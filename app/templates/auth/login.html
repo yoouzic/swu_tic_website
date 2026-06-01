@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}登录 - 西南大学教学信息中心{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white text-center">
+                <h4 class="mb-0">
+                    <i class="bi bi-person-circle"></i> 用户登录
+                </h4>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="student_id" class="form-label">
+                            <i class="bi bi-person"></i> 学号
+                        </label>
+                        <input type="text" class="form-control" id="student_id" name="student_id" 
+                               placeholder="请输入学号" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="password" class="form-label">
+                            <i class="bi bi-lock"></i> 密码
+                        </label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="password" name="password" 
+                                   placeholder="请输入密码" required>
+                            <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                                <i class="bi bi-eye" id="toggleIcon"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-box-arrow-in-right"></i> 登录
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="card-footer text-center text-muted">
+                <small>
+                    首次登录请使用系统分配的初始密码<br>
+                    如有问题请联系管理员
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 登录帮助模态框 -->
+<div class="modal fade" id="helpModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">登录帮助</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6>登录说明：</h6>
+                <ul>
+                    <li>使用您的学号作为用户名</li>
+                    <li>首次登录使用系统分配的初始密码</li>
+                    <li>建议首次登录后立即修改密码</li>
+                    <li>如忘记密码，请联系管理员重置</li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 帮助按钮 -->
+<div class="text-center mt-3">
+    <button type="button" class="btn btn-link" data-bs-toggle="modal" data-bs-target="#helpModal">
+        <i class="bi bi-question-circle"></i> 登录帮助
+    </button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 密码显示/隐藏切换
+document.getElementById('togglePassword').addEventListener('click', function() {
+    const passwordField = document.getElementById('password');
+    const toggleIcon = document.getElementById('toggleIcon');
+    
+    if (passwordField.type === 'password') {
+        passwordField.type = 'text';
+        toggleIcon.className = 'bi bi-eye-slash';
+    } else {
+        passwordField.type = 'password';
+        toggleIcon.className = 'bi bi-eye';
+    }
+});
+
+// 表单验证
+document.querySelector('form').addEventListener('submit', function(e) {
+    const studentId = document.getElementById('student_id').value.trim();
+    const password = document.getElementById('password').value;
+    
+    if (!studentId) {
+        e.preventDefault();
+        alert('请输入学号');
+        return;
+    }
+    
+    if (!password) {
+        e.preventDefault();
+        alert('请输入密码');
+        return;
+    }
+    
+    // 学号格式验证（假设学号为数字）
+    if (!/^\d+$/.test(studentId)) {
+        e.preventDefault();
+        alert('学号格式不正确，请输入数字');
+        return;
+    }
+});
+</script>
+{% endblock %}

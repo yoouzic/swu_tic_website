@@ -1,0 +1,712 @@
+{% extends "base.html" %}
+
+{% block title %}填写听课表单{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    {% if form_data_json %}
+    <script>
+        var initialFormData = {{ form_data_json|safe }};
+        document.addEventListener('DOMContentLoaded', function() {
+            // 延迟一点执行以确保其他初始化脚本已运行
+            setTimeout(function() {
+                populateForm(initialFormData);
+            }, 100);
+        });
+
+        function populateForm(data) {
+            console.log('Populating form with data:', data);
+            
+            // 遍历数据并填充
+            for (const key in data) {
+                if (data.hasOwnProperty(key)) {
+                    const value = data[key];
+                    const element = document.getElementById(key);
+                    
+                    if (element) {
+                        if (element.type === 'checkbox') {
+                            // 特殊处理复选框 (如教学方法)
+                            // 这里假设 key 是 input 的 id，但教学方法是 hidden input 'teaching_method' 
+                            // 和多个 checkboxes 'tm_ppt' 等。
+                            // data['teaching_method'] 可能是 "PPT演示法、讲授法"
+                        } else if (element.type === 'radio') {
+                             // radio 通常是 name 对应 key
+                        } else {
+                            element.value = value;
+                        }
+                    }
+                }
+            }
+            
+            // 特殊字段手动处理
+            
+            // 教学方法
+            if (data.teaching_method) {
+                const methods = data.teaching_method.split('、');
+                ['tm_ppt', 'tm_lecture', 'tm_interactive'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el && methods.includes(el.value)) {
+                        el.checked = true;
+                    }
+                });
+                // 触发变更事件以更新课件质量状态
+                syncCoursewareQualityWithTeachingMethod();
+            }
+            
+            // 节次解析：从 "第3-4节" 或 "第3节" 转换为开始和结束节次
+            if (data.class_period) {
+                const periodMatch = data.class_period.match(/第(\d+)(?:-(\d+))?节/);
+                if (periodMatch) {
+                    const startPeriod = periodMatch[1];
+                    const endPeriod = periodMatch[2] || periodMatch[1];
+                    
+                    const startEl = document.getElementById('start_period');
+                    const endEl = document.getElementById('end_period');
+                    
+                    if (startEl) startEl.value = startPeriod;
+                    if (endEl) endEl.value = endPeriod;
+                }
+            }
+            
+            // 课程反馈字数统计
+            if (data.course_feedback) {
+                const el = document.getElementById('course_feedback');
+                if (el) {
+                    document.getElementById('feedback_counter').textContent = `已输入 ${el.value.length} 字`;
+                }
+            }
+            
+            // 触发日期和节次更新
+            updateDateWithWeekday();
+            updateClassPeriod();
+            
+            // 如果是驳回重填，显示提示
+            {% if form and form.status == '已驳回' %}
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-warning alert-dismissible fade show mb-4';
+            alertDiv.innerHTML = `
+                <i class="bi bi-exclamation-triangle-fill"></i> <strong>注意：</strong> 您正在重新填写被驳回的表单。
+                <br><strong>驳回原因：</strong> ${data.review_comment || '无'}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.querySelector('.card-body').insertBefore(alertDiv, document.querySelector('form'));
+            {% endif %}
+        }
+    </script>
+    {% endif %}
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0"><i class="fas fa-edit"></i> 听课表单</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('user.submit_form') }}" id="lectureForm">
+                        <!-- 关联登记ID (隐藏域) -->
+                        <input type="hidden" id="registration_id" name="registration_id">
+                        <!-- 唯一ID (用于版本控制，编辑/驳回重填时使用) -->
+                        <input type="hidden" id="unique_id" name="unique_id" value="{{ form.unique_id if form else '' }}">
+
+                        <!-- 基本信息 -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h5 class="text-primary border-bottom pb-2">基本信息</h5>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="listener_name" class="form-label">听课人姓名+学院 <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="listener_name" name="listener_name" 
+                                           value="{{ user.name }}（{{ user.college }}）" readonly>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="listener_number" class="form-label">听课人编号 <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="listener_number" name="listener_number" 
+                                           value="{{ user.number }}" readonly>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 课程信息 -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h5 class="text-primary border-bottom pb-2">课程信息</h5>
+                                <div id="autoFillAlert" class="alert alert-info alert-dismissible fade show" style="display: none;">
+                                    <i class="bi bi-info-circle"></i> 已根据您的听课登记自动填充部分课程信息，您可以根据实际情况进行修改。
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="lecture_date" class="form-label">听课时间 <span class="text-danger">*</span></label>
+                                    <input type="date" class="form-control" id="lecture_date" name="lecture_date" required onchange="updateDateWithWeekday()">
+                                    <input type="hidden" id="lecture_date_display" name="lecture_date_display">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="class_period" class="form-label">第几节 <span class="text-danger">*</span></label>
+                                    <div class="row">
+                                        <div class="col-6">
+                                            <select class="form-select" id="start_period" name="start_period" required onchange="updateClassPeriod()">
+                                                <option value="">开始</option>
+                                                <option value="1">1</option>
+                                                <option value="2">2</option>
+                                                <option value="3">3</option>
+                                                <option value="4">4</option>
+                                                <option value="5">5</option>
+                                                <option value="6">6</option>
+                                                <option value="7">7</option>
+                                                <option value="8">8</option>
+                                                <option value="9">9</option>
+                                                <option value="10">10</option>
+                                                <option value="11">11</option>
+                                                <option value="12">12</option>
+                                                <option value="13">13</option>
+                                                <option value="14">14</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-6">
+                                            <select class="form-select" id="end_period" name="end_period" required onchange="updateClassPeriod()">
+                                                <option value="">结束</option>
+                                                <option value="1">1</option>
+                                                <option value="2">2</option>
+                                                <option value="3">3</option>
+                                                <option value="4">4</option>
+                                                <option value="5">5</option>
+                                                <option value="6">6</option>
+                                                <option value="7">7</option>
+                                                <option value="8">8</option>
+                                                <option value="9">9</option>
+                                                <option value="10">10</option>
+                                                <option value="11">11</option>
+                                                <option value="12">12</option>
+                                                <option value="13">13</option>
+                                                <option value="14">14</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <input type="hidden" id="class_period" name="class_period">
+                                    <small id="period-display" class="form-text text-muted"></small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="lecture_location" class="form-label">听课地点 <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="lecture_location" name="lecture_location" 
+                                           placeholder="如:32-302" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="teacher_name" class="form-label">授课教师 <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="teacher_name" name="teacher_name" 
+                                           placeholder="谨防错别字" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="teacher_college" class="form-label">教师所属学院 <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="teacher_college" name="teacher_college" required>
+                                </div>
+                            </div>
+                            <div class="col-md-8">
+                                <div class="mb-3">
+                                    <label for="course_title" class="form-label">课程 <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="course_title" name="course_title" required>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="student_grade_class" class="form-label">专业年级 <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="student_grade_class" name="student_grade_class" 
+                                           placeholder="如:2018级植物生产类05、06班" required>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div class="mb-3">
+                                    <label for="course_changes" class="form-label">课程信息变化 <span class="text-danger">*</span></label>
+                                    <textarea class="form-control" id="course_changes" name="course_changes" rows="2" 
+                                              placeholder='一般三个方面:老师、教室、时间,没有变化填"无"' required></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 课堂评价 -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h5 class="text-primary border-bottom pb-2">课堂评价</h5>
+                            </div>
+                            <div class="col-12">
+                                <div class="mb-3">
+                                    <label for="abnormal_situation" class="form-label">异常情况反映 <span class="text-danger">*</span></label>
+                                    <textarea class="form-control" id="abnormal_situation" name="abnormal_situation" rows="2" 
+                                              placeholder='根据事实,没有则填"无"' required></textarea>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">主要教学方法 <span class="text-danger">*</span></label>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="tm_ppt" value="PPT演示法">
+                                        <label class="form-check-label" for="tm_ppt">PPT演示法</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="tm_lecture" value="讲授法">
+                                        <label class="form-check-label" for="tm_lecture">讲授法</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="tm_interactive" value="师生互动法">
+                                        <label class="form-check-label" for="tm_interactive">师生互动法</label>
+                                    </div>
+                                    <input type="hidden" id="teaching_method" name="teaching_method">
+                                    <small id="teaching_method_hint" class="form-text text-danger" style="display:none">请选择至少一种教学方法</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="classroom_discipline" class="form-label">管理课堂纪律 <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="classroom_discipline" name="classroom_discipline" required>
+                                        <option value="">请选择</option>
+                                        <option value="非常好">非常好</option>
+                                        <option value="好">好</option>
+                                        <option value="一般">一般</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="classroom_atmosphere" class="form-label">调动课堂气氛 <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="classroom_atmosphere" name="classroom_atmosphere" required>
+                                        <option value="">请选择</option>
+                                        <option value="非常好">非常好</option>
+                                        <option value="好">好</option>
+                                        <option value="一般">一般</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="courseware_quality" class="form-label">课件制作质量 <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="courseware_quality" name="courseware_quality" required>
+                                        <option value="">请选择</option>
+                                        <option value="非常好">非常好</option>
+                                        <option value="好">好</option>
+                                        <option value="一般">一般</option>
+                                        <option value="无">无</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="overall_effect" class="form-label">整体教学效果 <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="overall_effect" name="overall_effect" required>
+                                        <option value="">请选择</option>
+                                        <option value="非常好">非常好</option>
+                                        <option value="好">好</option>
+                                        <option value="一般">一般</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="quality_case" class="form-label">优质案例推荐 <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="quality_case" name="quality_case" required>
+                                        <option value="">请选择</option>
+                                        <option value="推荐">推荐</option>
+                                        <option value="不推荐">不推荐</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 反馈信息 -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h5 class="text-primary border-bottom pb-2">反馈信息</h5>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="course_feedback" class="form-label">课程反馈(优点) <span class="text-danger">*</span></label>
+                                    <textarea class="form-control" id="course_feedback" name="course_feedback" rows="4" 
+                                              placeholder="五十字以上,评价的内容实在且有针对性" required></textarea>
+                                    <div class="d-flex justify-content-between">
+                                        <small id="feedback_counter" class="text-muted">已输入 0 字</small>
+                                        <small id="feedback_limit_hint" class="text-danger" style="display:none">反馈内容需至少50字</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="suggestions" class="form-label">不足及建议 <span class="text-danger">*</span></label>
+                                    <textarea class="form-control" id="suggestions" name="suggestions" rows="4" 
+                                              placeholder='根据事实,没有则填"无"' required></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 签名信息 -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h5 class="text-primary border-bottom pb-2">签名信息</h5>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="student_signature1" class="form-label">听课班级同学签名1 <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="student_signature1" name="student_signature1" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="contact_phone1" class="form-label">联系电话1 <span class="text-danger">*</span></label>
+                                    <input type="tel" class="form-control" id="contact_phone1" name="contact_phone1" 
+                                           pattern="[0-9]{11}" placeholder="请输入11位手机号" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="student_signature2" class="form-label">听课班级同学签名2 <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="student_signature2" name="student_signature2" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="contact_phone2" class="form-label">联系电话2 <span class="text-danger">*</span></label>
+                                    <input type="tel" class="form-control" id="contact_phone2" name="contact_phone2" 
+                                           pattern="[0-9]{11}" placeholder="请输入11位手机号" required>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 备注 (已移除) -->
+                        <!--
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h5 class="text-primary border-bottom pb-2">备注</h5>
+                            </div>
+                            <div class="col-12">
+                                <div class="mb-3">
+                                    <label for="remarks" class="form-label">备注</label>
+                                    <textarea class="form-control" id="remarks" name="remarks" rows="3" placeholder="可在此输入额外备注信息"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        -->
+
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-primary btn-lg me-3">
+                                <i class="fas fa-save"></i> 提交表单
+                            </button>
+                            <button type="reset" class="btn btn-secondary btn-lg">
+                                <i class="fas fa-undo"></i> 重置表单
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 登记选择模态框 -->
+<div class="modal fade" id="unusedRegistrationsModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-check-square"></i> 提交听课反馈</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle-fill"></i> 您有以下已登记但未填表的课程。是否要为其中一门课程提交反馈？
+                    <br>
+                    <small>选择已登记课程可以自动填充表单信息，并方便管理。</small>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover border">
+                        <thead class="table-light">
+                            <tr>
+                                <th>课程名称</th>
+                                <th>教师</th>
+                                <th>听课计划</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="unusedRegistrationsBody">
+                            <!-- 动态加载 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">不使用登记（手动填写）</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 页面加载完成后检查未使用的登记
+document.addEventListener('DOMContentLoaded', function() {
+    checkUnusedRegistrations();
+});
+
+function checkUnusedRegistrations() {
+    fetch('/user/api/unused_reservations')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.data.length > 0) {
+                renderUnusedRegistrations(data.data);
+            }
+        })
+        .catch(error => console.error('Error fetching reservations:', error));
+}
+
+function renderUnusedRegistrations(data) {
+    const tbody = document.getElementById('unusedRegistrationsBody');
+    tbody.innerHTML = '';
+    
+    data.forEach(item => {
+        const rawDataStr = encodeURIComponent(JSON.stringify(item.raw_data));
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><strong>${item.course_name}</strong></td>
+            <td>${item.teacher_name}</td>
+            <td><small>${item.listening_info || '无'}</small></td>
+            <td>
+                <button class="btn btn-sm btn-success" onclick="selectRegistration('${item.id}', '${rawDataStr}')">
+                    <i class="bi bi-check2"></i> 选择此课
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    const modal = new bootstrap.Modal(document.getElementById('unusedRegistrationsModal'));
+    modal.show();
+}
+
+function selectRegistration(id, rawDataEncoded) {
+    try {
+        const rawData = JSON.parse(decodeURIComponent(rawDataEncoded));
+        
+        // 设置隐藏域
+        document.getElementById('registration_id').value = id;
+        
+        // 填充表单
+        document.getElementById('course_title').value = rawData.course_title || '';
+        document.getElementById('teacher_name').value = rawData.teacher_name || '';
+        document.getElementById('teacher_college').value = rawData.teacher_college || '';
+        document.getElementById('lecture_location').value = rawData.lecture_location || '';
+        document.getElementById('student_grade_class').value = rawData.student_grade_class || '';
+        
+        // 显示提示
+        document.getElementById('autoFillAlert').style.display = 'block';
+        
+        // 关闭模态框
+        const modalEl = document.getElementById('unusedRegistrationsModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        modal.hide();
+        
+    } catch (e) {
+        console.error('Error selecting registration:', e);
+        alert('自动填充失败，请手动填写');
+    }
+}
+
+// 时间自动补全星期几
+function updateDateWithWeekday() {
+    const dateInput = document.getElementById('lecture_date');
+    const hiddenInput = document.getElementById('lecture_date_display');
+    
+    if (dateInput.value) {
+        const date = new Date(dateInput.value);
+        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        const weekday = weekdays[date.getDay()];
+        
+        // 格式化日期为 YYYY/MM/DD
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const formattedDate = `${year}/${month}/${day}${weekday}`;
+        
+        hiddenInput.value = formattedDate;
+        
+        // 显示在原输入框旁边
+        let displaySpan = document.getElementById('date-display');
+        if (!displaySpan) {
+            displaySpan = document.createElement('small');
+            displaySpan.id = 'date-display';
+            displaySpan.className = 'form-text text-muted';
+            dateInput.parentNode.appendChild(displaySpan);
+        }
+        displaySpan.textContent = `完整时间：${formattedDate}`;
+    }
+}
+
+// 节次自动补全
+function updateClassPeriod() {
+    const startPeriod = document.getElementById('start_period').value;
+    const endPeriod = document.getElementById('end_period').value;
+    const hiddenInput = document.getElementById('class_period');
+    
+    if (startPeriod && endPeriod) {
+        if (parseInt(startPeriod) > parseInt(endPeriod)) {
+            alert('开始节次不能大于结束节次！');
+            document.getElementById('end_period').value = '';
+            return;
+        }
+        
+        let periodText;
+        if (startPeriod === endPeriod) {
+            periodText = `第${startPeriod}节`;
+        } else {
+            periodText = `第${startPeriod}-${endPeriod}节`;
+        }
+        
+        hiddenInput.value = periodText;
+        
+        // 显示在选择框下方
+        let displaySpan = document.getElementById('period-display');
+        if (!displaySpan) {
+            displaySpan = document.createElement('small');
+            displaySpan.id = 'period-display';
+            displaySpan.className = 'form-text text-muted';
+            document.getElementById('class_period').parentNode.appendChild(displaySpan);
+        } else {
+            displaySpan.textContent = `完整节次：${periodText}`;
+        }
+    }
+}
+
+function syncCoursewareQualityWithTeachingMethod() {
+    const pptCheckbox = document.getElementById('tm_ppt');
+    const coursewareSelect = document.getElementById('courseware_quality');
+    if (!pptCheckbox || !coursewareSelect) {
+        return;
+    }
+    if (!pptCheckbox.checked) {
+        coursewareSelect.value = '无';
+        coursewareSelect.setAttribute('readonly', 'readonly');
+        coursewareSelect.style.pointerEvents = 'none';
+        coursewareSelect.style.backgroundColor = '#e9ecef';
+    } else {
+        coursewareSelect.removeAttribute('readonly');
+        coursewareSelect.style.pointerEvents = '';
+        coursewareSelect.style.backgroundColor = '';
+        if (coursewareSelect.value === '无') {
+            coursewareSelect.value = '';
+        }
+    }
+}
+
+// 表单验证
+document.getElementById('lectureForm').addEventListener('submit', function(e) {
+    if (this.dataset.submitting === '1') {
+        e.preventDefault();
+        return;
+    }
+    const requiredFields = this.querySelectorAll('[required]');
+    let isValid = true;
+    
+    requiredFields.forEach(field => {
+        if (!field.value.trim()) {
+            field.classList.add('is-invalid');
+            isValid = false;
+        } else {
+            field.classList.remove('is-invalid');
+        }
+    });
+    
+    // 检查隐藏字段
+    if (!document.getElementById('lecture_date_display').value) {
+        updateDateWithWeekday(); // 尝试自动修复
+        if (!document.getElementById('lecture_date_display').value) {
+            document.getElementById('lecture_date').classList.add('is-invalid');
+            isValid = false;
+        }
+    }
+    
+    if (!document.getElementById('class_period').value) {
+        document.getElementById('start_period').classList.add('is-invalid');
+        document.getElementById('end_period').classList.add('is-invalid');
+        isValid = false;
+    }
+    
+    if (!isValid) {
+        e.preventDefault();
+        alert('请填写所有必填项！');
+    }
+
+    const tmValues = [];
+    ['tm_ppt','tm_lecture','tm_interactive'].forEach(id => { const el = document.getElementById(id); if (el && el.checked) tmValues.push(el.value); });
+    document.getElementById('teaching_method').value = tmValues.join('、');
+    syncCoursewareQualityWithTeachingMethod();
+    if (tmValues.length === 0) {
+        document.getElementById('teaching_method_hint').style.display = 'inline';
+        isValid = false;
+    } else {
+        document.getElementById('teaching_method_hint').style.display = 'none';
+    }
+
+    const feedback = document.getElementById('course_feedback').value.trim();
+    document.getElementById('feedback_counter').textContent = `已输入 ${feedback.length} 字`;
+    if (feedback.length < 50) {
+        document.getElementById('feedback_limit_hint').style.display = 'inline';
+        document.getElementById('course_feedback').classList.add('is-invalid');
+        isValid = false;
+    } else {
+        document.getElementById('feedback_limit_hint').style.display = 'none';
+        document.getElementById('course_feedback').classList.remove('is-invalid');
+    }
+
+    if (!isValid) {
+        e.preventDefault();
+        return;
+    }
+    this.dataset.submitting = '1';
+    const submitBtn = this.querySelector('button[type="submit"]');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 提交中...';
+    }
+});
+
+// 电话号码验证
+function validatePhone(input) {
+    const phonePattern = /^[0-9]{11}$/;
+    if (input.value && !phonePattern.test(input.value)) {
+        input.classList.add('is-invalid');
+    } else {
+        input.classList.remove('is-invalid');
+    }
+}
+
+document.getElementById('contact_phone1').addEventListener('blur', function() {
+    validatePhone(this);
+});
+
+document.getElementById('contact_phone2').addEventListener('blur', function() {
+    validatePhone(this);
+});
+
+document.getElementById('course_feedback').addEventListener('input', function() {
+    const val = this.value.trim();
+    document.getElementById('feedback_counter').textContent = `已输入 ${val.length} 字`;
+    if (val.length < 50) {
+        document.getElementById('feedback_limit_hint').style.display = 'inline';
+    } else {
+        document.getElementById('feedback_limit_hint').style.display = 'none';
+    }
+});
+
+['tm_ppt', 'tm_lecture', 'tm_interactive'].forEach(id => {
+    const checkbox = document.getElementById(id);
+    if (checkbox) {
+        checkbox.addEventListener('change', syncCoursewareQualityWithTeachingMethod);
+    }
+});
+syncCoursewareQualityWithTeachingMethod();
+</script>
+{% endblock %}

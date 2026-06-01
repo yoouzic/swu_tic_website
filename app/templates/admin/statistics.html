@@ -1,0 +1,621 @@
+{% extends "base.html" %}
+
+{% block title %}统计分析 - 管理员面板{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    {% if can_access_extended_stats %}
+    <div class="row mb-3">
+        <div class="col-12 d-flex justify-content-end">
+            <a href="{{ url_for('admin.submission_count_stats') }}" class="btn btn-outline-success mr-2">
+                <i class="fas fa-file-signature mr-1"></i> 交表数量统计
+            </a>
+            <a href="{{ url_for('admin.review_assessment_stats') }}" class="btn btn-outline-primary mr-2">
+                <i class="fas fa-clipboard-check mr-1"></i> 审表考评统计
+            </a>
+            <a href="{{ url_for('admin.department_monthly_assessment_stats') }}" class="btn btn-outline-warning">
+                <i class="fas fa-building mr-1"></i> 部门月度考评统计
+            </a>
+        </div>
+    </div>
+    {% endif %}
+    {% if can_manage_department_leave %}
+    <div class="row mb-3">
+        <div class="col-lg-4 mb-3">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h3 class="card-title mb-0">
+                        <i class="fas fa-user-clock mr-2"></i>
+                        成员请假
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="mb-2 text-muted" id="leaveWeekHint">正在读取当前教学周...</div>
+                    <div class="form-group">
+                        <label for="leaveUserSelect">请假成员</label>
+                        <select class="form-control" id="leaveUserSelect">
+                            <option value="">正在加载...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="leaveReasonInput">请假说明</label>
+                        <input type="text" class="form-control" id="leaveReasonInput" maxlength="200" placeholder="可选">
+                    </div>
+                    <button type="button" class="btn btn-warning" id="btnCreateLeave">
+                        <i class="fas fa-check mr-1"></i> 为当前教学周请假
+                    </button>
+                    <div class="small text-muted mt-2">管理部门权限仅能为本部门成员发起当前教学周请假。</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-8 mb-3">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title mb-0">
+                        <i class="fas fa-list mr-2"></i>
+                        请假状态
+                    </h3>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnReloadLeaveStatus">刷新</button>
+                </div>
+                <div class="card-body" id="leaveStatusBody">
+                    <div class="text-muted">正在加载...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <!-- 统计概览 -->
+    <div class="row mb-4">
+        <div class="col-lg-3 col-6">
+            <div class="small-box bg-info">
+                <div class="inner">
+                    <h3>{{ total_forms }}</h3>
+                    <p>总表单数</p>
+                </div>
+                <div class="icon">
+                    <i class="fas fa-clipboard-list"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-6">
+            <div class="small-box bg-warning">
+                <div class="inner">
+                    <h3>{{ pending_forms }}</h3>
+                    <p>待审核表单</p>
+                </div>
+                <div class="icon">
+                    <i class="fas fa-clock"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-6">
+            <div class="small-box bg-success">
+                <div class="inner">
+                    <h3>{{ approved_forms }}</h3>
+                    <p>已通过表单</p>
+                </div>
+                <div class="icon">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-6">
+            <div class="small-box bg-danger">
+                <div class="inner">
+                    <h3>{{ rejected_forms }}</h3>
+                    <p>已驳回表单</p>
+                </div>
+                <div class="icon">
+                    <i class="fas fa-times-circle"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 筛选条件 -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-filter mr-2"></i>
+                        筛选条件
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <form method="GET" id="filterForm">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="form-group">
+                                    <label>时间范围：</label>
+                                    <div class="input-group">
+                                        <input type="date" class="form-control" name="start_date" value="{{ request.args.get('start_date', '') }}">
+                                        <div class="input-group-prepend input-group-append">
+                                            <span class="input-group-text">至</span>
+                                        </div>
+                                        <input type="date" class="form-control" name="end_date" value="{{ request.args.get('end_date', '') }}">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="form-group">
+                                    <label>部门：</label>
+                                    <select class="form-control" name="department">
+                                        <option value="">所有部门</option>
+                                        {% for dept in departments %}
+                                        <option value="{{ dept }}" {% if request.args.get('department') == dept %}selected{% endif %}>{{ dept }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="form-group">
+                                    <label>状态：</label>
+                                    <select class="form-control" name="status">
+                                        <option value="">所有状态</option>
+                                        <option value="待审核" {% if request.args.get('status') == '待审核' %}selected{% endif %}>待审核</option>
+                                        <option value="已审核" {% if request.args.get('status') == '已审核' %}selected{% endif %}>已审核</option>
+                                        <option value="已驳回" {% if request.args.get('status') == '已驳回' %}selected{% endif %}>已驳回</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="form-group">
+                                    <label>统计维度：</label>
+                                    <select class="form-control" name="dimension" id="dimensionSelect">
+                                        <option value="department" {% if request.args.get('dimension') == 'department' %}selected{% endif %}>按部门</option>
+                                        <option value="user" {% if request.args.get('dimension') == 'user' %}selected{% endif %}>按用户</option>
+                                        <option value="teacher" {% if request.args.get('dimension') == 'teacher' %}selected{% endif %}>按教师</option>
+                                        <option value="college" {% if request.args.get('dimension') == 'college' %}selected{% endif %}>按学院</option>
+                                        <option value="date" {% if request.args.get('dimension') == 'date' %}selected{% endif %}>按日期</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="form-group">
+                                    <label>&nbsp;</label>
+                                    <div>
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="fas fa-search"></i> 查询
+                                        </button>
+                                        <button type="button" class="btn btn-secondary ml-2" onclick="resetFilters()">
+                                            <i class="fas fa-undo"></i> 重置
+                                        </button>
+                                        <button type="button" class="btn btn-success ml-2" onclick="exportStatistics()">
+                                            <i class="fas fa-download"></i> 导出
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图表区域 -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">表单状态分布</h3>
+                </div>
+                <div class="card-body">
+                    <canvas id="statusChart" width="400" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">提交趋势</h3>
+                </div>
+                <div class="card-body">
+                    <canvas id="trendChart" width="400" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 详细统计表格 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">详细统计</h3>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped" id="statisticsTable">
+                            <thead>
+                                <tr>
+                                    {% if request.args.get('dimension') == 'department' or not request.args.get('dimension') %}
+                                    <th>部门</th>
+                                    {% elif request.args.get('dimension') == 'user' %}
+                                    <th>用户</th>
+                                    <th>部门</th>
+                                    {% elif request.args.get('dimension') == 'teacher' %}
+                                    <th>教师</th>
+                                    <th>学院</th>
+                                    {% elif request.args.get('dimension') == 'college' %}
+                                    <th>学院</th>
+                                    {% elif request.args.get('dimension') == 'date' %}
+                                    <th>日期</th>
+                                    {% endif %}
+                                    <th>总数</th>
+                                    <th>待审核</th>
+                                    <th>已通过</th>
+                                    <th>已驳回</th>
+                                    <th>通过率</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in statistics_data %}
+                                <tr>
+                                    {% if request.args.get('dimension') == 'department' or not request.args.get('dimension') %}
+                                    <td>{{ item.name }}</td>
+                                    {% elif request.args.get('dimension') == 'user' %}
+                                    <td>{{ item.name }}</td>
+                                    <td>{{ item.department }}</td>
+                                    {% elif request.args.get('dimension') == 'teacher' %}
+                                    <td>{{ item.name }}</td>
+                                    <td>{{ item.college }}</td>
+                                    {% elif request.args.get('dimension') == 'college' %}
+                                    <td>{{ item.name }}</td>
+                                    {% elif request.args.get('dimension') == 'date' %}
+                                    <td>{{ item.name }}</td>
+                                    {% endif %}
+                                    <td>{{ item.total }}</td>
+                                    <td>
+                                        <span class="badge badge-warning">{{ item.pending }}</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-success">{{ item.approved }}</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-danger">{{ item.rejected }}</span>
+                                    </td>
+                                    <td>
+                                        {% if item.total > 0 %}
+                                        <div class="progress" style="height: 20px;">
+                                            <div class="progress-bar bg-success" role="progressbar" 
+                                                 style="width: {{ (item.approved / item.total * 100)|round(1) }}%">
+                                                {{ (item.approved / item.total * 100)|round(1) }}%
+                                            </div>
+                                        </div>
+                                        {% else %}
+                                        0%
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-info" onclick="viewDetails('{{ item.name }}', '{{ request.args.get('dimension', 'department') }}')">
+                                            <i class="fas fa-eye"></i> 详情
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 详情模态框 -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="detailModalTitle">详细信息</h4>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body" id="detailModalContent">
+                <!-- 详细内容将通过AJAX加载 -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='vendor/chart.js/chart.min.js') }}"></script>
+<script>
+const canManageDepartmentLeave = {{ can_manage_department_leave|tojson }};
+let leaveStatusCache = null;
+
+function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, function(s) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s];
+    });
+}
+
+function renderLeaveCandidates(data) {
+    const select = document.getElementById('leaveUserSelect');
+    if (!select) {
+        return;
+    }
+    const candidates = data.candidates || [];
+    if (data.settings_error) {
+        select.innerHTML = '<option value="">当前教学周不可用</option>';
+        select.disabled = true;
+        document.getElementById('btnCreateLeave').disabled = true;
+        return;
+    }
+    if (candidates.length === 0) {
+        select.innerHTML = '<option value="">暂无可请假的成员</option>';
+        select.disabled = true;
+        document.getElementById('btnCreateLeave').disabled = true;
+        return;
+    }
+    select.disabled = false;
+    document.getElementById('btnCreateLeave').disabled = false;
+    select.innerHTML = '<option value="">请选择成员</option>' + candidates.map(item => {
+        const disabled = item.has_current_leave ? ' disabled' : '';
+        const suffix = item.has_current_leave ? '（请假中）' : '';
+        return `<option value="${item.user_id}"${disabled}>${escapeHtml(item.name)}（${escapeHtml(item.number || '-')}，${escapeHtml(item.role || '-')}）${suffix}</option>`;
+    }).join('');
+}
+
+function buildLeaveStatusTable(title, rows, badgeClass) {
+    if (!rows || rows.length === 0) {
+        return `
+            <div class="mb-3">
+                <div class="fw-bold mb-2">${title}</div>
+                <div class="text-muted small">暂无人员</div>
+            </div>
+        `;
+    }
+    return `
+        <div class="mb-3">
+            <div class="fw-bold mb-2">${title}</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead>
+                        <tr>
+                            <th>姓名</th>
+                            <th>编号</th>
+                            <th>角色</th>
+                            <th>小组</th>
+                            <th>请假周</th>
+                            <th>补交情况</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(item => `
+                            <tr>
+                                <td><span class="badge ${badgeClass} mr-1">${escapeHtml(item.status_label)}</span>${escapeHtml(item.name)}</td>
+                                <td>${escapeHtml(item.number || '-')}</td>
+                                <td>${escapeHtml(item.role || '-')}</td>
+                                <td>${escapeHtml(item.group || '-')}</td>
+                                <td>第${Number(item.leave_week || item.start_week || 0)}周</td>
+                                <td>${Number(item.submitted_count || 0)}/${Number(item.required_submission || 0)}
+                                    ${Number(item.pending_makeup_count || 0) > 0 ? `<span class="text-danger ms-1">缺${Number(item.pending_makeup_count || 0)}</span>` : '<span class="text-success ms-1">已足额</span>'}
+                                </td>
+                                <td>${escapeHtml(item.reason || '-')}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+function renderLeaveStatus(data) {
+    leaveStatusCache = data;
+    const hint = document.getElementById('leaveWeekHint');
+    const body = document.getElementById('leaveStatusBody');
+    if (hint) {
+        hint.textContent = data.settings_error
+            ? data.settings_error
+            : `当前教学周：第 ${data.current_week || '-'} 周；每周需交 ${data.required_submission || 0} 份`;
+    }
+    renderLeaveCandidates(data);
+    if (!body) {
+        return;
+    }
+    if (data.settings_error) {
+        body.innerHTML = `<div class="alert alert-warning mb-0">${escapeHtml(data.settings_error)}</div>`;
+        return;
+    }
+    body.innerHTML = [
+        buildLeaveStatusTable('请假中', data.active || [], 'bg-warning text-dark'),
+        buildLeaveStatusTable('请假结束期', data.ending || [], 'bg-info text-dark')
+    ].join('');
+}
+
+function loadLeaveStatus() {
+    if (!canManageDepartmentLeave) {
+        return;
+    }
+    fetch('/admin/api/leave-management/status')
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                throw new Error(data.message || '加载请假状态失败');
+            }
+            renderLeaveStatus(data);
+        })
+        .catch(error => {
+            const body = document.getElementById('leaveStatusBody');
+            if (body) {
+                body.innerHTML = `<div class="alert alert-danger mb-0">${escapeHtml(error.message || '加载请假状态失败')}</div>`;
+            }
+        });
+}
+
+function createCurrentWeekLeave() {
+    const select = document.getElementById('leaveUserSelect');
+    if (!select || !select.value) {
+        alert('请先选择成员');
+        return;
+    }
+    const reasonInput = document.getElementById('leaveReasonInput');
+    const btn = document.getElementById('btnCreateLeave');
+    btn.disabled = true;
+    btn.textContent = '提交中...';
+    fetch('/admin/api/leave-management/current-week', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            user_id: select.value,
+            reason: reasonInput ? reasonInput.value.trim() : ''
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                throw new Error(data.message || '请假发起失败');
+            }
+            alert(data.message || '请假已发起');
+            if (reasonInput) {
+                reasonInput.value = '';
+            }
+            loadLeaveStatus();
+        })
+        .catch(error => alert(error.message || '请假发起失败'))
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check mr-1"></i> 为当前教学周请假';
+        });
+}
+
+if (canManageDepartmentLeave) {
+    document.addEventListener('DOMContentLoaded', function() {
+        loadLeaveStatus();
+        const reloadBtn = document.getElementById('btnReloadLeaveStatus');
+        const createBtn = document.getElementById('btnCreateLeave');
+        if (reloadBtn) {
+            reloadBtn.addEventListener('click', loadLeaveStatus);
+        }
+        if (createBtn) {
+            createBtn.addEventListener('click', createCurrentWeekLeave);
+        }
+    });
+}
+
+// 状态分布饼图
+const statusCtx = document.getElementById('statusChart').getContext('2d');
+const statusChart = new Chart(statusCtx, {
+    type: 'doughnut',
+    data: {
+        labels: ['待审核', '已通过', '已驳回'],
+        datasets: [{
+            data: [{{ pending_forms }}, {{ approved_forms }}, {{ rejected_forms }}],
+            backgroundColor: [
+                '#ffc107',
+                '#28a745',
+                '#dc3545'
+            ],
+            borderWidth: 2
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+});
+
+// 趋势图
+const trendCtx = document.getElementById('trendChart').getContext('2d');
+const trendChart = new Chart(trendCtx, {
+    type: 'line',
+    data: {
+        labels: {{ trend_labels|safe }},
+        datasets: [{
+            label: '提交数量',
+            data: {{ trend_data|safe }},
+            borderColor: '#007bff',
+            backgroundColor: 'rgba(0, 123, 255, 0.1)',
+            tension: 0.4,
+            fill: true
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    stepSize: 1
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                display: false
+            }
+        }
+    }
+});
+
+// 重置筛选
+function resetFilters() {
+    document.querySelector('input[name="start_date"]').value = '';
+    document.querySelector('input[name="end_date"]').value = '';
+    document.querySelector('select[name="department"]').value = '';
+    document.querySelector('select[name="status"]').value = '';
+    document.querySelector('select[name="dimension"]').value = 'department';
+}
+
+// 查看详情
+function viewDetails(name, dimension) {
+    const params = new URLSearchParams(window.location.search);
+    params.set('detail_name', name);
+    params.set('detail_dimension', dimension);
+    
+    fetch(`/admin/statistics_detail?${params.toString()}`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('detailModalTitle').textContent = `${name} - 详细信息`;
+            document.getElementById('detailModalContent').innerHTML = data.html;
+            $('#detailModal').modal('show');
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('加载详情失败');
+        });
+}
+
+// 导出统计
+function exportStatistics() {
+    const params = new URLSearchParams(window.location.search);
+    window.open(`/admin/export_statistics?${params.toString()}`, '_blank');
+}
+
+// 维度变化时自动提交
+document.getElementById('dimensionSelect').addEventListener('change', function() {
+    document.getElementById('filterForm').submit();
+});
+
+// 数据表格排序
+$(document).ready(function() {
+    if ($.fn.DataTable) {
+        $('#statisticsTable').DataTable({
+            "paging": false,
+            "searching": false,
+            "info": false,
+            "ordering": true,
+            "language": {
+                "emptyTable": "暂无数据",
+                "zeroRecords": "没有找到匹配的记录"
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

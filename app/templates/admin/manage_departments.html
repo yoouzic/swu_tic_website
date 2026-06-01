@@ -1,0 +1,2300 @@
+{% extends "base.html" %}
+
+{% block title %}部门管理 - 西南大学听课信息中心{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="bi bi-building-gear"></i> 部门管理</h2>
+                <div>
+                    {% if manage_permission == '超级管理员' %}
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDepartmentModal">
+                        <i class="bi bi-plus-circle"></i> 添加部门
+                    </button>
+                    {% endif %}
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addGroupModal">
+                        <i class="bi bi-plus-circle"></i> 添加小组
+                    </button>
+                    {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
+                    <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                        <i class="bi bi-plus-circle"></i> 添加用户
+                    </button>
+                    {% endif %}
+                    <button type="button" class="btn btn-outline-secondary" onclick="openPersonnelMovementModal()">
+                        <i class="bi bi-clock-history"></i> 人员流动记录
+                    </button>
+                    {% if manage_permission == '超级管理员' %}
+                    <a href="#contacts-import" class="btn btn-warning">
+                        <i class="bi bi-upload"></i> 通讯录导入
+                    </a>
+                    <a href="#contacts-export" class="btn btn-outline-warning">
+                        <i class="bi bi-download"></i> 通讯录导出
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card mb-3">
+                <div class="card-body py-3">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-md-8">
+                            <input type="text" class="form-control" id="departmentLocatorInput" placeholder="搜索部门/小组/信息员姓名/编号">
+                        </div>
+                        <div class="col-md-4 text-md-end">
+                            <button type="button" class="btn btn-outline-primary" onclick="searchDepartments()">
+                                <i class="bi bi-search"></i> 搜索
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" onclick="clearDepartmentLocator()">
+                                <i class="bi bi-x-circle"></i> 清空
+                            </button>
+                        </div>
+                    </div>
+                    <div class="small text-muted mt-2" id="departmentLocatorStats"></div>
+                </div>
+            </div>
+
+            <!-- 部门管理卡片 -->
+            <div class="row" id="departmentsContainer">
+                <!-- 动态加载部门数据 -->
+                <div class="col-12 text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted">正在加载部门数据...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="personnelMovementModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">人员流动记录</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="personnelMovementBody">
+                <div class="text-center text-muted py-4">正在加载...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 通讯录导入/导出区域 -->
+{% if manage_permission == '超级管理员' %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-6" id="contacts-import">
+            <div class="card shadow mb-4">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="bi bi-upload"></i> 通讯录导入</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <a href="{{ url_for('admin.download_template') }}" class="btn btn-sm btn-primary">
+                            <i class="bi bi-file-earmark-excel"></i> 下载Excel模板
+                        </a>
+                        <a href="{{ url_for('admin.view_sample') }}" class="btn btn-sm btn-outline-info" target="_blank">
+                            <i class="bi bi-eye"></i> 查看示例
+                        </a>
+                    </div>
+                    <form method="POST" enctype="multipart/form-data" id="deptUploadForm">
+                        <div class="mb-3">
+                            <label class="form-label">选择Excel文件</label>
+                            <input type="file" class="form-control" id="deptFile" name="file" accept=".xlsx,.xls" required>
+                            <div class="form-text">支持 .xlsx 和 .xls 格式；导入将自动按“部门/组别”分配</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="deptOverwrite" name="overwrite">
+                                <label class="form-check-label" for="deptOverwrite">覆盖已存在的用户（相同学号）</label>
+                            </div>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-warning" id="deptUploadBtn">
+                                <i class="bi bi-upload"></i> 上传并预览
+                            </button>
+                        </div>
+                    </form>
+                    <div id="deptPreviewSection" class="mt-3" style="display:none"></div>
+                    <div id="deptResultSection" class="mt-3" style="display:none"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6" id="contacts-export">
+            <div class="card shadow mb-4">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="bi bi-download"></i> 通讯录导出</h5>
+                </div>
+                <div class="card-body">
+                    <form id="contactsExportForm">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">按部门筛选</label>
+                                <select class="form-select" id="exportDepartment">
+                                    <option value="">全部</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 d-grid align-items-end">
+                                <button type="submit" class="btn btn-warning mt-4" id="startExportBtn">
+                                    <i class="bi bi-cloud-download"></i> 开始导出
+                                </button>
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="ignoreContactRoleErrors">
+                                    <label class="form-check-label" for="ignoreContactRoleErrors">
+                                        忽略主任/部长校验，直接按编号升序导出
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                    <div class="mt-3" id="exportProgress" style="display:none">
+                        <div class="progress">
+                            <div class="progress-bar" role="progressbar" style="width:0%"></div>
+                        </div>
+                        <div class="small text-muted mt-2" id="exportProgressText">准备中...</div>
+                    </div>
+                    <div class="mt-3" id="exportResult" style="display:none"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 添加部门模态框 -->
+<div class="modal fade" id="addDepartmentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加部门</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addDepartmentForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="deptName" class="form-label">部门名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="deptName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="deptDescription" class="form-label">部门描述</label>
+                        <textarea class="form-control" id="deptDescription" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="deptManager" class="form-label">部门负责人</label>
+                        <div class="dropdown search-select" id="deptManagerDropdown">
+                            <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex justify-content-between align-items-center" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <span class="selected-text">请选择负责人</span>
+                            </button>
+                            <div class="dropdown-menu w-100 p-0">
+                                <div class="p-2 sticky-top bg-white border-bottom">
+                                    <input type="text" class="form-control form-control-sm search-input" placeholder="搜索...">
+                                </div>
+                                <div class="dropdown-items-wrapper" style="max-height: 250px; overflow-y: auto;">
+                                    <!-- 选项将通过JS加载 -->
+                                </div>
+                            </div>
+                            <input type="hidden" id="deptManager" name="manager_id">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">添加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑部门模态框 -->
+<div class="modal fade" id="editDepartmentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">编辑部门</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editDepartmentForm">
+                <input type="hidden" id="editDeptId" name="id">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="editDeptName" class="form-label">部门名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="editDeptName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editDeptDescription" class="form-label">部门描述</label>
+                        <textarea class="form-control" id="editDeptDescription" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editDeptManager" class="form-label">部门负责人</label>
+                        <div class="dropdown search-select" id="editDeptManagerDropdown">
+                            <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex justify-content-between align-items-center" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <span class="selected-text">请选择负责人</span>
+                            </button>
+                            <div class="dropdown-menu w-100 p-0">
+                                <div class="p-2 sticky-top bg-white border-bottom">
+                                    <input type="text" class="form-control form-control-sm search-input" placeholder="搜索...">
+                                </div>
+                                <div class="dropdown-items-wrapper" style="max-height: 250px; overflow-y: auto;">
+                                    <!-- 选项将通过JS加载 -->
+                                </div>
+                            </div>
+                            <input type="hidden" id="editDeptManager" name="manager_id">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+            </form>
+            {% if manage_permission == '超级管理员' %}
+            <div class="modal-footer justify-content-start border-top-0 pt-0">
+                <button type="button" class="btn btn-outline-info" onclick="showMoveMembersModal('department')">
+                    <i class="bi bi-people-fill"></i> 批量移入成员
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 添加小组模态框 -->
+<div class="modal fade" id="addGroupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加小组</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addGroupForm">
+                <div class="modal-body">
+                    {% if manage_permission == '超级管理员' %}
+                    <div class="mb-3">
+                        <label for="groupDepartment" class="form-label">所属部门 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="groupDepartment" name="department" required>
+                            <option value="">请选择部门</option>
+                        </select>
+                    </div>
+                    {% else %}
+                    <input type="hidden" id="groupDepartment" name="department" value="{{ current_user_dept }}">
+                    <div class="mb-3">
+                        <label class="form-label">所属部门</label>
+                        <input type="text" class="form-control" value="{{ current_user_dept }}" disabled>
+                    </div>
+                    {% endif %}
+                    <div class="mb-3">
+                        <label for="groupName" class="form-label">小组名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="groupName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="groupDescription" class="form-label">小组描述</label>
+                        <textarea class="form-control" id="groupDescription" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="groupLeader" class="form-label">小组长</label>
+                        <div class="dropdown search-select" id="groupLeaderDropdown">
+                            <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex justify-content-between align-items-center" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <span class="selected-text">请选择小组长</span>
+                            </button>
+                            <div class="dropdown-menu w-100 p-0">
+                                <div class="p-2 sticky-top bg-white border-bottom">
+                                    <input type="text" class="form-control form-control-sm search-input" placeholder="搜索...">
+                                </div>
+                                <div class="dropdown-items-wrapper" style="max-height: 250px; overflow-y: auto;">
+                                    <!-- 选项将通过JS加载 -->
+                                </div>
+                            </div>
+                            <input type="hidden" id="groupLeader" name="leader_id">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="groupMaxMembers" class="form-label">最大成员数</label>
+                        <input type="number" class="form-control" id="groupMaxMembers" name="max_members" value="10" min="1">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-success">添加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑小组模态框 -->
+<div class="modal fade" id="editGroupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">编辑小组</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editGroupForm">
+                <input type="hidden" id="editGroupId" name="id">
+                <div class="modal-body">
+                    {% if manage_permission == '超级管理员' %}
+                    <div class="mb-3">
+                        <label for="editGroupDepartment" class="form-label">所属部门 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="editGroupDepartment" name="department" required>
+                            <option value="">请选择部门</option>
+                        </select>
+                    </div>
+                    {% else %}
+                    <input type="hidden" id="editGroupDepartment" name="department" value="{{ current_user_dept }}">
+                    <div class="mb-3">
+                        <label class="form-label">所属部门</label>
+                        <input type="text" class="form-control" value="{{ current_user_dept }}" disabled>
+                    </div>
+                    {% endif %}
+                    <div class="mb-3">
+                        <label for="editGroupName" class="form-label">小组名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="editGroupName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editGroupDescription" class="form-label">小组描述</label>
+                        <textarea class="form-control" id="editGroupDescription" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editGroupLeader" class="form-label">小组长</label>
+                        <div class="dropdown search-select" id="editGroupLeaderDropdown">
+                            <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex justify-content-between align-items-center" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <span class="selected-text">请选择小组长</span>
+                            </button>
+                            <div class="dropdown-menu w-100 p-0">
+                                <div class="p-2 sticky-top bg-white border-bottom">
+                                    <input type="text" class="form-control form-control-sm search-input" placeholder="搜索...">
+                                </div>
+                                <div class="dropdown-items-wrapper" style="max-height: 250px; overflow-y: auto;">
+                                    <!-- 选项将通过JS加载 -->
+                                </div>
+                            </div>
+                            <input type="hidden" id="editGroupLeader" name="leader_id">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editGroupMaxMembers" class="form-label">最大成员数</label>
+                        <input type="number" class="form-control" id="editGroupMaxMembers" name="max_members" min="1">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-success">保存</button>
+            </div>
+            </form>
+            {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
+            <div class="modal-footer justify-content-start border-top-0 pt-0">
+                <button type="button" class="btn btn-outline-info" onclick="showMoveMembersModal('group')">
+                    <i class="bi bi-people-fill"></i> 批量移入成员
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 批量移动成员模态框 -->
+<div class="modal fade" id="moveMembersModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="moveMembersTitle">批量移动成员</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">选择成员</label>
+                    <div class="form-control" style="height: 200px; overflow-y: auto;" id="memberSelectionList">
+                        <!-- 动态加载成员列表 -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitMoveMembers()">确认移动</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加用户模态框 -->
+<div class="modal fade" id="addUserModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加用户</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addUserForm">
+                <div class="modal-body">
+                    <!-- 错误提示容器 -->
+                    <div id="addUserErrorContainer" class="alert alert-danger d-none" role="alert">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <span id="addUserErrorMessage"></span>
+                        <button type="button" class="btn-close float-end" onclick="hideAddUserError()"></button>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="userName" class="form-label">姓名 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="userName" name="name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                {% if manage_permission == '超级管理员' %}
+                                <label for="userDepartment" class="form-label">部门 <span class="text-danger">*</span></label>
+                                <select class="form-select" id="userDepartment" name="department" required>
+                                    <option value="">请选择部门</option>
+                                </select>
+                                {% else %}
+                                <label class="form-label">部门</label>
+                                <input type="hidden" id="userDepartment" name="department" value="{{ current_user_dept }}">
+                                <input type="text" class="form-control" value="{{ current_user_dept }}" disabled>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="userGroup" class="form-label">小组</label>
+                                <select class="form-select" id="userGroup" name="group_id">
+                                    <option value="">未分配小组</option>
+                                </select>
+                                <div class="form-text">可选项，可以稍后再分配到小组</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <div class="alert alert-info mb-0">
+                                    <i class="bi bi-info-circle"></i> 
+                                    <strong>编号自动分配</strong><br>
+                                    系统将自动为新用户分配编号
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="userGender" class="form-label">性别 <span class="text-danger">*</span></label>
+                                <select class="form-select" id="userGender" name="gender" required>
+                                    <option value="">请选择性别</option>
+                                    <option value="男">男</option>
+                                    <option value="女">女</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="userGrade" class="form-label">年级 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="userGrade" name="grade" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="userCollege" class="form-label">学院 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="userCollege" name="college" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="userMajor" class="form-label">专业 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="userMajor" name="major" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="userDormitory" class="form-label">宿舍 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="userDormitory" name="dormitory" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="userPhone" class="form-label">手机号码 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="userPhone" name="phone" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="userQQ" class="form-label">QQ号码 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="userQQ" name="qq" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="userStudentId" class="form-label">学号 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="userStudentId" name="student_id" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                {% if manage_permission == '超级管理员' %}
+                                <label for="userRole" class="form-label">角色 <span class="text-danger">*</span></label>
+                                <select class="form-select" id="userRole" name="role" required>
+                                    <option value="信息员">信息员</option>
+                                    <option value="管理员">管理员</option>
+                                    <option value="超级管理员">超级管理员</option>
+                                </select>
+                                {% else %}
+                                <label class="form-label">角色</label>
+                                <input type="hidden" id="userRole" name="role" value="信息员">
+                                <input type="text" class="form-control" value="信息员 (默认)" disabled>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="userPassword" class="form-label">密码 <span class="text-danger">*</span></label>
+                                <input type="password" class="form-control" id="userPassword" name="password" required>
+                                <div class="form-text">留空将自动生成随机密码</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-info">添加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑用户模态框 -->
+<div class="modal fade" id="editUserModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">编辑用户</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editUserForm">
+                <input type="hidden" id="editUserId" name="id">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editUserNumber" class="form-label">编号 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="editUserNumber" name="number" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editUserName" class="form-label">姓名 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="editUserName" name="name" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                {% if manage_permission == '超级管理员' %}
+                                <label for="editUserDepartment" class="form-label">部门 <span class="text-danger">*</span></label>
+                                <select class="form-select" id="editUserDepartment" name="department" required>
+                                    <option value="">请选择部门</option>
+                                </select>
+                                {% else %}
+                                <label class="form-label">部门</label>
+                                <input type="hidden" id="editUserDepartment" name="department" value="{{ current_user_dept }}">
+                                <input type="text" class="form-control" value="{{ current_user_dept }}" disabled>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editUserGroup" class="form-label">小组</label>
+                                <select class="form-select" id="editUserGroup" name="group_id">
+                                    <option value="">未分配小组</option>
+                                </select>
+                                <div class="form-text">可保留未分配小组，也可改选该部门下的其他小组</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editUserGender" class="form-label">性别 <span class="text-danger">*</span></label>
+                                <select class="form-select" id="editUserGender" name="gender" required>
+                                    <option value="">请选择性别</option>
+                                    <option value="男">男</option>
+                                    <option value="女">女</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editUserGrade" class="form-label">年级 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="editUserGrade" name="grade" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editUserCollege" class="form-label">学院 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="editUserCollege" name="college" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editUserMajor" class="form-label">专业 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="editUserMajor" name="major" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editUserDormitory" class="form-label">宿舍 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="editUserDormitory" name="dormitory" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editUserPhone" class="form-label">手机号码 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="editUserPhone" name="phone" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editUserQQ" class="form-label">QQ号码 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="editUserQQ" name="qq" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editUserStudentId" class="form-label">学号 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="editUserStudentId" name="student_id" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                {% if manage_permission == '超级管理员' %}
+                                <label for="editUserRole" class="form-label">角色 <span class="text-danger">*</span></label>
+                                <select class="form-select" id="editUserRole" name="role" required>
+                                    <option value="信息员">信息员</option>
+                                    <option value="管理员">管理员</option>
+                                    <option value="超级管理员">超级管理员</option>
+                                </select>
+                                {% else %}
+                                <label class="form-label">角色</label>
+                                <input type="hidden" id="editUserRole" name="role">
+                                <input type="text" class="form-control" id="editUserRoleDisplay" disabled>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="editUserPassword" class="form-label">重置密码</label>
+                                <input type="password" class="form-control" id="editUserPassword" name="password" autocomplete="new-password" data-lpignore="true">
+                                <div class="form-text">留空表示不重置密码</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        {% if manage_permission == '超级管理员' %}
+                        <button type="button" class="btn btn-warning btn-sm" onclick="showPermissionModal()">
+                            <i class="bi bi-key"></i> 管理权限
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-info">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 权限管理模态框 -->
+<div class="modal fade" id="permissionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">权限管理</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> 修改权限后，用户角色将自动设置为"管理员"
+                </div>
+                <div id="permissionsList">
+                    <!-- 动态加载权限列表 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="savePermissions()">保存权限</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 密码确认模态框 -->
+<div class="modal fade" id="confirmDeleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmActionTitle">确认操作</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> 
+                    <span id="deleteMessage">此操作不可撤销，确定要删除吗？</span>
+                </div>
+                <div class="mb-3">
+                    <label for="deletePassword" class="form-label">请输入您的登录密码以确认：</label>
+                    <input type="password" class="form-control" id="deletePassword" placeholder="输入密码">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">确认</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 全局变量
+let currentEditUserId = null;
+let deleteCallback = null;
+let currentMoveType = null; // 'department' or 'group'
+let allDepartmentsData = [];
+
+// 页面加载完成后初始化
+document.addEventListener('DOMContentLoaded', function() {
+    loadDepartments();
+    loadUsersForSelect();
+    {% if manage_permission == '超级管理员' %}
+    loadPermissions();
+    initContactsImport();
+    initContactsExport();
+    {% endif %}
+    
+    // 绑定表单提交事件
+    bindFormEvents();
+    
+    // 绑定部门选择变化事件
+    bindDepartmentChangeEvents();
+    const locatorInput = document.getElementById('departmentLocatorInput');
+    if (locatorInput) {
+        locatorInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                searchDepartments();
+            }
+        });
+    }
+    
+    // 绑定模态框事件
+    const addUserModal = document.getElementById('addUserModal');
+    if (addUserModal) {
+        addUserModal.addEventListener('show.bs.modal', function() {
+            // 清除之前的错误提示
+            hideAddUserError();
+            // 重置表单
+            document.getElementById('addUserForm').reset();
+        });
+    }
+});
+
+function showMoveMembersModal(type) {
+    currentMoveType = type;
+    const modalTitle = document.getElementById('moveMembersTitle');
+    const container = document.getElementById('memberSelectionList');
+    container.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">加载成员中...</p></div>';
+    
+    let targetId;
+    let apiUrl;
+    
+    if (type === 'department') {
+        modalTitle.textContent = '批量移动成员到部门';
+        targetId = document.getElementById('editDeptId').value; 
+        if (!targetId) {
+             alert('无法获取部门ID，请先打开编辑框');
+             return;
+        }
+        apiUrl = '/admin/api/users'; 
+    } else {
+        modalTitle.textContent = '批量移动成员到小组';
+        targetId = document.getElementById('editGroupId').value;
+        if (!targetId) {
+             alert('无法获取小组ID，请先打开编辑框');
+             return;
+        }
+        const dept = document.getElementById('editGroupDepartment').value;
+        apiUrl = `/admin/api/users?department=${encodeURIComponent(dept)}`;
+    }
+    
+    // 关闭当前模态框（如果是从编辑模态框打开的）
+    if (type === 'department') {
+        bootstrap.Modal.getInstance(document.getElementById('editDepartmentModal')).hide();
+    } else {
+        bootstrap.Modal.getInstance(document.getElementById('editGroupModal')).hide();
+    }
+    
+    const modal = new bootstrap.Modal(document.getElementById('moveMembersModal'));
+    modal.show();
+    
+    // 监听关闭事件，重新打开编辑模态框
+    document.getElementById('moveMembersModal').addEventListener('hidden.bs.modal', function () {
+        if (type === 'department') {
+            new bootstrap.Modal(document.getElementById('editDepartmentModal')).show();
+        } else {
+            new bootstrap.Modal(document.getElementById('editGroupModal')).show();
+        }
+    }, { once: true });
+    
+    fetch(apiUrl)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.data) {
+                renderMemberSelection(data.data, type, targetId);
+            } else {
+                container.innerHTML = '<p class="text-danger text-center">加载失败</p>';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            container.innerHTML = '<p class="text-danger text-center">加载失败</p>';
+        });
+}
+
+function renderMemberSelection(users, type, targetId) {
+    const container = document.getElementById('memberSelectionList');
+    container.innerHTML = '';
+    
+    if (users.length === 0) {
+        container.innerHTML = '<p class="text-muted text-center py-3">没有可移动的用户</p>';
+        return;
+    }
+    
+    const listGroup = document.createElement('div');
+    listGroup.className = 'list-group list-group-flush';
+    
+    users.forEach(user => {
+        const item = document.createElement('label');
+        item.className = 'list-group-item d-flex gap-2';
+        item.style.cursor = 'pointer';
+        
+        item.innerHTML = `
+            <input class="form-check-input flex-shrink-0" type="checkbox" value="${user.id}" name="selected_users">
+            <span>
+                ${user.name} <small class="text-muted">(${user.department}${user.group_id ? ' - ' + (user.group || '小组' + user.group_id) : ''})</small>
+            </span>
+        `;
+        listGroup.appendChild(item);
+    });
+    
+    container.appendChild(listGroup);
+}
+
+function submitMoveMembers() {
+    const checkboxes = document.querySelectorAll('input[name="selected_users"]:checked');
+    const userIds = Array.from(checkboxes).map(cb => cb.value);
+    
+    if (userIds.length === 0) {
+        alert('请选择至少一名用户');
+        return;
+    }
+    
+    let url;
+    let targetId;
+    
+    if (currentMoveType === 'department') {
+        targetId = document.getElementById('editDeptId').value;
+        url = `/admin/api/departments/${targetId}/move_members`;
+    } else {
+        targetId = document.getElementById('editGroupId').value;
+        url = `/admin/api/groups/${targetId}/move_members`;
+    }
+    
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ user_ids: userIds })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert(data.message, 'success');
+            // 关闭当前模态框
+            bootstrap.Modal.getInstance(document.getElementById('moveMembersModal')).hide();
+            // 刷新页面
+             setTimeout(() => location.reload(), 1000);
+        } else {
+            alert(data.message || '操作失败');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('操作失败');
+    });
+}
+
+// 加载部门数据
+function loadDepartments() {
+    fetch('/admin/api/departments')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.data) {
+                allDepartmentsData = data.data;
+                renderDepartments(allDepartmentsData);
+                updateDepartmentSearchStats(allDepartmentsData);
+                updateDepartmentSelects(data.data);
+            } else {
+                showAlert(data.message || '加载部门数据失败', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('加载部门数据失败', 'error');
+        });
+}
+
+// 渲染部门卡片
+function renderDepartments(departments) {
+    const container = document.getElementById('departmentsContainer');
+    if (!departments || departments.length === 0) {
+        container.innerHTML = '<div class="col-12"><div class="alert alert-warning mb-0">未找到匹配结果</div></div>';
+        return;
+    }
+    container.innerHTML = departments.map(dept => {
+        const isVirtualDepartment = dept.is_virtual || dept.id === null;
+        const buttonsHtml = isVirtualDepartment ? '' : `
+            <div class="btn-group">
+                <button class="btn btn-sm btn-outline-primary" onclick="editDepartment(${dept.id})">
+                    <i class="bi bi-pencil"></i> 编辑
+                </button>
+                {% if manage_permission == '超级管理员' %}
+                <button class="btn btn-sm btn-outline-warning" onclick="disbandDepartment(${dept.id}, '${dept.name}')">
+                    <i class="bi bi-box-arrow-right"></i> 解散
+                </button>
+                {% endif %}
+            </div>
+        `;
+
+        return `
+        <div class="col-12 mb-4 department-card">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 text-primary">
+                        <i class="bi bi-building"></i> ${dept.name}
+                        <span class="badge bg-secondary ms-2" style="font-size: 0.8rem;">${dept.groups.length} 个小组</span>
+                        <span class="badge bg-info text-dark ms-1" style="font-size: 0.8rem;">${dept.total_users || '0'} 名用户</span>
+                    </h5>
+                    ${buttonsHtml}
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        ${dept.description ? `<p class="text-muted mb-1"><small>${dept.description}</small></p>` : ''}
+                        ${dept.head ? `<p class="mb-0"><strong>负责人：</strong>${dept.head}</p>` : ''}
+                        
+                        <!-- 部门评价概览 -->
+                        <div class="mt-2 p-2 bg-light rounded border">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span><strong>部门累计扣分：</strong><span class="text-danger">${dept.total_deduction || 0}</span> 分</span>
+                                <button class="btn btn-sm btn-link text-decoration-none" type="button" data-bs-toggle="collapse" data-bs-target="#deptEval${dept.id}">
+                                    查看部员扣分详情 <i class="bi bi-chevron-down"></i>
+                                </button>
+                            </div>
+                            <div class="collapse mt-2" id="deptEval${dept.id}">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-borderless mb-0">
+                                        <thead>
+                                            <tr class="text-muted" style="font-size: 0.85rem;">
+                                                <th>姓名</th>
+                                                <th class="text-end">扣分</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${dept.member_deductions && dept.member_deductions.length > 0 ? 
+                                                dept.member_deductions.map((m, idx) => `
+                                                    <tr class="${idx >= 5 ? 'd-none extended-row-' + dept.id : ''}">
+                                                        <td>${m.name}</td>
+                                                        <td class="text-end text-danger">-${m.score}</td>
+                                                    </tr>
+                                                `).join('') 
+                                                : '<tr><td colspan="2" class="text-center text-muted small">暂无扣分记录</td></tr>'
+                                            }
+                                        </tbody>
+                                    </table>
+                                    ${dept.member_deductions && dept.member_deductions.length > 5 ? `
+                                        <div class="text-center mt-1">
+                                            <button class="btn btn-xs btn-outline-secondary" onclick="toggleExtendedRows(${dept.id}, this)">
+                                                查看全部
+                                            </button>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        ${dept.groups.map(group => createGroupCard(group)).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>
+        `;
+    }).join('');
+}
+
+// 切换显示全部行
+function toggleExtendedRows(deptId, btn) {
+    const rows = document.querySelectorAll(`.extended-row-${deptId}`);
+    const isHidden = rows[0].classList.contains('d-none');
+    
+    rows.forEach(row => {
+        if (isHidden) {
+            row.classList.remove('d-none');
+        } else {
+            row.classList.add('d-none');
+        }
+    });
+    
+    btn.textContent = isHidden ? '收起' : '查看全部';
+}
+
+// 创建小组卡片
+function createGroupCard(group) {
+    // 检查是否为未分配小组且没有成员，如果是则隐藏
+    if (group.id === null && group.member_count === 0) {
+        return '';
+    }
+
+    // 判断是否为未分配小组，如果是则不显示操作按钮
+    const isUnassigned = group.id === null || group.is_virtual;
+    const buttonsHtml = isUnassigned ? '' : `
+        <div class="btn-group">
+            <button class="btn btn-outline-success" onclick="editGroup(${group.id})" title="编辑">
+                <i class="bi bi-pencil"></i> 编辑
+            </button>
+            {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
+            <button class="btn btn-outline-warning" onclick="disbandGroup(${group.id}, '${group.name}')" title="解散">
+                <i class="bi bi-box-arrow-right"></i> 解散
+            </button>
+            {% endif %}
+        </div>
+    `;
+
+    return `
+        <div class="col-md-6 col-lg-4 mb-3 group-card">
+            <div class="card border-secondary">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <h6 class="mb-0">
+                        <i class="bi bi-people"></i> ${group.name}
+                        <span class="badge bg-secondary ms-1">${group.member_count}${group.max_members === '无限制' ? '' : '/' + group.max_members}</span>
+                    </h6>
+                    ${buttonsHtml}
+                </div>
+                <div class="card-body py-2">
+                    ${group.description ? `<p class="small text-muted mb-2">${group.description}</p>` : ''}
+                    ${group.leader ? `<p class="small mb-2"><strong>组长：</strong>${group.leader}</p>` : ''}
+                    
+                    <div class="user-list">
+                        ${group.members.map(user => `
+                            <div class="d-flex justify-content-between align-items-center mb-1 group-user-row">
+                                <span class="small">${user.name} (${user.role})</span>
+                                {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
+                                <div class="btn-group">
+                                    <button type="button" class="btn btn-outline-secondary" onclick="viewUser(${user.id})" title="查看">
+                                        <i class="bi bi-eye"></i> 查看
+                                    </button>
+                                    <button class="btn btn-outline-info" onclick="editUser(${user.id})" title="编辑">
+                                        <i class="bi bi-pencil"></i> 编辑
+                                    </button>
+                                    ${user.role !== '超级管理员' ? `
+                                    <button class="btn btn-outline-warning" onclick="departUser(${user.id}, '${user.name}')" title="离任">
+                                        <i class="bi bi-person-dash"></i> 离任
+                                    </button>
+                                    ` : ''}
+                                    {% if manage_permission == '超级管理员' %}
+                                    <button class="btn btn-outline-danger" onclick="deleteUser(${user.id}, '${user.name}')" title="删除">
+                                        <i class="bi bi-trash"></i> 删除
+                                    </button>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function getFilteredDepartments(keyword) {
+    const normalized = (keyword || '').trim().toLowerCase();
+    if (!normalized) {
+        return allDepartmentsData;
+    }
+    const result = [];
+    allDepartmentsData.forEach(dept => {
+        const deptMatched = (dept.name || '').toLowerCase().includes(normalized);
+        const groups = Array.isArray(dept.groups) ? dept.groups : [];
+        const filteredGroups = [];
+        groups.forEach(group => {
+            const groupMatched = (group.name || '').toLowerCase().includes(normalized);
+            const members = Array.isArray(group.members) ? group.members : [];
+            const filteredMembers = members.filter(user => {
+                const nameMatched = (user.name || '').toLowerCase().includes(normalized);
+                const numberMatched = String(user.number || '').toLowerCase().includes(normalized);
+                return nameMatched || numberMatched;
+            });
+            if (deptMatched || groupMatched || filteredMembers.length > 0) {
+                const copiedMembers = (deptMatched || groupMatched) ? members : filteredMembers;
+                filteredGroups.push({
+                    ...group,
+                    members: copiedMembers,
+                    users: copiedMembers,
+                    member_count: copiedMembers.length,
+                    current_members: copiedMembers.length
+                });
+            }
+        });
+        if (deptMatched || filteredGroups.length > 0) {
+            const totalUsers = filteredGroups.reduce((sum, group) => sum + (group.member_count || 0), 0);
+            result.push({
+                ...dept,
+                groups: filteredGroups,
+                total_users: totalUsers
+            });
+        }
+    });
+    return result;
+}
+
+function updateDepartmentSearchStats(departments) {
+    const statsEl = document.getElementById('departmentLocatorStats');
+    if (!statsEl) {
+        return;
+    }
+    const deptCount = departments.length;
+    const groupCount = departments.reduce((sum, dept) => sum + ((dept.groups || []).length), 0);
+    const userCount = departments.reduce((sum, dept) => sum + ((dept.groups || []).reduce((s, group) => s + ((group.members || []).length), 0)), 0);
+    statsEl.textContent = `匹配部门 ${deptCount} 个，小组 ${groupCount} 个，信息员 ${userCount} 人`;
+}
+
+function searchDepartments() {
+    const keyword = document.getElementById('departmentLocatorInput')?.value || '';
+    const filtered = getFilteredDepartments(keyword);
+    renderDepartments(filtered);
+    updateDepartmentSearchStats(filtered);
+}
+
+function clearDepartmentLocator() {
+    const input = document.getElementById('departmentLocatorInput');
+    if (input) {
+        input.value = '';
+    }
+    renderDepartments(allDepartmentsData);
+    updateDepartmentSearchStats(allDepartmentsData);
+}
+
+function viewUser(userId) {
+    window.open(`/admin/users/${userId}/view`, '_blank');
+}
+
+// 绑定表单事件
+function bindFormEvents() {
+    // 添加部门
+    const addDeptForm = document.getElementById('addDepartmentForm');
+    if (addDeptForm) {
+        addDeptForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            submitForm('/admin/api/departments', new FormData(this), 'addDepartmentModal');
+        });
+    }
+    
+    // 编辑部门
+    const editDeptForm = document.getElementById('editDepartmentForm');
+    if (editDeptForm) {
+        editDeptForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const id = formData.get('id');
+            submitForm(`/admin/api/departments/${id}`, formData, 'editDepartmentModal', 'PUT');
+        });
+    }
+    
+    // 添加小组
+    const addGroupForm = document.getElementById('addGroupForm');
+    if (addGroupForm) {
+        addGroupForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            submitForm('/admin/api/groups', new FormData(this), 'addGroupModal');
+        });
+    }
+    
+    // 编辑小组
+    const editGroupForm = document.getElementById('editGroupForm');
+    if (editGroupForm) {
+        editGroupForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const id = formData.get('id');
+            submitForm(`/admin/api/groups/${id}`, formData, 'editGroupModal', 'PUT');
+        });
+    }
+    
+    // 添加用户
+    const addUserForm = document.getElementById('addUserForm');
+    if (addUserForm) {
+        addUserForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            submitForm('/admin/api/users', new FormData(this), 'addUserModal');
+        });
+    }
+    
+    // 编辑用户
+    const editUserForm = document.getElementById('editUserForm');
+    if (editUserForm) {
+        editUserForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const password = String(formData.get('password') || '').trim();
+            if (password) {
+                if (!confirm('检测到你填写了“重置密码”。保存后将修改该用户密码，是否继续？')) {
+                    return;
+                }
+                formData.set('new_password', password);
+            }
+            formData.delete('password');
+            const id = formData.get('id');
+            submitForm(`/admin/api/users/${id}`, formData, 'editUserModal', 'PUT');
+        });
+    }
+}
+
+// 绑定部门选择变化事件
+function bindDepartmentChangeEvents() {
+    // 添加用户时的部门选择
+    const userDept = document.getElementById('userDepartment');
+    if (userDept) {
+        userDept.addEventListener('change', function() {
+            loadGroupsForDepartment(this.value, 'userGroup');
+        });
+    }
+    
+    // 编辑用户时的部门选择
+    const editUserDept = document.getElementById('editUserDepartment');
+    if (editUserDept) {
+        editUserDept.addEventListener('change', function() {
+            loadGroupsForDepartment(this.value, 'editUserGroup');
+        });
+    }
+    
+    // 添加小组时的部门选择
+    const groupDept = document.getElementById('groupDepartment');
+    if (groupDept) {
+        groupDept.addEventListener('change', function() {
+            loadUsersForDepartment(this.value, 'groupLeader');
+        });
+    }
+    
+    // 编辑小组时的部门选择
+    const editGroupDept = document.getElementById('editGroupDepartment');
+    if (editGroupDept) {
+        editGroupDept.addEventListener('change', function() {
+            loadUsersForDepartment(this.value, 'editGroupLeader');
+        });
+    }
+}
+
+// 提交表单
+function submitForm(url, formData, modalId, method = 'POST') {
+    // 将FormData转换为JSON对象
+    const jsonData = {};
+    for (let [key, value] of formData.entries()) {
+        jsonData[key] = value;
+    }
+    
+    const options = {
+        method: method,
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(jsonData)
+    };
+    
+    fetch(url, options)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert(data.message, 'success');
+                const modalEl = document.getElementById(modalId);
+                if (modalEl) {
+                    bootstrap.Modal.getInstance(modalEl).hide();
+                }
+                loadDepartments();
+                loadUsersForSelect();
+                refreshPersonnelMovementRecordsIfOpen();
+                // 如果是添加用户模态框，清除错误提示
+                if (modalId === 'addUserModal') {
+                    hideAddUserError();
+                }
+            } else {
+                // 如果是添加用户模态框，在模态框内显示错误
+                if (modalId === 'addUserModal') {
+                    showAddUserError(data.message);
+                } else {
+                    showAlert(data.message, 'error');
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            // 如果是添加用户模态框，在模态框内显示错误
+            if (modalId === 'addUserModal') {
+                showAddUserError('操作失败');
+            } else {
+                showAlert('操作失败', 'error');
+            }
+        });
+}
+
+// 编辑部门
+function editDepartment(id) {
+    fetch(`/admin/api/departments/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const dept = data.data;
+                document.getElementById('editDeptId').value = dept.id;
+                document.getElementById('editDeptName').value = dept.name;
+                document.getElementById('editDeptDescription').value = dept.description || '';
+                
+                // 设置负责人下拉框
+                const managerDropdown = document.getElementById('editDeptManagerDropdown');
+                if (managerDropdown) {
+                    const hiddenInput = document.getElementById('editDeptManager');
+                    const btnText = managerDropdown.querySelector('.selected-text');
+                    const wrapper = managerDropdown.querySelector('.dropdown-items-wrapper');
+                    
+                    if (dept.manager_id) {
+                        hiddenInput.value = dept.manager_id;
+                        // 尝试从列表中找到对应的文本
+                        const items = wrapper.getElementsByClassName('dropdown-item');
+                        let found = false;
+                        for (let item of items) {
+                            if (item.dataset.value == dept.manager_id) {
+                                btnText.textContent = item.textContent;
+                                found = true;
+                                break;
+                            }
+                        }
+                        // 如果没找到（可能数据未加载完全），暂时显示"已选择(ID)"
+                        if (!found) {
+                            btnText.textContent = dept.head || '已选择负责人'; 
+                        }
+                    } else {
+                        hiddenInput.value = '';
+                        btnText.textContent = '请选择负责人';
+                    }
+                }
+                
+                new bootstrap.Modal(document.getElementById('editDepartmentModal')).show();
+            }
+        });
+}
+
+// 解散部门
+function disbandDepartment(id, name) {
+    showPasswordConfirm(`确定要解散部门"${name}"吗？该部门下的小组将被解散，所有用户会转入“未分配部门 / 未分配小组”。`, '解散', (password) => {
+        fetch(`/admin/api/departments/${id}/disband`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: password })
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    loadDepartments();
+                    loadUsersForSelect();
+                } else {
+                    showAlert(data.message, 'error');
+                }
+            });
+    });
+}
+
+// 编辑小组
+function editGroup(id) {
+    fetch(`/admin/api/groups/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const group = data.data;
+                document.getElementById('editGroupId').value = group.id;
+                document.getElementById('editGroupDepartment').value = group.department;
+                document.getElementById('editGroupName').value = group.name;
+                document.getElementById('editGroupDescription').value = group.description || '';
+                document.getElementById('editGroupMaxMembers').value = group.max_members;
+                
+                // 加载该部门的用户作为组长候选
+                loadUsersForDepartment(group.department, 'editGroupLeader', group.leader_id);
+                
+                // 由于loadUsersForDepartment是异步的，我们在那里处理了值的选中
+                // 但如果group.leader_id存在，而列表还没加载完，可能需要一些UI状态指示（已在函数中处理为"加载中..."）
+                
+                new bootstrap.Modal(document.getElementById('editGroupModal')).show();
+            }
+        });
+}
+
+// 解散小组
+function disbandGroup(id, name) {
+    showPasswordConfirm(`确定要解散小组"${name}"吗？该小组用户会转入“未分配小组”。`, '解散', (password) => {
+        fetch(`/admin/api/groups/${id}/disband`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: password })
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    loadDepartments();
+                } else {
+                    showAlert(data.message, 'error');
+                }
+            });
+    });
+}
+
+// 编辑用户
+function editUser(id) {
+    currentEditUserId = id;
+    fetch(`/admin/api/users/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const user = data.data;
+                document.getElementById('editUserId').value = user.id;
+                document.getElementById('editUserNumber').value = user.number;
+                document.getElementById('editUserName').value = user.name;
+                document.getElementById('editUserDepartment').value = user.department;
+                document.getElementById('editUserGender').value = user.gender;
+                document.getElementById('editUserGrade').value = user.grade;
+                document.getElementById('editUserCollege').value = user.college;
+                document.getElementById('editUserMajor').value = user.major;
+                document.getElementById('editUserDormitory').value = user.dormitory;
+                document.getElementById('editUserPhone').value = user.phone;
+                document.getElementById('editUserQQ').value = user.qq;
+                document.getElementById('editUserStudentId').value = user.student_id;
+                document.getElementById('editUserRole').value = user.role;
+                document.getElementById('editUserPassword').value = '';
+                
+                const roleDisplay = document.getElementById('editUserRoleDisplay');
+                if (roleDisplay) {
+                    roleDisplay.value = user.role;
+                }
+                
+                // 加载该部门的小组
+                loadGroupsForDepartment(user.department, 'editUserGroup', user.group_id);
+                
+                new bootstrap.Modal(document.getElementById('editUserModal')).show();
+            }
+        });
+}
+
+// 用户离任
+function departUser(id, name) {
+    showPasswordConfirm(`确定要将用户"${name}"设为离任吗？离任后该用户不再登录、不再参与活动，并从各页面隐藏。`, '离任', (password) => {
+        fetch(`/admin/api/users/${id}/depart`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: password })
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    loadDepartments();
+                    loadUsersForSelect();
+                    refreshPersonnelMovementRecordsIfOpen();
+                } else {
+                    showAlert(data.message, 'error');
+                }
+            });
+    });
+}
+
+// 删除用户
+function deleteUser(id, name) {
+    showPasswordConfirm(`确定要删除用户"${name}"吗？该操作会物理删除账号，仅建议超级管理员在无历史数据时使用。`, '删除', (password) => {
+        fetch(`/admin/api/users/${id}`, { 
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: password })
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    loadDepartments();
+                    loadUsersForSelect();
+                    refreshPersonnelMovementRecordsIfOpen();
+                } else {
+                    showAlert(data.message, 'error');
+                }
+            });
+    });
+}
+
+function renderPersonnelMovementRecords(records) {
+    const body = document.getElementById('personnelMovementBody');
+    const safeRecords = records || [];
+    if (safeRecords.length === 0) {
+        body.innerHTML = '<div class="text-center text-muted py-4">暂无人员流动记录</div>';
+        return;
+    }
+    body.innerHTML = `
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped align-middle">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>类型</th>
+                        <th>用户</th>
+                        <th>部门/小组</th>
+                        <th>摘要</th>
+                        <th>详情</th>
+                        <th>操作人</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${safeRecords.map(record => `
+                        <tr>
+                            <td>${record.created_at || '-'}</td>
+                            <td>${record.action_type || '-'}</td>
+                            <td>${record.target_user_name || '-'}${record.target_user_number ? ` (${record.target_user_number})` : ''}</td>
+                            <td>${record.department_name || '-'} / ${record.group_name || '未分配小组'}</td>
+                            <td>${record.summary || '-'}</td>
+                            <td>
+                                ${(record.details || []).length > 0 ? `
+                                    <ul class="mb-0 ps-3">
+                                        ${(record.details || []).map(item => `
+                                            <li>${item.label || item.field || '-'}：${item.before || '空'} → ${item.after || '空'}</li>
+                                        `).join('')}
+                                    </ul>
+                                ` : '<span class="text-muted">无</span>'}
+                            </td>
+                            <td>${record.operator_name || '-'}${record.operator_number ? ` (${record.operator_number})` : ''}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function loadPersonnelMovementRecords() {
+    const body = document.getElementById('personnelMovementBody');
+    if (body) {
+        body.innerHTML = '<div class="text-center text-muted py-4">正在加载...</div>';
+    }
+    fetch('/admin/api/personnel-movement-records?limit=120')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderPersonnelMovementRecords(data.records || []);
+            } else {
+                if (body) {
+                    body.innerHTML = `<div class="alert alert-danger">${data.message || '加载失败'}</div>`;
+                }
+            }
+        })
+        .catch(() => {
+            if (body) {
+                body.innerHTML = '<div class="alert alert-danger">加载失败，请稍后重试</div>';
+            }
+        });
+}
+
+function openPersonnelMovementModal() {
+    loadPersonnelMovementRecords();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('personnelMovementModal')).show();
+}
+
+function refreshPersonnelMovementRecordsIfOpen() {
+    const modalEl = document.getElementById('personnelMovementModal');
+    if (!modalEl) {
+        return;
+    }
+    const instance = bootstrap.Modal.getInstance(modalEl);
+    if (instance && modalEl.classList.contains('show')) {
+        loadPersonnelMovementRecords();
+    }
+}
+
+// 加载用户列表用于选择
+function loadUsersForSelect() {
+    fetch('/admin/api/users')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateUserSelects(data.data);
+            }
+        });
+}
+
+// 更新部门选择框
+function updateDepartmentSelects(departments) {
+    // 仅更新与部门相关的选择框，避免覆盖负责人（用户）选择框
+    const selects = ['groupDepartment', 'editGroupDepartment', 'userDepartment', 'editUserDepartment'];
+    const unassignedDepartmentName = '未分配部门';
+    
+    selects.forEach(selectId => {
+        const select = document.getElementById(selectId);
+        // 确保元素存在且为SELECT标签（非超级管理员时可能是hidden input）
+        if (select && select.tagName === 'SELECT') {
+            // 保留第一个选项
+            const firstOption = select.querySelector('option');
+            if (firstOption) {
+                select.innerHTML = '';
+                select.appendChild(firstOption);
+                
+                if (departments && Array.isArray(departments)) {
+                    let hasUnassignedDepartment = false;
+                    departments.forEach(dept => {
+                        if ((selectId === 'groupDepartment' || selectId === 'editGroupDepartment') && (dept.is_virtual || dept.id === null)) {
+                            return;
+                        }
+                        if (dept.name === unassignedDepartmentName) {
+                            hasUnassignedDepartment = true;
+                        }
+                        const option = document.createElement('option');
+                        option.value = dept.name;
+                        option.textContent = dept.name;
+                        select.appendChild(option);
+                    });
+                    if ((selectId === 'userDepartment' || selectId === 'editUserDepartment') && !hasUnassignedDepartment) {
+                        const option = document.createElement('option');
+                        option.value = unassignedDepartmentName;
+                        option.textContent = unassignedDepartmentName;
+                        select.appendChild(option);
+                    }
+                }
+            }
+        }
+    });
+    // 更新导出部门筛选
+    const exportDept = document.getElementById('exportDepartment');
+    if (exportDept) {
+        const firstOption = exportDept.querySelector('option');
+        exportDept.innerHTML = '';
+        exportDept.appendChild(firstOption);
+        if (departments && Array.isArray(departments)) {
+            departments.forEach(dept => {
+                const option = document.createElement('option');
+                option.value = dept.name;
+                option.textContent = dept.name;
+                exportDept.appendChild(option);
+            });
+        }
+    }
+}
+
+// 更新用户选择框（支持搜索）
+function updateUserSelects(users) {
+    const dropdownIds = ['deptManagerDropdown', 'editDeptManagerDropdown'];
+    
+    dropdownIds.forEach(dropdownId => {
+        const dropdown = document.getElementById(dropdownId);
+        if (!dropdown) return;
+        
+        const wrapper = dropdown.querySelector('.dropdown-items-wrapper');
+        const hiddenInput = dropdown.querySelector('input[type="hidden"]');
+        const btnText = dropdown.querySelector('.selected-text');
+        
+        // 清空列表
+        wrapper.innerHTML = '';
+        
+        // 添加"不选择"选项
+        const defaultItem = document.createElement('a');
+        defaultItem.className = 'dropdown-item';
+        defaultItem.href = '#';
+        defaultItem.textContent = '请选择负责人';
+        defaultItem.onclick = (e) => {
+            e.preventDefault();
+            hiddenInput.value = '';
+            btnText.textContent = '请选择负责人';
+        };
+        wrapper.appendChild(defaultItem);
+        
+        if (users && Array.isArray(users)) {
+            users.forEach(user => {
+                const item = document.createElement('a');
+                item.className = 'dropdown-item';
+                item.href = '#';
+                item.textContent = `${user.name} (${user.department})`;
+                item.dataset.value = user.id;
+                
+                item.onclick = (e) => {
+                    e.preventDefault();
+                    hiddenInput.value = user.id;
+                    btnText.textContent = `${user.name} (${user.department})`;
+                };
+                
+                wrapper.appendChild(item);
+            });
+        }
+        
+        // 绑定搜索事件
+        const searchInput = dropdown.querySelector('.search-input');
+        if (searchInput) {
+            searchInput.onkeyup = function() {
+                const filter = this.value.toLowerCase();
+                const items = wrapper.getElementsByClassName('dropdown-item');
+                
+                for (let item of items) {
+                    const text = item.textContent.toLowerCase();
+                    if (text.includes(filter)) {
+                        item.classList.remove('d-none');
+                    } else {
+                        item.classList.add('d-none');
+                    }
+                }
+            };
+        }
+    });
+}
+
+// 根据部门加载小组
+function loadGroupsForDepartment(department, selectId, selectedValue = null) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    const supportsUnassignedGroup = selectId === 'userGroup' || selectId === 'editUserGroup';
+    
+    if (!department) {
+        if (supportsUnassignedGroup) {
+            select.innerHTML = '<option value="">未分配小组</option>';
+        } else {
+            select.innerHTML = '<option value="">请先选择部门</option>';
+        }
+        return;
+    }
+    
+    // 显示加载中
+    select.innerHTML = '<option value="">加载中...</option>';
+    
+    fetch(`/admin/api/groups?department=${encodeURIComponent(department)}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (supportsUnassignedGroup) {
+                    select.innerHTML = '<option value="">未分配小组</option>';
+                } else {
+                    select.innerHTML = '<option value="">请选择小组</option>';
+                }
+                
+                if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+                    data.data.forEach(group => {
+                        if (supportsUnassignedGroup && group.name === '未分配小组') {
+                            return;
+                        }
+                        const option = document.createElement('option');
+                        option.value = group.id;
+                        option.textContent = group.name;
+                        if (selectedValue && group.id == selectedValue) {
+                            option.selected = true;
+                        }
+                        select.appendChild(option);
+                    });
+                } else {
+                    if (!supportsUnassignedGroup) {
+                        const option = document.createElement('option');
+                        option.value = "";
+                        option.textContent = "该部门暂无小组";
+                        select.appendChild(option);
+                    }
+                }
+            } else {
+                select.innerHTML = '<option value="">加载失败</option>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading groups:', error);
+            if (supportsUnassignedGroup) {
+                select.innerHTML = '<option value="">未分配小组</option>';
+            } else {
+                select.innerHTML = '<option value="">加载小组失败</option>';
+            }
+        });
+}
+
+// 根据部门加载用户（更新为支持搜索下拉框）
+function loadUsersForDepartment(department, selectId, selectedValue = null) {
+    // selectId 传入的是 input hidden 的 ID，我们需要找到对应的 Dropdown 容器
+    // 约定 Dropdown 容器 ID 为 selectId + 'Dropdown'
+    const dropdownId = selectId + 'Dropdown';
+    const dropdown = document.getElementById(dropdownId);
+    
+    if (!dropdown) {
+        console.warn(`Dropdown container ${dropdownId} not found`);
+        return;
+    }
+    
+    const wrapper = dropdown.querySelector('.dropdown-items-wrapper');
+    const hiddenInput = document.getElementById(selectId);
+    const btnText = dropdown.querySelector('.selected-text');
+    
+    // 重置
+    wrapper.innerHTML = '';
+    hiddenInput.value = '';
+    btnText.textContent = '加载中...';
+    
+    if (!department) {
+        btnText.textContent = '请先选择部门';
+        return;
+    }
+    
+    fetch(`/admin/api/users?department=${encodeURIComponent(department)}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.data) {
+                btnText.textContent = '请选择用户';
+                
+                // 添加"不选择"选项
+                const defaultItem = document.createElement('a');
+                defaultItem.className = 'dropdown-item';
+                defaultItem.href = '#';
+                defaultItem.textContent = '请选择用户';
+                defaultItem.onclick = (e) => {
+                    e.preventDefault();
+                    hiddenInput.value = '';
+                    btnText.textContent = '请选择用户';
+                };
+                wrapper.appendChild(defaultItem);
+                
+                if (Array.isArray(data.data)) {
+                    data.data.forEach(user => {
+                        const item = document.createElement('a');
+                        item.className = 'dropdown-item';
+                        item.href = '#';
+                        item.textContent = user.name;
+                        item.dataset.value = user.id;
+                        
+                        item.onclick = (e) => {
+                            e.preventDefault();
+                            hiddenInput.value = user.id;
+                            btnText.textContent = user.name;
+                        };
+                        
+                        wrapper.appendChild(item);
+                        
+                        // 如果有预选值，设置选中状态
+                        if (selectedValue && user.id == selectedValue) {
+                            hiddenInput.value = user.id;
+                            btnText.textContent = user.name;
+                        }
+                    });
+                }
+                
+                // 绑定搜索事件
+                const searchInput = dropdown.querySelector('.search-input');
+                if (searchInput) {
+                    // 重置搜索框
+                    searchInput.value = '';
+                    searchInput.onkeyup = function() {
+                        const filter = this.value.toLowerCase();
+                        const items = wrapper.getElementsByClassName('dropdown-item');
+                        
+                        for (let item of items) {
+                            const text = item.textContent.toLowerCase();
+                            if (text.includes(filter)) {
+                                item.classList.remove('d-none');
+                            } else {
+                                item.classList.add('d-none');
+                            }
+                        }
+                    };
+                }
+            } else {
+                 btnText.textContent = '加载用户失败';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading users:', error);
+            btnText.textContent = '加载用户失败';
+        });
+}
+
+// 显示权限管理模态框
+function showPermissionModal() {
+    if (!currentEditUserId) return;
+    
+    fetch(`/admin/api/users/${currentEditUserId}/permissions`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderPermissions(data.permissions, data.user_permissions);
+                new bootstrap.Modal(document.getElementById('permissionModal')).show();
+            }
+        });
+}
+
+// 加载权限列表
+function loadPermissions() {
+    fetch('/admin/api/permissions')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.allPermissions = data.data;
+            }
+        });
+}
+
+// 渲染权限列表
+function renderPermissions(permissions, userPermissions) {
+    const container = document.getElementById('permissionsList');
+    container.innerHTML = '';
+    
+    // 添加错误处理
+    if (!permissions || !Array.isArray(permissions)) {
+        container.innerHTML = '<div class="alert alert-warning">无法加载权限列表</div>';
+        return;
+    }
+    
+    if (!userPermissions || !Array.isArray(userPermissions)) {
+        userPermissions = [];
+    }
+    
+    permissions.forEach(permission => {
+        const isChecked = userPermissions.includes(permission.id);
+        const div = document.createElement('div');
+        div.className = 'form-check mb-2';
+        div.innerHTML = `
+            <input class="form-check-input" type="checkbox" value="${permission.id}" 
+                   id="perm_${permission.id}" ${isChecked ? 'checked' : ''}>
+            <label class="form-check-label" for="perm_${permission.id}">
+                <strong>${permission.name}</strong>
+                ${permission.description ? `<br><small class="text-muted">${permission.description}</small>` : ''}
+            </label>
+        `;
+        container.appendChild(div);
+    });
+}
+
+// 保存权限
+function savePermissions() {
+    if (!currentEditUserId) return;
+    
+    const checkboxes = document.querySelectorAll('#permissionsList input[type="checkbox"]');
+    const selectedPermissions = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => parseInt(cb.value));
+    
+    fetch(`/admin/api/users/${currentEditUserId}/permissions`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            permission_ids: selectedPermissions
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert(data.message, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('permissionModal')).hide();
+            // 更新用户角色为管理员
+            const roleDisplay = document.getElementById('editUserRole');
+            if (roleDisplay) roleDisplay.value = '管理员';
+        } else {
+            showAlert(data.message, 'error');
+        }
+    });
+}
+
+// 显示需要密码的确认对话框
+function showPasswordConfirm(message, actionLabel, callback) {
+    const title = document.getElementById('confirmActionTitle');
+    const confirmBtn = document.getElementById('confirmDeleteBtn');
+    if (title) {
+        title.textContent = `确认${actionLabel || '操作'}`;
+    }
+    if (confirmBtn) {
+        confirmBtn.textContent = `确认${actionLabel || '操作'}`;
+        confirmBtn.classList.toggle('btn-danger', actionLabel === '删除');
+        confirmBtn.classList.toggle('btn-warning', actionLabel !== '删除');
+    }
+    document.getElementById('deleteMessage').textContent = message;
+    document.getElementById('deletePassword').value = ''; // 清空密码框
+    deleteCallback = callback;
+    
+    const modal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
+    modal.show();
+    
+    confirmBtn.onclick = function() {
+        const password = document.getElementById('deletePassword').value;
+        if (!password) {
+            alert('请输入密码');
+            return;
+        }
+        
+        if (deleteCallback) {
+            deleteCallback(password);
+            deleteCallback = null;
+        }
+        modal.hide();
+    };
+}
+
+// 显示添加用户模态框内的错误信息
+function showAddUserError(message) {
+    const errorContainer = document.getElementById('addUserErrorContainer');
+    const errorMessage = document.getElementById('addUserErrorMessage');
+    
+    errorMessage.textContent = message;
+    errorContainer.classList.remove('d-none');
+    
+    // 滚动到错误提示位置
+    errorContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// 隐藏添加用户模态框内的错误信息
+function hideAddUserError() {
+    const errorContainer = document.getElementById('addUserErrorContainer');
+    if (errorContainer) {
+        errorContainer.classList.add('d-none');
+    }
+}
+
+// 显示提示信息
+function showAlert(message, type) {
+    const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+    const alertHtml = `
+        <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    
+    // 在页面顶部显示提示
+    const container = document.querySelector('.container-fluid');
+    container.insertAdjacentHTML('afterbegin', alertHtml);
+    
+    // 3秒后自动消失
+    setTimeout(() => {
+        const alert = container.querySelector('.alert');
+        if (alert) {
+            alert.remove();
+        }
+    }, 3000);
+}
+
+// 通讯录导入（部门页内）
+function initContactsImport() {
+    const form = document.getElementById('deptUploadForm');
+    if (!form) return;
+    const btn = document.getElementById('deptUploadBtn');
+    const fileInput = document.getElementById('deptFile');
+    const preview = document.getElementById('deptPreviewSection');
+    const result = document.getElementById('deptResultSection');
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const file = fileInput.files[0];
+        if (!file) return alert('请选择文件');
+        btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 上传中...';
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('overwrite', document.getElementById('deptOverwrite').checked);
+        fetch('/admin/preview_import', { method:'POST', body: fd })
+        .then(r=>r.json()).then(data=>{
+            if (!data.success) { alert('上传失败：'+(data.message||'')); return; }
+            window.__deptImportData = data;
+            // 简要预览
+            let html = `<div class="alert alert-info">共 ${data.total_rows} 行，${data.valid_rows} 行有效，${data.error_rows} 行错误</div>`;
+            if (data.errors && data.errors.length) {
+                html += `<div class="alert alert-warning"><ul>${data.errors.map(e=>`<li>${e}</li>`).join('')}</ul></div>`;
+            }
+            html += `<button class="btn btn-warning" onclick="confirmDeptImport()"><i class="bi bi-check-circle"></i> 确认导入</button>`;
+            preview.innerHTML = html; preview.style.display='block'; result.style.display='none';
+        }).catch(err=>{ alert('上传失败：'+err.message); })
+        .finally(()=>{ btn.disabled=false; btn.innerHTML='<i class="bi bi-upload"></i> 上传并预览'; });
+    });
+}
+
+function confirmDeptImport() {
+    const data = window.__deptImportData;
+    if (!data || !data.import_id) return alert('无效的导入数据');
+    
+    const overwrite = document.getElementById('deptOverwrite').checked;
+    const btn = document.querySelector('#deptPreviewSection button');
+    if(btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 导入中...'; }
+
+    // 显示加载遮罩
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.id = 'importLoadingOverlay';
+    loadingOverlay.style.position = 'fixed';
+    loadingOverlay.style.top = '0';
+    loadingOverlay.style.left = '0';
+    loadingOverlay.style.width = '100%';
+    loadingOverlay.style.height = '100%';
+    loadingOverlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
+    loadingOverlay.style.zIndex = '9999';
+    loadingOverlay.style.display = 'flex';
+    loadingOverlay.style.justifyContent = 'center';
+    loadingOverlay.style.alignItems = 'center';
+    loadingOverlay.innerHTML = `
+        <div class="card p-4 text-center">
+            <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <h5>正在导入通讯录，请稍候...</h5>
+            <p class="text-danger mb-0"><i class="bi bi-exclamation-triangle-fill"></i> 请勿关闭页面或执行其他操作</p>
+        </div>
+    `;
+    document.body.appendChild(loadingOverlay);
+
+    // 添加页面关闭警告
+    window.onbeforeunload = function() {
+        return "通讯录正在导入中，确定要离开吗？这可能会导致导入中断。";
+    };
+
+    fetch('/admin/confirm_import', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            import_id: data.import_id,
+            overwrite: overwrite
+        })
+    })
+    .then(r => r.json())
+    .then(res => {
+        // 移除 loading 和关闭警告
+        if (document.body.contains(loadingOverlay)) {
+            document.body.removeChild(loadingOverlay);
+        }
+        window.onbeforeunload = null;
+
+        if (res.success) {
+            const result = document.getElementById('deptResultSection');
+            result.innerHTML = `
+                <div class="alert alert-success">
+                    <h5><i class="bi bi-check-circle"></i> 导入成功</h5>
+                    <p>新增: ${res.imported_count}, 更新: ${res.updated_count}, 跳过: ${res.skipped_count}</p>
+                    ${res.password_file_url ? `<a href="${res.password_file_url}" class="btn btn-primary btn-sm"><i class="bi bi-download"></i> 下载密码表</a>` : ''}
+                </div>
+            `;
+            result.style.display = 'block';
+            document.getElementById('deptPreviewSection').style.display = 'none';
+            loadDepartments(); // 刷新列表
+        } else {
+            alert('导入失败: ' + res.message);
+            if(btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle"></i> 确认导入'; }
+        }
+    })
+    .catch(err => {
+        // 移除 loading 和关闭警告
+        if (document.body.contains(loadingOverlay)) {
+            document.body.removeChild(loadingOverlay);
+        }
+        window.onbeforeunload = null;
+
+        console.error(err);
+        alert('系统错误: ' + err.message);
+        if(btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle"></i> 确认导入'; }
+    });
+}
+
+// 通讯录导出
+function initContactsExport() {
+    const form = document.getElementById('contactsExportForm');
+    if (!form) return;
+    const progress = document.getElementById('exportProgress');
+    const progressBar = progress.querySelector('.progress-bar');
+    const progressText = document.getElementById('exportProgressText');
+    const result = document.getElementById('exportResult');
+    form.addEventListener('submit', function(e){
+        e.preventDefault();
+        const dept = document.getElementById('exportDepartment').value.trim();
+        const ignoreRoleErrors = document.getElementById('ignoreContactRoleErrors')?.checked;
+        const params = new URLSearchParams();
+        if (dept) params.append('department', dept);
+        if (ignoreRoleErrors) params.append('ignore_role_errors', '1');
+        progress.style.display='block'; result.style.display='none';
+        progressBar.style.width='5%'; progressText.textContent='开始导出...';
+        fetch(`/admin/api/export/contacts?${params.toString()}`)
+        .then(r=>r.json()).then(data=>{
+            if (!data.success) { progressText.textContent='导出失败'; alert(data.message || '导出失败'); return; }
+            const jobId = data.job_id;
+            // 轮询进度
+            const timer = setInterval(()=>{
+                fetch(`/admin/api/export/progress/${jobId}`).then(r=>r.json()).then(pg=>{
+                    if (!pg.success) return;
+                    const p = pg.progress;
+                    progressBar.style.width = `${p.percent||0}%`;
+                    progressText.textContent = p.message || '';
+                    if (p.status === 'completed') {
+                        clearInterval(timer);
+                        result.style.display='block';
+                        result.innerHTML = `<div class=\"alert alert-success\">导出完成，共 ${data.total} 条记录<br><a class=\"btn btn-primary btn-sm mt-2\" href=\"${p.download_url}\"><i class=\"bi bi-download\"></i> 下载文件</a></div>`;
+                    }
+                });
+            }, 1000);
+        }).catch(err=>{
+            alert('导出失败：'+err.message);
+        });
+    });
+}
+</script>
+
+<style>
+.btn-xs {
+    padding: 0.125rem 0.25rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    border-radius: 0.2rem;
+}
+
+.user-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.card-header h6 {
+    font-size: 0.9rem;
+}
+
+.card-body .small {
+    font-size: 0.8rem;
+}
+
+.badge {
+    font-size: 0.7rem;
+}
+</style>
+{% endblock %}

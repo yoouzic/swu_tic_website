@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}Excel导入表单 - 管理员面板{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <h3 class="mb-0">Excel导入表单</h3>
+            <a href="{{ url_for('admin.view_forms') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> 返回查看表单
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">导入操作</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <a class="btn btn-outline-primary" href="{{ url_for('admin.download_forms_import_template') }}">
+                            <i class="fas fa-download"></i> 下载导入模板
+                        </a>
+                    </div>
+                    <div class="mb-3">
+                        <input type="file" id="importFile" class="form-control" accept=".xls,.xlsx">
+                    </div>
+                    <div class="mb-3">
+                        <button class="btn btn-primary" id="btnImport">
+                            <i class="fas fa-file-import"></i> 上传并导入
+                        </button>
+                        <button class="btn btn-outline-info ml-2" id="btnPreview">
+                            <i class="fas fa-search"></i> 导入预览
+                        </button>
+                    </div>
+                    <div id="previewResult" style="display:none;" class="mb-3"></div>
+                    <div id="importResult" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">说明</div>
+                <div class="card-body">
+                    <ul class="mb-0">
+                        <li>导入后数据直接写入教学反馈表数据表（lecture_forms）。</li>
+                        <li>建议先下载模板并按模板列填写。</li>
+                        <li>系统兼容旧版Excel反馈表格式。</li>
+                        <li>该功能仅对超级管理员开放。</li>
+                        <li>导入默认状态为“部门已审核”。</li>
+                        <li>可在模板填写“创建时间”“更新时间”（支持YYYY-MM-DD或YYYY-MM-DD HH:MM:SS）；不填写时系统自动写入导入时间。</li>
+                        <li>reviewer_id 自动写入当前导入人ID，registration_id 与表单组ID均由系统维护，不通过Excel填写。</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
+function renderImportResult(data) {
+    const root = document.getElementById('importResult');
+    if (!data.success) {
+        root.className = 'alert alert-danger';
+        root.innerHTML = escapeHtml(data.message || '导入失败');
+        root.style.display = 'block';
+        return;
+    }
+    const details = data.skipped_details || [];
+    let html = `
+        <div><strong>导入完成</strong></div>
+        <div>成功：<span class="text-success fw-bold">${Number(data.imported_count || 0)}</span> 条</div>
+        <div>跳过：<span class="text-warning fw-bold">${Number(data.skipped_count || 0)}</span> 条</div>
+    `;
+    if (details.length > 0) {
+        html += `
+            <hr>
+            <div class="mb-1"><strong>部分跳过原因：</strong></div>
+            <ul class="mb-0">
+                ${details.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+            </ul>
+        `;
+    }
+    if (data.export_url) {
+        html += `
+            <hr>
+            <a class="btn btn-success btn-sm" href="${escapeHtml(data.export_url)}">
+                <i class="fas fa-download"></i> 下载本次导入表单完整数据
+            </a>
+        `;
+    }
+    root.className = 'alert alert-info';
+    root.innerHTML = html;
+    root.style.display = 'block';
+}
+
+function renderPreviewResult(data) {
+    const root = document.getElementById('previewResult');
+    if (!data.success) {
+        root.className = 'alert alert-danger';
+        root.innerHTML = escapeHtml(data.message || '预览失败');
+        root.style.display = 'block';
+        return;
+    }
+    const summary = data.summary || {};
+    const rows = data.rows || [];
+    let html = `
+        <div class="alert alert-light border mb-2">
+            <strong>预览结果</strong>
+            <div>总行数：${Number(summary.total_rows || 0)}，可导入：<span class="text-success fw-bold">${Number(summary.valid_rows || 0)}</span>，不可导入：<span class="text-danger fw-bold">${Number(summary.invalid_rows || 0)}</span></div>
+            <div class="text-muted">仅展示前50行预览</div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered">
+                <thead>
+                    <tr>
+                        <th>行号</th>
+                        <th>听课人编号</th>
+                        <th>授课教师</th>
+                        <th>课程</th>
+                        <th>状态</th>
+                        <th>校验结果</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map(item => `
+                        <tr>
+                            <td>${item.row_no}</td>
+                            <td>${escapeHtml(item.listener_number || '-')}</td>
+                            <td>${escapeHtml(item.teacher_name || '-')}</td>
+                            <td>${escapeHtml(item.course_title || '-')}</td>
+                            <td>${escapeHtml(item.status || '-')}</td>
+                            <td>${item.valid ? '<span class="text-success">通过</span>' : `<span class="text-danger">${escapeHtml((item.errors || []).join('；') || '失败')}</span>`}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+    root.className = '';
+    root.innerHTML = html;
+    root.style.display = 'block';
+}
+
+function getSelectedFile() {
+    const fileInput = document.getElementById('importFile');
+    if (!fileInput.files || fileInput.files.length === 0) {
+        alert('请先选择Excel文件');
+        return null;
+    }
+    return fileInput.files[0];
+}
+
+function importForms() {
+    const selectedFile = getSelectedFile();
+    if (!selectedFile) return;
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    const btn = document.getElementById('btnImport');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 导入中...';
+
+    fetch('/admin/api/forms/import', {
+        method: 'POST',
+        body: fd
+    })
+    .then(r => r.json())
+    .then(data => {
+        renderImportResult(data);
+        if (data.success) {
+            document.getElementById('importFile').value = '';
+        }
+    })
+    .catch(() => {
+        renderImportResult({success: false, message: '导入失败，请稍后重试'});
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-file-import"></i> 上传并导入';
+    });
+}
+
+function previewForms() {
+    const selectedFile = getSelectedFile();
+    if (!selectedFile) return;
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    const btn = document.getElementById('btnPreview');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 预览中...';
+    fetch('/admin/api/forms/import/preview', {
+        method: 'POST',
+        body: fd
+    })
+    .then(r => r.json())
+    .then(data => {
+        renderPreviewResult(data);
+    })
+    .catch(() => {
+        renderPreviewResult({success: false, message: '预览失败，请稍后重试'});
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-search"></i> 导入预览';
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('btnImport').addEventListener('click', importForms);
+    document.getElementById('btnPreview').addEventListener('click', previewForms);
+});
+</script>
+{% endblock %}

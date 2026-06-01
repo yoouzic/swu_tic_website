@@ -1,0 +1,1 @@
+# Ensure 'app' is a proper Python package for production imports.

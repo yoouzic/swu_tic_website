@@ -1,0 +1,581 @@
+{% extends "base.html" %}
+
+{% block title %}部门月度考评统计 - 管理员面板{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <h3 class="mb-0">部门月度考评统计</h3>
+            <div>
+                <button class="btn btn-outline-secondary me-2" id="btnMonthSettings">
+                    <i class="bi bi-calendar-week"></i> 教学月设置
+                </button>
+                <a href="{{ url_for('admin.assessment_exemption_settings') }}" class="btn btn-outline-info">
+                    <i class="bi bi-person-gear"></i> 考核对象与指标设定
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="alert alert-warning">
+        考评情况为系统根据当前考评规则和数据自动给出，不代表真实考评情况，请认真核实，建议核实无误后保存或导出数据。
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">筛选条件</div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label">开始时间</label>
+                            <input type="date" id="startDate" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">结束时间</label>
+                            <input type="date" id="endDate" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <button class="btn btn-primary me-2" id="btnLoadStats">查询统计</button>
+                            <button class="btn btn-outline-success me-2" id="btnExportStats">导出Excel</button>
+                            <button class="btn btn-outline-primary me-2" id="btnSaveSnapshot">保存历史</button>
+                            <button class="btn btn-outline-secondary me-2" id="btnLoadSnapshot">加载历史</button>
+                            <button class="btn btn-outline-secondary me-2" id="btnSelectAllDepartments">全选部门</button>
+                            <button class="btn btn-outline-secondary" id="btnClearDepartments">清空选择</button>
+                        </div>
+                    </div>
+                    <div class="mt-3" id="monthInfoAlert"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-header">部门范围</div>
+                <div class="card-body">
+                    <input type="text" id="departmentSearchInput" class="form-control mb-2" placeholder="搜索部门">
+                    <div id="departmentList" style="max-height: 600px; overflow-y: auto;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-9">
+            <div class="card">
+                <div class="card-header">统计结果</div>
+                <div class="card-body" id="resultBody">
+                    <div class="text-center text-muted py-5">请先选择时间与部门范围后查询</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="snapshotModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">月度考评历史记录</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="snapshotModalBody">
+                <div class="text-center text-muted py-4">正在加载...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 教学月设置模态框 -->
+<div class="modal fade" id="monthSettingsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">教学月设置</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    自定义每个教学月包含的教学周范围。默认每4周为一个教学月。修改后影响“部门月度考评统计”的计算。
+                </div>
+                <div id="monthDefList"></div>
+                <div class="mt-3">
+                    <button class="btn btn-sm btn-outline-primary" id="btnAddMonth"><i class="bi bi-plus-circle"></i> 添加教学月</button>
+                    <button class="btn btn-sm btn-outline-warning ms-2" id="btnResetMonths">恢复默认</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <span id="monthSettingsStatus" class="text-muted me-auto"></span>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="btnSaveMonthSettings">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const availableDepartments = {{ available_departments|tojson }};
+let currentMonthlyPayload = null;
+let currentMonthlyFilters = null;
+let currentMonthlySnapshotId = null;
+
+function setDefaultDates() {
+    const now = new Date();
+    const end = now.toISOString().slice(0, 10);
+    const startObj = new Date(now.getFullYear(), now.getMonth(), 1);
+    const start = startObj.toISOString().slice(0, 10);
+    document.getElementById('startDate').value = start;
+    document.getElementById('endDate').value = end;
+}
+
+function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
+function formatScore(value) {
+    return Number(value || 0).toFixed(2);
+}
+
+function renderDepartmentList() {
+    const root = document.getElementById('departmentList');
+    if (!availableDepartments || availableDepartments.length === 0) {
+        root.innerHTML = '<div class="text-muted">暂无可选部门</div>';
+        return;
+    }
+    root.innerHTML = availableDepartments.map(name => `
+        <label class="form-check d-block mb-2 department-item-row">
+            <input class="form-check-input department-item" type="checkbox" value="${escapeHtml(name)}">
+            ${escapeHtml(name)}
+        </label>
+    `).join('');
+}
+
+function filterDepartments() {
+    const keyword = document.getElementById('departmentSearchInput').value.trim().toLowerCase();
+    document.querySelectorAll('.department-item-row').forEach(row => {
+        row.style.display = (!keyword || row.textContent.toLowerCase().includes(keyword)) ? '' : 'none';
+    });
+}
+
+function getSelectedDepartments() {
+    return Array.from(document.querySelectorAll('.department-item:checked')).map(el => el.value);
+}
+
+function setSelectedDepartments(departments) {
+    const set = new Set(departments || []);
+    document.querySelectorAll('.department-item').forEach(el => {
+        el.checked = set.has(el.value);
+    });
+}
+
+function selectAllDepartments(flag) {
+    document.querySelectorAll('.department-item').forEach(el => {
+        el.checked = flag;
+    });
+}
+
+function buildMonthlyQuery(startDate, endDate, departments) {
+    const params = new URLSearchParams();
+    params.set('start_date', startDate);
+    params.set('end_date', endDate);
+    (departments || []).forEach(name => params.append('departments', name));
+    return params.toString();
+}
+
+function renderMonthInfo(meta) {
+    const alertEl = document.getElementById('monthInfoAlert');
+    if (!meta) {
+        alertEl.innerHTML = '';
+        return;
+    }
+    if (!meta.has_full_months) {
+        alertEl.innerHTML = '<div class="alert alert-info mb-0">当前筛选范围内无完整教学月，无法给出月度考评。</div>';
+        return;
+    }
+    alertEl.innerHTML = `
+        <div class="alert alert-success mb-0">
+            当前范围包含完整教学月：${escapeHtml((meta.month_labels || []).join('、'))}
+            <span class="ms-3 text-muted">部门范围：${escapeHtml(meta.scope_label || '-')}</span>
+        </div>
+    `;
+}
+
+function renderAssessmentTierText(tiers) {
+    const safeTiers = tiers || [];
+    if (safeTiers.length === 0) {
+        return '<span class="text-muted">无扣分项</span>';
+    }
+    return safeTiers.map(tier => `
+        <span class="badge bg-light text-dark border me-1 mb-1">${escapeHtml(tier.score_label)}分 x ${Number(tier.item_count || 0)}项 = ${formatScore(tier.total_score)}</span>
+    `).join('');
+}
+
+function renderMonthlyResults(payload) {
+    const root = document.getElementById('resultBody');
+    const safePayload = payload || {};
+    const departments = safePayload.departments || [];
+    const meta = safePayload.meta || {};
+    renderMonthInfo(meta);
+    if (!meta.has_full_months) {
+        root.innerHTML = '<div class="text-center text-muted py-5">当前筛选范围内无完整教学月</div>';
+        return;
+    }
+    if (departments.length === 0) {
+        root.innerHTML = '<div class="text-center text-muted py-5">无可统计部门</div>';
+        return;
+    }
+
+    root.innerHTML = departments.map(departmentRow => `
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <div class="fw-bold">${escapeHtml(departmentRow.department)}</div>
+                    <div class="text-muted small">成员数：${Number(departmentRow.member_count || 0)}，每人每周需交表：${Number(departmentRow.required_submission_per_member || 0)}</div>
+                </div>
+            </div>
+            <div class="card-body">
+                ${(departmentRow.months || []).map(monthRow => `
+                    <div class="border rounded mb-4">
+                        <div class="px-3 py-2 border-bottom bg-light d-flex justify-content-between flex-wrap gap-2">
+                            <div class="fw-bold">${escapeHtml(monthRow.month_label)} <span class="text-muted ms-2">${escapeHtml(monthRow.week_range_label || '')}</span></div>
+                            <div class="small text-muted">${escapeHtml(monthRow.start_date || '')} ~ ${escapeHtml(monthRow.end_date || '')}</div>
+                        </div>
+                        <div class="p-3">
+                            <div class="row g-2 mb-3">
+                                <div class="col-md-2">月多交表：<span class="fw-bold">${Number((monthRow.summary || {}).extra_count || 0)}</span></div>
+                                <div class="col-md-2">月少交表：<span class="fw-bold text-danger">${Number((monthRow.summary || {}).shortage_count || 0)}</span></div>
+                                <div class="col-md-auto">月错误表单扣分（原始分）：<span class="fw-bold text-danger">${formatScore((monthRow.summary || {}).assessment_total_score || 0)}</span></div>
+                                <div class="col-md-auto">月错误表单扣分（实际扣分）：<span class="fw-bold text-danger">${formatScore((monthRow.summary || {}).assessment_actual_score || 0)}</span></div>
+                                <div class="col-md-2">月总考评分：<span class="fw-bold">${formatScore((monthRow.summary || {}).final_score || 0)}</span></div>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-striped table-sm mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>周次</th>
+                                            <th>时间范围</th>
+                                            <th>需交表数</th>
+                                            <th>有效表单数</th>
+                                            <th>错误表单数</th>
+                                            <th>多交表（+1分/张）</th>
+                                            <th>少交表（-2分/张）</th>
+                                            <th>实际交表少于应交表数（-3/张）</th>
+                                            <th>考评扣分分布</th>
+                                            <th>错误表单扣分（原始分）</th>
+                                            <th>错误表单扣分（实际扣分）</th>
+                                            <th>周考评分</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${(monthRow.weeks || []).map(weekRow => `
+                                            <tr>
+                                                <td>${escapeHtml(weekRow.week_label || '')}</td>
+                                                <td>${escapeHtml(weekRow.start_date || '')} ~ ${escapeHtml(weekRow.end_date || '')}</td>
+                                                <td>${Number(weekRow.required_submission || 0)}</td>
+                                                <td>${Number(weekRow.effective_count || 0)}</td>
+                                                <td>${Number(weekRow.error_count || 0)}</td>
+                                                <td>${Number(weekRow.extra_count || 0)}</td>
+                                                <td class="text-danger">${Number(weekRow.shortage_count || 0)}</td>
+                                                <td class="text-danger">${Number(weekRow.missing_count || 0)}</td>
+                                                <td>${renderAssessmentTierText(weekRow.assessment_tiers)}</td>
+                                                <td class="text-danger">${formatScore(weekRow.assessment_total_score || 0)}</td>
+                                                <td class="text-danger">${formatScore(weekRow.assessment_actual_score || 0)}</td>
+                                                <td class="fw-bold">${formatScore(weekRow.final_score || 0)}</td>
+                                            </tr>
+                                        `).join('')}
+                                        <tr class="table-secondary fw-bold">
+                                            <td colspan="2">本月汇总</td>
+                                            <td>${Number((monthRow.summary || {}).required_submission || 0)}</td>
+                                            <td>${Number((monthRow.summary || {}).effective_count || 0)}</td>
+                                            <td>${Number((monthRow.summary || {}).error_count || 0)}</td>
+                                            <td>${Number((monthRow.summary || {}).extra_count || 0)}</td>
+                                            <td class="text-danger">${Number((monthRow.summary || {}).shortage_count || 0)}</td>
+                                            <td class="text-danger">${Number((monthRow.summary || {}).missing_count || 0)}</td>
+                                            <td>-</td>
+                                            <td class="text-danger">${formatScore((monthRow.summary || {}).assessment_total_score || 0)}</td>
+                                            <td class="text-danger">${formatScore((monthRow.summary || {}).assessment_actual_score || 0)}</td>
+                                            <td>${formatScore((monthRow.summary || {}).final_score || 0)}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `).join('');
+}
+
+function loadMonthlyStats() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    if (!startDate || !endDate) {
+        alert('请先选择开始和结束时间');
+        return;
+    }
+    const departments = getSelectedDepartments();
+    const query = buildMonthlyQuery(startDate, endDate, departments);
+    fetch(`/admin/api/review/department-monthly-assessment/stats?${query}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '查询失败');
+                return;
+            }
+            currentMonthlyPayload = data;
+            currentMonthlyFilters = {start_date: startDate, end_date: endDate, departments};
+            currentMonthlySnapshotId = null;
+            renderMonthlyResults(data);
+        })
+        .catch(() => alert('查询失败，请稍后重试'));
+}
+
+function exportMonthlyStats() {
+    if (currentMonthlySnapshotId) {
+        window.location.href = `/admin/api/review/department-monthly-assessment/snapshots/${currentMonthlySnapshotId}/export`;
+        return;
+    }
+    if (currentMonthlyPayload && currentMonthlyPayload.meta && !currentMonthlyPayload.meta.has_full_months) {
+        alert('当前筛选范围内无完整教学月，无法导出月度考评');
+        return;
+    }
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    if (!startDate || !endDate) {
+        alert('请先选择开始和结束时间');
+        return;
+    }
+    const departments = getSelectedDepartments();
+    const defaultTitle = `${startDate}至${endDate}部门月度考评统计`;
+    const filenameTitle = window.prompt('请输入导出文件名', defaultTitle);
+    if (filenameTitle === null) {
+        return;
+    }
+    const params = new URLSearchParams(buildMonthlyQuery(startDate, endDate, departments));
+    if ((filenameTitle || '').trim()) {
+        params.set('filename_title', filenameTitle.trim());
+    }
+    window.location.href = `/admin/api/review/department-monthly-assessment/export?${params.toString()}`;
+}
+
+function saveMonthlySnapshot() {
+    if (!currentMonthlyPayload || !currentMonthlyFilters) {
+        alert('请先查询月度考评结果');
+        return;
+    }
+    if (!currentMonthlyPayload.meta || !currentMonthlyPayload.meta.has_full_months) {
+        alert('当前筛选范围内无完整教学月，无法保存历史');
+        return;
+    }
+    const defaultTitle = `${currentMonthlyFilters.start_date}至${currentMonthlyFilters.end_date}部门月度考评统计`;
+    const title = window.prompt('请输入历史记录名称', defaultTitle);
+    if (title === null) {
+        return;
+    }
+    fetch('/admin/api/review/department-monthly-assessment/snapshots', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({...currentMonthlyFilters, title: (title || '').trim()})
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '保存失败');
+                return;
+            }
+            alert(data.message || '保存成功');
+        })
+        .catch(() => alert('保存失败，请稍后重试'));
+}
+
+function openSnapshotModal() {
+    fetch('/admin/api/review/department-monthly-assessment/snapshots')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '加载历史失败');
+                return;
+            }
+            const snapshots = data.snapshots || [];
+            const body = document.getElementById('snapshotModalBody');
+            if (snapshots.length === 0) {
+                body.innerHTML = '<div class="text-center text-muted py-4">暂无历史记录</div>';
+            } else {
+                body.innerHTML = `
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped">
+                            <thead>
+                                <tr>
+                                    <th>名称</th>
+                                    <th>时间范围</th>
+                                    <th>教学月</th>
+                                    <th>部门范围</th>
+                                    <th>保存时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${snapshots.map(item => `
+                                    <tr>
+                                        <td>${escapeHtml(item.title)}</td>
+                                        <td>${escapeHtml(item.range_start || '')} ~ ${escapeHtml(item.range_end || '')}</td>
+                                        <td>${escapeHtml(item.period_label || '-')}</td>
+                                        <td>${escapeHtml(item.scope_label || '-')}</td>
+                                        <td>${escapeHtml(item.created_at || '')}</td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <button class="btn btn-outline-primary" onclick="loadMonthlySnapshot(${item.id})">加载</button>
+                                                <button class="btn btn-outline-success" onclick="window.location.href='/admin/api/review/department-monthly-assessment/snapshots/${item.id}/export'">导出</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('snapshotModal')).show();
+        })
+        .catch(() => alert('加载历史失败，请稍后重试'));
+}
+
+function loadMonthlySnapshot(snapshotId) {
+    fetch(`/admin/api/review/department-monthly-assessment/snapshots/${snapshotId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '加载历史失败');
+                return;
+            }
+            const snapshot = data.snapshot || {};
+            const filters = snapshot.filters || {};
+            document.getElementById('startDate').value = filters.start_date || '';
+            document.getElementById('endDate').value = filters.end_date || '';
+            setSelectedDepartments(filters.departments || []);
+            currentMonthlyPayload = snapshot.payload || null;
+            currentMonthlyFilters = filters;
+            currentMonthlySnapshotId = snapshot.id;
+            renderMonthlyResults(snapshot.payload || {});
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('snapshotModal')).hide();
+        })
+        .catch(() => alert('加载历史失败，请稍后重试'));
+}
+
+function initPage() {
+    setDefaultDates();
+    renderDepartmentList();
+    document.getElementById('departmentSearchInput').addEventListener('input', filterDepartments);
+    document.getElementById('btnLoadStats').addEventListener('click', loadMonthlyStats);
+    document.getElementById('btnExportStats').addEventListener('click', exportMonthlyStats);
+    document.getElementById('btnSaveSnapshot').addEventListener('click', saveMonthlySnapshot);
+    document.getElementById('btnLoadSnapshot').addEventListener('click', openSnapshotModal);
+    document.getElementById('btnSelectAllDepartments').addEventListener('click', () => selectAllDepartments(true));
+    document.getElementById('btnClearDepartments').addEventListener('click', () => selectAllDepartments(false));
+}
+
+document.addEventListener('DOMContentLoaded', initPage);
+
+// ===== 教学月设置 =====
+let monthDefData = [];
+
+function openMonthSettings() {
+    fetch('/admin/api/teaching-month-definitions')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '加载失败');
+                return;
+            }
+            monthDefData = (data.months || []).map(m => ({...m}));
+            document.getElementById('monthSettingsStatus').textContent = data.is_custom ? '当前使用自定义设置' : '当前使用默认设置（每4周一个教学月）';
+            renderMonthDefList();
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('monthSettingsModal')).show();
+        })
+        .catch(() => alert('加载教学月设置失败'));
+}
+
+function renderMonthDefList() {
+    const root = document.getElementById('monthDefList');
+    if (monthDefData.length === 0) {
+        root.innerHTML = '<div class="text-muted">无教学月定义，将使用默认设置</div>';
+        return;
+    }
+    root.innerHTML = monthDefData.map((m, idx) => `
+        <div class="card mb-2">
+            <div class="card-body py-2 px-3 d-flex align-items-center gap-2 flex-wrap">
+                <span class="badge bg-primary">第${idx+1}教学月</span>
+                <div class="d-flex align-items-center gap-1">
+                    <label class="form-label mb-0 small">名称</label>
+                    <input type="text" class="form-control form-control-sm" style="width:140px" value="${escapeHtml(m.label || '')}"
+                           onchange="monthDefData[${idx}].label=this.value" placeholder="第${idx+1}教学月">
+                </div>
+                <div class="d-flex align-items-center gap-1">
+                    <label class="form-label mb-0 small">第</label>
+                    <input type="number" class="form-control form-control-sm" style="width:70px" min="1" value="${m.start_week}"
+                           onchange="monthDefData[${idx}].start_week=parseInt(this.value)">
+                    <label class="form-label mb-0 small">周 ~</label>
+                    <input type="number" class="form-control form-control-sm" style="width:70px" min="1" value="${m.end_week}"
+                           onchange="monthDefData[${idx}].end_week=parseInt(this.value)">
+                    <label class="form-label mb-0 small">周</label>
+                </div>
+                <button class="btn btn-sm btn-outline-danger ms-auto" onclick="removeMonthDef(${idx})"><i class="bi bi-trash"></i></button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function addMonthDef() {
+    const last = monthDefData.length > 0 ? monthDefData[monthDefData.length - 1] : null;
+    const newStart = last ? last.end_week + 1 : 1;
+    const newEnd = newStart + 3;
+    monthDefData.push({ start_week: newStart, end_week: newEnd, label: '' });
+    renderMonthDefList();
+}
+
+function removeMonthDef(idx) {
+    monthDefData.splice(idx, 1);
+    renderMonthDefList();
+}
+
+function resetMonthDefs() {
+    monthDefData = [];
+    for (let i = 0; i < 5; i++) {
+        monthDefData.push({ start_week: i*4+1, end_week: i*4+4, label: `第${i+1}教学月` });
+    }
+    renderMonthDefList();
+}
+
+function saveMonthSettings() {
+    const btn = document.getElementById('btnSaveMonthSettings');
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+    fetch('/admin/api/teaching-month-definitions', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ months: monthDefData.length > 0 ? monthDefData : null })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '保存失败');
+                return;
+            }
+            alert(data.message || '保存成功');
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('monthSettingsModal')).hide();
+        })
+        .catch(() => alert('保存失败'))
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = '保存';
+        });
+}
+
+document.getElementById('btnMonthSettings').addEventListener('click', openMonthSettings);
+document.getElementById('btnAddMonth').addEventListener('click', addMonthDef);
+document.getElementById('btnResetMonths').addEventListener('click', resetMonthDefs);
+document.getElementById('btnSaveMonthSettings').addEventListener('click', saveMonthSettings);
+</script>
+{% endblock %}

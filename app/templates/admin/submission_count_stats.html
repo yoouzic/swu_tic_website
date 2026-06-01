@@ -1,0 +1,877 @@
+{% extends "base.html" %}
+
+{% block title %}交表数量统计 - 管理员面板{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <h3 class="mb-0">交表数量统计</h3>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">筛选条件</div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label">开始时间</label>
+                            <input type="date" id="startDate" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">结束时间</label>
+                            <input type="date" id="endDate" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">时间条件</label>
+                            <select id="timeFilterType" class="form-select">
+                                <option value="created">表单创建时间</option>
+                                <option value="lecture">听课时间</option>
+                                <option value="updated">表单更新时间</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <button class="btn btn-primary me-2" id="btnLoadStats">查询统计</button>
+                            <button class="btn btn-outline-success me-2" id="btnExportStats">导出Excel</button>
+                            <button class="btn btn-outline-primary me-2" id="btnSaveSnapshot">保存历史</button>
+                            <button class="btn btn-outline-secondary me-2" id="btnLoadSnapshot">加载历史</button>
+                            <button class="btn btn-outline-secondary me-2" id="btnSelectAll">全选用户</button>
+                            <button class="btn btn-outline-secondary" id="btnClearAll">清空选择</button>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">排序方式</label>
+                            <select id="sortBy" class="form-select">
+                                <option value="submission">按交表数量倒序</option>
+                                <option value="reward">按奖励表数量倒序</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="text-muted mt-2">时间条件仅影响“交表数量”的统计范围；奖励表周次默认按表单组最新版本的听课时间计算，若标签中定义了“教学周修正（第x周）”，则直接按定义的教学周计算。</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="alert alert-warning">
+        奖励表情况为系统根据当前奖励表规则和数据自动给出，不代表真实考评情况，请认真核实，建议核实无误后保存或导出数据。
+    </div>
+
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">范围用户</div>
+                <div class="card-body">
+                    <input type="text" id="userSearchInput" class="form-control mb-2" placeholder="搜索部门/小组/姓名/编号">
+                    <div id="userStructure" style="max-height: 600px; overflow-y: auto;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">统计结果</div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped">
+                            <thead>
+                                <tr>
+                                    <th>排名</th>
+                                    <th>姓名</th>
+                                    <th>编号</th>
+                                    <th>部门</th>
+                                    <th>小组</th>
+                                    <th>交表数量（表单组）</th>
+                                    <th>奖励表</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="statsBody">
+                                <tr><td colspan="8" class="text-center text-muted">请先选择时间与用户范围后查询</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detailTitle">交表详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detailBody"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="rewardDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="rewardDetailTitle">奖励表详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="rewardDetailBody"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="formDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">表单详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="formDetailContent">
+                <div class="text-center py-4"><i class="fas fa-spinner fa-spin"></i> 正在加载...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="snapshotModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">奖励表历史记录</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="snapshotModalBody">
+                <div class="text-center text-muted py-4">正在加载...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let structureRawData = null;
+let currentSubmissionPayload = null;
+let currentSubmissionFilters = null;
+let currentSubmissionSnapshotId = null;
+
+function setDefaultDates() {
+    const now = new Date();
+    const end = now.toISOString().slice(0, 10);
+    const startObj = new Date(now.getFullYear(), now.getMonth(), 1);
+    const start = startObj.toISOString().slice(0, 10);
+    document.getElementById('startDate').value = start;
+    document.getElementById('endDate').value = end;
+}
+
+function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
+function userCheckboxHtml(user) {
+    const uid = user.id;
+    const name = escapeHtml(user.name || '');
+    const number = escapeHtml(user.number || '');
+    return `<label class="form-check d-block ms-2 mb-1 user-item-row"><input class="form-check-input user-item" type="checkbox" value="${uid}" data-user-id="${uid}"> ${name} (${number})</label>`;
+}
+
+function renderCenterStructure(structure) {
+    const container = document.createElement('div');
+    Object.entries(structure || {}).forEach(([deptName, groups]) => {
+        const deptKey = `${deptName}`;
+        const deptBlock = document.createElement('div');
+        deptBlock.className = 'mb-2 border rounded p-2';
+        deptBlock.innerHTML = `<label class="form-check fw-bold mb-1"><input class="form-check-input dept-item" type="checkbox" data-dept="${escapeHtml(deptKey)}"> ${escapeHtml(deptName)}</label>`;
+        Object.entries(groups || {}).forEach(([groupName, users]) => {
+            const groupKey = `${deptName}__${groupName}`;
+            const groupBlock = document.createElement('div');
+            groupBlock.className = 'ms-2 mb-1';
+            groupBlock.innerHTML = `<label class="form-check text-primary mb-1"><input class="form-check-input group-item" type="checkbox" data-dept="${escapeHtml(deptKey)}" data-group="${escapeHtml(groupKey)}"> ${escapeHtml(groupName)}</label>`;
+            (users || []).forEach(user => {
+                const row = userCheckboxHtml(user).replace(
+                    'class="form-check-input user-item"',
+                    `class="form-check-input user-item" data-dept="${escapeHtml(deptKey)}" data-group="${escapeHtml(groupKey)}"`
+                );
+                groupBlock.innerHTML += row;
+            });
+            deptBlock.appendChild(groupBlock);
+        });
+        container.appendChild(deptBlock);
+    });
+    return container.innerHTML;
+}
+
+function renderDepartmentStructure(structure) {
+    const container = document.createElement('div');
+    Object.entries(structure || {}).forEach(([groupName, users]) => {
+        const groupKey = `${groupName}`;
+        const groupBlock = document.createElement('div');
+        groupBlock.className = 'mb-2 border rounded p-2';
+        groupBlock.innerHTML = `<label class="form-check text-primary mb-1"><input class="form-check-input group-item" type="checkbox" data-group="${escapeHtml(groupKey)}"> ${escapeHtml(groupName)}</label>`;
+        (users || []).forEach(user => {
+            const row = userCheckboxHtml(user).replace(
+                'class="form-check-input user-item"',
+                `class="form-check-input user-item" data-group="${escapeHtml(groupKey)}"`
+            );
+            groupBlock.innerHTML += row;
+        });
+        container.appendChild(groupBlock);
+    });
+    return container.innerHTML;
+}
+
+function renderGroupStructure(structure) {
+    const container = document.createElement('div');
+    const block = document.createElement('div');
+    block.className = 'mb-2 border rounded p-2';
+    (structure || []).forEach(user => {
+        block.innerHTML += userCheckboxHtml(user);
+    });
+    container.appendChild(block);
+    return container.innerHTML;
+}
+
+function renderStructure() {
+    const root = document.getElementById('userStructure');
+    const permission = structureRawData.permission;
+    if (permission === '审表_中心') {
+        root.innerHTML = renderCenterStructure(structureRawData.structure);
+    } else if (permission === '审表_部门' || permission === '管理部门') {
+        root.innerHTML = renderDepartmentStructure(structureRawData.structure);
+    } else {
+        root.innerHTML = renderGroupStructure(structureRawData.structure);
+    }
+    bindStructureSelectionEvents();
+}
+
+function filterStructure() {
+    const keyword = document.getElementById('userSearchInput').value.trim().toLowerCase();
+    document.querySelectorAll('.user-item-row').forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = (!keyword || text.includes(keyword)) ? '' : 'none';
+    });
+}
+
+function getSelectedUserIds() {
+    return Array.from(document.querySelectorAll('.user-item:checked')).map(el => el.value);
+}
+
+function getStatusClass(status) {
+    switch (status) {
+        case '待审核': return 'bg-warning text-dark';
+        case '部门已审核': return 'bg-info text-dark';
+        case '中心已审核': return 'bg-success text-white';
+        case '已驳回': return 'bg-danger text-white';
+        default: return 'bg-secondary text-white';
+    }
+}
+
+function renderStatsTable(users) {
+    const body = document.getElementById('statsBody');
+    if (!users || users.length === 0) {
+        body.innerHTML = '<tr><td colspan="8" class="text-center text-muted">无统计数据</td></tr>';
+        return;
+    }
+    body.innerHTML = users.map(row => `
+        <tr>
+            <td>${row.rank}</td>
+            <td>${escapeHtml(row.name)}</td>
+            <td>${escapeHtml(row.number)}</td>
+            <td>${escapeHtml(row.department || '-')}</td>
+            <td>${escapeHtml(row.group || '-')}</td>
+            <td class="fw-bold">${Number(row.submission_group_count || 0)}</td>
+            <td class="fw-bold">${Number(row.reward_form_count || 0)}</td>
+            <td><button class="btn btn-sm btn-outline-primary" onclick="viewDetail(${row.user_id})">查看交表详情</button></td>
+        </tr>
+    `).join('');
+}
+
+function bindStructureSelectionEvents() {
+    const root = document.getElementById('userStructure');
+    root.addEventListener('change', function(e) {
+        const target = e.target;
+        if (!target || !target.classList) return;
+        if (target.classList.contains('dept-item')) {
+            const dept = target.getAttribute('data-dept');
+            root.querySelectorAll(`.group-item[data-dept="${dept}"], .user-item[data-dept="${dept}"]`).forEach(el => {
+                el.checked = target.checked;
+            });
+            return;
+        }
+        if (target.classList.contains('group-item')) {
+            const group = target.getAttribute('data-group');
+            root.querySelectorAll(`.user-item[data-group="${group}"]`).forEach(el => {
+                el.checked = target.checked;
+            });
+        }
+    });
+}
+
+function buildQuery(startDate, endDate, userIds) {
+    const params = new URLSearchParams();
+    params.set('start_date', startDate);
+    params.set('end_date', endDate);
+    userIds.forEach(id => params.append('user_ids', id));
+    return params.toString();
+}
+
+function loadStats() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    if (!startDate || !endDate) {
+        alert('请先选择开始和结束时间');
+        return;
+    }
+    const userIds = getSelectedUserIds();
+    const query = buildQuery(startDate, endDate, userIds);
+    fetch(`/admin/api/review/submission-count/stats?${query}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '查询失败');
+                return;
+            }
+            renderStatsTable(data.users || []);
+            if (data.reward_meta) {
+                showWeekRangeNotice(data.reward_meta || {}, '教学周范围提示');
+            }
+            const rewardMeta = {has_full_weeks: true};
+            if (!rewardMeta.has_full_weeks) {
+                alert('???????????????????? 0 ???');
+            }
+})
+        .catch(() => alert('查询失败，请稍后重试'));
+}
+
+function toggleVersions(collapseId, chevronId) {
+    const row = document.getElementById(collapseId);
+    const icon = document.getElementById(chevronId);
+    if (!row) return;
+    if (row.style.display === 'none' || !row.style.display) {
+        row.style.display = 'table-row';
+        if (icon) icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
+    } else {
+        row.style.display = 'none';
+        if (icon) icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+    }
+}
+
+function viewForm(formId) {
+    const modalEl = document.getElementById('formDetailModal');
+    let modal = bootstrap.Modal.getInstance(modalEl);
+    if (!modal) {
+        modal = new bootstrap.Modal(modalEl);
+    }
+    modal.show();
+    document.getElementById('formDetailContent').innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin"></i> 正在加载...</div>';
+    fetch(`/admin/form/${formId}?format=json`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.html) {
+                document.getElementById('formDetailContent').innerHTML = data.html;
+                return;
+            }
+            document.getElementById('formDetailContent').innerHTML = `<div class="alert alert-danger">${escapeHtml(data.message || '加载失败')}</div>`;
+        })
+        .catch(() => {
+            document.getElementById('formDetailContent').innerHTML = '<div class="alert alert-danger">加载失败，请重试</div>';
+        });
+}
+
+function viewDetail(userId) {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    if (!startDate || !endDate) {
+        alert('请先选择开始和结束时间');
+        return;
+    }
+    const params = new URLSearchParams({
+        start_date: startDate,
+        end_date: endDate,
+        time_filter_type: getSubmissionTimeFilterType()
+    });
+    fetch(`/admin/api/review/submission-count/detail/${userId}?${params.toString()}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '加载详情失败');
+                return;
+            }
+            document.getElementById('detailTitle').textContent = `${data.user.name}（${data.user.number}）交表详情`;
+            const groups = data.groups || [];
+            const timeFilterLabel = getSubmissionTimeFilterLabel(data.time_filter_type || getSubmissionTimeFilterType());
+            let html = `
+                <div class="mb-2">
+                    <span class="me-3">部门：${escapeHtml(data.user.department || '-')}</span>
+                    <span class="me-3">小组：${escapeHtml(data.user.group || '-')}</span>
+                    <span class="fw-bold">交表数量（表单组）：${groups.length}</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped">
+                        <thead>
+                            <tr>
+                                <th>最新时间</th>
+                                <th>教师</th>
+                                <th>课程</th>
+                                <th>听课时间</th>
+                                <th>版本数</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            if (groups.length === 0) {
+                html += '<tr><td colspan="6" class="text-center text-muted">无交表明细</td></tr>';
+            } else {
+                html += groups.map(group => {
+                    const collapseId = `versions-${group.unique_id}`;
+                    const chevronId = `chevron-${group.unique_id}`;
+                    const forms = group.forms || [];
+                    const latest = forms[0] || {};
+                    return `
+                        <tr>
+                            <td>${escapeHtml(group.filter_datetime || '-')}</td>
+                            <td>${escapeHtml(group.teacher_name || '-')}</td>
+                            <td title="${escapeHtml(group.course_title || '')}">${escapeHtml(group.course_title || '-')}</td>
+                            <td>${escapeHtml(group.lecture_date || '-')}</td>
+                            <td>
+                                <span class="badge bg-info text-dark">${forms.length}</span>
+                                ${forms.length > 1 ? `
+                                    <button class="btn btn-outline-info btn-sm ms-1" onclick="toggleVersions('${collapseId}', '${chevronId}')">
+                                        <i class="fas fa-chevron-down me-1" id="${chevronId}"></i> 展开/收起版本
+                                    </button>
+                                ` : ''}
+                            </td>
+                            <td>
+                                <button class="btn btn-info btn-sm" onclick="viewForm(${latest.id})">
+                                    <i class="fas fa-eye me-1"></i> 查看最新版本
+                                </button>
+                            </td>
+                        </tr>
+                        ${forms.length > 1 ? `
+                            <tr id="${collapseId}" style="display:none;">
+                                <td colspan="6">
+                                    <div class="card mb-0">
+                                        <div class="card-header"><h6 class="mb-0">版本历史</h6></div>
+                                        <div class="card-body p-2">
+                                            <div class="table-responsive">
+                                                <table class="table table-sm table-borderless mb-0">
+                                                    <thead>
+                                                        <tr class="text-muted">
+                                                            <th>版本</th>
+                                                            <th>状态</th>
+                                                            <th>创建时间</th>
+                                                            <th>更新时间</th>
+                                                            <th>审核人</th>
+                                                            <th>审核意见</th>
+                                                            <th>操作</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        ${forms.map((version, idx) => `
+                                                            <tr>
+                                                                <td>
+                                                                    <span class="badge bg-light text-dark">v${forms.length - idx}</span>
+                                                                    ${idx === 0 ? '<span class="badge bg-primary ms-1">最新</span>' : ''}
+                                                                </td>
+                                                                <td><span class="badge ${getStatusClass(version.status)}">${escapeHtml(version.status || '-')}</span></td>
+                                                                <td>${escapeHtml(version.created_at || '-')}</td>
+                                                                <td>${escapeHtml(version.updated_at || '-')}</td>
+                                                                <td>${escapeHtml(version.reviewer_display || '-')}</td>
+                                                                <td><span title="${escapeHtml(version.review_comment || '')}">${escapeHtml(version.review_comment || '-')}</span></td>
+                                                                <td>
+                                                                    <button class="btn btn-outline-info btn-sm" onclick="viewForm(${version.id})">
+                                                                        <i class="fas fa-eye me-1"></i> 查看此版本
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        `).join('')}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        ` : ''}
+                    `;
+                }).join('');
+            }
+            html += '</tbody></table></div>';
+            document.getElementById('detailBody').innerHTML = html;
+            const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+            modal.show();
+        })
+        .catch(() => alert('加载详情失败，请稍后重试'));
+}
+
+function renderStatsTable(users) {
+    const body = document.getElementById('statsBody');
+    if (!users || users.length === 0) {
+        body.innerHTML = '<tr><td colspan="8" class="text-center text-muted">无统计数据</td></tr>';
+        return;
+    }
+    body.innerHTML = users.map(row => `
+        <tr>
+            <td>${row.rank}</td>
+            <td>${escapeHtml(row.name)}</td>
+            <td>${escapeHtml(row.number)}</td>
+            <td>${escapeHtml(row.department || '-')}</td>
+            <td>${escapeHtml(row.group || '-')}</td>
+            <td class="fw-bold">${Number(row.submission_group_count || 0)}</td>
+            <td class="fw-bold">${Number(row.reward_form_count || 0)}</td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    <button type="button" class="btn btn-outline-primary" onclick="viewDetail(${row.user_id})">查看交表详情</button>
+                    <button type="button" class="btn btn-outline-success" onclick="viewRewardDetail(${row.user_id})">查看奖励表详情</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function getSubmissionTimeFilterType() {
+    return document.getElementById('timeFilterType')?.value || 'created';
+}
+
+function getSubmissionTimeFilterLabel(type) {
+    switch (type) {
+        case 'lecture':
+            return '听课时间';
+        case 'updated':
+            return '表单更新时间';
+        default:
+            return '表单创建时间';
+    }
+}
+
+function buildQuery(startDate, endDate, userIds) {
+    const params = new URLSearchParams();
+    params.set('start_date', startDate);
+    params.set('end_date', endDate);
+    params.set('sort_by', document.getElementById('sortBy').value || 'submission');
+    params.set('time_filter_type', getSubmissionTimeFilterType());
+    userIds.forEach(id => params.append('user_ids', id));
+    return params.toString();
+}
+
+function loadStats() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    if (!startDate || !endDate) {
+        alert('请先选择开始和结束时间');
+        return;
+    }
+    const userIds = getSelectedUserIds();
+    const query = buildQuery(startDate, endDate, userIds);
+    fetch(`/admin/api/review/submission-count/stats?${query}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '查询失败');
+                return;
+            }
+            currentSubmissionPayload = data;
+            currentSubmissionFilters = {
+                start_date: startDate,
+                end_date: endDate,
+                user_ids: userIds,
+                sort_by: document.getElementById('sortBy').value || 'submission',
+                time_filter_type: getSubmissionTimeFilterType()
+            };
+            currentSubmissionSnapshotId = null;
+            renderStatsTable(data.users || []);
+            const rewardMeta = data.reward_meta || {};
+            if (!rewardMeta.has_full_weeks) {
+                alert('当前筛选范围内无完整教学周，奖励表数量按 0 统计。');
+            }
+        })
+        .catch(() => alert('查询失败，请稍后重试'));
+}
+
+function exportSubmissionStats() {
+    if (currentSubmissionSnapshotId) {
+        window.location.href = `/admin/api/review/submission-count/snapshots/${currentSubmissionSnapshotId}/export`;
+        return;
+    }
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    if (!startDate || !endDate) {
+        alert('请先选择开始和结束时间');
+        return;
+    }
+    const userIds = getSelectedUserIds();
+    const defaultTitle = `${startDate}至${endDate}交表统计`;
+    const filenameTitle = window.prompt('请输入导出文件名', defaultTitle);
+    if (filenameTitle === null) {
+        return;
+    }
+    const params = new URLSearchParams(buildQuery(startDate, endDate, userIds));
+    if ((filenameTitle || '').trim()) {
+        params.set('filename_title', filenameTitle.trim());
+    }
+    window.location.href = `/admin/api/review/submission-count/export?${params.toString()}`;
+}
+
+function viewRewardDetail(userId) {
+    if (currentSubmissionSnapshotId && currentSubmissionPayload && currentSubmissionPayload.users) {
+        const target = (currentSubmissionPayload.users || []).find(row => Number(row.user_id) === Number(userId));
+        if (!target) {
+            alert('历史记录中未找到该用户的奖励表详情');
+            return;
+        }
+        document.getElementById('rewardDetailTitle').textContent = `${target.name}（${target.number}）奖励表详情`;
+        const rewardMeta = currentSubmissionPayload.reward_meta || {};
+        const weeks = target.reward_week_details || [];
+        const html = `
+            <div class="mb-3">
+                <span class="me-3">交表数量：${Number(target.submission_group_count || 0)}</span>
+                <span class="me-3">总有效表单数：${Number(target.reward_effective_count || 0)}</span>
+                <span class="me-3">总错误表单数：${Number(target.reward_error_count || 0)}</span>
+                <span class="fw-bold text-success">总奖励表数：${Number(target.reward_form_count || 0)}</span>
+            </div>
+            ${!rewardMeta.has_full_weeks ? '<div class="alert alert-info mb-0">当前历史记录内无完整教学周。</div>' : `
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped">
+                        <thead>
+                            <tr>
+                                <th>周次</th>
+                                <th>时间范围</th>
+                                <th>有效表单数</th>
+                                <th>错误表单数</th>
+                                <th>每周需交表数</th>
+                                <th>奖励表数</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${weeks.length > 0 ? weeks.map(week => `
+                                <tr>
+                                    <td>${escapeHtml(week.week_label || '-')}</td>
+                                    <td>${escapeHtml(week.start_date || '-')} ~ ${escapeHtml(week.end_date || '-')}</td>
+                                    <td>${Number(week.effective_count || 0)}</td>
+                                    <td>${Number(week.error_count || 0)}</td>
+                                    <td>${Number(week.required_submission || 0)}</td>
+                                    <td class="fw-bold text-success">${Number(week.reward_form_count || 0)}</td>
+                                </tr>
+                            `).join('') : '<tr><td colspan="6" class="text-center text-muted">无周度数据</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+            `}
+        `;
+        document.getElementById('rewardDetailBody').innerHTML = html;
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('rewardDetailModal')).show();
+        return;
+    }
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    if (!startDate || !endDate) {
+        alert('请先选择开始和结束时间');
+        return;
+    }
+    const params = new URLSearchParams({start_date: startDate, end_date: endDate});
+    fetch(`/admin/api/review/submission-count/reward-detail/${userId}?${params.toString()}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '加载奖励表详情失败');
+                return;
+            }
+            document.getElementById('rewardDetailTitle').textContent = `${data.user.name}（${data.user.number}）奖励表详情`;
+            const summary = data.summary || {};
+            const rewardMeta = data.reward_meta || {};
+            const weeks = data.weeks || [];
+            let html = `
+                <div class="mb-3">
+                    <span class="me-3">交表数量：${Number(summary.submission_group_count || 0)}</span>
+                    <span class="me-3">总有效表单数：${Number(summary.reward_effective_count || 0)}</span>
+                    <span class="me-3">总错误表单数：${Number(summary.reward_error_count || 0)}</span>
+                    <span class="fw-bold text-success">总奖励表数：${Number(summary.reward_form_count || 0)}</span>
+                </div>
+            `;
+            if (!rewardMeta.has_full_weeks) {
+                html += '<div class="alert alert-info mb-0">当前筛选范围内无完整教学周，无法生成周度奖励表。</div>';
+            } else {
+                html += `
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped">
+                            <thead>
+                                <tr>
+                                    <th>周次</th>
+                                    <th>时间范围</th>
+                                    <th>有效表单数</th>
+                                    <th>错误表单数</th>
+                                    <th>每周需交表数</th>
+                                    <th>奖励表数</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${weeks.length > 0 ? weeks.map(week => `
+                                    <tr>
+                                        <td>${escapeHtml(week.week_label || '-')}</td>
+                                        <td>${escapeHtml(week.start_date || '-')} ~ ${escapeHtml(week.end_date || '-')}</td>
+                                        <td>${Number(week.effective_count || 0)}</td>
+                                        <td>${Number(week.error_count || 0)}</td>
+                                        <td>${Number(week.required_submission || 0)}</td>
+                                        <td class="fw-bold text-success">${Number(week.reward_form_count || 0)}</td>
+                                    </tr>
+                                `).join('') : '<tr><td colspan="6" class="text-center text-muted">无周度数据</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+            document.getElementById('rewardDetailBody').innerHTML = html;
+            const modal = new bootstrap.Modal(document.getElementById('rewardDetailModal'));
+            modal.show();
+        })
+        .catch(() => alert('加载奖励表详情失败，请稍后重试'));
+}
+
+function saveSubmissionSnapshot() {
+    if (!currentSubmissionPayload || !currentSubmissionFilters) {
+        alert('请先查询交表数量统计');
+        return;
+    }
+    if (!currentSubmissionPayload.reward_meta || !currentSubmissionPayload.reward_meta.has_full_weeks) {
+        alert('当前筛选范围内无完整教学周，无法保存奖励表历史');
+        return;
+    }
+    const defaultTitle = `${currentSubmissionFilters.start_date}至${currentSubmissionFilters.end_date}交表统计`;
+    const title = window.prompt('请输入历史记录名称', defaultTitle);
+    if (title === null) {
+        return;
+    }
+    fetch('/admin/api/review/submission-count/snapshots', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({...currentSubmissionFilters, title: (title || '').trim()})
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '保存失败');
+                return;
+            }
+            alert(data.message || '保存成功');
+        })
+        .catch(() => alert('保存失败，请稍后重试'));
+}
+
+function openSubmissionSnapshotModal() {
+    fetch('/admin/api/review/submission-count/snapshots')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '加载历史失败');
+                return;
+            }
+            const snapshots = data.snapshots || [];
+            const body = document.getElementById('snapshotModalBody');
+            if (snapshots.length === 0) {
+                body.innerHTML = '<div class="text-center text-muted py-4">暂无历史记录</div>';
+            } else {
+                body.innerHTML = `
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped">
+                            <thead>
+                                <tr>
+                                    <th>名称</th>
+                                    <th>时间范围</th>
+                                    <th>教学周</th>
+                                    <th>范围</th>
+                                    <th>保存时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${snapshots.map(item => `
+                                    <tr>
+                                        <td>${escapeHtml(item.title)}</td>
+                                        <td>${escapeHtml(item.range_start || '')} ~ ${escapeHtml(item.range_end || '')}</td>
+                                        <td>${escapeHtml(item.period_label || '-')}</td>
+                                        <td>${escapeHtml(item.scope_label || '-')}</td>
+                                        <td>${escapeHtml(item.created_at || '')}</td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <button class="btn btn-outline-primary" onclick="loadSubmissionSnapshot(${item.id})">加载</button>
+                                                <button class="btn btn-outline-success" onclick="window.location.href='/admin/api/review/submission-count/snapshots/${item.id}/export'">导出</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('snapshotModal')).show();
+        })
+        .catch(() => alert('加载历史失败，请稍后重试'));
+}
+
+function loadSubmissionSnapshot(snapshotId) {
+    fetch(`/admin/api/review/submission-count/snapshots/${snapshotId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '加载历史失败');
+                return;
+            }
+            const snapshot = data.snapshot || {};
+            const filters = snapshot.filters || {};
+            document.getElementById('startDate').value = filters.start_date || '';
+            document.getElementById('endDate').value = filters.end_date || '';
+            document.getElementById('sortBy').value = filters.sort_by || 'submission';
+            document.getElementById('timeFilterType').value = filters.time_filter_type || 'created';
+            selectAllUsers(false);
+            (filters.user_ids || []).forEach(id => {
+                const el = document.querySelector(`.user-item[value="${id}"]`);
+                if (el) {
+                    el.checked = true;
+                }
+            });
+            currentSubmissionPayload = snapshot.payload || null;
+            currentSubmissionFilters = filters;
+            currentSubmissionSnapshotId = snapshot.id;
+            renderStatsTable((snapshot.payload || {}).users || []);
+            const rewardMeta = (snapshot.payload || {}).reward_meta || {};
+            if (rewardMeta.has_full_weeks === false) {
+                alert('当前历史记录内无完整教学周。');
+            }
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('snapshotModal')).hide();
+            showWeekRangeNotice(rewardMeta, '历史记录教学周范围');
+        })
+        .catch(() => alert('加载历史失败，请稍后重试'));
+}
+
+function selectAllUsers(flag) {
+    document.querySelectorAll('.user-item').forEach(el => { el.checked = flag; });
+}
+
+function initPage() {
+    setDefaultDates();
+    fetch('/admin/api/review/user-structure')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '加载用户结构失败');
+                return;
+            }
+            structureRawData = data;
+            renderStructure();
+        })
+        .catch(() => alert('加载用户结构失败'));
+
+    document.getElementById('btnLoadStats').addEventListener('click', loadStats);
+    document.getElementById('btnExportStats').addEventListener('click', exportSubmissionStats);
+    document.getElementById('btnSaveSnapshot').addEventListener('click', saveSubmissionSnapshot);
+    document.getElementById('btnLoadSnapshot').addEventListener('click', openSubmissionSnapshotModal);
+    document.getElementById('btnSelectAll').addEventListener('click', () => selectAllUsers(true));
+    document.getElementById('btnClearAll').addEventListener('click', () => selectAllUsers(false));
+    document.getElementById('userSearchInput').addEventListener('input', filterStructure);
+}
+
+document.addEventListener('DOMContentLoaded', initPage);
+</script>
+{% endblock %}

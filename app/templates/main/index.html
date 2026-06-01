@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+
+{% block title %}首页{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- 欢迎信息 -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h4 class="mb-1">
+                                {% if current_user.is_authenticated %}
+                                    欢迎回来，{{ current_user.name }}！
+                                {% else %}
+                                    欢迎使用听课表单系统
+                                {% endif %}
+                            </h4>
+                            <p class="mb-0">
+                                {% if current_user.is_authenticated %}
+                                    您的角色：{{ current_user.role }} | 所属部门：{{ current_user.department.name if current_user.department else '未分配' }}
+                                    {% if current_user.group %}
+                                        | 所在小组：{{ current_user.group.name }}
+                                    {% endif %}
+                                {% else %}
+                                    请登录以使用系统功能
+                                {% endif %}
+                            </p>
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <i class="fas fa-graduation-cap fa-3x opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if current_user.is_authenticated %}
+    <!-- 快速操作 -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h5 class="mb-3">快速操作</h5>
+        </div>
+        
+        {% if current_user.role == '信息员' %}
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card h-100 border-primary">
+                <div class="card-body text-center">
+                    <i class="fas fa-edit fa-2x text-primary mb-3"></i>
+                    <h6 class="card-title">填写听课表单</h6>
+                    <p class="card-text text-muted">记录听课情况和教学评价</p>
+                    <a href="{{ url_for('user.submit_form') }}" class="btn btn-primary">开始填写</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card h-100 border-info">
+                <div class="card-body text-center">
+                    <i class="fas fa-list fa-2x text-info mb-3"></i>
+                    <h6 class="card-title">我的表单</h6>
+                    <p class="card-text text-muted">查看已提交的听课表单</p>
+                    <a href="{{ url_for('user.my_forms') }}" class="btn btn-info">查看表单</a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if current_user.role in ['管理员', '超级管理员'] %}
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card h-100 border-success">
+                <div class="card-body text-center">
+                    <i class="fas fa-tachometer-alt fa-2x text-success mb-3"></i>
+                    <h6 class="card-title">管理面板</h6>
+                    <p class="card-text text-muted">查看统计数据和管理功能</p>
+                    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-success">进入面板</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card h-100 border-warning">
+                <div class="card-body text-center">
+                    <i class="fas fa-users fa-2x text-warning mb-3"></i>
+                    <h6 class="card-title">用户管理</h6>
+                    <p class="card-text text-muted">导入和管理用户信息</p>
+                    <a href="{{ url_for('admin.import_users') }}" class="btn btn-warning">用户导入</a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card h-100 border-secondary">
+                <div class="card-body text-center">
+                    <i class="fas fa-user fa-2x text-secondary mb-3"></i>
+                    <h6 class="card-title">个人资料</h6>
+                    <p class="card-text text-muted">查看和编辑个人信息</p>
+                    <a href="{{ url_for('user.profile') }}" class="btn btn-secondary">查看资料</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 统计信息 -->
+    {% if current_user.role == '信息员' %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <h5 class="mb-3">我的统计</h5>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h3 class="text-primary">{{ user_stats.total_forms or 0 }}</h3>
+                    <p class="mb-0">总表单数</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h3 class="text-success">{{ user_stats.this_month or 0 }}</h3>
+                    <p class="mb-0">本月表单</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h3 class="text-info">{{ user_stats.pending_review or 0 }}</h3>
+                    <p class="mb-0">待审核</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h3 class="text-warning">{{ user_stats.reviewed or 0 }}</h3>
+                    <p class="mb-0">已审核</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if current_user.role in ['管理员', '超级管理员'] %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <h5 class="mb-3">系统统计</h5>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h3 class="text-primary">{{ system_stats.total_users or 0 }}</h3>
+                    <p class="mb-0">总用户数</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h3 class="text-success">{{ system_stats.total_forms or 0 }}</h3>
+                    <p class="mb-0">总表单数</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h3 class="text-info">{{ system_stats.this_month_forms or 0 }}</h3>
+                    <p class="mb-0">本月表单</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h3 class="text-warning">{{ system_stats.pending_forms or 0 }}</h3>
+                    <p class="mb-0">待审核表单</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 最近活动 -->
+    {% if recent_forms %}
+    <div class="row">
+        <div class="col-12">
+            <h5 class="mb-3">
+                {% if current_user.role == '信息员' %}
+                    最近提交的表单
+                {% else %}
+                    最近的表单活动
+                {% endif %}
+            </h5>
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>提交时间</th>
+                                    <th>课程名称</th>
+                                    <th>授课教师</th>
+                                    {% if current_user.role in ['管理员', '超级管理员'] %}
+                                    <th>提交人</th>
+                                    {% endif %}
+                                    <th>状态</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for form in recent_forms %}
+                                <tr>
+                                    <td>{{ form.created_at.strftime('%m-%d %H:%M') }}</td>
+                                    <td>{{ form.course_title }}</td>
+                                    <td>{{ form.teacher_name }}</td>
+                                    {% if current_user.role in ['管理员', '超级管理员'] %}
+                                    <td>{{ form.listener_name }}</td>
+                                    {% endif %}
+                                    <td>
+                                        {% if form.status == '已提交' %}
+                                            <span class="badge bg-success">{{ form.status }}</span>
+                                        {% elif form.status == '审核中' %}
+                                            <span class="badge bg-warning">{{ form.status }}</span>
+                                        {% elif form.status == '已审核' %}
+                                            <span class="badge bg-info">{{ form.status }}</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">{{ form.status or '草稿' }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if current_user.role == '信息员' %}
+                                            <a href="{{ url_for('admin.get_form_detail', form_id=form.id) }}" 
+                                               class="btn btn-sm btn-outline-primary">查看</a>
+                                        {% else %}
+                                            <a href="{{ url_for('admin.get_form_detail', form_id=form.id) }}" 
+                                               class="btn btn-sm btn-outline-primary">查看</a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="text-center mt-3">
+                        {% if current_user.role == '信息员' %}
+                            <a href="{{ url_for('user.my_forms') }}" class="btn btn-outline-primary">查看全部</a>
+                        {% else %}
+                            <a href="{{ url_for('admin.forms_list') }}" class="btn btn-outline-primary">查看全部</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <!-- 未登录用户显示 -->
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="fas fa-sign-in-alt fa-3x text-primary mb-4"></i>
+                    <h4 class="mb-3">请先登录</h4>
+                    <p class="text-muted mb-4">登录后即可使用听课表单系统的所有功能</p>
+                    <a href="{{ url_for('auth.login') }}" class="btn btn-primary btn-lg">
+                        <i class="fas fa-sign-in-alt"></i> 立即登录
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}表单记录列表 - 听课表单系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>听课表单记录</h2>
+            <a href="{{ url_for('main.index') }}" class="btn btn-primary">填写新表单</a>
+        </div>
+
+        {% if forms %}
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>编号</th>
+                                <th>听课人</th>
+                                <th>授课教师</th>
+                                <th>课程</th>
+                                <th>听课时间</th>
+                                <th>听课地点</th>
+                                <th>提交时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for form in forms %}
+                            <tr>
+                                <td>{{ form.id }}</td>
+                                <td>{{ form.listener_name }}</td>
+                                <td>{{ form.teacher_name }}</td>
+                                <td>{{ form.course_title }}</td>
+                                <td>{{ form.lecture_date }}</td>
+                                <td>{{ form.lecture_location }}</td>
+                                <td>{{ form.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                <td>
+                                    <a href="{{ url_for('admin.get_form_detail', form_id=form.id) }}" class="btn btn-sm btn-outline-primary">查看详情</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <p class="text-muted">共 {{ forms|length }} 条记录</p>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <div class="mb-4">
+                <i class="fas fa-clipboard-list fa-3x text-muted"></i>
+            </div>
+            <h4 class="text-muted">暂无表单记录</h4>
+            <p class="text-muted">还没有提交过听课表单</p>
+            <a href="{{ url_for('main.index') }}" class="btn btn-primary">填写第一个表单</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

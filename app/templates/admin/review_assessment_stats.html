@@ -1,0 +1,688 @@
+﻿{% extends "base.html" %}
+
+{% block title %}审表考评统计 - 管理员面板{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <h3 class="mb-0">审表考评统计</h3>
+            {% if can_manual_assessment_import %}
+            <div class="d-flex gap-2">
+                <a class="btn btn-outline-secondary" href="/admin/api/review/assessment/import/template">下载考评导入模板</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">筛选条件</div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label">开始时间</label>
+                            <input type="date" id="startDate" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">结束时间</label>
+                            <input type="date" id="endDate" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <button class="btn btn-primary me-2" id="btnLoadStats">查询统计</button>
+                            <button class="btn btn-outline-success me-2" id="btnExportStats">导出Excel</button>
+                            <button class="btn btn-outline-secondary me-2" id="btnSelectAll">全选用户</button>
+                            <button class="btn btn-outline-secondary" id="btnClearAll">清空选择</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% if can_manual_assessment_import %}
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">手动导入考评</div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <input type="file" id="importFile" class="form-control" accept=".xls,.xlsx">
+                    </div>
+                    <button class="btn btn-success w-100" id="btnImport">上传并预览</button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">范围用户</div>
+                <div class="card-body">
+                    <input type="text" id="userSearchInput" class="form-control mb-2" placeholder="搜索部门/小组/姓名/编号">
+                    <div id="userStructure" style="max-height: 600px; overflow-y: auto;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">统计结果</div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped">
+                            <thead>
+                                <tr>
+                                    <th>排名</th>
+                                    <th>姓名</th>
+                                    <th>编号</th>
+                                    <th>部门</th>
+                                    <th>小组</th>
+                                    <th>部门扣分</th>
+                                    <th>个人扣分</th>
+                                    <th>总个人扣分</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="statsBody">
+                                <tr><td colspan="9" class="text-center text-muted">请先选择时间与用户范围后查询</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detailTitle">考评详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detailBody"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="importPreviewModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">导入预览</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="importPreviewSummary"></div>
+                <div id="importPreviewBody" class="mt-3"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-success" id="btnConfirmImportPreview">确认导入</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let structureRawData = null;
+let pendingImportFile = null;
+let previewModalInstance = null;
+
+function setDefaultDates() {
+    const now = new Date();
+    const end = now.toISOString().slice(0, 10);
+    const startObj = new Date(now.getFullYear(), now.getMonth(), 1);
+    const start = startObj.toISOString().slice(0, 10);
+    document.getElementById('startDate').value = start;
+    document.getElementById('endDate').value = end;
+}
+
+function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
+function formatScore(value) {
+    return Number(value || 0).toFixed(2);
+}
+
+function userCheckboxHtml(user) {
+    const uid = user.id;
+    const name = escapeHtml(user.name || '');
+    const number = escapeHtml(user.number || '');
+    return `<label class="form-check d-block ms-2 mb-1 user-item-row"><input class="form-check-input user-item" type="checkbox" value="${uid}" data-user-id="${uid}"> ${name} (${number})</label>`;
+}
+
+function renderCenterStructure(structure) {
+    const container = document.createElement('div');
+    Object.entries(structure || {}).forEach(([deptName, groups]) => {
+        const deptKey = `${deptName}`;
+        const deptBlock = document.createElement('div');
+        deptBlock.className = 'mb-2 border rounded p-2';
+        deptBlock.innerHTML = `<label class="form-check fw-bold mb-1"><input class="form-check-input dept-item" type="checkbox" data-dept="${escapeHtml(deptKey)}"> ${escapeHtml(deptName)}</label>`;
+        Object.entries(groups || {}).forEach(([groupName, users]) => {
+            const groupKey = `${deptName}__${groupName}`;
+            const groupBlock = document.createElement('div');
+            groupBlock.className = 'ms-2 mb-1';
+            groupBlock.innerHTML = `<label class="form-check text-primary mb-1"><input class="form-check-input group-item" type="checkbox" data-dept="${escapeHtml(deptKey)}" data-group="${escapeHtml(groupKey)}"> ${escapeHtml(groupName)}</label>`;
+            (users || []).forEach(user => {
+                const row = userCheckboxHtml(user).replace(
+                    'class="form-check-input user-item"',
+                    `class="form-check-input user-item" data-dept="${escapeHtml(deptKey)}" data-group="${escapeHtml(groupKey)}"`
+                );
+                groupBlock.innerHTML += row;
+            });
+            deptBlock.appendChild(groupBlock);
+        });
+        container.appendChild(deptBlock);
+    });
+    return container.innerHTML;
+}
+
+function renderDepartmentStructure(structure) {
+    const container = document.createElement('div');
+    Object.entries(structure || {}).forEach(([groupName, users]) => {
+        const groupKey = `${groupName}`;
+        const groupBlock = document.createElement('div');
+        groupBlock.className = 'mb-2 border rounded p-2';
+        groupBlock.innerHTML = `<label class="form-check text-primary mb-1"><input class="form-check-input group-item" type="checkbox" data-group="${escapeHtml(groupKey)}"> ${escapeHtml(groupName)}</label>`;
+        (users || []).forEach(user => {
+            const row = userCheckboxHtml(user).replace(
+                'class="form-check-input user-item"',
+                `class="form-check-input user-item" data-group="${escapeHtml(groupKey)}"`
+            );
+            groupBlock.innerHTML += row;
+        });
+        container.appendChild(groupBlock);
+    });
+    return container.innerHTML;
+}
+
+function renderGroupStructure(structure) {
+    const container = document.createElement('div');
+    const block = document.createElement('div');
+    block.className = 'mb-2 border rounded p-2';
+    (structure || []).forEach(user => {
+        block.innerHTML += userCheckboxHtml(user);
+    });
+    container.appendChild(block);
+    return container.innerHTML;
+}
+
+function renderStructure() {
+    const root = document.getElementById('userStructure');
+    const permission = structureRawData.permission;
+    if (permission === '审表_中心') {
+        root.innerHTML = renderCenterStructure(structureRawData.structure);
+    } else if (permission === '审表_部门' || permission === '管理部门') {
+        root.innerHTML = renderDepartmentStructure(structureRawData.structure);
+    } else {
+        root.innerHTML = renderGroupStructure(structureRawData.structure);
+    }
+    bindStructureSelectionEvents();
+}
+
+function filterStructure() {
+    const keyword = document.getElementById('userSearchInput').value.trim().toLowerCase();
+    document.querySelectorAll('.user-item-row').forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = (!keyword || text.includes(keyword)) ? '' : 'none';
+    });
+}
+
+function getSelectedUserIds() {
+    return Array.from(document.querySelectorAll('.user-item:checked')).map(el => el.value);
+}
+
+function renderStatsTable(users) {
+    const body = document.getElementById('statsBody');
+    if (!users || users.length === 0) {
+        body.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无统计数据</td></tr>';
+        return;
+    }
+    body.innerHTML = users.map(row => `
+        <tr>
+            <td>${row.rank}</td>
+            <td>${escapeHtml(row.name)}</td>
+            <td>${escapeHtml(row.number)}</td>
+            <td>${escapeHtml(row.department || '-')}</td>
+            <td>${escapeHtml(row.group || '-')}</td>
+            <td>${formatScore(row.linked_department_score)}</td>
+            <td>${formatScore(row.linked_personal_score)}</td>
+            <td class="fw-bold text-danger">${formatScore(row.total_personal_score)}</td>
+            <td><button class="btn btn-sm btn-outline-primary" onclick="viewDetail(${row.user_id})">查看考评详情</button></td>
+        </tr>
+    `).join('');
+}
+
+function bindStructureSelectionEvents() {
+    const root = document.getElementById('userStructure');
+    root.addEventListener('change', function(e) {
+        const target = e.target;
+        if (!target || !target.classList) return;
+        if (target.classList.contains('dept-item')) {
+            const dept = target.getAttribute('data-dept');
+            root.querySelectorAll(`.group-item[data-dept="${dept}"], .user-item[data-dept="${dept}"]`).forEach(el => {
+                el.checked = target.checked;
+            });
+            return;
+        }
+        if (target.classList.contains('group-item')) {
+            const group = target.getAttribute('data-group');
+            root.querySelectorAll(`.user-item[data-group="${group}"]`).forEach(el => {
+                el.checked = target.checked;
+            });
+        }
+    });
+}
+
+function buildQuery(startDate, endDate, userIds) {
+    const params = new URLSearchParams();
+    params.set('start_date', startDate);
+    params.set('end_date', endDate);
+    userIds.forEach(id => params.append('user_ids', id));
+    return params.toString();
+}
+
+function loadStats() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    if (!startDate || !endDate) {
+        alert('请先选择开始和结束时间');
+        return;
+    }
+    const userIds = getSelectedUserIds();
+    const query = buildQuery(startDate, endDate, userIds);
+    fetch(`/admin/api/review/assessment/stats?${query}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '查询失败');
+                return;
+            }
+            renderStatsTable(data.users || []);
+        })
+        .catch(() => alert('查询失败，请稍后重试'));
+}
+
+function exportAssessmentStats() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    if (!startDate || !endDate) {
+        alert('请先选择开始和结束时间');
+        return;
+    }
+    const userIds = getSelectedUserIds();
+    const defaultTitle = `${startDate}至${endDate}考评统计`;
+    const filenameTitle = window.prompt('请输入导出文件名', defaultTitle);
+    if (filenameTitle === null) {
+        return;
+    }
+    const params = new URLSearchParams(buildQuery(startDate, endDate, userIds));
+    if ((filenameTitle || '').trim()) {
+        params.set('filename_title', filenameTitle.trim());
+    }
+    window.location.href = `/admin/api/review/assessment/export?${params.toString()}`;
+}
+
+function viewDetail(userId) {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    if (!startDate || !endDate) {
+        alert('请先选择开始和结束时间');
+        return;
+    }
+    const params = new URLSearchParams({start_date: startDate, end_date: endDate});
+    fetch(`/admin/api/review/assessment/detail/${userId}?${params.toString()}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '加载详情失败');
+                return;
+            }
+            document.getElementById('detailTitle').textContent = `${data.user.name}（${data.user.number}）考评详情`;
+            const s = data.summary || {};
+            let html = `
+                <div class="mb-2">
+                    <span class="me-3">部门扣分：${formatScore(s.linked_department_score)}</span>
+                    <span class="me-3">个人扣分：${formatScore(s.linked_personal_score)}</span>
+                    <span class="fw-bold text-danger">总个人扣分：${formatScore(s.total_score)}</span>
+                </div>
+            `;
+            html += renderAssessmentDetailGroups(data.groups || []);
+            document.getElementById('detailBody').innerHTML = html;
+            const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+            modal.show();
+        })
+        .catch(() => alert('加载详情失败，请稍后重试'));
+}
+
+function toggleAssessmentItems(rowId, chevronId) {
+    const row = document.getElementById(rowId);
+    const chevron = document.getElementById(chevronId);
+    if (!row) {
+        return;
+    }
+    const isHidden = row.style.display === 'none' || row.style.display === '';
+    row.style.display = isHidden ? 'table-row' : 'none';
+    if (chevron) {
+        chevron.classList.toggle('fa-chevron-down', !isHidden);
+        chevron.classList.toggle('fa-chevron-up', isHidden);
+    }
+}
+
+function renderAssessmentDetailGroups(groups) {
+    const safeGroups = groups || [];
+    if (safeGroups.length === 0) {
+        return `
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered">
+                    <thead>
+                        <tr>
+                            <th>反馈表单ID</th>
+                            <th>时间</th>
+                            <th>教师</th>
+                            <th>课程</th>
+                            <th>考评项数量</th>
+                            <th>部门扣分</th>
+                            <th>个人扣分</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="8" class="text-center text-muted">暂无明细</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    const rows = safeGroups.map((group, index) => {
+        const rowId = `assessment-group-${group.form_id}-${index}`;
+        const chevronId = `assessment-chevron-${group.form_id}-${index}`;
+        const items = group.items || [];
+        const itemRows = items.length > 0
+            ? items.map(item => `
+                <tr>
+                    <td>${escapeHtml(item.issue_detail)}</td>
+                    <td>${formatScore(item.department_score)}</td>
+                    <td>${formatScore(item.personal_score)}</td>
+                </tr>
+            `).join('')
+            : '<tr><td colspan="3" class="text-center text-muted">无考评项</td></tr>';
+
+        return `
+            <tr>
+                <td>${escapeHtml(group.form_id)}</td>
+                <td>${escapeHtml(group.date)}</td>
+                <td>${escapeHtml(group.teacher_name)}</td>
+                <td>${escapeHtml(group.course_title)}</td>
+                <td><span class="badge bg-info">${escapeHtml(group.item_count || items.length)}</span></td>
+                <td>${formatScore(group.total_department_score)}</td>
+                <td>${formatScore(group.total_personal_score)}</td>
+                <td>
+                    <button type="button" class="btn btn-outline-info btn-sm" onclick="toggleAssessmentItems('${rowId}', '${chevronId}')">
+                        <i class="fas fa-chevron-down me-1" id="${chevronId}"></i> 查看考评项
+                    </button>
+                </td>
+            </tr>
+            <tr id="${rowId}" style="display: none;">
+                <td colspan="8">
+                    <div class="card">
+                        <div class="card-header bg-light">
+                            <div class="fw-bold">反馈表单 ${escapeHtml(group.form_id)} 的考评项</div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>考评项</th>
+                                            <th>部门扣分</th>
+                                            <th>个人扣分</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>${itemRows}</tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    return `
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered">
+                <thead>
+                    <tr>
+                        <th>反馈表单ID</th>
+                        <th>时间</th>
+                        <th>教师</th>
+                        <th>课程</th>
+                        <th>考评项数量</th>
+                        <th>部门扣分</th>
+                        <th>个人扣分</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderPreviewScoreTable(title, snapshot) {
+    const safeSnapshot = snapshot || {total_department_score: 0, total_personal_score: 0, items: []};
+    const items = safeSnapshot.items || [];
+    const rows = items.length > 0
+        ? items.map(item => `
+            <tr>
+                <td>${escapeHtml(item.reason)}</td>
+                <td>${formatScore(item.department_score)}</td>
+                <td>${formatScore(item.personal_score)}</td>
+            </tr>
+        `).join('')
+        : '<tr><td colspan="3" class="text-center text-muted">无考评项</td></tr>';
+
+    return `
+        <div class="col-md-6 mb-3">
+            <div class="border rounded h-100">
+                <div class="px-3 py-2 border-bottom bg-light fw-bold">${escapeHtml(title)}</div>
+                <div class="p-3">
+                    <div class="mb-2">
+                        <span class="me-3">部门扣分：${formatScore(safeSnapshot.total_department_score)}</span>
+                        <span>个人扣分：${formatScore(safeSnapshot.total_personal_score)}</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-0">
+                            <thead>
+                                <tr>
+                                    <th>考评项</th>
+                                    <th>部门扣分</th>
+                                    <th>个人扣分</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderPreviewSummary(data) {
+    const summary = data.summary || {};
+    const skippedDetails = (data.skipped_details || []).length > 0
+        ? `<div class="mt-2 small text-muted">${data.skipped_details.map(item => escapeHtml(item)).join('<br>')}</div>`
+        : '';
+    const unchanged = (data.unchanged_form_ids || []).length > 0
+        ? `<div class="mt-2 small text-muted">未发生变化的表单ID：${data.unchanged_form_ids.map(id => escapeHtml(id)).join('、')}</div>`
+        : '';
+
+    return `
+        <div class="alert alert-secondary mb-0">
+            <div class="fw-bold mb-2">预览汇总</div>
+            <div class="row g-2">
+                <div class="col-md-3">有效行数：${escapeHtml(summary.valid_row_count || 0)}</div>
+                <div class="col-md-3">将改动表单数：${escapeHtml(summary.changed_form_count || 0)}</div>
+                <div class="col-md-3">未变化表单数：${escapeHtml(summary.unchanged_form_count || 0)}</div>
+                <div class="col-md-3">跳过行数：${escapeHtml(summary.skipped_count || 0)}</div>
+            </div>
+            ${unchanged}
+            ${skippedDetails}
+        </div>
+    `;
+}
+
+function renderPreviewChangedForms(changedForms) {
+    if (!changedForms || changedForms.length === 0) {
+        return '<div class="alert alert-info mb-0">本次导入不会改动任何考评记录。</div>';
+    }
+
+    return changedForms.map(form => `
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <div class="fw-bold">表单ID：${escapeHtml(form.form_id)}</div>
+                    <div class="text-muted small">
+                        听课人编号：${escapeHtml(form.listener_number || '-')}，
+                        教师：${escapeHtml(form.teacher_name || '-')}，
+                        课程：${escapeHtml(form.course_title || '-')}
+                    </div>
+                </div>
+                <span class="badge ${form.change_type === 'create' ? 'bg-success' : 'bg-warning text-dark'}">
+                    ${form.change_type === 'create' ? '新增评分' : '覆盖原评分'}
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    ${renderPreviewScoreTable('改动前', form.before)}
+                    ${renderPreviewScoreTable('改动后', form.after)}
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function showImportPreview(data) {
+    document.getElementById('importPreviewSummary').innerHTML = renderPreviewSummary(data);
+    document.getElementById('importPreviewBody').innerHTML = renderPreviewChangedForms(data.changed_forms || []);
+
+    const confirmBtn = document.getElementById('btnConfirmImportPreview');
+    confirmBtn.disabled = !data.changed_forms || data.changed_forms.length === 0;
+
+    if (!previewModalInstance) {
+        previewModalInstance = new bootstrap.Modal(document.getElementById('importPreviewModal'));
+    }
+    previewModalInstance.show();
+}
+
+function previewManualAssessments() {
+    const fileInput = document.getElementById('importFile');
+    if (!fileInput.files || fileInput.files.length === 0) {
+        alert('请先选择导入文件');
+        return;
+    }
+
+    pendingImportFile = fileInput.files[0];
+    const fd = new FormData();
+    fd.append('file', pendingImportFile);
+
+    const importBtn = document.getElementById('btnImport');
+    importBtn.disabled = true;
+    fetch('/admin/api/review/assessment/import/preview', {
+        method: 'POST',
+        body: fd
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '预览失败');
+                return;
+            }
+            showImportPreview(data);
+        })
+        .catch(() => alert('预览失败，请稍后重试'))
+        .finally(() => {
+            importBtn.disabled = false;
+        });
+}
+
+function confirmManualAssessmentImport() {
+    if (!pendingImportFile) {
+        alert('请先选择导入文件并完成预览');
+        return;
+    }
+
+    const fd = new FormData();
+    fd.append('file', pendingImportFile);
+
+    const confirmBtn = document.getElementById('btnConfirmImportPreview');
+    confirmBtn.disabled = true;
+    fetch('/admin/api/review/assessment/import', {
+        method: 'POST',
+        body: fd
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '导入失败');
+                return;
+            }
+            const skippedDetails = data.skipped_details && data.skipped_details.length > 0
+                ? `\n跳过原因：\n${data.skipped_details.join('\n')}`
+                : '';
+            const unchangedText = data.unchanged_form_count
+                ? `，未变化表单 ${data.unchanged_form_count} 张`
+                : '';
+            alert(`导入完成：成功写入 ${data.imported_count} 行，影响 ${data.imported_form_count || 0} 张表单${unchangedText}，跳过 ${data.skipped_count || 0} 行${skippedDetails}`);
+            pendingImportFile = null;
+            document.getElementById('importFile').value = '';
+            if (previewModalInstance) {
+                previewModalInstance.hide();
+            }
+            loadStats();
+        })
+        .catch(() => alert('导入失败，请稍后重试'))
+        .finally(() => {
+            confirmBtn.disabled = false;
+        });
+}
+
+function selectAllUsers(flag) {
+    document.querySelectorAll('.user-item').forEach(el => { el.checked = flag; });
+}
+
+function initPage() {
+    setDefaultDates();
+    fetch('/admin/api/review/user-structure')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '加载用户结构失败');
+                return;
+            }
+            structureRawData = data;
+            renderStructure();
+        })
+        .catch(() => alert('加载用户结构失败'));
+
+    document.getElementById('btnLoadStats').addEventListener('click', loadStats);
+    document.getElementById('btnExportStats').addEventListener('click', exportAssessmentStats);
+    document.getElementById('btnSelectAll').addEventListener('click', () => selectAllUsers(true));
+    document.getElementById('btnClearAll').addEventListener('click', () => selectAllUsers(false));
+    const importBtn = document.getElementById('btnImport');
+    if (importBtn) {
+        importBtn.addEventListener('click', previewManualAssessments);
+        document.getElementById('btnConfirmImportPreview').addEventListener('click', confirmManualAssessmentImport);
+    }
+    document.getElementById('userSearchInput').addEventListener('input', filterStructure);
+}
+
+document.addEventListener('DOMContentLoaded', initPage);
+</script>
+{% endblock %}

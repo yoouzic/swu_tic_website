@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}自动审核结果 - 专业审查{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title">
+                        <i class="fas fa-clipboard-check mr-2"></i> 
+                        自动审核结果 - 专业审查
+                    </h3>
+                    <div>
+                        <span id="taskStatus" class="badge bg-secondary me-2">加载中...</span>
+                        <button class="btn btn-primary btn-sm" onclick="loadResults()">
+                            <i class="fas fa-sync"></i> 刷新
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="resultsContent">
+                        <div class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">正在加载审核结果...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 查看表单模态框 -->
+<div class="modal fade" id="viewFormModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">表单详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="viewFormContent">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 查看表单详情
+    function viewForm(id) {
+        const modal = new bootstrap.Modal(document.getElementById('viewFormModal'));
+        modal.show();
+        
+        const contentDiv = document.getElementById('viewFormContent');
+        contentDiv.innerHTML = `
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 text-muted">正在加载表单详情...</p>
+            </div>
+        `;
+        
+        fetch(`/admin/form/${id}?format=json`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    contentDiv.innerHTML = data.html || '<div class="alert alert-warning">暂无表单详情</div>';
+                } else {
+                    contentDiv.innerHTML = `<div class="alert alert-danger">加载失败: ${data.message || '未知错误'}</div>`;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                contentDiv.innerHTML = `<div class="alert alert-danger">加载失败: ${error.message}</div>`;
+            });
+    }
+
+    // 驳回表单
+    function rejectForm(id) {
+        const reason = prompt("请输入驳回原因：");
+        if (reason === null) return; // 用户取消
+        
+        if (confirm('确定要驳回此表单吗？')) {
+            fetch(`/admin/api/review/reject/${id}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    reason: reason
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('表单已驳回');
+                    loadResults(); // 刷新列表
+                } else {
+                    alert('驳回失败: ' + (data.message || '未知错误'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('驳回失败: 网络错误');
+            });
+        }
+    }
+
+    function loadResults() {
+        fetch('/admin/api/review/auto_check/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    renderResults(data);
+                } else {
+                    document.getElementById('resultsContent').innerHTML = '<div class="alert alert-danger">加载失败: ' + (data.message || '未知错误') + '</div>';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('resultsContent').innerHTML = '<div class="alert alert-danger">加载失败，请检查网络</div>';
+            });
+    }
+
+    function renderResults(data) {
+        const statusBadge = document.getElementById('taskStatus');
+        if (data.status === 'completed') {
+            statusBadge.textContent = '已完成';
+            statusBadge.className = 'badge bg-success';
+        } else if (data.status === 'running') {
+            statusBadge.textContent = '运行中';
+            statusBadge.className = 'badge bg-primary';
+        } else if (data.status === 'failed') {
+            statusBadge.textContent = '失败';
+            statusBadge.className = 'badge bg-danger';
+        } else {
+            statusBadge.textContent = '未运行';
+            statusBadge.className = 'badge bg-secondary';
+        }
+
+        if (!data.result || !data.result.results) {
+            document.getElementById('resultsContent').innerHTML = `
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i> 暂无审核结果数据。请先在“审核表单”页面进行一键自动审核。
+                </div>`;
+            return;
+        }
+
+        const results = data.result.results;
+        const processed = data.result.processed || 0;
+        const ignored = data.result.ignored || 0;
+        
+        let html = `
+            <div class="alert alert-success mb-4">
+                <h5 class="alert-heading"><i class="fas fa-check-circle me-2"></i>审核完成</h5>
+                <p class="mb-0">本次自动审核共处理 <strong>${processed}</strong> 份表单，忽略 <strong>${ignored}</strong> 份（非待审核或非无需人工审核）。</p>
+                <small class="text-muted">审核时间：${data.time || '-'}</small>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 10%">听课人</th>
+                            <th style="width: 10%">编号</th>
+                            <th style="width: 15%">专业</th>
+                            <th style="width: 20%">班级组成</th>
+                            <th style="width: 10%">审核状态</th>
+                            <th style="width: 25%">问题项</th>
+                            <th style="width: 10%">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        if (results.length === 0) {
+            html += `<tr><td colspan="7" class="text-center text-muted py-3">没有符合条件的表单被处理</td></tr>`;
+        } else {
+            results.forEach(item => {
+                const issuesHtml = (item.issues || []).map(i => `<div class="text-danger small mb-1"><i class="fas fa-exclamation-circle me-1"></i> ${i}</div>`).join('');
+                const fixesHtml = (item.fixes || []).map(f => `<div class="text-success small mb-1"><i class="fas fa-wrench me-1"></i> ${f}</div>`).join('');
+                
+                let statusBadge = '';
+                if (item.passed) {
+                    statusBadge = '<span class="badge bg-success">通过</span>';
+                } else {
+                    statusBadge = '<span class="badge bg-warning text-dark">发现问题</span>';
+                }
+                
+                html += `
+                    <tr>
+                        <td>${item.listener || '-'}</td>
+                        <td>${item.listener_number || '-'}</td>
+                        <td>${item.major || '-'}</td>
+                        <td>${item.class_composition || '-'}</td>
+                        <td>${statusBadge}</td>
+                        <td>
+                            ${issuesHtml || '<span class="text-muted small">无问题</span>'}
+                            ${fixesHtml}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button onclick="viewForm(${item.id})" class="btn btn-outline-info" title="查看表单详情">
+                                    <i class="fas fa-eye me-1"></i> 查看详情
+                                </button>
+                                <button onclick="rejectForm(${item.id})" class="btn btn-outline-danger" title="驳回">
+                                    <i class="fas fa-times me-1"></i> 驳回
+                                </button>
+                                <a href="/admin/review/form/${item.id}" target="_blank" class="btn btn-outline-warning" title="人工复审">
+                                    <i class="fas fa-user-edit me-1"></i> 人工审核
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        html += `</tbody></table></div>`;
+        document.getElementById('resultsContent').innerHTML = html;
+    }
+
+    document.addEventListener('DOMContentLoaded', loadResults);
+</script>
+{% endblock %}

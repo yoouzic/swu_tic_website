@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户首页 - 听课管理系统</title>
+    <link href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='vendor/bootstrap-icons/font/bootstrap-icons.css') }}" rel="stylesheet">
+    <style>
+        .hero-section {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+            color: white;
+            padding: 60px 0;
+        }
+        .feature-card {
+            transition: transform 0.3s;
+            border: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        }
+        .quick-access-btn {
+            height: 100px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-decoration: none;
+            color: inherit;
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+        .quick-access-btn:hover {
+            color: inherit;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-journal-text"></i> 听课管理系统
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="{{ url_for('main.index') }}">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('user.submit_form') }}">填写听课表</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('user.my_forms') }}">我的表单</a>
+                    </li>
+                </ul>
+                <ul class="navbar-nav">
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-person-circle"></i> {{ user.name }}
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('user.profile') }}">个人资料</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.change_password') }}">修改密码</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">退出登录</a></li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 欢迎区域 -->
+    <div class="hero-section">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1 class="display-4 fw-bold">欢迎回来，{{ user.name }}</h1>
+                    <p class="lead">开始您的听课记录之旅</p>
+                    <p class="mb-4">{{ user.department }} - {{ user.major }} - {{ user.grade }}</p>
+                    <a href="{{ url_for('user.submit_form') }}" class="btn btn-light btn-lg">
+                        <i class="bi bi-plus-circle"></i> 填写听课表
+                    </a>
+                </div>
+                <div class="col-md-4 text-center">
+                    <i class="bi bi-journal-text" style="font-size: 8rem; opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 快速访问 -->
+    <div class="container my-5">
+        <h3 class="mb-4"><i class="bi bi-lightning-fill"></i> 快速访问</h3>
+        <div class="row">
+            <div class="col-md-3 mb-3">
+                <a href="{{ url_for('user.submit_form') }}" class="quick-access-btn btn btn-outline-primary w-100">
+                    <i class="bi bi-plus-circle fs-1 mb-2"></i>
+                    <span>填写听课表</span>
+                </a>
+            </div>
+            <div class="col-md-3 mb-3">
+                <a href="{{ url_for('user.my_forms') }}" class="quick-access-btn btn btn-outline-success w-100">
+                    <i class="bi bi-file-earmark-text fs-1 mb-2"></i>
+                    <span>我的表单</span>
+                </a>
+            </div>
+            <div class="col-md-3 mb-3">
+                <a href="{{ url_for('user.profile') }}" class="quick-access-btn btn btn-outline-info w-100">
+                    <i class="bi bi-person-gear fs-1 mb-2"></i>
+                    <span>个人资料</span>
+                </a>
+            </div>
+            <div class="col-md-3 mb-3">
+                <a href="{{ url_for('auth.change_password') }}" class="quick-access-btn btn btn-outline-warning w-100">
+                    <i class="bi bi-key fs-1 mb-2"></i>
+                    <span>修改密码</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 功能介绍 -->
+    <div class="container my-5">
+        <h3 class="mb-4"><i class="bi bi-star-fill"></i> 系统功能</h3>
+        <div class="row">
+            <div class="col-md-4 mb-4">
+                <div class="card feature-card h-100">
+                    <div class="card-body text-center">
+                        <i class="bi bi-journal-plus text-primary" style="font-size: 3rem;"></i>
+                        <h5 class="card-title mt-3">听课记录</h5>
+                        <p class="card-text">详细记录听课过程，包括课程信息、教学内容、听课感受等</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card feature-card h-100">
+                    <div class="card-body text-center">
+                        <i class="bi bi-clock-history text-success" style="font-size: 3rem;"></i>
+                        <h5 class="card-title mt-3">历史查看</h5>
+                        <p class="card-text">查看历史听课记录，跟踪个人听课进度和成长轨迹</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card feature-card h-100">
+                    <div class="card-body text-center">
+                        <i class="bi bi-person-check text-info" style="font-size: 3rem;"></i>
+                        <h5 class="card-title mt-3">个人管理</h5>
+                        <p class="card-text">管理个人信息，修改密码，完善个人资料</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 使用指南 -->
+    <div class="container my-5">
+        <div class="row">
+            <div class="col-md-8 mx-auto">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> 使用指南</h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-2">点击"填写听课表"开始记录听课信息</li>
+                            <li class="mb-2">详细填写课程信息、授课教师、听课内容等</li>
+                            <li class="mb-2">提交表单后等待管理员审核</li>
+                            <li class="mb-2">在"我的表单"中查看提交历史和审核状态</li>
+                            <li class="mb-0">定期更新个人资料，保持信息准确</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 页脚 -->
+    <footer class="bg-dark text-light py-4 mt-5">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>听课管理系统</h6>
+                    <p class="mb-0">服务学生学习,服务教师教学,服务教学决策管理</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <p class="mb-0">© 2026 SWU TIC. 保留所有权利.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+    {% include 'main/_leave_reminder_modal.html' %}
+</body>
+</html>

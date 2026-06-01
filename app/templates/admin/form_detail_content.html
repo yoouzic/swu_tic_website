@@ -1,0 +1,164 @@
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <h4 class="text-center mb-4">西南大学学生教学质量监控信息（意见）处理笺</h4>
+            
+            <table class="table table-bordered">
+                <tbody>
+                    <tr>
+                        <th style="width: 15%;">听课人</th>
+                        <td style="width: 35%;">{{ form.listener_name }} ({{ form.listener_number }})</td>
+                        <th style="width: 15%;">听课时间</th>
+                        <td style="width: 35%;">{{ form.lecture_date }} {{ form.class_period }}</td>
+                    </tr>
+                    <tr>
+                        <th>听课地点</th>
+                        <td colspan="3">{{ form.lecture_location }}</td>
+                    </tr>
+                    <tr>
+                        <th>课程名称</th>
+                        <td>{{ form.course_title }}</td>
+                        <th>专业年级</th>
+                        <td>{{ form.student_grade_class }}</td>
+                    </tr>
+                    <tr>
+                        <th>授课教师</th>
+                        <td>{{ form.teacher_name }}</td>
+                        <th>所属学院</th>
+                        <td>{{ form.teacher_college }}</td>
+                    </tr>
+                    
+                    <tr>
+                        <th colspan="4" class="bg-light">异常情况反映</th>
+                    </tr>
+                    <tr>
+                        <td colspan="4">{{ form.abnormal_situation }}</td>
+                    </tr>
+                    
+                    <tr>
+                        <th colspan="4" class="bg-light">课堂教学评价</th>
+                    </tr>
+                    <tr>
+                        <th>主要教学方法</th>
+                        <td colspan="3">{{ form.teaching_method }}</td>
+                    </tr>
+                    <tr>
+                        <th>课堂纪律管理</th>
+                        <td colspan="3">{{ form.classroom_discipline }}</td>
+                    </tr>
+                    <tr>
+                        <th>课堂气氛调动</th>
+                        <td colspan="3">{{ form.classroom_atmosphere }}</td>
+                    </tr>
+                    <tr>
+                        <th>课件制作质量</th>
+                        <td colspan="3">{{ form.courseware_quality }}</td>
+                    </tr>
+                    <tr>
+                        <th>整体教学效果</th>
+                        <td colspan="3">{{ form.overall_effect }}</td>
+                    </tr>
+                    <tr>
+                        <th>优质案例推荐</th>
+                        <td colspan="3">{{ form.quality_case }}</td>
+                    </tr>
+                    
+                    <tr>
+                        <th colspan="4" class="bg-light">课程反馈 (优点)</th>
+                    </tr>
+                    <tr>
+                        <td colspan="4" style="white-space: pre-wrap;">{{ form.course_feedback }}</td>
+                    </tr>
+                    
+                    <tr>
+                        <th colspan="4" class="bg-light">不足及建议</th>
+                    </tr>
+                    <tr>
+                        <td colspan="4" style="white-space: pre-wrap;">{{ form.suggestions }}</td>
+                    </tr>
+                    
+                    <tr>
+                        <th colspan="4" class="bg-light">其他信息</th>
+                    </tr>
+                    <tr>
+                        <th>课程信息变化</th>
+                        <td colspan="3">{{ form.course_changes }}</td>
+                    </tr>
+                    <tr>
+                        <th>班级同学签名</th>
+                        <td>{{ form.student_signature1 }} ({{ form.contact_phone1 }})</td>
+                        <th>班级同学签名2</th>
+                        <td>{{ form.student_signature2 or '无' }} ({{ form.contact_phone2 or '无' }})</td>
+                    </tr>
+                    
+                    {% if form.status != '待审核' %}
+                    <tr>
+                        <th colspan="4" class="bg-light">审核信息</th>
+                    </tr>
+                    <tr>
+                        <th>审核状态</th>
+                        <td>
+                            {% if form.status == '已驳回' %}
+                                <span class="text-danger">{{ form.status }}</span>
+                            {% else %}
+                                <span class="text-success">{{ form.status }}</span>
+                            {% endif %}
+                        </td>
+                        <th>审核时间</th>
+                        <td>{{ form.review_time.strftime('%Y-%m-%d %H:%M') if form.review_time else '-' }}</td>
+                    </tr>
+                    <tr>
+                        <th>审核人</th>
+                        <td>
+                            {% if form.reviewer %}
+                                {% if reviewer_display_mode == 'number' %}
+                                    {{ form.reviewer.number or '-' }}
+                                {% else %}
+                                    {{ form.reviewer.name or form.reviewer.number or '-' }}
+                                {% endif %}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <th>审核意见</th>
+                        <td>{{ form.review_comment or '无' }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if score_record %}
+                    <tr>
+                        <th colspan="4" class="bg-light">扣分情况</th>
+                    </tr>
+                    <tr>
+                        <td colspan="4">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered mb-2">
+                                    <thead>
+                                        <tr>
+                                            <th>扣分原因</th>
+                                            <th>部门扣分</th>
+                                            <th>个人扣分</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for item in score_record.items %}
+                                        <tr>
+                                            <td>{{ item.reason }}</td>
+                                            <td>{{ item.department_score }}</td>
+                                            <td>{{ item.personal_score }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="d-flex justify-content-end">
+                                <span class="mr-3">部门累计扣分：{{ score_record.total_department_score }}</span>
+                                <span>个人累计扣分：{{ score_record.total_personal_score }}</span>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

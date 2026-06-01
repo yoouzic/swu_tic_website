@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+
+{% block title %}编辑资料 - 西南大学教学信息中心{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">
+                    <i class="bi bi-pencil-square"></i> 编辑个人资料
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info" role="alert">
+                    <i class="bi bi-info-circle"></i>
+                    请确保信息准确无误。带 <span class="text-danger">*</span> 的字段为必填项。
+                </div>
+                {% macro locked_hint(field) -%}
+                    {% if field not in editable_fields %}
+                        <div class="form-text text-muted">该项暂不允许自行修改</div>
+                    {% endif %}
+                {%- endmacro %}
+                
+                <form method="POST" id="editProfileForm">
+                    <div class="row">
+                        <!-- 基本信息 -->
+                        <div class="col-md-6">
+                            <h6 class="text-primary mb-3">
+                                <i class="bi bi-person"></i> 基本信息
+                            </h6>
+                            
+                            <div class="mb-3">
+                                {% set can_edit_name = 'name' in editable_fields %}
+                                <label for="name" class="form-label">
+                                    <i class="bi bi-person"></i> 姓名 {% if can_edit_name %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                <input type="text" class="form-control" id="name" name="name" 
+                                       value="{{ user.name }}" {% if can_edit_name %}required{% else %}readonly{% endif %}>
+                                {{ locked_hint('name') }}
+                            </div>
+                            
+                            <div class="mb-3">
+                                {% set can_edit_gender = 'gender' in editable_fields %}
+                                <label for="gender" class="form-label">
+                                    <i class="bi bi-gender-ambiguous"></i> 性别 {% if can_edit_gender %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                <select class="form-select" id="gender" name="gender" {% if can_edit_gender %}required{% else %}disabled{% endif %}>
+                                    <option value="">请选择性别</option>
+                                    <option value="男" {{ 'selected' if user.gender == '男' }}>男</option>
+                                    <option value="女" {{ 'selected' if user.gender == '女' }}>女</option>
+                                </select>
+                                {{ locked_hint('gender') }}
+                            </div>
+                            
+                            <div class="mb-3">
+                                {% set can_edit_grade = 'grade' in editable_fields %}
+                                <label for="grade" class="form-label">
+                                    <i class="bi bi-mortarboard"></i> 年级 {% if can_edit_grade %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                <select class="form-select" id="grade" name="grade" {% if can_edit_grade %}required{% else %}disabled{% endif %}>
+                                    <option value="">请选择年级</option>
+                                    <option value="2021级" {{ 'selected' if user.grade == '2021级' }}>2021级</option>
+                                    <option value="2022级" {{ 'selected' if user.grade == '2022级' }}>2022级</option>
+                                    <option value="2023级" {{ 'selected' if user.grade == '2023级' }}>2023级</option>
+                                    <option value="2024级" {{ 'selected' if user.grade == '2024级' }}>2024级</option>
+                                </select>
+                                {{ locked_hint('grade') }}
+                            </div>
+                            
+                            <div class="mb-3">
+                                {% set can_edit_college = 'college' in editable_fields %}
+                                <label for="college" class="form-label">
+                                    <i class="bi bi-building"></i> 学院 {% if can_edit_college %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                <input type="text" class="form-control" id="college" name="college" 
+                                       value="{{ user.college }}" placeholder="如：计算机与信息科学学院" {% if can_edit_college %}required{% else %}readonly{% endif %}>
+                                {{ locked_hint('college') }}
+                            </div>
+                            
+                            <div class="mb-3">
+                                {% set can_edit_major = 'major' in editable_fields %}
+                                <label for="major" class="form-label">
+                                    <i class="bi bi-book"></i> 专业 {% if can_edit_major %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                <input type="text" class="form-control" id="major" name="major" 
+                                       value="{{ user.major }}" placeholder="如：计算机科学与技术" {% if can_edit_major %}required{% else %}readonly{% endif %}>
+                                {{ locked_hint('major') }}
+                            </div>
+                        </div>
+                        
+                        <!-- 联系信息 -->
+                        <div class="col-md-6">
+                            <h6 class="text-success mb-3">
+                                <i class="bi bi-telephone"></i> 联系信息
+                            </h6>
+                            
+                            <div class="mb-3">
+                                {% set can_edit_dormitory = 'dormitory' in editable_fields %}
+                                <label for="dormitory" class="form-label">
+                                    <i class="bi bi-house"></i> 宿舍
+                                </label>
+                                <input type="text" class="form-control" id="dormitory" name="dormitory" 
+                                       value="{{ user.dormitory }}" placeholder="如：1栋101" {% if not can_edit_dormitory %}readonly{% endif %}>
+                                {{ locked_hint('dormitory') }}
+                            </div>
+                            
+                            <div class="mb-3">
+                                {% set can_edit_phone = 'phone' in editable_fields %}
+                                <label for="phone" class="form-label">
+                                    <i class="bi bi-telephone"></i> 手机号码 {% if can_edit_phone %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                <input type="tel" class="form-control" id="phone" name="phone" 
+                                       value="{{ user.phone }}" placeholder="请输入11位手机号" {% if can_edit_phone %}required{% else %}readonly{% endif %}>
+                                {% if can_edit_phone %}
+                                    <div class="form-text">请输入有效的11位手机号码</div>
+                                {% else %}
+                                    {{ locked_hint('phone') }}
+                                {% endif %}
+                            </div>
+                            
+                            <div class="mb-3">
+                                {% set can_edit_qq = 'qq' in editable_fields %}
+                                <label for="qq" class="form-label">
+                                    <i class="bi bi-chat-dots"></i> QQ号码
+                                </label>
+                                <input type="text" class="form-control" id="qq" name="qq" 
+                                       value="{{ user.qq }}" placeholder="请输入QQ号码" {% if not can_edit_qq %}readonly{% endif %}>
+                                {{ locked_hint('qq') }}
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="student_id" class="form-label">
+                                    <i class="bi bi-card-text"></i> 学号
+                                </label>
+                                <input type="text" class="form-control" id="student_id" name="student_id" 
+                                       value="{{ user.student_id }}" readonly>
+                                <div class="form-text text-muted">学号不可修改</div>
+                            </div>
+                            
+                            <!-- 只有超级管理员可以修改部门 -->
+                            {% if session.user_role == '超级管理员' %}
+                            <div class="mb-3">
+                                <label for="department" class="form-label">
+                                    <i class="bi bi-diagram-3"></i> 部门
+                                </label>
+                                <select class="form-select" id="department" name="department">
+                                    <option value="">请选择部门</option>
+                                    <option value="办公部" {{ 'selected' if user.department == '办公部' }}>办公部</option>
+                                    <option value="策划部" {{ 'selected' if user.department == '策划部' }}>策划部</option>
+                                    <option value="技术部" {{ 'selected' if user.department == '技术部' }}>技术部</option>
+                                    <option value="宣传部" {{ 'selected' if user.department == '宣传部' }}>宣传部</option>
+                                </select>
+                            </div>
+                            {% else %}
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    <i class="bi bi-diagram-3"></i> 部门
+                                </label>
+                                <input type="text" class="form-control" value="{{ user.department }}" readonly>
+                                <div class="form-text text-muted">部门信息由管理员设置</div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <hr class="my-4">
+                    
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('user.profile') }}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> 返回
+                        </a>
+                        <div>
+                            <button type="reset" class="btn btn-outline-secondary me-2">
+                                <i class="bi bi-arrow-clockwise"></i> 重置
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-lg"></i> 保存修改
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const editableFields = new Set({{ editable_fields|list|tojson }});
+function isProfileFieldEditable(field) {
+    return editableFields.has(field);
+}
+
+// 表单验证
+document.getElementById('editProfileForm').addEventListener('submit', function(e) {
+    const name = document.getElementById('name').value.trim();
+    const phone = document.getElementById('phone').value.trim();
+    const gender = document.getElementById('gender').value;
+    const grade = document.getElementById('grade').value;
+    const college = document.getElementById('college').value.trim();
+    const major = document.getElementById('major').value.trim();
+    
+    // 检查必填字段
+    if (isProfileFieldEditable('name') && !name) {
+        e.preventDefault();
+        alert('请输入姓名');
+        return;
+    }
+    
+    if (isProfileFieldEditable('gender') && !gender) {
+        e.preventDefault();
+        alert('请选择性别');
+        return;
+    }
+    
+    if (isProfileFieldEditable('grade') && !grade) {
+        e.preventDefault();
+        alert('请选择年级');
+        return;
+    }
+    
+    if (isProfileFieldEditable('college') && !college) {
+        e.preventDefault();
+        alert('请输入学院');
+        return;
+    }
+    
+    if (isProfileFieldEditable('major') && !major) {
+        e.preventDefault();
+        alert('请输入专业');
+        return;
+    }
+    
+    // 手机号验证
+    if (isProfileFieldEditable('phone') && !phone) {
+        e.preventDefault();
+        alert('请输入手机号码');
+        return;
+    }
+    
+    if (isProfileFieldEditable('phone') && !/^1[3-9]\d{9}$/.test(phone)) {
+        e.preventDefault();
+        alert('请输入有效的11位手机号码');
+        return;
+    }
+    
+    // QQ号验证（如果填写了）
+    const qq = document.getElementById('qq').value.trim();
+    if (isProfileFieldEditable('qq') && qq && !/^[1-9]\d{4,10}$/.test(qq)) {
+        e.preventDefault();
+        alert('请输入有效的QQ号码（5-11位数字）');
+        return;
+    }
+});
+
+// 实时手机号验证
+document.getElementById('phone').addEventListener('input', function() {
+    const phone = this.value.trim();
+    const isValid = /^1[3-9]\d{9}$/.test(phone);
+    
+    if (phone && !isValid) {
+        this.classList.add('is-invalid');
+        this.classList.remove('is-valid');
+    } else if (phone && isValid) {
+        this.classList.add('is-valid');
+        this.classList.remove('is-invalid');
+    } else {
+        this.classList.remove('is-valid', 'is-invalid');
+    }
+});
+
+// 实时QQ号验证
+document.getElementById('qq').addEventListener('input', function() {
+    const qq = this.value.trim();
+    const isValid = /^[1-9]\d{4,10}$/.test(qq);
+    
+    if (qq && !isValid) {
+        this.classList.add('is-invalid');
+        this.classList.remove('is-valid');
+    } else if (qq && isValid) {
+        this.classList.add('is-valid');
+        this.classList.remove('is-invalid');
+    } else {
+        this.classList.remove('is-valid', 'is-invalid');
+    }
+});
+
+// 姓名输入限制（只允许中文、英文和空格）
+document.getElementById('name').addEventListener('input', function() {
+    const name = this.value;
+    const validName = name.replace(/[^\u4e00-\u9fa5a-zA-Z\s]/g, '');
+    if (name !== validName) {
+        this.value = validName;
+    }
+});
+</script>
+{% endblock %}

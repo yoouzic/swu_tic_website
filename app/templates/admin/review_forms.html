@@ -1,0 +1,1901 @@
+{% extends "base.html" %}
+
+{% block title %}表单审核 - 管理员面板{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-clipboard-check mr-2"></i>
+                        表单审核管理
+                    </h3>
+                    <div class="card-tools">
+                        <span class="badge bg-info text-dark" id="permissionBadge">检查权限中...</span>
+                    </div>
+                </div>
+                
+                <div class="card-body" id="mainContent" style="display: none;">
+                    <!-- 筛选条件 -->
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5 class="card-title mb-0">
+                                        <i class="fas fa-filter mr-2"></i>筛选条件
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <!-- 时间范围 -->
+                                        <div class="col-md-2">
+                                            <label for="startDate">开始时间：</label>
+                                            <input type="date" class="form-control" id="startDate">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label for="endDate">结束时间：</label>
+                                            <input type="date" class="form-control" id="endDate">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label for="timeFilterType">时间条件：</label>
+                                            <select class="form-control" id="timeFilterType" style="color: black;">
+                                                <option value="created">表单创建时间</option>
+                                                <option value="lecture">听课时间</option>
+                                                <option value="updated">表单更新时间</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <!-- 表单状态 -->
+                                        <div class="col-md-2">
+                                            <label for="statusFilter">表单状态：</label>
+                                            <select class="form-control" id="statusFilter" style="color: black;">
+                                                <option value="">全部状态</option>
+                                                <option value="待审核">待审核</option>
+                                                <option value="部门已审核">部门已审核</option>
+                                                <option value="中心已审核">中心已审核</option>
+                                                <option value="已驳回">已驳回</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <!-- 搜索按钮 -->
+                                        <div class="col-md-4">
+                                            <label>&nbsp;</label>
+                                            <div>
+                                                <button class="btn btn-primary" onclick="loadUserStructure()">
+                                                    <i class="fas fa-search"></i> 查询表单
+                                                </button>
+                                                <button class="btn btn-info ms-2" onclick="showStatistics()">
+                                                    <i class="fas fa-chart-pie"></i> 查看统计
+                                                </button>
+                                                <button class="btn btn-secondary ms-2" onclick="resetFilters()">
+                                                    <i class="fas fa-undo"></i> 重置
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 用户选择区域 -->
+                    <div class="row mb-4" id="userSelectionArea" style="display: none;">
+                        <div class="col-md-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5 class="card-title mb-0">
+                                        <i class="fas fa-users mr-2"></i>选择审核范围
+                                        <small class="text-muted ms-2" id="permissionInfo"></small>
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row g-2 align-items-center mb-3">
+                                        <div class="col-md-6">
+                                            <input type="text" class="form-control" id="scopeSearchInput" placeholder="搜索部门/小组/信息员姓名/编号" oninput="applyScopeSearch()">
+                                        </div>
+                                        <div class="col-md-6 text-md-end">
+                                            <button class="btn btn-outline-primary btn-sm" id="scopeSearchBtn" onclick="applyScopeSearch()">
+                                                <i class="fas fa-search"></i> 搜索
+                                            </button>
+                                            <button class="btn btn-outline-success btn-sm ms-1" id="scopeSelectAllBtn" onclick="selectAllDepartments()">
+                                                <i class="fas fa-check-double"></i> 全选
+                                            </button>
+                                            <button class="btn btn-outline-secondary btn-sm ms-1" onclick="clearScopeSelection()">
+                                                <i class="fas fa-eraser"></i> 清空选择
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="small text-muted mb-2" id="scopeSearchStats"></div>
+                                    <div id="userStructure">
+                                        <!-- 用户结构将通过JavaScript动态加载 -->
+                                    </div>
+                                    <div class="mt-3">
+                                        <button class="btn btn-success" onclick="loadForms()">
+                                            <i class="fas fa-list"></i> 加载表单列表
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 表单列表 -->
+                    <div class="row" id="formsListArea" style="display: none;">
+                        <div class="col-md-12">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h5 class="card-title mb-0">
+                                        <i class="fas fa-list mr-2"></i>表单列表
+                                        <span class="badge bg-primary text-white ms-2" id="formsCount">0</span>
+                                    </h5>
+                                    <div>
+                                        <span class="badge bg-info text-dark me-2" id="selectedFormsHint" style="display:none;">已选择0表单</span>
+                                        <button class="btn btn-outline-secondary btn-sm me-2" onclick="toggleSelectionLock()" id="btnLockSelection" style="display:none;">
+                                            <i class="fas fa-lock"></i> 锁定选择
+                                        </button>
+                                        <button class="btn btn-outline-success btn-sm me-2" onclick="openSelectedFormsExportModal()" id="btnExportSelectedForms" style="display:none;">
+                                            <i class="fas fa-file-excel"></i> 导出已选择表单
+                                        </button>
+                                        <button class="btn btn-outline-primary btn-sm me-2" onclick="batchDefineForms()" id="btnBatchDefineTags" style="display:none;">
+                                            <i class="fas fa-tags"></i> 批量定义表单
+                                        </button>
+                                        <button class="btn btn-warning btn-sm" onclick="batchAutoReview()" id="btnAutoReview" style="display:none;">
+                                            <i class="fas fa-magic"></i> 一键自动审核
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-bordered table-striped" id="formsTable">
+                                            <thead>
+                                                <tr>
+                                                    <th width="5%">
+                                                        <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                                                    </th>
+                                                    <th width="10%">提交时间</th>
+                                                    <th width="9%">听课人</th>
+                                                    <th width="9%">信息员编号</th>
+                                                    <th width="9%">授课教师</th>
+                                                    <th width="15%">课程</th>
+                                                    <th width="8%">听课时间</th>
+                                                    <th width="8%">状态</th>
+                                                    <th width="7%">版本数</th>
+                                                    <th width="10%">更新时间</th>
+                                                    <th width="20%">操作</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="formsTableBody">
+                                                <!-- 表单数据将通过JavaScript动态加载 -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 无权限提示 -->
+                <div class="card-body text-center" id="noPermissionAlert" style="display: none;">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-3"></i>
+                        <h4>您不具有审表权限</h4>
+                        <p>如有疑问，请联系管理员</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 统计详情模态框 -->
+<div class="modal fade" id="statisticsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-chart-pie mr-2"></i>表单提交统计</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="statisticsContent">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted">正在加载统计数据...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="autoReviewDecisionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-magic mr-2"></i>自动审核确认</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="autoReviewDecisionSummary" class="mb-0" style="white-space: pre-wrap;"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="autoReviewCancelBtn" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="autoReviewNormalBtn">仅自动审核“无需人工审核”</button>
+                <button type="button" class="btn btn-danger" id="autoReviewForceBtn">强制审核“需人工审核”标签</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+
+// 显示统计信息
+function showStatistics() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    if (!startDate || !endDate) {
+        alert('请先选择开始时间和结束时间');
+        return;
+    }
+
+    // 显示模态框
+    const modal = new bootstrap.Modal(document.getElementById('statisticsModal'));
+    modal.show();
+    
+    const params = new URLSearchParams({
+        start_date: startDate,
+        end_date: endDate,
+        time_filter_type: document.getElementById('timeFilterType').value || 'created'
+    });
+
+    fetch(`/admin/api/review/statistics?${params}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderStatistics(data.stats, data.range_info);
+            } else {
+                document.getElementById('statisticsContent').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-circle mr-2"></i> ${data.message || '加载统计数据失败'}
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('statisticsContent').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-circle mr-2"></i> 加载统计数据失败，请检查网络连接
+                </div>
+            `;
+        });
+}
+
+function renderStatistics(stats, rangeInfo) {
+    const rangeText = rangeInfo
+        ? `${rangeInfo.start_date} 至 ${rangeInfo.end_date}`
+        : '时间范围获取失败';
+
+    let html = `
+        <div class="alert alert-primary">
+            <i class="fas fa-calendar-alt me-2"></i>当前统计范围：${rangeText}
+        </div>
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card h-100 border-success">
+                    <div class="card-header bg-success text-white">
+                        <h6 class="mb-0"><i class="fas fa-check-circle mr-2"></i>已完成任务 (${stats.completed.count}人)</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="accordion" id="completedAccordion">
+                            ${renderUserList(stats.completed.users, 'completed')}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card h-100 border-warning">
+                    <div class="card-header bg-warning text-dark">
+                        <h6 class="mb-0"><i class="fas fa-exclamation-circle mr-2"></i>未完成任务 (${stats.incomplete.count}人)</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="accordion" id="incompleteAccordion">
+                            ${renderUserList(stats.incomplete.users, 'incomplete')}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('statisticsContent').innerHTML = html;
+}
+
+function renderUserList(users, type) {
+    if (!users || users.length === 0) {
+        return '<p class="text-muted text-center my-3">暂无数据</p>';
+    }
+    
+    let html = '';
+    users.forEach((user, index) => {
+        const collapseId = `${type}Collapse${index}`;
+        const headingId = `${type}Heading${index}`;
+        
+        // 状态统计条
+        let statusBars = '';
+        if (user.forms && user.forms.length > 0) {
+            const total = user.forms.length;
+            const statusCounts = {};
+            user.forms.forEach(f => {
+                statusCounts[f.status] = (statusCounts[f.status] || 0) + 1;
+            });
+            
+            statusBars = '<div class="progress mt-2" style="height: 6px;">';
+            for (const [status, count] of Object.entries(statusCounts)) {
+                let colorClass = 'bg-secondary';
+                if (status === '中心已审核') colorClass = 'bg-success';
+                else if (status === '部门已审核') colorClass = 'bg-info';
+                else if (status === '待审核') colorClass = 'bg-warning';
+                else if (status === '已驳回') colorClass = 'bg-danger';
+                
+                const width = (count / total) * 100;
+                statusBars += `<div class="progress-bar ${colorClass}" role="progressbar" style="width: ${width}%" title="${status}: ${count}"></div>`;
+            }
+            statusBars += '</div>';
+        }
+        
+        html += `
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="${headingId}">
+                    <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}">
+                        <div class="d-flex justify-content-between w-100 align-items-center">
+                            <span>${user.name} <small class="text-muted">(${user.number})</small></span>
+                            <span class="badge bg-secondary rounded-pill me-2">${user.submitted_count}/${user.required_count}</span>
+                        </div>
+                    </button>
+                </h2>
+                <div id="${collapseId}" class="accordion-collapse collapse" data-bs-parent="#${type}Accordion">
+                    <div class="accordion-body py-2">
+                        <div class="small text-muted mb-1">所属：${user.department} - ${user.group}</div>
+                        ${statusBars}
+                        <div class="mt-2 small">
+                            ${user.forms.map(f => `
+                                <div class="d-flex justify-content-between border-bottom py-1">
+                                    <span>${f.date} ${f.period}</span>
+                                    <span class="badge ${getStatusBadgeClass(f.status)}">${f.status}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    return html;
+}
+
+function getStatusBadgeClass(status) {
+    switch (status) {
+        case '待审核': return 'bg-warning text-dark';
+        case '部门已审核': return 'bg-info text-dark';
+        case '中心已审核': return 'bg-success';
+        case '已驳回': return 'bg-danger';
+        default: return 'bg-secondary';
+    }
+}
+</script>
+<div class="modal fade" id="permissionWarningModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h4 class="modal-title">
+                    <i class="fas fa-exclamation-triangle"></i> 权限警告
+                </h4>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="permissionWarningMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">我知道了</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 表单详情模态框 -->
+<div class="modal fade" id="formDetailModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">表单详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="formDetailContent">
+                <!-- 详情内容将通过AJAX加载 -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 导出已选择表单模态框 -->
+<div class="modal fade" id="selectedFormsExportModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-file-excel me-2"></i>导出已选择表单</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="selectedFormsExportForm">
+                    <div class="alert alert-info py-2" id="selectedFormsExportSummary">
+                        导出范围：已选择 0 份表单
+                    </div>
+
+                    <div class="form-group">
+                        <label>导出模式</label>
+                        <div class="custom-control custom-radio">
+                            <input type="radio" id="selectedExportModeStandard" name="export_mode" value="standard" class="custom-control-input" checked onchange="handleSelectedExportModeChange()">
+                            <label class="custom-control-label" for="selectedExportModeStandard">规范 Excel 文件</label>
+                        </div>
+                        <div class="custom-control custom-radio">
+                            <input type="radio" id="selectedExportModeAllData" name="export_mode" value="all_data" class="custom-control-input" onchange="handleSelectedExportModeChange()">
+                            <label class="custom-control-label" for="selectedExportModeAllData">数据库全部字段</label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>排序方式</label>
+                        <div class="custom-control custom-radio">
+                            <input type="radio" id="selectedExportSortTime" name="sort_by" value="time" class="custom-control-input" checked>
+                            <label class="custom-control-label" for="selectedExportSortTime">按听课时间排序</label>
+                        </div>
+                        <div class="custom-control custom-radio">
+                            <input type="radio" id="selectedExportSortCourse" name="sort_by" value="course" class="custom-control-input">
+                            <label class="custom-control-label" for="selectedExportSortCourse">按课程排序 (学院-教师-课程)</label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>状态筛选 (可多选)</label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="custom-control custom-checkbox">
+                                    <input type="checkbox" class="custom-control-input selected-export-status-checkbox" id="selectedExportStatusCenter" value="中心已审核" checked>
+                                    <label class="custom-control-label" for="selectedExportStatusCenter">中心已审核</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="custom-control custom-checkbox">
+                                    <input type="checkbox" class="custom-control-input selected-export-status-checkbox" id="selectedExportStatusDept" value="部门已审核" checked>
+                                    <label class="custom-control-label" for="selectedExportStatusDept">部门已审核</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="custom-control custom-checkbox">
+                                    <input type="checkbox" class="custom-control-input selected-export-status-checkbox" id="selectedExportStatusPending" value="待审核">
+                                    <label class="custom-control-label" for="selectedExportStatusPending">待审核</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="custom-control custom-checkbox">
+                                    <input type="checkbox" class="custom-control-input selected-export-status-checkbox" id="selectedExportStatusRejected" value="已驳回">
+                                    <label class="custom-control-label" for="selectedExportStatusRejected">已驳回</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="selectedExportFilenameGroup">
+                        <label>文件名标题 (可选)</label>
+                        <input type="text" class="form-control" name="filename_title" placeholder="默认：未命名">
+                        <small class="form-text text-muted">最终文件名：学生教学信息中心听课反馈表汇总-[标题] [日期].xlsx</small>
+                    </div>
+                    <div class="form-group" id="selectedExportAllDataFilenameHint" style="display: none;">
+                        <label>文件名</label>
+                        <div class="form-control-plaintext text-muted">听课反馈表-[日期].xlsx</div>
+                    </div>
+
+                    <div id="selectedExportCheckResult" class="alert alert-info" style="display: none;">
+                        <i class="fas fa-spinner fa-spin"></i> 正在检查数据...
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-info" onclick="checkSelectedExportData()">
+                    <i class="fas fa-calculator"></i> 检查数量
+                </button>
+                <button type="button" class="btn btn-primary" id="btnConfirmSelectedExport" disabled onclick="executeSelectedExport()">
+                    <i class="fas fa-file-export"></i> 确认导出
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="formTagDefinitionModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-tags me-2"></i>定义表单标签</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info py-2">
+                        使用分号区分标签类别：第一个标签表示是否需要人工审核，第二个标签表示教学周修正（如“第7周”）。第二个标签允许不定义。
+                </div>
+                <div class="small text-muted mb-3" id="formTagDefinitionSummary">正在加载...</div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th width="8%">表单ID</th>
+                                <th width="12%">听课人</th>
+                                <th width="24%">教师与课程</th>
+                                <th width="20%">当前标签</th>
+                                <th width="18%">人工审核标签</th>
+                                <th width="18%">教学周修正</th>
+                            </tr>
+                        </thead>
+                        <tbody id="formTagDefinitionTableBody">
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">正在加载...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="saveFormTagDefinitionBtn" onclick="saveFormTagDefinitions()">保存定义</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPermission = null;
+let userStructureData = null;
+let selectedUserIds = [];
+const isSuperAdmin = {{ 'true' if is_super_admin else 'false' }};
+const teachingTotalWeeks = {{ teaching_total_weeks or 20 }};
+let currentTagDefinitionForms = [];
+let currentFormGroups = [];
+let selectionLocked = false;
+let lockedFormIds = new Set();
+let lockedFormGroups = new Map();
+
+function escapeAttrValue(value) {
+    return String(value || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function formatAuditTagInfo(tagInfo) {
+    const safeTagInfo = tagInfo || {};
+    const reviewTag = safeTagInfo.review_tag || '未定义';
+    const weekCorrectionTag = safeTagInfo.week_correction_tag || safeTagInfo.legacy_late_tag || '未定义';
+    const rawTag = safeTagInfo.raw || '';
+    const extraTags = Array.isArray(safeTagInfo.extra_tags) ? safeTagInfo.extra_tags : [];
+    let html = `
+        <div class="d-flex flex-wrap gap-1">
+            <span class="badge bg-primary">${escapeHtml(reviewTag)}</span>
+            <span class="badge bg-secondary">${escapeHtml(weekCorrectionTag)}</span>
+        </div>
+    `;
+    if (rawTag) {
+        html += `<div class="small text-muted mt-1">原始值：${escapeHtml(rawTag)}</div>`;
+    } else {
+        html += '<div class="small text-muted mt-1">原始值：未设置</div>';
+    }
+    if (extraTags.length > 0) {
+        html += `<div class="small text-danger mt-1">额外标签：${escapeHtml(extraTags.join('；'))}</div>`;
+    }
+    return html;
+}
+
+function buildReviewTagOptions(selectedValue) {
+    return ['需要人工审核', '无需人工审核'].map(option => `
+        <option value="${option}" ${selectedValue === option ? 'selected' : ''}>${option}</option>
+    `).join('');
+}
+
+function buildWeekCorrectionOptions(selectedValue) {
+    const normalizedValue = selectedValue || '';
+    const options = [{ value: '', label: '未定义' }];
+    const totalWeeks = Math.max(Number(teachingTotalWeeks || 20), 1);
+    for (let week = 1; week <= totalWeeks; week += 1) {
+        options.push({
+            value: `第${week}周`,
+            label: `第${week}周`
+        });
+    }
+    if (normalizedValue && !options.some(option => option.value === normalizedValue)) {
+        options.push({
+            value: normalizedValue,
+            label: `${normalizedValue}（旧标签）`
+        });
+    }
+    return options.map(option => `
+        <option value="${option.value}" ${normalizedValue === option.value ? 'selected' : ''}>${option.label}</option>
+    `).join('');
+}
+
+// 页面加载时检查权限
+document.addEventListener('DOMContentLoaded', function() {
+    checkPermission();
+    const scopeSearchInput = document.getElementById('scopeSearchInput');
+    if (scopeSearchInput) {
+        scopeSearchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                applyScopeSearch();
+            }
+        });
+    }
+});
+
+// 检查用户审核权限
+function checkPermission() {
+    fetch('/admin/api/review/permission')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.has_permission) {
+                currentPermission = data.permission;
+                document.getElementById('permissionBadge').textContent = `审核权限：${data.permission}`;
+                document.getElementById('permissionBadge').className = 'badge bg-success text-white';
+                document.getElementById('mainContent').style.display = 'block';
+                
+                // 设置默认时间范围（最近一周）
+                const endDate = new Date();
+                const startDate = new Date();
+                startDate.setDate(endDate.getDate() - 7);
+                
+                document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+                document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+            } else {
+                document.getElementById('permissionBadge').textContent = '无审核权限';
+                document.getElementById('permissionBadge').className = 'badge bg-danger text-white';
+                document.getElementById('noPermissionAlert').style.display = 'block';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('permissionBadge').textContent = '权限检查失败';
+            document.getElementById('permissionBadge').className = 'badge badge-danger';
+        });
+}
+
+// 加载用户结构
+function loadUserStructure() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    
+    if (!startDate || !endDate) {
+        alert('请选择时间范围');
+        return;
+    }
+    
+    fetch('/admin/api/review/user-structure')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                userStructureData = data.structure;
+                currentPermission = data.permission;
+                renderUserStructure();
+                document.getElementById('userSelectionArea').style.display = 'block';
+                document.getElementById('permissionInfo').textContent = `当前权限：${currentPermission}`;
+                const selectAllBtn = document.getElementById('scopeSelectAllBtn');
+                if (selectAllBtn) {
+                    if (currentPermission === '审表_中心') {
+                        selectAllBtn.innerHTML = '<i class="fas fa-check-double"></i> 一键全选全部门';
+                    } else {
+                        selectAllBtn.innerHTML = '<i class="fas fa-check-double"></i> 全选当前范围';
+                    }
+                }
+                const searchInput = document.getElementById('scopeSearchInput');
+                if (searchInput) {
+                    searchInput.value = '';
+                }
+                applyScopeSearch();
+            } else {
+                alert(data.message || '加载用户结构失败');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('加载用户结构失败');
+        });
+}
+
+// 渲染用户结构
+function renderUserStructure() {
+    const container = document.getElementById('userStructure');
+    let html = '';
+    
+    if (currentPermission === '审表_小组') {
+        html = `
+            <div class="card scope-group" data-keywords="小组成员">
+                <div class="card-header p-2 d-flex justify-content-between align-items-center">
+                    <span><strong><i class="fas fa-users me-1"></i> 小组成员</strong></span>
+                    <span class="badge bg-secondary">${userStructureData.length}人</span>
+                </div>
+                <div class="card-body p-2">
+        `;
+        userStructureData.forEach(user => {
+            const userKeywords = escapeAttrValue(`${user.name} ${user.number}`);
+            html += `
+                <div class="form-check scope-user" data-keywords="${userKeywords}">
+                    <input class="form-check-input user-checkbox" type="checkbox" 
+                           id="user_${user.id}" value="${user.id}">
+                    <label class="form-check-label" for="user_${user.id}">
+                        ${user.name} (${user.number})
+                    </label>
+                </div>
+            `;
+        });
+        html += '</div></div>';
+        
+    } else if (currentPermission === '审表_部门') {
+        html = '<div class="accordion" id="departmentAccordion">';
+        const groups = userStructureData;
+        
+        Object.keys(groups).forEach((groupName, index) => {
+            const groupKeywords = escapeAttrValue(groupName);
+            html += `
+                <div class="card scope-group" data-keywords="${groupKeywords}">
+                    <div class="card-header p-2 d-flex align-items-center">
+                        <div class="me-2">
+                            <input class="form-check-input group-checkbox" type="checkbox" 
+                                   id="group_${index}" onchange="toggleGroup('${index}')">
+                        </div>
+                        <div class="flex-grow-1 d-flex justify-content-between align-items-center" 
+                             style="cursor: pointer;" 
+                             data-bs-toggle="collapse" 
+                             data-bs-target="#collapse${index}">
+                            <span>
+                                <i class="fas fa-users me-1"></i> ${groupName}
+                                <span class="badge bg-secondary ms-2">${groups[groupName].length}人</span>
+                            </span>
+                            <i class="fas fa-chevron-down text-muted"></i>
+                        </div>
+                    </div>
+                    <div id="collapse${index}" class="collapse" data-bs-parent="#departmentAccordion">
+                        <div class="card-body p-2">
+            `;
+            
+            groups[groupName].forEach(user => {
+                const userKeywords = escapeAttrValue(`${groupName} ${user.name} ${user.number}`);
+                html += `
+                    <div class="form-check scope-user" data-keywords="${userKeywords}">
+                        <input class="form-check-input user-checkbox group-${index}" type="checkbox" 
+                               id="user_${user.id}" value="${user.id}">
+                        <label class="form-check-label" for="user_${user.id}">
+                            ${user.name} (${user.number})
+                        </label>
+                    </div>
+                `;
+            });
+            
+            html += '</div></div></div>';
+        });
+        
+        html += '</div>';
+        
+    } else if (currentPermission === '审表_中心') {
+        // 中心权限：按部门-小组-用户三级结构显示
+        html = '<div class="accordion" id="centerAccordion">';
+        
+        // userStructureData 已经是按部门-小组分组的对象结构
+        const departments = userStructureData;
+        
+        let deptIndex = 0;
+        Object.keys(departments).forEach(deptName => {
+            const deptKeywords = escapeAttrValue(deptName);
+            html += `
+                <div class="card scope-dept" data-keywords="${deptKeywords}">
+                    <div class="card-header p-2 d-flex align-items-center">
+                        <div class="me-2">
+                            <input class="form-check-input dept-checkbox" type="checkbox" 
+                                   id="dept_${deptIndex}" onchange="toggleDepartment('${deptIndex}')">
+                        </div>
+                        <div class="flex-grow-1 d-flex justify-content-between align-items-center" 
+                             style="cursor: pointer;" 
+                             data-bs-toggle="collapse" 
+                             data-bs-target="#deptCollapse${deptIndex}">
+                            <span><strong><i class="fas fa-building me-1"></i> ${deptName}</strong></span>
+                            <i class="fas fa-chevron-down text-muted"></i>
+                        </div>
+                    </div>
+                    <div id="deptCollapse${deptIndex}" class="collapse" data-bs-parent="#centerAccordion">
+                        <div class="card-body p-2">
+            `;
+            
+            let groupIndex = 0;
+            Object.keys(departments[deptName]).forEach(groupName => {
+                const groupId = `${deptIndex}_${groupIndex}`;
+                const groupKeywords = escapeAttrValue(`${deptName} ${groupName}`);
+                html += `
+                    <div class="card mb-2 border-0 shadow-sm scope-group" data-keywords="${groupKeywords}">
+                        <div class="card-header p-2 d-flex align-items-center bg-light">
+                            <div class="me-2">
+                                <input class="form-check-input group-checkbox dept-${deptIndex}" type="checkbox" 
+                                       id="group_${groupId}" onchange="toggleGroup('${groupId}')">
+                            </div>
+                            <div class="flex-grow-1 d-flex justify-content-between align-items-center" 
+                                 style="cursor: pointer;" 
+                                 data-bs-toggle="collapse" 
+                                 data-bs-target="#groupCollapse${groupId}">
+                                <span>
+                                    <i class="fas fa-users me-1"></i> ${groupName}
+                                    <span class="badge bg-secondary ms-2">${departments[deptName][groupName].length}人</span>
+                                </span>
+                                <i class="fas fa-chevron-down text-muted"></i>
+                            </div>
+                        </div>
+                        <div id="groupCollapse${groupId}" class="collapse show">
+                            <div class="card-body py-2">
+                `;
+                
+                departments[deptName][groupName].forEach(user => {
+                    const userKeywords = escapeAttrValue(`${deptName} ${groupName} ${user.name} ${user.number}`);
+                    html += `
+                        <div class="form-check scope-user" data-keywords="${userKeywords}">
+                            <input class="form-check-input user-checkbox group-${groupId}" type="checkbox" 
+                                   id="user_${user.id}" value="${user.id}">
+                            <label class="form-check-label" for="user_${user.id}">
+                                ${user.name} (${user.number})
+                            </label>
+                        </div>
+                    `;
+                });
+                
+                html += '</div></div></div>';
+                groupIndex++;
+            });
+            
+            html += '</div></div></div>';
+            deptIndex++;
+        });
+        
+        html += '</div>';
+    }
+    
+    container.innerHTML = html;
+    applyScopeSearch();
+}
+
+function applyScopeSearch() {
+    const keyword = (document.getElementById('scopeSearchInput')?.value || '').trim().toLowerCase();
+    const root = document.getElementById('userStructure');
+    if (!root) {
+        return;
+    }
+    const users = Array.from(root.querySelectorAll('.scope-user'));
+    const groups = Array.from(root.querySelectorAll('.scope-group'));
+    const departments = Array.from(root.querySelectorAll('.scope-dept'));
+    users.forEach(userRow => {
+        const text = (userRow.dataset.keywords || '').toLowerCase();
+        const matched = !keyword || text.includes(keyword);
+        userRow.dataset.matched = matched ? '1' : '0';
+        userRow.style.display = matched ? '' : 'none';
+    });
+    groups.forEach(groupCard => {
+        const text = (groupCard.dataset.keywords || '').toLowerCase();
+        const selfMatched = !keyword || text.includes(keyword);
+        const childMatched = Array.from(groupCard.querySelectorAll('.scope-user')).some(item => item.dataset.matched === '1');
+        const visible = selfMatched || childMatched;
+        groupCard.dataset.matched = visible ? '1' : '0';
+        groupCard.style.display = visible ? '' : 'none';
+    });
+    departments.forEach(deptCard => {
+        const text = (deptCard.dataset.keywords || '').toLowerCase();
+        const selfMatched = !keyword || text.includes(keyword);
+        const groupMatched = Array.from(deptCard.querySelectorAll('.scope-group')).some(item => item.dataset.matched === '1');
+        const userMatched = Array.from(deptCard.querySelectorAll('.scope-user')).some(item => item.dataset.matched === '1');
+        const visible = selfMatched || groupMatched || userMatched;
+        deptCard.dataset.matched = visible ? '1' : '0';
+        deptCard.style.display = visible ? '' : 'none';
+    });
+    const matchedUsers = users.filter(item => item.dataset.matched === '1').length;
+    const stats = document.getElementById('scopeSearchStats');
+    if (stats) {
+        if (!keyword) {
+            stats.textContent = `当前可选信息员：${users.length} 人`;
+        } else {
+            stats.textContent = `搜索命中信息员：${matchedUsers} 人`;
+        }
+    }
+}
+
+function selectAllDepartments() {
+    if (currentPermission === '审表_中心') {
+        document.querySelectorAll('.dept-checkbox').forEach(checkbox => {
+            checkbox.checked = true;
+            const deptId = checkbox.id.replace('dept_', '');
+            toggleDepartment(deptId);
+        });
+        return;
+    }
+    document.querySelectorAll('#userStructure .user-checkbox').forEach(checkbox => {
+        const userRow = checkbox.closest('.scope-user');
+        if (!userRow || userRow.style.display !== 'none') {
+            checkbox.checked = true;
+        }
+    });
+}
+
+function clearScopeSelection() {
+    document.querySelectorAll('.user-checkbox, .group-checkbox, .dept-checkbox').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+}
+
+// 切换部门选择
+function toggleDepartment(deptIndex) {
+    const deptCheckbox = document.getElementById(`dept_${deptIndex}`);
+    const groupCheckboxes = document.querySelectorAll(`.dept-${deptIndex}`);
+    
+    groupCheckboxes.forEach(checkbox => {
+        checkbox.checked = deptCheckbox.checked;
+        // 触发 toggleGroup 来更新用户选择
+        const groupId = checkbox.id.replace('group_', '');
+        toggleGroup(groupId);
+    });
+}
+
+// 切换小组选择
+function toggleGroup(groupId) {
+    const groupCheckbox = document.getElementById(`group_${groupId}`);
+    const userCheckboxes = document.querySelectorAll(`.group-${groupId}`);
+    
+    userCheckboxes.forEach(checkbox => {
+        checkbox.checked = groupCheckbox.checked;
+    });
+}
+
+function getFormGroupKey(group) {
+    const forms = group.forms || [];
+    const latestForm = forms[0] || {};
+    return String(group.unique_id || latestForm.unique_id || latestForm.id || '');
+}
+
+function isFormLocked(formId) {
+    return lockedFormIds.has(String(formId));
+}
+
+function mergeLockedFormGroups(formGroups) {
+    const merged = Array.isArray(formGroups) ? [...formGroups] : [];
+    if (!selectionLocked || lockedFormGroups.size === 0) {
+        return merged;
+    }
+    const existingKeys = new Set(merged.map(group => getFormGroupKey(group)));
+    merged.forEach(group => {
+        const forms = group.forms || [];
+        if (forms.some(form => isFormLocked(form.id))) {
+            const key = getFormGroupKey(group);
+            if (key) {
+                lockedFormGroups.set(key, group);
+            }
+        }
+    });
+    lockedFormGroups.forEach((group, key) => {
+        if (!existingKeys.has(key)) {
+            merged.push(group);
+        }
+    });
+    return merged;
+}
+
+function rememberLockedFormGroups(formIds) {
+    const idSet = new Set(formIds.map(id => String(id)));
+    lockedFormGroups.clear();
+    currentFormGroups.forEach(group => {
+        const forms = group.forms || [];
+        if (forms.some(form => idSet.has(String(form.id)))) {
+            const key = getFormGroupKey(group);
+            if (key) {
+                lockedFormGroups.set(key, group);
+            }
+        }
+    });
+}
+
+function toggleSelectionLock() {
+    if (selectionLocked) {
+        const unlockedIds = Array.from(lockedFormIds);
+        selectionLocked = false;
+        lockedFormIds.clear();
+        lockedFormGroups.clear();
+        renderFormsList(currentFormGroups, unlockedIds);
+        return;
+    }
+
+    const formIds = getSelectedReviewableFormIds();
+    if (formIds.length === 0) {
+        alert('请选择需要锁定的表单');
+        return;
+    }
+
+    lockedFormIds = new Set(formIds.map(id => String(id)));
+    rememberLockedFormGroups(formIds);
+    selectionLocked = true;
+    renderFormsList(currentFormGroups);
+}
+
+// 加载表单列表
+function loadForms() {
+    // 获取选中的用户ID
+    const checkedUsers = document.querySelectorAll('.user-checkbox:checked');
+    selectedUserIds = Array.from(checkedUsers).map(cb => cb.value);
+    
+    if (selectedUserIds.length === 0) {
+        alert('请至少选择一个用户');
+        return;
+    }
+    
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    const status = document.getElementById('statusFilter').value;
+    const timeFilterType = document.getElementById('timeFilterType').value || 'created';
+    
+    const params = new URLSearchParams({
+        start_date: startDate,
+        end_date: endDate,
+        time_filter_type: timeFilterType
+    });
+    
+    if (status) {
+        params.append('status', status);
+    }
+    
+    selectedUserIds.forEach(id => {
+        params.append('user_ids', id);
+    });
+    
+    fetch(`/admin/api/review/forms?${params}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderFormsList(mergeLockedFormGroups(data.forms || []));
+                document.getElementById('formsListArea').style.display = 'block';
+            } else {
+                alert(data.message || '加载表单列表失败');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('加载表单列表失败');
+        });
+}
+
+// 渲染表单列表
+function renderFormsList(formGroups, checkedFormIds = []) {
+    currentFormGroups = Array.isArray(formGroups) ? formGroups : [];
+    const checkedIdSet = new Set(checkedFormIds.map(id => String(id)));
+    const tbody = document.getElementById('formsTableBody');
+    let html = '';
+    let totalGroups = 0;
+
+    currentFormGroups.forEach(group => {
+        const uniqueId = group.unique_id;
+        const forms = group.forms || [];
+        if (forms.length === 0) {
+            return;
+        }
+        totalGroups += 1;
+
+        const latestForm = forms[0];
+        const groupCollapseId = `versions-${uniqueId}`;
+        const chevronId = `chevron-${uniqueId}`;
+        const latestCanReview = canReviewForm(latestForm.status);
+        const groupLocked = isFormLocked(latestForm.id);
+        const groupTargetFormId = (latestCanReview || groupLocked) ? latestForm.id : '';
+        const groupSelectable = currentPermission === '审表_中心' && !!groupTargetFormId && latestCanReview;
+        const groupChecked = groupLocked || checkedIdSet.has(String(groupTargetFormId));
+        const groupDisabled = groupLocked || !groupSelectable;
+
+        html += `
+            <tr>
+                <td>
+                    <input type="checkbox"
+                           class="group-select-checkbox"
+                           data-target-form-id="${groupTargetFormId}"
+                           ${groupChecked ? 'checked' : ''}
+                           ${groupDisabled ? 'disabled' : ''}
+                           ${groupLocked ? 'title="已锁定，需取消锁定后才能取消选择"' : ''}
+                           onchange="onGroupSelectChange(this)">
+                </td>
+                <td>${latestForm.created_at || '-'}</td>
+                <td>${latestForm.listener_name || '-'}</td>
+                <td>${latestForm.listener_number || '-'}</td>
+                <td>${latestForm.teacher_name || '-'}</td>
+                <td title="${latestForm.course_title || ''}">${(latestForm.course_title || '').length > 30 ? latestForm.course_title.substring(0, 30) + '...' : (latestForm.course_title || '-')}</td>
+                <td>${latestForm.lecture_date || '-'}</td>
+                <td><span class="badge ${getStatusClass(latestForm.status)}">${latestForm.status || '-'}</span></td>
+                <td>
+                    <span class="badge bg-info text-dark">${forms.length}</span>
+                    ${forms.length > 1 ? `
+                        <button class="btn btn-outline-info btn-sm ms-1" onclick="toggleVersions('${groupCollapseId}', '${chevronId}')" title="展开/收起版本">
+                            <i class="fas fa-chevron-down me-1" id="${chevronId}"></i> 展开/收起版本
+                        </button>
+                    ` : ''}
+                </td>
+                <td>${latestForm.updated_at || latestForm.created_at || '-'}</td>
+                <td>
+                    <div class="btn-group">
+                        <button class="btn btn-info btn-sm" onclick="viewForm(${latestForm.id})" title="查看最新版本">
+                            <i class="fas fa-eye me-1"></i> 查看最新版本
+                        </button>
+                        ${isSuperAdmin ? `
+                            <button class="btn btn-primary btn-sm" onclick="defineSingleForm(${latestForm.id}, this)" title="定义标签">
+                                <i class="fas fa-tags me-1"></i> 定义
+                            </button>
+                        ` : ''}
+                        ${latestCanReview ? `
+                            <button class="btn btn-success btn-sm" onclick="reviewForm(${latestForm.id})" title="审核">
+                                <i class="fas fa-edit me-1"></i> 审核
+                            </button>
+                        ` : ''}
+                        ${currentPermission === '审表_中心' ? `
+                        <button class="btn btn-danger btn-sm" onclick="deleteFormGroup(${uniqueId})" title="删除表单组">
+                            <i class="fas fa-trash-alt me-1"></i> 删除
+                        </button>
+                        ` : ''}
+                    </div>
+                </td>
+            </tr>
+        `;
+
+        if (forms.length > 1) {
+            html += `
+                <tr id="${groupCollapseId}" class="version-history" style="display: none;">
+                    <td colspan="11">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">版本历史 (按更新时间排序)</h6>
+                            </div>
+                            <div class="card-body p-2">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-borderless">
+                                        <thead>
+                                            <tr class="text-muted">
+                                                <th width="5%">选择</th>
+                                                <th>版本</th>
+                                                <th>状态</th>
+                                                <th>更新时间</th>
+                                                <th>审核人</th>
+                                                <th>审核意见</th>
+                                                <th>操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${forms.map((version, idx) => {
+                                                const isLatest = idx === 0;
+                                                const canReviewVersion = isLatest && canReviewForm(version.status);
+                                                const canSelectVersion = currentPermission === '审表_中心' && canReviewVersion;
+                                                const versionLocked = isFormLocked(version.id);
+                                                const versionChecked = versionLocked || checkedIdSet.has(String(version.id));
+                                                const versionDisabled = versionLocked || !canSelectVersion;
+                                                return `
+                                                    <tr>
+                                                        <td>
+                                                            <input type="checkbox"
+                                                                   class="form-checkbox"
+                                                                   value="${version.id}"
+                                                                   data-group-id="${uniqueId}"
+                                                                   ${versionChecked ? 'checked' : ''}
+                                                                   ${versionDisabled ? 'disabled' : ''}
+                                                                   ${versionLocked ? 'title="已锁定，需取消锁定后才能取消选择"' : ''}
+                                                                   onchange="onFormSelectChange(this)">
+                                                        </td>
+                                                        <td>
+                                                            <span class="badge bg-light text-dark">v${forms.length - idx}</span>
+                                                            ${isLatest ? '<span class="badge bg-primary ms-1">最新</span>' : ''}
+                                                        </td>
+                                                        <td><span class="badge ${getStatusClass(version.status)}">${version.status || '-'}</span></td>
+                                                        <td>${version.updated_at || version.created_at || '-'}</td>
+                                                        <td>${version.reviewer_display || '-'}</td>
+                                                        <td><span title="${version.review_comment || ''}">${(version.review_comment || '-').length > 24 ? version.review_comment.substring(0, 24) + '...' : (version.review_comment || '-')}</span></td>
+                                                        <td>
+                                                            <div class="btn-group">
+                                                                <button class="btn btn-outline-info btn-sm" onclick="viewForm(${version.id})" title="查看此版本">
+                                                                    <i class="fas fa-eye me-1"></i> 查看此版本
+                                                                </button>
+                                                                ${canReviewVersion ? `
+                                                                    <button class="btn btn-outline-success btn-sm" onclick="reviewForm(${version.id})" title="审核">
+                                                                        <i class="fas fa-edit me-1"></i> 审核
+                                                                    </button>
+                                                                ` : ''}
+                                                                ${currentPermission === '审表_中心' ? `
+                                                                <button class="btn btn-outline-danger btn-sm" onclick="deleteForm(${version.id})" title="删除">
+                                                                    <i class="fas fa-trash-alt me-1"></i> 删除
+                                                                </button>
+                                                                ` : ''}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                `;
+                                            }).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+    });
+
+    tbody.innerHTML = html;
+    document.getElementById('formsCount').textContent = totalGroups;
+    bindSelectionEvents();
+    updateBatchButtons();
+}
+
+// 获取状态样式类
+function getStatusClass(status) {
+    switch (status) {
+        case '待审核': return 'bg-warning text-dark';
+        case '部门已审核': return 'bg-info text-dark';
+        case '中心已审核': return 'bg-success text-white';
+        case '已驳回': return 'bg-danger text-white';
+        default: return 'bg-secondary text-white';
+    }
+}
+
+// 检查是否可以审核表单
+function canReviewForm(status) {
+    if (currentPermission === '审表_中心') {
+        return true; // 中心权限可以审核所有状态
+    } else if (currentPermission === '审表_小组' || currentPermission === '审表_部门') {
+        return status === '待审核' || status === '部门已审核';
+    }
+    return false;
+}
+
+// 查看表单详情
+function viewForm(formId) {
+    // 显示模态框
+    const modalEl = document.getElementById('formDetailModal');
+    let modal = bootstrap.Modal.getInstance(modalEl);
+    if (!modal) {
+        modal = new bootstrap.Modal(modalEl);
+    }
+    modal.show();
+    
+    // 加载表单详情
+    document.getElementById('formDetailContent').innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin"></i> 正在加载...</div>';
+    
+    fetch(`/admin/form/${formId}?format=json`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // 如果后端返回的是JSON包装的HTML字符串
+                if (data.html) {
+                    document.getElementById('formDetailContent').innerHTML = data.html;
+                } else {
+                    // 如果直接返回HTML片段（视后端实现而定，这里假设admin/form/id返回的是JSON {success:true, html:...}）
+                    document.getElementById('formDetailContent').innerHTML = '数据加载成功，但格式不符'; 
+                }
+            } else {
+                document.getElementById('formDetailContent').innerHTML = '<div class="alert alert-danger">' + (data.message || '加载失败') + '</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('formDetailContent').innerHTML = '<div class="alert alert-danger">加载失败，请重试</div>';
+        });
+}
+
+// 审核表单
+function reviewForm(formId) {
+    // 检查权限
+    fetch(`/admin/api/review/form/${formId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const form = data.form;
+                if (!canReviewForm(form.status)) {
+                    showPermissionWarning(`您无权限审核处于"${form.status}"状态的表单`);
+                    return;
+                }
+                // 在新标签页打开审核页面
+                window.open(`/admin/review/form/${formId}`, '_blank');
+            } else {
+                alert(data.message || '获取表单信息失败');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('获取表单信息失败');
+        });
+}
+
+function toggleVersions(rowId, chevronId) {
+    const row = document.getElementById(rowId);
+    const chevron = document.getElementById(chevronId);
+    if (!row || !chevron) {
+        return;
+    }
+    if (row.style.display === 'none' || row.style.display === '') {
+        row.style.display = 'table-row';
+        chevron.classList.remove('fa-chevron-down');
+        chevron.classList.add('fa-chevron-up');
+    } else {
+        row.style.display = 'none';
+        chevron.classList.remove('fa-chevron-up');
+        chevron.classList.add('fa-chevron-down');
+    }
+}
+
+function bindSelectionEvents() {
+    document.querySelectorAll('.group-select-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', updateBatchButtons);
+    });
+    document.querySelectorAll('.form-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', updateBatchButtons);
+    });
+}
+
+function onGroupSelectChange(groupCheckbox) {
+    const targetId = groupCheckbox.dataset.targetFormId;
+    if (!targetId) {
+        groupCheckbox.checked = false;
+        return;
+    }
+    const formCheckbox = document.querySelector(`.form-checkbox[value="${targetId}"]`);
+    if (formCheckbox && !formCheckbox.disabled) {
+        formCheckbox.checked = groupCheckbox.checked;
+    }
+    updateBatchButtons();
+}
+
+function onFormSelectChange(formCheckbox) {
+    const groupId = formCheckbox.dataset.groupId;
+    if (!groupId) {
+        updateBatchButtons();
+        return;
+    }
+    const groupCheckbox = document.querySelector(`.group-select-checkbox[data-target-form-id="${formCheckbox.value}"]`);
+    if (groupCheckbox && !groupCheckbox.disabled) {
+        groupCheckbox.checked = formCheckbox.checked;
+    }
+    updateBatchButtons();
+}
+
+function getSelectedReviewableFormIds() {
+    const formIdSet = new Set();
+    lockedFormIds.forEach(id => {
+        formIdSet.add(String(id));
+    });
+    document.querySelectorAll('.form-checkbox:checked').forEach(cb => {
+        if (!cb.disabled) {
+            formIdSet.add(String(cb.value));
+        }
+    });
+    document.querySelectorAll('.group-select-checkbox:checked').forEach(cb => {
+        const targetId = cb.dataset.targetFormId;
+        if (targetId) {
+            formIdSet.add(String(targetId));
+        }
+    });
+    return Array.from(formIdSet);
+}
+
+function deleteFormGroup(uniqueId) {
+    if (!confirm('确定删除整个表单组吗？将删除该组所有版本及关联评分记录，并清理无引用的课程登记记录。')) {
+        return;
+    }
+    fetch(`/admin/api/review/group/${uniqueId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            loadForms();
+        } else {
+            alert(data.message || '删除失败');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('删除操作失败，请检查网络');
+    });
+}
+
+function deleteForm(formId) {
+    if (!confirm('确定删除此版本表单吗？')) {
+        return;
+    }
+    fetch(`/admin/api/review/form/${formId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            loadForms();
+        } else {
+            alert(data.message || '删除失败');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('删除操作失败，请检查网络');
+    });
+}
+
+function showPermissionWarning(message) {
+    document.getElementById('permissionWarningMessage').textContent = message;
+    $('#permissionWarningModal').modal('show');
+}
+
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll');
+    document.querySelectorAll('.group-select-checkbox, .form-checkbox').forEach(checkbox => {
+        if (!checkbox.disabled) {
+            checkbox.checked = selectAll.checked;
+        }
+    });
+    updateBatchButtons();
+}
+
+function updateBatchButtons() {
+    const formIds = getSelectedReviewableFormIds();
+    const selectedFormsHint = document.getElementById('selectedFormsHint');
+    if (selectedFormsHint) {
+        if (formIds.length > 0) {
+            selectedFormsHint.textContent = `已选择${formIds.length}表单`;
+            selectedFormsHint.style.display = 'inline-block';
+        } else {
+            selectedFormsHint.style.display = 'none';
+        }
+    }
+    const btnLockSelection = document.getElementById('btnLockSelection');
+    if (btnLockSelection) {
+        if (formIds.length > 0 || selectionLocked) {
+            btnLockSelection.style.display = 'inline-block';
+            btnLockSelection.innerHTML = selectionLocked
+                ? '<i class="fas fa-unlock"></i> 取消锁定'
+                : '<i class="fas fa-lock"></i> 锁定选择';
+        } else {
+            btnLockSelection.style.display = 'none';
+        }
+    }
+    const btnExportSelectedForms = document.getElementById('btnExportSelectedForms');
+    if (btnExportSelectedForms) {
+        if (isSuperAdmin && formIds.length > 0) {
+            btnExportSelectedForms.style.display = 'inline-block';
+        } else {
+            btnExportSelectedForms.style.display = 'none';
+        }
+    }
+    const btnAutoReview = document.getElementById('btnAutoReview');
+    if (btnAutoReview) {
+        if (currentPermission === '审表_中心' && formIds.length > 0) {
+            btnAutoReview.style.display = 'inline-block';
+        } else {
+            btnAutoReview.style.display = 'none';
+        }
+    }
+    const btnBatchDefineTags = document.getElementById('btnBatchDefineTags');
+    if (btnBatchDefineTags) {
+        if (isSuperAdmin && formIds.length > 0) {
+            btnBatchDefineTags.style.display = 'inline-block';
+        } else {
+            btnBatchDefineTags.style.display = 'none';
+        }
+    }
+}
+
+function resetSelectedExportCheckState() {
+    document.getElementById('selectedExportCheckResult').style.display = 'none';
+    document.getElementById('btnConfirmSelectedExport').disabled = true;
+}
+
+function handleSelectedExportModeChange() {
+    const mode = document.querySelector('input[name="export_mode"]:checked').value;
+    document.getElementById('selectedExportFilenameGroup').style.display = mode === 'standard' ? 'block' : 'none';
+    document.getElementById('selectedExportAllDataFilenameHint').style.display = mode === 'all_data' ? 'block' : 'none';
+    resetSelectedExportCheckState();
+}
+
+function openSelectedFormsExportModal() {
+    const formIds = getSelectedReviewableFormIds();
+    if (formIds.length === 0) {
+        alert('请选择需要导出的表单');
+        return;
+    }
+    if (!isSuperAdmin) {
+        alert('仅超级管理员可以导出表单');
+        return;
+    }
+    document.getElementById('selectedFormsExportSummary').textContent = `导出范围：已选择 ${formIds.length} 份表单`;
+    resetSelectedExportCheckState();
+    handleSelectedExportModeChange();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('selectedFormsExportModal')).show();
+}
+
+function collectSelectedExportData() {
+    const form = document.getElementById('selectedFormsExportForm');
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+    data.scope = 'selected';
+    data.form_ids = getSelectedReviewableFormIds();
+    const statuses = [];
+    document.querySelectorAll('.selected-export-status-checkbox:checked').forEach(cb => {
+        statuses.push(cb.value);
+    });
+    data.status_list = statuses;
+    return data;
+}
+
+function checkSelectedExportData() {
+    const data = collectSelectedExportData();
+    if (data.form_ids.length === 0) {
+        alert('请选择需要导出的表单');
+        return;
+    }
+
+    const resultDiv = document.getElementById('selectedExportCheckResult');
+    resultDiv.style.display = 'block';
+    resultDiv.className = 'alert alert-info';
+    resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在检查数据...';
+
+    fetch('/admin/api/forms/export/check', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(res => {
+        if (res.success) {
+            resultDiv.className = 'alert alert-success';
+            const excludedText = res.excluded_count > 0
+                ? `<br><small>状态筛选已排除 ${res.excluded_count} 条记录。</small>`
+                : '';
+            resultDiv.innerHTML = `<strong>准备就绪:</strong> 将导出 <b>${res.total_count}</b> 条记录。${excludedText}`;
+            document.getElementById('btnConfirmSelectedExport').disabled = res.total_count <= 0;
+            if (res.total_count <= 0) {
+                resultDiv.className = 'alert alert-warning';
+                resultDiv.innerHTML = '没有符合条件的记录可导出。';
+            }
+        } else {
+            resultDiv.className = 'alert alert-danger';
+            resultDiv.innerHTML = '检查失败: ' + (res.message || '未知错误');
+        }
+    })
+    .catch(err => {
+        resultDiv.className = 'alert alert-danger';
+        resultDiv.innerHTML = '请求错误: ' + err;
+    });
+}
+
+function executeSelectedExport() {
+    const data = collectSelectedExportData();
+    if (data.form_ids.length === 0) {
+        alert('请选择需要导出的表单');
+        return;
+    }
+    data.status_list = data.status_list.join(',');
+    data.form_ids = data.form_ids.join(',');
+
+    const params = new URLSearchParams();
+    Object.keys(data).forEach(key => {
+        params.append(key, data[key]);
+    });
+
+    window.location.href = `/admin/api/forms/export/download?${params.toString()}`;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('selectedFormsExportModal')).hide();
+}
+
+function defineSingleForm(formId, triggerButton = null) {
+    openFormTagDefinitionModal([formId], triggerButton);
+}
+
+function batchDefineForms() {
+    const formIds = getSelectedReviewableFormIds();
+    if (formIds.length === 0) {
+        alert('请选择需要定义标签的表单或表单组');
+        return;
+    }
+    const triggerButton = document.getElementById('btnBatchDefineTags');
+    openFormTagDefinitionModal(formIds, triggerButton);
+}
+
+function openFormTagDefinitionModal(formIds, triggerButton = null) {
+    if (!isSuperAdmin) {
+        alert('仅超级管理员可以定义表单标签');
+        return;
+    }
+    const summaryEl = document.getElementById('formTagDefinitionSummary');
+    const tbody = document.getElementById('formTagDefinitionTableBody');
+    const modalEl = document.getElementById('formTagDefinitionModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    const originalButtonHtml = triggerButton ? triggerButton.innerHTML : '';
+
+    if (triggerButton) {
+        triggerButton.disabled = true;
+        triggerButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在加载...';
+    }
+
+    summaryEl.textContent = '正在分析当前标签...';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">正在加载...</td></tr>';
+
+    fetch('/admin/api/review/form-tags/preview', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ form_ids: formIds })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            throw new Error(data.message || '加载标签定义失败');
+        }
+        currentTagDefinitionForms = data.forms || [];
+        renderFormTagDefinitionRows(currentTagDefinitionForms);
+    summaryEl.textContent = `共加载 ${currentTagDefinitionForms.length} 个表单组。这里展示的是每个表单组的最新版本，保存后会同步更新该组全部历史版本。第一个下拉框定义“是否需要人工审核”，第二个下拉框定义“教学周修正（第x周）”。`;
+        modal.show();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert(error.message || '加载标签定义失败');
+    })
+    .finally(() => {
+        if (triggerButton) {
+            triggerButton.disabled = false;
+            triggerButton.innerHTML = originalButtonHtml;
+        }
+    });
+}
+
+function renderFormTagDefinitionRows(forms) {
+    const tbody = document.getElementById('formTagDefinitionTableBody');
+    if (!forms || forms.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">暂无可定义的表单</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = forms.map(form => {
+        const tagInfo = form.audit_tag_info || {};
+        return `
+            <tr>
+                <td>${escapeHtml(form.form_id)}</td>
+                <td>
+                    <div>${escapeHtml(form.listener_name || '-')}</div>
+                    <div class="small text-muted">${escapeHtml(form.listener_number || '-')}</div>
+                </td>
+                <td>
+                    <div>${escapeHtml(form.teacher_name || '-')}</div>
+                    <div class="small text-muted">${escapeHtml(form.course_title || '-')}</div>
+                    <div class="small text-muted">共 ${escapeHtml(form.version_count || 1)} 个版本</div>
+                </td>
+                <td>${formatAuditTagInfo(tagInfo)}</td>
+                <td>
+                    <select class="form-select form-select-sm audit-review-tag-select" data-form-id="${escapeHtml(form.form_id)}">
+                        ${buildReviewTagOptions(tagInfo.review_tag || '需要人工审核')}
+                    </select>
+                </td>
+                <td>
+                    <select class="form-select form-select-sm audit-week-correction-select" data-form-id="${escapeHtml(form.form_id)}">
+                        ${buildWeekCorrectionOptions(tagInfo.week_correction_tag || tagInfo.legacy_late_tag || '')}
+                    </select>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function saveFormTagDefinitions() {
+    if (!isSuperAdmin) {
+        alert('仅超级管理员可以定义表单标签');
+        return;
+    }
+
+    const saveBtn = document.getElementById('saveFormTagDefinitionBtn');
+    const originalText = saveBtn.innerHTML;
+    const definitions = currentTagDefinitionForms.map(form => {
+        const reviewSelect = document.querySelector(`.audit-review-tag-select[data-form-id="${form.form_id}"]`);
+        const correctionSelect = document.querySelector(`.audit-week-correction-select[data-form-id="${form.form_id}"]`);
+        return {
+            form_id: form.form_id,
+            review_tag: reviewSelect ? reviewSelect.value : '',
+            week_correction_tag: correctionSelect ? correctionSelect.value : ''
+        };
+    });
+
+    if (definitions.length === 0) {
+        alert('没有可保存的标签定义');
+        return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
+
+    fetch('/admin/api/review/form-tags', {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ definitions })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            throw new Error(data.message || '保存标签定义失败');
+        }
+        alert(data.message || '保存成功');
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('formTagDefinitionModal')).hide();
+        currentTagDefinitionForms = [];
+        loadForms();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert(error.message || '保存标签定义失败');
+    })
+    .finally(() => {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = originalText;
+    });
+}
+
+function batchAutoReview() {
+    const formIds = getSelectedReviewableFormIds();
+    if (formIds.length === 0) {
+        alert('请选择可审核的表单或表单组');
+        return;
+    }
+
+    const btn = document.getElementById('btnAutoReview');
+    const originalBtnContent = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在分析...';
+
+    fetch('/admin/api/review/batch_auto_check/preview', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ form_ids: formIds })
+    })
+    .then(response => response.json())
+    .then(async data => {
+        btn.disabled = false;
+        btn.innerHTML = originalBtnContent;
+
+        if (data.success) {
+            const stats = data.stats;
+            let msg = `您选择了 ${stats.total} 个可审核表单。\n\n`;
+            msg += `✅ 将自动审核: ${stats.will_process} 个\n`;
+            msg += `🚫 将被忽略: ${stats.will_ignore} 个 (因状态不允许或标签需人工审核)\n\n`;
+
+            if (stats.will_ignore > 0 && stats.ignored_reasons && stats.ignored_reasons.length > 0) {
+                msg += `忽略原因示例:\n${stats.ignored_reasons.join('\n')}\n...\n\n`;
+            }
+            msg += '请选择执行方式。\n强制模式仅放开“需人工审核”标签限制，不会强制审核已驳回等状态不允许的表单。';
+            const decision = await showAutoReviewDecision(msg);
+            if (decision === 'normal') {
+                startBatchReview(formIds, btn, false);
+                return;
+            }
+            if (decision === 'force') {
+                startBatchReview(formIds, btn, true);
+                return;
+            }
+        } else {
+            alert(data.message || '预览失败');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('操作失败，请检查网络');
+        btn.disabled = false;
+        btn.innerHTML = originalBtnContent;
+    });
+}
+
+function showAutoReviewDecision(message) {
+    return new Promise((resolve) => {
+        const modalEl = document.getElementById('autoReviewDecisionModal');
+        const summaryEl = document.getElementById('autoReviewDecisionSummary');
+        const cancelBtn = document.getElementById('autoReviewCancelBtn');
+        const normalBtn = document.getElementById('autoReviewNormalBtn');
+        const forceBtn = document.getElementById('autoReviewForceBtn');
+        const modal = new bootstrap.Modal(modalEl);
+        let decision = null;
+
+        summaryEl.textContent = message;
+        cancelBtn.onclick = () => { decision = 'cancel'; modal.hide(); };
+        normalBtn.onclick = () => { decision = 'normal'; modal.hide(); };
+        forceBtn.onclick = () => { decision = 'force'; modal.hide(); };
+        modalEl.addEventListener('hidden.bs.modal', () => resolve(decision), { once: true });
+        modal.show();
+    });
+}
+
+function startBatchReview(formIds, btn, forceAll = false) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 启动中...';
+
+    fetch('/admin/api/review/batch_auto_check', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ form_ids: formIds, force_all: forceAll })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            window.location.href = '/admin/super_admin_dashboard';
+        } else {
+            alert(data.message || '启动失败');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-magic"></i> 一键自动审核';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('启动失败，请检查网络');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-magic"></i> 一键自动审核';
+    });
+}
+
+
+
+
+
+
+
+// 重置筛选条件
+function resetFilters() {
+    // 重置时间范围为最近一周
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - 7);
+    
+    document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+    document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+    document.getElementById('statusFilter').value = '';
+    document.getElementById('timeFilterType').value = 'created';
+    
+    // 隐藏用户选择和表单列表区域
+    document.getElementById('userSelectionArea').style.display = 'none';
+    document.getElementById('formsListArea').style.display = 'none';
+    
+    // 清空选择
+    selectedUserIds = [];
+    currentFormGroups = [];
+    selectionLocked = false;
+    lockedFormIds.clear();
+    lockedFormGroups.clear();
+}
+</script>
+{% endblock %}

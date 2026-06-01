@@ -1,0 +1,467 @@
+{% extends "base.html" %}
+
+{% block title %}听课登记统计 - 西南大学听课信息中心{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="mb-0"><i class="bi bi-bar-chart"></i> 听课登记统计</h2>
+        <a href="{{ url_for('admin.course_management') }}" class="btn btn-outline-secondary">返回课程管理</a>
+    </div>
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>按教师统计</span>
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="loadRegistrationStats()">刷新</button>
+        </div>
+        <div class="card-body">
+            <div id="registrationStatsContainer" class="table-responsive"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="userSelectionModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">选择禁听用户</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <h6>已选择的课程</h6>
+                        <div id="selectedCoursesInfo" class="border rounded p-2 bg-light"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="userSearchInput" class="form-label">搜索用户</label>
+                        <div class="d-flex gap-2">
+                            <input type="text" class="form-control" id="userSearchInput" placeholder="搜索用户姓名或工号...">
+                            <button type="button" class="btn btn-outline-success" onclick="selectAllUsersForBan()">一键选择所有用户</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>选择用户</h6>
+                        <div class="border rounded" style="height: 400px; overflow-y: auto;">
+                            <div id="departmentUserTree"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>已选用户 <span class="badge bg-primary" id="selectedUsersCount">0</span></h6>
+                        <div class="border rounded" style="height: 400px; overflow-y: auto;">
+                            <div class="list-group list-group-flush" id="selectedUsersList"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="confirmBanUsers()" id="confirmBanBtn">
+                    <i class="bi bi-ban"></i> 确认禁听
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let registrationStatsData = [];
+let selectedCourses = new Set();
+let selectedUsers = new Set();
+let allUsers = [];
+let filteredUsers = [];
+let departmentData = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadRegistrationStats();
+    document.getElementById('userSearchInput').addEventListener('input', filterUsers);
+});
+
+function loadRegistrationStats() {
+    const container = document.getElementById('registrationStatsContainer');
+    container.innerHTML = '<div class="text-center py-4 text-muted">加载统计中...</div>';
+    fetch('/admin/api/registration_statistics')
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                container.innerHTML = `<div class="text-danger">${data.message || '加载失败'}</div>`;
+                return;
+            }
+            registrationStatsData = Array.isArray(data.teachers) ? data.teachers : [];
+            renderRegistrationStats();
+        })
+        .catch(error => {
+            container.innerHTML = `<div class="text-danger">${error.message}</div>`;
+        });
+}
+
+function renderRegistrationStats() {
+    const container = document.getElementById('registrationStatsContainer');
+    if (!registrationStatsData.length) {
+        container.innerHTML = '<div class="text-muted">暂无登记统计数据</div>';
+        return;
+    }
+    let html = `
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>教师</th>
+                    <th>教师编号</th>
+                    <th>课程数</th>
+                    <th>被听课总次数</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    registrationStatsData.forEach((teacher, index) => {
+        const rowId = `teacher-courses-${index}`;
+        const courseIdsArg = JSON.stringify(teacher.course_ids || []).replace(/"/g, '&quot;');
+        html += `
+            <tr>
+                <td>
+                    <button class="btn btn-sm btn-link text-decoration-none p-0 me-2" onclick="toggleStatsCourses('${rowId}')">
+                        <i class="bi bi-chevron-right" id="icon-${rowId}"></i>
+                    </button>
+                    ${teacher.teacher_name || '未匹配教师'}
+                </td>
+                <td>${teacher.teacher_id || '-'}</td>
+                <td>${teacher.course_count || 0}</td>
+                <td><span class="badge bg-primary">${teacher.total_listen_count || 0}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-outline-warning" onclick='banTeacherCourses(${courseIdsArg})'>禁听该教师全部课程</button>
+                </td>
+            </tr>
+            <tr id="${rowId}" style="display:none;">
+                <td colspan="5" class="bg-light p-0">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th class="ps-4">课程</th>
+                                <th>课程号</th>
+                                <th>被听次数</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${(teacher.courses || []).map(course => {
+                                const oneCourseIds = JSON.stringify(course.course_ids || []).replace(/"/g, '&quot;');
+                                return `
+                                    <tr>
+                                        <td class="ps-4">${course.course_name || '未命名课程'}</td>
+                                        <td>${course.course_code || ''}-${course.selection_code || ''}</td>
+                                        <td>${course.listen_count || 0}</td>
+                                        <td><button class="btn btn-sm btn-outline-warning" onclick='banTeacherCourses(${oneCourseIds})'>禁听该课程</button></td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </td>
+            </tr>
+        `;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function toggleStatsCourses(rowId) {
+    const row = document.getElementById(rowId);
+    const icon = document.getElementById(`icon-${rowId}`);
+    if (row.style.display === 'none') {
+        row.style.display = '';
+        icon.classList.remove('bi-chevron-right');
+        icon.classList.add('bi-chevron-down');
+    } else {
+        row.style.display = 'none';
+        icon.classList.remove('bi-chevron-down');
+        icon.classList.add('bi-chevron-right');
+    }
+}
+
+function banTeacherCourses(courseIds) {
+    if (!Array.isArray(courseIds) || courseIds.length === 0) {
+        showAlert('未找到可禁听课程', 'warning');
+        return;
+    }
+    selectedCourses.clear();
+    courseIds.forEach(id => selectedCourses.add(id));
+    showUserSelectionModal();
+}
+
+function showUserSelectionModal() {
+    selectedUsers.clear();
+    loadSelectedCoursesInfo();
+    loadAvailableUsers().then(() => loadBannedUsers());
+    const modal = new bootstrap.Modal(document.getElementById('userSelectionModal'));
+    modal.show();
+}
+
+function loadSelectedCoursesInfo() {
+    document.getElementById('selectedCoursesInfo').innerHTML = `<div class="text-muted">已选择 ${selectedCourses.size} 门课程</div>`;
+}
+
+function loadAvailableUsers() {
+    return fetch('/admin/api/users/for_ban')
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.message || '加载用户失败');
+            departmentData = data.departments || [];
+            allUsers = [];
+            departmentData.forEach(dept => dept.groups.forEach(group => allUsers.push(...group.users)));
+            filteredUsers = [...allUsers];
+            renderDepartmentUserTree();
+            updateSelectedUsersDisplay();
+        });
+}
+
+function loadBannedUsers() {
+    if (selectedCourses.size === 0) return;
+    const courseIds = Array.from(selectedCourses);
+    const requests = courseIds.map(courseId => fetch(`/admin/api/courses/${courseId}/ban_users`).then(r => r.json()));
+    Promise.all(requests).then(results => {
+        const bannedUserIds = new Set();
+        results.forEach(data => {
+            if (data.success && data.ban_users) data.ban_users.forEach(ban => bannedUserIds.add(ban.user_id));
+        });
+        bannedUserIds.forEach(id => selectedUsers.add(id));
+        renderDepartmentUserTree();
+        updateSelectedUsersDisplay();
+    });
+}
+
+function filterUsers() {
+    const searchTerm = document.getElementById('userSearchInput').value.toLowerCase();
+    if (searchTerm) {
+        filteredUsers = allUsers.filter(user =>
+            user.name.toLowerCase().includes(searchTerm) ||
+            user.number.toLowerCase().includes(searchTerm) ||
+            user.student_id.toLowerCase().includes(searchTerm) ||
+            user.department.toLowerCase().includes(searchTerm) ||
+            user.group.toLowerCase().includes(searchTerm)
+        );
+    } else {
+        filteredUsers = [...allUsers];
+    }
+    renderDepartmentUserTree();
+}
+
+function renderDepartmentUserTree() {
+    const container = document.getElementById('departmentUserTree');
+    container.innerHTML = '';
+    const searchTerm = document.getElementById('userSearchInput').value.toLowerCase();
+    if (searchTerm) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'p-2';
+        wrapper.innerHTML = `<h6 class="text-muted mb-2">搜索结果 (${filteredUsers.length})</h6>`;
+        filteredUsers.forEach(user => {
+            if (!selectedUsers.has(user.id)) {
+                const item = document.createElement('div');
+                item.className = 'list-group-item list-group-item-action border-0 py-2';
+                item.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-bold">${user.name}</div>
+                            <small class="text-muted">${user.number} | ${user.department} - ${user.group}</small>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="selectUser(${user.id})"><i class="bi bi-plus"></i></button>
+                    </div>
+                `;
+                wrapper.appendChild(item);
+            }
+        });
+        if (filteredUsers.filter(u => !selectedUsers.has(u.id)).length === 0) {
+            wrapper.innerHTML += '<div class="text-center text-muted py-3">没有匹配的用户</div>';
+        }
+        container.appendChild(wrapper);
+        return;
+    }
+    departmentData.forEach(dept => {
+        const deptDiv = document.createElement('div');
+        deptDiv.className = 'border-bottom';
+        const availableUsersInDept = dept.groups.reduce((count, group) => count + group.users.filter(u => !selectedUsers.has(u.id)).length, 0);
+        deptDiv.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center p-2 bg-light">
+                <div class="d-flex align-items-center">
+                    <button class="btn btn-sm btn-link p-0 me-2" onclick="toggleDepartment('dept-${dept.name.replace(/\\s+/g, '-')}')"><i class="bi bi-chevron-right" id="dept-${dept.name.replace(/\\s+/g, '-')}-icon"></i></button>
+                    <strong>${dept.name}</strong><span class="badge bg-secondary ms-2">${availableUsersInDept}</span>
+                </div>
+                <button class="btn btn-sm btn-outline-success" onclick="selectDepartmentUsers('${dept.name}')" ${availableUsersInDept === 0 ? 'disabled' : ''}>选择全部</button>
+            </div>
+            <div class="collapse" id="dept-${dept.name.replace(/\\s+/g, '-')}"></div>
+        `;
+        const deptBody = deptDiv.querySelector('.collapse');
+        dept.groups.forEach(group => {
+            const availableUsersInGroup = group.users.filter(u => !selectedUsers.has(u.id)).length;
+            const groupDiv = document.createElement('div');
+            groupDiv.className = 'ps-3 border-start border-2 border-light';
+            groupDiv.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center p-2 bg-light bg-opacity-50">
+                    <div class="d-flex align-items-center">
+                        <button class="btn btn-sm btn-link p-0 me-2" onclick="toggleGroup('group-${dept.name.replace(/\\s+/g, '-')}-${group.name.replace(/\\s+/g, '-')}')"><i class="bi bi-chevron-right" id="group-${dept.name.replace(/\\s+/g, '-')}-${group.name.replace(/\\s+/g, '-')}-icon"></i></button>
+                        <span>${group.name}</span><span class="badge bg-info ms-2">${availableUsersInGroup}</span>
+                    </div>
+                    <button class="btn btn-sm btn-outline-info" onclick="selectGroupUsers('${dept.name}', '${group.name}')" ${availableUsersInGroup === 0 ? 'disabled' : ''}>选择全部</button>
+                </div>
+                <div class="collapse" id="group-${dept.name.replace(/\\s+/g, '-')}-${group.name.replace(/\\s+/g, '-')}"></div>
+            `;
+            const groupBody = groupDiv.querySelector('.collapse');
+            group.users.forEach(user => {
+                if (!selectedUsers.has(user.id)) {
+                    const userDiv = document.createElement('div');
+                    userDiv.className = 'ps-4 py-2 border-bottom border-light';
+                    userDiv.innerHTML = `
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div><div class="fw-bold">${user.name}</div><small class="text-muted">${user.number} | ${user.student_id}</small></div>
+                            <button class="btn btn-sm btn-outline-primary" onclick="selectUser(${user.id})"><i class="bi bi-plus"></i></button>
+                        </div>
+                    `;
+                    groupBody.appendChild(userDiv);
+                }
+            });
+            deptBody.appendChild(groupDiv);
+        });
+        container.appendChild(deptDiv);
+    });
+}
+
+function toggleDepartment(deptId) {
+    const element = document.getElementById(deptId);
+    const icon = document.getElementById(deptId + '-icon');
+    if (element.classList.contains('show')) {
+        element.classList.remove('show');
+        icon.classList.remove('bi-chevron-down');
+        icon.classList.add('bi-chevron-right');
+    } else {
+        element.classList.add('show');
+        icon.classList.remove('bi-chevron-right');
+        icon.classList.add('bi-chevron-down');
+    }
+}
+
+function toggleGroup(groupId) {
+    const element = document.getElementById(groupId);
+    const icon = document.getElementById(groupId + '-icon');
+    if (element.classList.contains('show')) {
+        element.classList.remove('show');
+        icon.classList.remove('bi-chevron-down');
+        icon.classList.add('bi-chevron-right');
+    } else {
+        element.classList.add('show');
+        icon.classList.remove('bi-chevron-right');
+        icon.classList.add('bi-chevron-down');
+    }
+}
+
+function selectDepartmentUsers(deptName) {
+    const dept = departmentData.find(d => d.name === deptName);
+    if (!dept) return;
+    dept.groups.forEach(group => group.users.forEach(user => selectedUsers.add(user.id)));
+    renderDepartmentUserTree();
+    updateSelectedUsersDisplay();
+}
+
+function selectGroupUsers(deptName, groupName) {
+    const dept = departmentData.find(d => d.name === deptName);
+    if (!dept) return;
+    const group = dept.groups.find(g => g.name === groupName);
+    if (!group) return;
+    group.users.forEach(user => selectedUsers.add(user.id));
+    renderDepartmentUserTree();
+    updateSelectedUsersDisplay();
+}
+
+function selectUser(userId) {
+    if (allUsers.find(u => u.id === userId)) {
+        selectedUsers.add(userId);
+        renderDepartmentUserTree();
+        updateSelectedUsersDisplay();
+    }
+}
+
+function unselectUser(userId) {
+    selectedUsers.delete(userId);
+    renderDepartmentUserTree();
+    updateSelectedUsersDisplay();
+}
+
+function selectAllUsersForBan() {
+    allUsers.forEach(user => selectedUsers.add(user.id));
+    renderDepartmentUserTree();
+    updateSelectedUsersDisplay();
+}
+
+function updateSelectedUsersDisplay() {
+    const container = document.getElementById('selectedUsersList');
+    const countBadge = document.getElementById('selectedUsersCount');
+    container.innerHTML = '';
+    countBadge.textContent = selectedUsers.size;
+    selectedUsers.forEach(userId => {
+        const user = allUsers.find(u => u.id === userId);
+        if (user) {
+            const userItem = document.createElement('div');
+            userItem.className = 'list-group-item list-group-item-action';
+            userItem.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <div><div class="fw-bold">${user.name}</div><small class="text-muted">${user.number} | ${user.department || '未分配部门'}</small></div>
+                    <button class="btn btn-sm btn-outline-danger" onclick="unselectUser(${user.id})"><i class="bi bi-dash"></i></button>
+                </div>
+            `;
+            container.appendChild(userItem);
+        }
+    });
+    if (container.children.length === 0) {
+        container.innerHTML = '<div class="text-center text-muted py-3">未选择用户</div>';
+    }
+    document.getElementById('confirmBanBtn').disabled = selectedUsers.size === 0;
+}
+
+function confirmBanUsers() {
+    if (selectedUsers.size === 0 || selectedCourses.size === 0) {
+        showAlert('请选择课程和用户', 'warning');
+        return;
+    }
+    const confirmBtn = document.getElementById('confirmBanBtn');
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> 处理中...';
+    fetch('/admin/api/courses/batch_ban_users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            course_ids: Array.from(selectedCourses),
+            user_ids: Array.from(selectedUsers)
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert(data.message, 'success');
+        } else {
+            showAlert(data.message || '禁听操作失败', 'error');
+        }
+        const modal = bootstrap.Modal.getInstance(document.getElementById('userSelectionModal'));
+        modal.hide();
+        selectedCourses.clear();
+        selectedUsers.clear();
+        loadRegistrationStats();
+    })
+    .catch(() => showAlert('禁听操作失败', 'error'))
+    .finally(() => {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = '<i class="bi bi-ban"></i> 确认禁听';
+    });
+}
+
+function showAlert(message, type) {
+    const alertClass = type === 'success' ? 'alert-success' : type === 'warning' ? 'alert-warning' : 'alert-danger';
+    const html = `<div class="alert ${alertClass} alert-dismissible fade show" role="alert">${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`;
+    const container = document.querySelector('.container-fluid');
+    container.insertAdjacentHTML('afterbegin', html);
+    setTimeout(() => {
+        const alert = container.querySelector('.alert');
+        if (alert) alert.remove();
+    }, 3000);
+}
+</script>
+{% endblock %}

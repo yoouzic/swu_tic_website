@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>超级管理员仪表板 - 听课管理系统</title>
+    <link href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='vendor/bootstrap-icons/font/bootstrap-icons.css') }}" rel="stylesheet">
+    <script src="{{ url_for('static', filename='vendor/chart.js/chart.min.js') }}"></script>
+    <style>
+        .dashboard-card {
+            transition: transform 0.2s;
+            border: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .dashboard-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .stat-card.users {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .stat-card.departments {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .stat-card.groups {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+        .stat-card.forms {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        }
+        .quick-action-btn {
+            height: 120px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-decoration: none;
+            color: inherit;
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+        .quick-action-btn:hover {
+            color: inherit;
+            transform: scale(1.05);
+        }
+        .recent-forms-table {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .super-admin-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark super-admin-header">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-shield-check"></i> 听课管理系统 - 超级管理员
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text me-3">
+                    欢迎，{{ session.user_name }} ({{ session.user_role }})
+                </span>
+                <a class="nav-link" href="{{ url_for('auth.logout') }}">
+                    <i class="bi bi-box-arrow-right"></i> 退出
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- 提示消息 -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="row">
+                    <div class="col-12">
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'danger' if category == 'error' else 'warning' if category == 'warning' else 'info' if category == 'info' else 'success' }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <!-- 页面标题 -->
+        <div class="row mb-4">
+            <div class="col">
+                <h2><i class="bi bi-speedometer2"></i> 超级管理员仪表板</h2>
+                <p class="text-muted">系统全局数据概览与管理功能</p>
+            </div>
+        </div>
+
+        <!-- 自动审核通知 -->
+        <div class="row mb-4" id="autoReviewNotification" style="display: none;">
+            <div class="col-12">
+                <div class="card bg-info text-white">
+                    <div class="card-body d-flex justify-content-between align-items-center">
+                        <div>
+                            <h5 class="card-title mb-0"><i class="bi bi-magic"></i> 自动审核任务</h5>
+                            <p class="card-text mb-0" id="autoReviewStatusText">任务正在运行中...</p>
+                        </div>
+                        <div>
+                            <a href="{{ url_for('admin.auto_review_results_page') }}" class="btn btn-light text-info fw-bold" id="btnViewAutoReviewResult" style="display: none;">查看结果</a>
+                            <button class="btn btn-outline-light btn-sm ms-2" onclick="dismissAutoReviewNotification()">关闭</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 统计卡片 -->
+        <div class="row mb-4">
+            <div class="col-md-3 mb-3">
+                <div class="card dashboard-card stat-card users">
+                    <div class="card-body text-center">
+                        <i class="bi bi-people fs-1 mb-2"></i>
+                        <h3>{{ total_users }}</h3>
+                        <p class="mb-0">总用户数</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card dashboard-card stat-card departments">
+                    <div class="card-body text-center">
+                        <i class="bi bi-building fs-1 mb-2"></i>
+                        <h3>{{ total_departments }}</h3>
+                        <p class="mb-0">部门数量</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card dashboard-card stat-card groups">
+                    <div class="card-body text-center">
+                        <i class="bi bi-collection fs-1 mb-2"></i>
+                        <h3>{{ total_groups }}</h3>
+                        <p class="mb-0">群组数量</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card dashboard-card stat-card forms">
+                    <div class="card-body text-center">
+                        <i class="bi bi-file-earmark-text fs-1 mb-2"></i>
+                        <h3>{{ total_forms }}</h3>
+                        <p class="mb-0">听课表单</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主要功能区域 -->
+        <div class="row mb-4">
+            <!-- 左侧功能区 -->
+            <div class="col-md-6">
+                <!-- 系统管理 -->
+                <div class="card dashboard-card mb-3">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-gear"></i> 系统管理</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <a href="{{ url_for('admin.system_management') }}" class="quick-action-btn btn btn-outline-primary">
+                                    <i class="bi bi-gear-fill fs-1 mb-2"></i>
+                                    <span>系统管理</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 部门管理 -->
+                <div class="card dashboard-card mb-3">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-building"></i> 部门管理</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <a href="{{ url_for('admin.manage_departments') }}" class="quick-action-btn btn btn-outline-info">
+                                    <i class="bi bi-building-gear fs-1 mb-2"></i>
+                                    <span>部门管理</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 表单管理 -->
+                <div class="card dashboard-card mb-3">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-file-earmark-text"></i> 表单管理</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <a href="{{ url_for('user.submit_form') }}" class="quick-action-btn btn btn-outline-success">
+                                    <i class="bi bi-plus-circle fs-1 mb-2"></i>
+                                    <span>填写表单</span>
+                                </a>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <a href="{{ url_for('user.listening_registration') }}" class="quick-action-btn btn btn-outline-info">
+                                    <i class="bi bi-calendar-check fs-1 mb-2"></i>
+                                    <span>听课登记</span>
+                                </a>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <a href="{{ url_for('admin.view_forms') }}" class="quick-action-btn btn btn-outline-secondary">
+                                    <i class="bi bi-file-earmark-text fs-1 mb-2"></i>
+                                    <span>查看表单</span>
+                                </a>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <a href="{{ url_for('admin.review_forms') }}" class="quick-action-btn btn btn-outline-danger">
+                                    <i class="bi bi-clipboard-check fs-1 mb-2"></i>
+                                    <span>审核表单</span>
+                                </a>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <a href="{{ url_for('admin.statistics') }}" class="quick-action-btn btn btn-outline-warning">
+                                    <i class="bi bi-graph-up fs-1 mb-2"></i>
+                                    <span>统计分析</span>
+                                </a>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <a href="{{ url_for('admin.auto_review_page') }}" class="quick-action-btn btn btn-outline-primary">
+                                    <i class="bi bi-robot fs-1 mb-2"></i>
+                                    <span>自动审核 (Excel版)</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 课程管理 -->
+                <div class="card dashboard-card mb-3">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-journal-text"></i> 课程管理</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-12 mb-3">
+                                <a href="{{ url_for('admin.course_management') }}" class="quick-action-btn btn btn-outline-primary">
+                                    <i class="bi bi-journal-text fs-1 mb-2"></i>
+                                    <span>课程管理</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 个人资料 -->
+                <div class="card dashboard-card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-person-circle"></i> 个人设置</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-12">
+                                <a href="{{ url_for('user.profile') }}" class="quick-action-btn btn btn-outline-primary">
+                                    <i class="bi bi-person-circle fs-1 mb-2"></i>
+                                    <span>个人资料</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧空白区域 -->
+            <div class="col-md-6">
+                <!-- 预留空白区域 -->
+                <div class="text-center text-muted" style="padding: 100px 0;">
+                    <i class="bi bi-layout-text-window-reverse" style="font-size: 4rem; opacity: 0.3;"></i>
+                    <p class="mt-3">此区域预留用于未来功能扩展</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 最近表单 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card dashboard-card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-clock-history"></i> 最近提交的听课表单</h5>
+                        <a href="{{ url_for('admin.view_forms') }}" class="btn btn-sm btn-outline-primary">查看全部</a>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="recent-forms-table">
+                            {% if recent_forms %}
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>听课人</th>
+                                        <th>授课教师</th>
+                                        <th>课程名称</th>
+                                        <th>听课日期</th>
+                                        <th>提交时间</th>
+                                        <th>状态</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for form in recent_forms %}
+                                    <tr>
+                                        <td>{{ form.listener_name }}</td>
+                                        <td>{{ form.teacher_name }}</td>
+                                        <td>{{ form.course_title }}</td>
+                                        <td>{{ form.lecture_date if form.lecture_date else '-' }}</td>
+                                        <td>{{ form.created_at.strftime('%m-%d %H:%M') if form.created_at else '-' }}</td>
+                                        <td>
+                                            {% if form.status == '待审核' %}
+                                                <span class="badge bg-warning">{{ form.status }}</span>
+                                            {% elif form.status == '已通过' %}
+                                                <span class="badge bg-success">{{ form.status }}</span>
+                                            {% elif form.status == '未通过' %}
+                                                <span class="badge bg-danger">{{ form.status }}</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">{{ form.status }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <a href="{{ url_for('admin.view_forms') }}#form-{{ form.id }}" class="btn btn-sm btn-outline-primary">
+                                                <i class="bi bi-eye"></i> 查看
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {% else %}
+                            <div class="text-center text-muted py-4">
+                                <i class="bi bi-inbox fs-1"></i>
+                                <p class="mt-2">暂无听课表单</p>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+    <script>
+        function checkAutoReviewStatus() {
+            fetch('/admin/api/review/auto_check/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const notification = document.getElementById('autoReviewNotification');
+                        const statusText = document.getElementById('autoReviewStatusText');
+                        const viewBtn = document.getElementById('btnViewAutoReviewResult');
+                        
+                        if (data.status === 'running') {
+                            notification.style.display = 'block';
+                            statusText.textContent = '正在进行自动审核，请稍候...';
+                            viewBtn.style.display = 'none';
+                            // 2秒后再次检查
+                            setTimeout(checkAutoReviewStatus, 2000);
+                        } else if (data.status === 'completed') {
+                            notification.style.display = 'block';
+                            notification.querySelector('.card').className = 'card bg-success text-white';
+                            const result = data.result || {};
+                            statusText.textContent = `自动审核已完成（${data.time}）。处理: ${result.processed || 0}, 忽略: ${result.ignored || 0}`;
+                            viewBtn.style.display = 'inline-block';
+                            viewBtn.className = 'btn btn-light text-success fw-bold ms-2';
+                        } else if (data.status === 'failed') {
+                            notification.style.display = 'block';
+                            notification.querySelector('.card').className = 'card bg-danger text-white';
+                            statusText.textContent = `自动审核失败: ${data.error || '未知错误'}`;
+                            viewBtn.style.display = 'none';
+                        } else {
+                            if (data.status === 'idle') {
+                                notification.style.display = 'none';
+                            }
+                        }
+                    }
+                })
+                .catch(console.error);
+        }
+        
+        function dismissAutoReviewNotification() {
+            document.getElementById('autoReviewNotification').style.display = 'none';
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAutoReviewStatus();
+            
+            // 为所有内部链接添加 target="_blank"，除了登出、锚点和模态框触发器
+            document.querySelectorAll('a').forEach(function(link) {
+                var href = link.getAttribute('href');
+                if (href && 
+                    !href.startsWith('#') && 
+                    !href.startsWith('javascript') && 
+                    !link.hasAttribute('target') &&
+                    !link.hasAttribute('data-bs-toggle') &&
+                    !link.hasAttribute('data-toggle') &&
+                    !href.includes('logout')) {
+                    link.setAttribute('target', '_blank');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

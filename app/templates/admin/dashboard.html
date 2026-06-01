@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+
+{% block title %}管理面板 - 西南大学教学信息中心{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- 页面标题 -->
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>
+                <i class="bi bi-speedometer2"></i> 管理面板
+                <small class="text-muted">{{ session.user_role }}</small>
+            </h2>
+            <div class="text-muted">
+                <i class="bi bi-clock"></i> {{ current_time.strftime('%Y年%m月%d日 %H:%M') }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 统计卡片 -->
+    <div class="col-md-3 mb-4">
+        <div class="card bg-primary text-white shadow">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="mb-0">{{ stats.total_users or 0 }}</h4>
+                        <p class="mb-0">总用户数</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-people" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-primary border-0">
+                <a href="{{ url_for('admin.manage_users') }}" class="text-white text-decoration-none">
+                    <small><i class="bi bi-arrow-right"></i> 查看详情</small>
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-4">
+        <div class="card bg-success text-white shadow">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="mb-0">{{ stats.total_forms or 0 }}</h4>
+                        <p class="mb-0">总表单数</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-file-earmark-text" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-success border-0">
+                <a href="{{ url_for('admin.view_forms') }}" class="text-white text-decoration-none">
+                    <small><i class="bi bi-arrow-right"></i> 查看详情</small>
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-4">
+        <div class="card bg-warning text-white shadow">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="mb-0">{{ stats.total_groups or 0 }}</h4>
+                        <p class="mb-0">总小组数</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-diagram-3" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-warning border-0">
+                <a href="{{ url_for('admin.manage_groups') }}" class="text-white text-decoration-none">
+                    <small><i class="bi bi-arrow-right"></i> 查看详情</small>
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-4">
+        <div class="card bg-info text-white shadow">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="mb-0">{{ stats.this_month_forms or 0 }}</h4>
+                        <p class="mb-0">本月表单</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-calendar-month" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-info border-0">
+                <small><i class="bi bi-trending-up"></i> 较上月 +{{ stats.month_growth or 0 }}%</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 快速操作 -->
+    <div class="col-md-4 mb-4">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-lightning"></i> 快速操作
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    {% if session.user_role == '超级管理员' %}
+                        <a href="{{ url_for('admin.import_users') }}" class="btn btn-outline-primary">
+                            <i class="bi bi-upload"></i> 导入用户
+                        </a>
+                        <a href="{{ url_for('admin.manage_departments') }}" class="btn btn-outline-success">
+                            <i class="bi bi-building"></i> 部门管理
+                        </a>
+                    {% endif %}
+                    <a href="{{ url_for('admin.manage_groups') }}" class="btn btn-outline-warning">
+                        <i class="bi bi-people"></i> 小组管理
+                    </a>
+                    <a href="{{ url_for('admin.view_forms') }}" class="btn btn-outline-info">
+                        <i class="bi bi-file-earmark-text"></i> 查看表单
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 最近表单 -->
+    <div class="col-md-8 mb-4">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-clock-history"></i> 最近提交的表单
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if recent_forms %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>提交人</th>
+                                    <th>课程名称</th>
+                                    <th>授课教师</th>
+                                    <th>提交时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for form in recent_forms %}
+                                <tr>
+                                    <td>{{ form.submitter_name }}</td>
+                                    <td>{{ form.course_title }}</td>
+                                    <td>{{ form.teacher_name }}</td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {{ form.created_at.strftime('%m-%d %H:%M') }}
+                                        </small>
+                                    </td>
+                                    <td>
+                            <a href="{{ url_for('admin.get_form_detail', form_id=form.id) }}"
+                                           class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="text-center mt-3">
+                        <a href="{{ url_for('admin.view_forms') }}" class="btn btn-outline-success">
+                            查看全部表单 <i class="bi bi-arrow-right"></i>
+                        </a>
+                    </div>
+                {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                        <p class="mt-2">暂无表单记录</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 部门统计 -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow">
+            <div class="card-header bg-warning text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-bar-chart"></i> 部门统计
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if department_stats %}
+                    <canvas id="departmentChart" width="400" height="200"></canvas>
+                {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-pie-chart" style="font-size: 2rem;"></i>
+                        <p class="mt-2">暂无统计数据</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- 系统信息 -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-info-circle"></i> 系统信息
+                </h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <td><strong>系统版本：</strong></td>
+                        <td>v1.0.0</td>
+                    </tr>
+                    <tr>
+                        <td><strong>数据库：</strong></td>
+                        <td>SQLite</td>
+                    </tr>
+                    <tr>
+                        <td><strong>在线用户：</strong></td>
+                        <td>{{ stats.online_users or 0 }} 人</td>
+                    </tr>
+                    <tr>
+                        <td><strong>系统运行时间：</strong></td>
+                        <td>{{ system_info.uptime or '未知' }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>最后备份：</strong></td>
+                        <td>{{ system_info.last_backup or '未备份' }}</td>
+                    </tr>
+                </table>
+                
+                {% if session.user_role == '超级管理员' %}
+                <div class="mt-3">
+                    <button class="btn btn-sm btn-outline-primary" onclick="backupDatabase()">
+                        <i class="bi bi-download"></i> 备份数据库
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/chart.js/chart.min.js') }}"></script>
+<script>
+// 部门统计图表
+{% if department_stats %}
+const ctx = document.getElementById('departmentChart').getContext('2d');
+const departmentChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+        labels: {{ department_stats.labels | tojson }},
+        datasets: [{
+            data: {{ department_stats.data | tojson }},
+            backgroundColor: [
+                '#007bff',
+                '#28a745',
+                '#ffc107',
+                '#dc3545'
+            ],
+            borderWidth: 2,
+            borderColor: '#fff'
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+});
+{% endif %}
+
+// 备份数据库
+function backupDatabase() {
+    if (confirm('确定要备份数据库吗？')) {
+        fetch('/admin/backup', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('数据库备份成功！');
+                location.reload();
+            } else {
+                alert('备份失败：' + data.message);
+            }
+        })
+        .catch(error => {
+            alert('备份失败：' + error.message);
+        });
+    }
+}
+
+// 自动刷新统计数据
+setInterval(function() {
+    fetch('/admin/stats')
+    .then(response => response.json())
+    .then(data => {
+        // 更新统计数字
+        document.querySelector('.bg-primary .card-body h4').textContent = data.total_users || 0;
+        document.querySelector('.bg-success .card-body h4').textContent = data.total_forms || 0;
+        document.querySelector('.bg-warning .card-body h4').textContent = data.total_groups || 0;
+        document.querySelector('.bg-info .card-body h4').textContent = data.this_month_forms || 0;
+    })
+    .catch(error => console.log('统计数据更新失败:', error));
+}, 30000); // 每30秒更新一次
+</script>
+{% endblock %}

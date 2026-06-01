@@ -1,0 +1,373 @@
+{% extends "base.html" %}
+
+{% block title %}考核对象与指标设定 - 管理员面板{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <h3 class="mb-0">考核对象与指标设定</h3>
+            <a href="{{ url_for('admin.department_monthly_assessment_stats') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> 返回部门月度考评
+            </a>
+        </div>
+    </div>
+
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i>
+        在此页面可以设定特殊考核规则（如免于考核、请假），设定后将影响"部门月度考评统计"的计算结果。免于考核和请假成员在对应周次不计入考核。
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">操作</div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-12">
+                            <button class="btn btn-primary me-2" id="btnLoadMembers">查询成员</button>
+                            <button class="btn btn-outline-secondary me-2" id="btnSelectAllDepts">全选部门</button>
+                            <button class="btn btn-outline-secondary" id="btnClearDepts">清空选择</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-header">部门范围</div>
+                <div class="card-body">
+                    <input type="text" id="deptSearchInput" class="form-control mb-2" placeholder="搜索部门">
+                    <div id="deptList" style="max-height: 600px; overflow-y: auto;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-9">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>成员列表与考核规则设定</span>
+                    <div id="memberSelectionToolbar" style="display: none;">
+                        <button class="btn btn-sm btn-outline-secondary me-1" id="btnSelectAllMembers">全选</button>
+                        <button class="btn btn-sm btn-outline-secondary me-1" id="btnInvertMembers">反选</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="btnClearMembers">清空选择</button>
+                    </div>
+                </div>
+                <div class="card-body" id="memberBody">
+                    <div class="text-center text-muted py-5">请先选择部门后点击"查询成员"</div>
+                </div>
+                <div class="card-footer" id="batchActionBar" style="display: none;">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <span id="selectedCountLabel" class="text-muted">已选择 0 人</span>
+                        <button class="btn btn-warning" id="btnBatchAddRule" disabled>
+                            <i class="bi bi-plus-circle"></i> 为选中成员添加规则
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加规则模态框 -->
+<div class="modal fade" id="addRuleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加特殊考核规则</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">成员</label>
+                    <div id="ruleTargetMembers" class="form-control-plaintext fw-bold"></div>
+                </div>
+                <div class="mb-3">
+                    <label for="ruleType" class="form-label">规则类型</label>
+                    <select class="form-select" id="ruleType">
+                        <option value="exempt">免于考核</option>
+                        {% if is_super_admin %}
+                        <option value="leave">请假</option>
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <label for="ruleStartWeek" class="form-label">起始周</label>
+                        <input type="number" class="form-control" id="ruleStartWeek" min="1" value="1">
+                    </div>
+                    <div class="col-6">
+                        <label for="ruleEndWeek" class="form-label">结束周</label>
+                        <input type="number" class="form-control" id="ruleEndWeek" min="1" value="20">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="ruleReason" class="form-label">理由 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="ruleReason" placeholder="请填写理由（必填）" maxlength="200">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="btnSaveRule">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const availableDepartments = {{ available_departments|tojson }};
+const isSuperAdmin = {{ is_super_admin|tojson }};
+let currentMembersData = null;
+let pendingRuleUserIds = [];
+
+function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
+// ===== 部门列表 =====
+function renderDeptList() {
+    const root = document.getElementById('deptList');
+    if (!availableDepartments || availableDepartments.length === 0) {
+        root.innerHTML = '<div class="text-muted">暂无可选部门</div>';
+        return;
+    }
+    root.innerHTML = availableDepartments.map(name => `
+        <label class="form-check d-block mb-2 dept-item-row">
+            <input class="form-check-input dept-item" type="checkbox" value="${escapeHtml(name)}">
+            ${escapeHtml(name)}
+        </label>
+    `).join('');
+}
+
+function filterDepts() {
+    const keyword = document.getElementById('deptSearchInput').value.trim().toLowerCase();
+    document.querySelectorAll('.dept-item-row').forEach(row => {
+        row.style.display = (!keyword || row.textContent.toLowerCase().includes(keyword)) ? '' : 'none';
+    });
+}
+
+function getSelectedDepts() {
+    return Array.from(document.querySelectorAll('.dept-item:checked')).map(el => el.value);
+}
+
+function selectAllDepts(flag) {
+    document.querySelectorAll('.dept-item').forEach(el => { el.checked = flag; });
+}
+
+// ===== 成员多选 =====
+function getCheckedMemberIds() {
+    return Array.from(document.querySelectorAll('.member-checkbox:checked')).map(el => parseInt(el.value));
+}
+
+function updateSelectionCount() {
+    const count = getCheckedMemberIds().length;
+    document.getElementById('selectedCountLabel').textContent = `已选择 ${count} 人`;
+    document.getElementById('btnBatchAddRule').disabled = count === 0;
+}
+
+function selectAllMembers() {
+    document.querySelectorAll('.member-checkbox').forEach(el => { el.checked = true; });
+    updateSelectionCount();
+}
+
+function invertMembers() {
+    document.querySelectorAll('.member-checkbox').forEach(el => { el.checked = !el.checked; });
+    updateSelectionCount();
+}
+
+function clearMemberSelection() {
+    document.querySelectorAll('.member-checkbox').forEach(el => { el.checked = false; });
+    updateSelectionCount();
+}
+
+// ===== 渲染成员列表 =====
+function renderOverrideTypeBadge(type) {
+    const map = {
+        'exempt': '<span class="badge bg-danger">免于考核</span>',
+        'leave': '<span class="badge bg-primary">请假</span>',
+        'custom_requirement': '<span class="badge bg-warning text-dark">自定义指标</span>',
+        'partial_exempt': '<span class="badge bg-info">部分减免</span>'
+    };
+    return map[type] || `<span class="badge bg-secondary">${escapeHtml(type)}</span>`;
+}
+
+function renderMembers(data) {
+    const root = document.getElementById('memberBody');
+    const departments = data.departments || [];
+    if (departments.length === 0) {
+        root.innerHTML = '<div class="text-center text-muted py-5">无可展示的成员</div>';
+        document.getElementById('memberSelectionToolbar').style.display = 'none';
+        document.getElementById('batchActionBar').style.display = 'none';
+        return;
+    }
+
+    document.getElementById('memberSelectionToolbar').style.display = '';
+    document.getElementById('batchActionBar').style.display = '';
+
+    let html = '';
+    for (const dept of departments) {
+        for (const group of (dept.groups || [])) {
+            html += `<div class="card mb-3">`;
+            html += `<div class="card-header bg-light"><strong>${escapeHtml(dept.department)}</strong> · ${escapeHtml(group.group_name)}</div>`;
+            html += `<div class="list-group list-group-flush">`;
+            for (const member of (group.members || [])) {
+                const overrides = member.overrides || [];
+                html += `<div class="list-group-item">`;
+                html += `<div class="d-flex align-items-center mb-1">`;
+                html += `<input class="form-check-input me-2 member-checkbox" type="checkbox" value="${member.user_id}" data-name="${escapeHtml(member.name)}" onchange="updateSelectionCount()">`;
+                html += `<strong>${escapeHtml(member.name)}</strong> <span class="text-muted ms-1">(${escapeHtml(member.number || '-')})</span>`;
+                html += `<button class="btn btn-sm btn-outline-primary ms-auto" onclick="openAddRuleModal([{id:${member.user_id},name:'${escapeHtml(member.name)}'}])"><i class="bi bi-plus-circle"></i> 添加规则</button>`;
+                html += `</div>`;
+                if (overrides.length === 0) {
+                    html += `<div class="text-muted small ms-4">无特殊考核规则</div>`;
+                } else {
+                    for (const ov of overrides) {
+                        html += `<div class="d-flex align-items-center ms-4 mb-1">`;
+                        html += renderOverrideTypeBadge(ov.override_type);
+                        html += `<span class="ms-2 small">第${ov.start_week}-${ov.end_week}周</span>`;
+                        html += `<span class="ms-2 small text-muted">(${escapeHtml(ov.reason)})</span>`;
+                        html += `<button class="btn btn-sm btn-outline-danger ms-auto" onclick="deleteOverride(${ov.id})">删除</button>`;
+                        html += `</div>`;
+                    }
+                }
+                html += `</div>`;
+            }
+            html += `</div></div>`;
+        }
+    }
+    root.innerHTML = html;
+    updateSelectionCount();
+}
+
+// ===== API 交互 =====
+function loadMembers() {
+    const departments = getSelectedDepts();
+    if (departments.length === 0) {
+        alert('请先选择至少一个部门');
+        return;
+    }
+    const params = new URLSearchParams();
+    departments.forEach(name => params.append('departments', name));
+    fetch(`/admin/api/assessment-overrides/list?${params.toString()}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '查询失败');
+                return;
+            }
+            currentMembersData = data;
+            renderMembers(data);
+        })
+        .catch(() => alert('查询失败，请稍后重试'));
+}
+
+function openAddRuleModal(users) {
+    pendingRuleUserIds = users.map(u => u.id);
+    const names = users.map(u => u.name).join('，');
+    document.getElementById('ruleTargetMembers').textContent = names;
+    document.getElementById('ruleType').value = 'exempt';
+    document.getElementById('ruleStartWeek').value = '1';
+    document.getElementById('ruleEndWeek').value = '20';
+    document.getElementById('ruleReason').value = '';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('addRuleModal')).show();
+}
+
+function openBatchAddRuleModal() {
+    const checkedEls = document.querySelectorAll('.member-checkbox:checked');
+    if (checkedEls.length === 0) {
+        alert('请先勾选至少一个成员');
+        return;
+    }
+    const users = Array.from(checkedEls).map(el => ({
+        id: parseInt(el.value),
+        name: el.getAttribute('data-name')
+    }));
+    openAddRuleModal(users);
+}
+
+function saveRule() {
+    const overrideType = document.getElementById('ruleType').value;
+    const startWeek = parseInt(document.getElementById('ruleStartWeek').value);
+    const endWeek = parseInt(document.getElementById('ruleEndWeek').value);
+    const reason = document.getElementById('ruleReason').value.trim();
+
+    if (!reason) {
+        alert('请填写理由');
+        return;
+    }
+    if (isNaN(startWeek) || isNaN(endWeek) || startWeek < 1 || endWeek < 1) {
+        alert('周次必须为大于0的整数');
+        return;
+    }
+    if (startWeek > endWeek) {
+        alert('起始周不能大于结束周');
+        return;
+    }
+
+    const btnSave = document.getElementById('btnSaveRule');
+    btnSave.disabled = true;
+    btnSave.textContent = '保存中...';
+
+    fetch('/admin/api/assessment-overrides', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            user_ids: pendingRuleUserIds,
+            override_type: overrideType,
+            start_week: startWeek,
+            end_week: endWeek,
+            reason: reason
+        })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '添加失败');
+                return;
+            }
+            alert(data.message || '添加成功');
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('addRuleModal')).hide();
+            loadMembers();
+        })
+        .catch(() => alert('添加失败，请稍后重试'))
+        .finally(() => {
+            btnSave.disabled = false;
+            btnSave.textContent = '保存';
+        });
+}
+
+function deleteOverride(overrideId) {
+    if (!confirm('确定要删除该考核规则吗？')) {
+        return;
+    }
+    fetch(`/admin/api/assessment-overrides/${overrideId}`, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message || '删除失败');
+                return;
+            }
+            loadMembers();
+        })
+        .catch(() => alert('删除失败，请稍后重试'));
+}
+
+// ===== 初始化 =====
+function initPage() {
+    renderDeptList();
+    document.getElementById('deptSearchInput').addEventListener('input', filterDepts);
+    document.getElementById('btnLoadMembers').addEventListener('click', loadMembers);
+    document.getElementById('btnSelectAllDepts').addEventListener('click', () => selectAllDepts(true));
+    document.getElementById('btnClearDepts').addEventListener('click', () => selectAllDepts(false));
+    document.getElementById('btnSelectAllMembers').addEventListener('click', selectAllMembers);
+    document.getElementById('btnInvertMembers').addEventListener('click', invertMembers);
+    document.getElementById('btnClearMembers').addEventListener('click', clearMemberSelection);
+    document.getElementById('btnBatchAddRule').addEventListener('click', openBatchAddRuleModal);
+    document.getElementById('btnSaveRule').addEventListener('click', saveRule);
+}
+
+document.addEventListener('DOMContentLoaded', initPage);
+</script>
+{% endblock %}

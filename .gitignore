@@ -1,0 +1,48 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Environment and secret files
+.env
+.env.*
+!.env.example
+*.local
+*.secret
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+
+
+# Flask and runtime state
+data/instance/
+data/storage/
+
+# Local database and backup data
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs and temporary files
+*.log
+logs/
+tmp_*
+tmp*
+
+# IDE and OS files
+.vscode/
+.idea/
+.trae/
+.DS_Store
+Thumbs.db
+
+readme/
+scripts/

@@ -1,0 +1,178 @@
+<div class="row">
+    <div class="col-md-6">
+        <h5 class="text-primary">基本信息</h5>
+        <table class="table table-sm table-borderless">
+            <tr>
+                <td width="30%"><strong>听课人姓名：</strong></td>
+                <td>{{ form.listener_name }}</td>
+            </tr>
+            <tr>
+                <td><strong>听课人编号：</strong></td>
+                <td>{{ form.listener_number }}</td>
+            </tr>
+            <tr>
+                <td><strong>提交时间：</strong></td>
+                <td>{{ form.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            </tr>
+            <tr>
+                <td><strong>状态：</strong></td>
+                <td>
+                    {% if form.status == '待审核' %}
+                        <span class="badge badge-warning">{{ form.status }}</span>
+                    {% elif form.status == '已审核' %}
+                        <span class="badge badge-success">{{ form.status }}</span>
+                    {% elif form.status == '已驳回' %}
+                        <span class="badge badge-danger">{{ form.status }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% if form.reviewer %}
+            <tr>
+                <td><strong>审核人：</strong></td>
+                <td>{{ form.reviewer.name }}</td>
+            </tr>
+            <tr>
+                <td><strong>审核时间：</strong></td>
+                <td>{{ form.review_time.strftime('%Y-%m-%d %H:%M:%S') if form.review_time else '' }}</td>
+            </tr>
+            {% endif %}
+        </table>
+    </div>
+    
+    <div class="col-md-6">
+        <h5 class="text-primary">听课信息</h5>
+        <table class="table table-sm table-borderless">
+            <tr>
+                <td width="30%"><strong>听课时间：</strong></td>
+                <td>{{ form.lecture_date }}</td>
+            </tr>
+            <tr>
+                <td><strong>第几节：</strong></td>
+                <td>{{ form.class_period }}</td>
+            </tr>
+            <tr>
+                <td><strong>听课地点：</strong></td>
+                <td>{{ form.lecture_location }}</td>
+            </tr>
+            <tr>
+                <td><strong>课程信息变化：</strong></td>
+                <td>{{ form.course_changes }}</td>
+            </tr>
+        </table>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <h5 class="text-primary">课程信息</h5>
+        <table class="table table-sm table-borderless">
+            <tr>
+                <td width="15%"><strong>授课教师：</strong></td>
+                <td width="35%">{{ form.teacher_name }}</td>
+                <td width="15%"><strong>教师所属学院：</strong></td>
+                <td width="35%">{{ form.teacher_college }}</td>
+            </tr>
+            <tr>
+                <td><strong>课程总标题：</strong></td>
+                <td colspan="3">{{ form.course_title }}</td>
+            </tr>
+            <tr>
+                <td><strong>专业年级：</strong></td>
+                <td colspan="3">{{ form.student_grade_class }}</td>
+            </tr>
+        </table>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <h5 class="text-primary">课堂评价</h5>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label><strong>主要教学方法：</strong></label>
+                    <div class="border p-2 bg-light">{{ form.teaching_method }}</div>
+                </div>
+                <div class="form-group">
+                    <label><strong>管理课堂纪律：</strong></label>
+                    <div class="border p-2 bg-light">{{ form.classroom_discipline }}</div>
+                </div>
+                <div class="form-group">
+                    <label><strong>调动课堂气氛：</strong></label>
+                    <div class="border p-2 bg-light">{{ form.classroom_atmosphere }}</div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label><strong>课件制作质量：</strong></label>
+                    <div class="border p-2 bg-light">{{ form.courseware_quality }}</div>
+                </div>
+                <div class="form-group">
+                    <label><strong>整体教学效果：</strong></label>
+                    <div class="border p-2 bg-light">{{ form.overall_effect }}</div>
+                </div>
+                <div class="form-group">
+                    <label><strong>优质案例推荐：</strong></label>
+                    <div class="border p-2 bg-light">{{ form.quality_case }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <h5 class="text-primary">反馈信息</h5>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label><strong>课程反馈（优点）：</strong></label>
+                    <div class="border p-2 bg-light">{{ form.course_feedback }}</div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label><strong>不足及建议：</strong></label>
+                    <div class="border p-2 bg-light">{{ form.suggestions }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="form-group">
+            <label><strong>异常情况反映：</strong></label>
+            <div class="border p-2 bg-light">{{ form.abnormal_situation }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <h5 class="text-primary">签名信息</h5>
+        <table class="table table-sm table-borderless">
+            <tr>
+                <td width="25%"><strong>听课班级同学签名1：</strong></td>
+                <td width="25%">{{ form.student_signature1 }}</td>
+                <td width="25%"><strong>联系电话1：</strong></td>
+                <td width="25%">{{ form.contact_phone1 }}</td>
+            </tr>
+            {% if form.student_signature2 %}
+            <tr>
+                <td><strong>听课班级同学签名2：</strong></td>
+                <td>{{ form.student_signature2 }}</td>
+                <td><strong>联系电话2：</strong></td>
+                <td>{{ form.contact_phone2 or '' }}</td>
+            </tr>
+            {% endif %}
+        </table>
+    </div>
+</div>
+
+{% if form.review_comment %}
+<div class="row mt-3">
+    <div class="col-12">
+        <h5 class="text-primary">审核意见</h5>
+        <div class="alert alert-info">
+            {{ form.review_comment }}
+        </div>
+    </div>
+</div>
+{% endif %}

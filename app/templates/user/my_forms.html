@@ -1,0 +1,448 @@
+{% extends "base.html" %}
+
+{% block title %}我的听课表单{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3><i class="fas fa-list"></i> 我的听课表单</h3>
+                <a href="{{ url_for('user.submit_form') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i> 填写新表单
+                </a>
+            </div>
+
+            <!-- 筛选和搜索 -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <form method="GET" class="row g-3">
+                        <div class="col-md-3">
+                            <label for="date_from" class="form-label">开始日期</label>
+                            <input type="date" class="form-control" id="date_from" name="date_from" 
+                                   value="{{ request.args.get('date_from', '') }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="date_to" class="form-label">结束日期</label>
+                            <input type="date" class="form-control" id="date_to" name="date_to" 
+                                   value="{{ request.args.get('date_to', '') }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="search" class="form-label">搜索</label>
+                            <input type="text" class="form-control" id="search" name="search" 
+                                   placeholder="课程名称、教师姓名..." value="{{ request.args.get('search', '') }}">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">&nbsp;</label>
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-outline-primary">
+                                    <i class="fas fa-search"></i> 搜索
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-journal-check"></i> 我的听课记录</h5>
+                    <small class="text-muted">未绑定反馈表单时可修改和删除</small>
+                </div>
+                <div class="card-body">
+                    {% if my_reservations %}
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>登记时间</th>
+                                    <th>课程</th>
+                                    <th>教师</th>
+                                    <th>计划说明</th>
+                                    <th>绑定状态</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in my_reservations %}
+                                <tr>
+                                    <td>{{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '-' }}</td>
+                                    <td>
+                                        <div class="fw-bold">{{ item.course_name }}</div>
+                                        <small class="text-muted">{{ item.course_code }}-{{ item.selection_code }}</small>
+                                    </td>
+                                    <td>
+                                        <div>{{ item.teacher_name }}</div>
+                                        <small class="text-muted">{{ item.class_time or '-' }}</small>
+                                    </td>
+                                    <td style="max-width: 360px;">
+                                        <span title="{{ item.listening_info or '' }}">{{ item.listening_info or '-' }}</span>
+                                    </td>
+                                    <td>
+                                        {% if item.is_bound %}
+                                        <span class="badge bg-secondary">已绑定反馈表 ({{ item.bind_count }})</span>
+                                        {% else %}
+                                        <span class="badge bg-success">未绑定</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-outline-primary" onclick="editReservation({{ item.id }}, '{{ (item.listening_info or '')|replace('\\', '\\\\')|replace('\'', '\\\'')|replace('\n', '\\n') }}')" {% if not item.can_edit %}disabled{% endif %}>
+                                                修改
+                                            </button>
+                                            <button class="btn btn-outline-danger" onclick="deleteReservation({{ item.id }})" {% if not item.can_delete %}disabled{% endif %}>
+                                                删除
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-muted">暂无听课登记记录</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- 表单列表 -->
+            {% if forms %}
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>表单ID</th>
+                                    <th>听课日期</th>
+                                    <th>课程名称</th>
+                                    <th>授课教师</th>
+                                    <th>听课地点</th>
+                                    <th>当前状态</th>
+                                    <th>版本数</th>
+                                    <th>最后更新</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for form_group in forms %}
+                                {% set latest_form = form_group['latest_form'] %}
+                                {% set versions = form_group['versions'] %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ latest_form.unique_id or ('单独-' + latest_form.id|string) }}</strong>
+                                        {% if versions|length > 1 %}
+                                        <br><small class="text-muted">共{{ versions|length }}个版本</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ latest_form.lecture_date }}</td>
+                                    <td>
+                                        <strong>{{ latest_form.course_title }}</strong>
+                                        <br>
+                                        <small class="text-muted">{{ latest_form.class_period }}</small>
+                                    </td>
+                                    <td>
+                                        {{ latest_form.teacher_name }}
+                                        <br>
+                                        <small class="text-muted">{{ latest_form.teacher_college }}</small>
+                                    </td>
+                                    <td>{{ latest_form.lecture_location }}</td>
+                                    <td>
+                                        {% if latest_form.status == '待审核' %}
+                                            <span class="badge bg-warning">{{ latest_form.status }}</span>
+                                        {% elif latest_form.status == '已审核' or latest_form.status == '部门已审核' or latest_form.status == '中心已审核' %}
+                                            <span class="badge bg-success">{{ latest_form.status }}</span>
+                                        {% elif latest_form.status == '已驳回' %}
+                                            <span class="badge bg-danger">{{ latest_form.status }}</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">{{ latest_form.status or '草稿' }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">{{ versions|length }}</span>
+                                        {% if versions|length > 1 %}
+                                        <button type="button" class="btn btn-outline-info ml-2" onclick="toggleVersions('{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}')" title="展开/收起版本">
+                                            <i class="fas fa-chevron-down me-1" id="chevron-{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}"></i> 展开/收起版本
+                                        </button>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ (latest_form.updated_at or latest_form.created_at).strftime('%Y-%m-%d %H:%M') if (latest_form.updated_at or latest_form.created_at) else '-' }}</td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{{ url_for('admin.get_form_detail', form_id=latest_form.id) }}" class="btn btn-info" title="查看最新版本">
+                                                <i class="fas fa-eye me-1"></i> 查看最新版本
+                                            </a>
+                                            <button class="btn btn-secondary" disabled title="导出功能暂未开放">
+                                                <i class="fas fa-download me-1"></i> 导出暂未开放
+                                            </button>
+                                            {% if versions|length == 1 and latest_form.status == '待审核' %}
+                                            <button class="btn btn-danger" onclick="deleteForm({{ latest_form.id }})" title="删除">
+                                                <i class="fas fa-trash-alt me-1"></i> 删除
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                <!-- 版本历史行（默认隐藏） -->
+                                {% if versions|length > 1 %}
+                                <tr id="versions-{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}" class="version-history" style="display: none;">
+                                    <td colspan="9">
+                                        <div class="card">
+                                            <div class="card-header">
+                                                <h6 class="mb-0">版本历史 (按更新时间排序)</h6>
+                                            </div>
+                                            <div class="card-body p-2">
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm table-borderless">
+                                                        <thead>
+                                                            <tr class="text-muted">
+                                                                <th>版本</th>
+                                                                <th>状态</th>
+                                                                <th>更新时间</th>
+                                                                <th>审核意见</th>
+                                                                <th>操作</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {% for version in versions %}
+                                                            <tr>
+                                                                <td>
+                                                                    <span class="badge bg-light text-dark">v{{ versions|length - loop.index0 }}</span>
+                                                                    {% if loop.first %}
+                                                                    <span class="badge bg-primary">最新</span>
+                                                                    {% endif %}
+                                                                </td>
+                                                                <td>
+                                                                    {% if version.status == '待审核' %}
+                                                                        <span class="badge bg-warning">{{ version.status }}</span>
+                                                                    {% elif version.status == '已审核' or version.status == '部门已审核' or version.status == '中心已审核' %}
+                                                                        <span class="badge bg-success">{{ version.status }}</span>
+                                                                    {% elif version.status == '已驳回' %}
+                                                                        <span class="badge bg-danger">{{ version.status }}</span>
+                                                                    {% else %}
+                                                                        <span class="badge bg-secondary">{{ version.status or '草稿' }}</span>
+                                                                    {% endif %}
+                                                                </td>
+                                                                <td>{{ (version.updated_at or version.created_at).strftime('%m-%d %H:%M') if (version.updated_at or version.created_at) else '-' }}</td>
+                                                                <td>
+                                                                    {% if version.review_comment %}
+                                                                    <span title="{{ version.review_comment }}">{{ version.review_comment[:20] }}{% if version.review_comment|length > 20 %}...{% endif %}</span>
+                                                                    {% else %}
+                                                                    -
+                                                                    {% endif %}
+                                                                </td>
+                                                                <td>
+                                                                    <div class="btn-group btn-group-sm">
+                                                                        <a href="{{ url_for('admin.get_form_detail', form_id=version.id) }}" 
+                                                                           class="btn btn-outline-info" title="查看此版本">
+                                                                            <i class="fas fa-eye me-1"></i> 查看此版本
+                                                                        </a>
+                                                                        {% if version.status in [None, '草稿'] or (version.status == '已驳回' and loop.first) %}
+                                                                        <a href="{{ url_for('user.edit_form', form_id=version.id) }}" 
+                                                                           class="btn btn-outline-warning" title="编辑此版本">
+                                                                            <i class="fas fa-edit me-1"></i> 编辑此版本
+                                                                        </a>
+                                                                        {% endif %}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                            {% endfor %}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 分页 -->
+                    {% if pagination %}
+                    <nav aria-label="表单分页">
+                        <ul class="pagination justify-content-center">
+                            {% if pagination.has_prev %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('user.my_forms', page=pagination.prev_num, **request.args) }}">
+                                    上一页
+                                </a>
+                            </li>
+                            {% endif %}
+                            
+                            {% for page_num in pagination.iter_pages() %}
+                                {% if page_num %}
+                                    {% if page_num != pagination.page %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('user.my_forms', page=page_num, **request.args) }}">
+                                            {{ page_num }}
+                                        </a>
+                                    </li>
+                                    {% else %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ page_num }}</span>
+                                    </li>
+                                    {% endif %}
+                                {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">…</span>
+                                </li>
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% if pagination.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('user.my_forms', page=pagination.next_num, **request.args) }}">
+                                    下一页
+                                </a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-clipboard-list fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">暂无听课表单</h5>
+                <p class="text-muted">您还没有提交过听课表单</p>
+                <a href="{{ url_for('user.submit_form') }}" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> 创建第一个表单
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 删除确认模态框 -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                确定要删除这个听课表单吗？此操作不可撤销。
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirmDelete">确认删除</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let deleteFormId = null;
+
+function deleteForm(formId) {
+    deleteFormId = formId;
+    const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    modal.show();
+}
+
+function editReservation(reservationId, originalInfo) {
+    const nextInfo = prompt('请修改听课计划说明：', originalInfo || '');
+    if (nextInfo === null) return;
+    const payload = { listening_info: nextInfo.trim() };
+    if (!payload.listening_info) {
+        alert('听课计划说明不能为空');
+        return;
+    }
+    fetch(`/user/api/my_reservations/${reservationId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('修改失败：' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('修改失败：' + error.message);
+    });
+}
+
+function deleteReservation(reservationId) {
+    if (!confirm('确定删除该听课登记记录吗？此操作不可撤销。')) return;
+    fetch(`/user/api/my_reservations/${reservationId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('删除失败：' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('删除失败：' + error.message);
+    });
+}
+
+document.getElementById('confirmDelete').addEventListener('click', function() {
+    if (deleteFormId) {
+        fetch(`/user/delete_form/${deleteFormId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('删除失败：' + data.message);
+            }
+        })
+        .catch(error => {
+            alert('删除失败：' + error.message);
+        });
+    }
+});
+
+// 切换版本历史显示
+function toggleVersions(uniqueId) {
+    const versionRow = document.getElementById('versions-' + uniqueId);
+    const chevron = document.getElementById('chevron-' + uniqueId);
+    
+    if (versionRow.style.display === 'none' || versionRow.style.display === '') {
+        versionRow.style.display = 'table-row';
+        chevron.classList.remove('fa-chevron-down');
+        chevron.classList.add('fa-chevron-up');
+    } else {
+        versionRow.style.display = 'none';
+        chevron.classList.remove('fa-chevron-up');
+        chevron.classList.add('fa-chevron-down');
+    }
+}
+
+// 自动设置日期范围
+document.addEventListener('DOMContentLoaded', function() {
+    const dateFrom = document.getElementById('date_from');
+    const dateTo = document.getElementById('date_to');
+    
+    if (!dateFrom.value && !dateTo.value) {
+        const today = new Date();
+        const oneMonthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+        
+        dateFrom.value = oneMonthAgo.toISOString().split('T')[0];
+        dateTo.value = today.toISOString().split('T')[0];
+    }
+});
+</script>
+{% endblock %}

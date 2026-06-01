@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}提交成功 - 听课表单系统{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="alert alert-success text-center" role="alert">
+            <h4 class="alert-heading">✅ 表单提交成功！</h4>
+            <p>您的听课表单已成功提交，表单编号：<strong>{{ form.id }}</strong></p>
+            <hr>
+            <p class="mb-0">提交时间：{{ form.created_at.strftime('%Y年%m月%d日 %H:%M:%S') }}</p>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">表单详情</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <!-- 基本信息 -->
+                    <div class="col-12 mb-4">
+                        <h6 class="text-primary border-bottom pb-2">基本信息</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>听课人姓名+学院：</strong> {{ form.listener_name }}
+                            </div>
+                            <div class="col-md-6">
+                                <strong>听课人编号：</strong> {{ form.listener_number }}
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <strong>课程信息变化：</strong> {{ form.course_changes }}
+                        </div>
+                    </div>
+
+                    <!-- 时间地点信息 -->
+                    <div class="col-12 mb-4">
+                        <h6 class="text-primary border-bottom pb-2">时间地点信息</h6>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <strong>听课时间：</strong> {{ form.lecture_date }}
+                            </div>
+                            <div class="col-md-4">
+                                <strong>第几节：</strong> {{ form.class_period }}
+                            </div>
+                            <div class="col-md-4">
+                                <strong>听课地点：</strong> {{ form.lecture_location }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 教师课程信息 -->
+                    <div class="col-12 mb-4">
+                        <h6 class="text-primary border-bottom pb-2">教师课程信息</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>授课教师：</strong> {{ form.teacher_name }}
+                            </div>
+                            <div class="col-md-6">
+                                <strong>教师所属学院：</strong> {{ form.teacher_college }}
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <strong>课程：</strong> {{ form.course_title }}
+                        </div>
+                        <div class="mt-2">
+                            <strong>专业年级：</strong> {{ form.student_grade_class }}
+                        </div>
+                    </div>
+
+                    <!-- 听课人信息 -->
+                    <div class="col-12 mb-4">
+                        <h6 class="text-primary border-bottom pb-2">听课人信息</h6>
+                        <div class="row">
+                            <div class="col-12 mb-2">
+                                <strong>所在小组：</strong> {{ form.group_name }}
+                            </div>
+                            <div class="col-md-6">
+                                <strong>同学签名1：</strong> {{ form.student_signature1 }}
+                            </div>
+                            <div class="col-md-6">
+                                <strong>联系电话1：</strong> {{ form.contact_phone1 }}
+                            </div>
+                            {% if form.student_signature2 %}
+                            <div class="col-md-6">
+                                <strong>同学签名2：</strong> {{ form.student_signature2 }}
+                            </div>
+                            {% endif %}
+                            {% if form.contact_phone2 %}
+                            <div class="col-md-6">
+                                <strong>联系电话2：</strong> {{ form.contact_phone2 }}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-4">
+            <a href="{{ url_for('main.index') }}" class="btn btn-primary">继续填写表单</a>
+            <a href="{{ url_for('user.my_forms') }}" class="btn btn-outline-primary ms-3">查看所有记录</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

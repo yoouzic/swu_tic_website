@@ -1,0 +1,51 @@
+{% if leave_prompt %}
+<div class="modal fade" id="leaveMakeupReminderModal" tabindex="-1" aria-labelledby="leaveMakeupReminderLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title" id="leaveMakeupReminderLabel">
+                    <i class="bi bi-exclamation-circle"></i> 请假补交提醒
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">
+                    您当前处于{{ leave_prompt.status_label }}，第{{ leave_prompt.leave_week }}周仍有
+                    <strong class="text-danger">{{ leave_prompt.pending_makeup_count }}</strong>
+                    份听课表待补交。
+                </p>
+                <p class="mb-0 text-muted small">
+                    提交时系统会自动将表单定义为第{{ leave_prompt.leave_week }}周请假补交表。
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">稍后处理</button>
+                <a href="{{ url_for('user.submit_form') }}" class="btn btn-primary">去交表</a>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const promptData = {{ leave_prompt|tojson }};
+    const cooldownMs = 12 * 60 * 60 * 1000;
+    const key = `leaveMakeupReminder:${promptData.user_id}:${promptData.status}:${promptData.leave_week}`;
+    let shouldShow = true;
+    try {
+        const lastShown = Number(localStorage.getItem(key) || '0');
+        shouldShow = !lastShown || (Date.now() - lastShown >= cooldownMs);
+        if (shouldShow) {
+            localStorage.setItem(key, String(Date.now()));
+        }
+    } catch (e) {
+        shouldShow = true;
+    }
+    if (shouldShow) {
+        const modalEl = document.getElementById('leaveMakeupReminderModal');
+        if (modalEl && window.bootstrap) {
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        }
+    }
+});
+</script>
+{% endif %}

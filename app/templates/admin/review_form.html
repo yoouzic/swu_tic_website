@@ -1,0 +1,1533 @@
+{% extends "base.html" %}
+
+{% block title %}审核表单 - 管理员面板{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-edit mr-2"></i>
+                        表单审核
+                    </h3>
+                    <div class="card-tools">
+                        <button type="button" class="btn btn-sm btn-primary mr-2" onclick="showReferenceData()">
+                            <i class="fas fa-search"></i> 查看参考数据
+                        </button>
+                        <span class="badge bg-info text-dark" id="statusBadge">加载中...</span>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="window.close()">
+                            <i class="fas fa-times"></i> 关闭
+                        </button>
+                    </div>
+                </div>·
+                
+                <div class="card-body" id="mainContent" style="display: none;">
+                    <form id="reviewForm">
+                        <input type="hidden" id="formId" name="form_id">
+                        
+                        <!-- 基本信息 -->
+                        <div class="row mb-4">
+                            <div class="col-md-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="card-title mb-0">
+                                            <i class="fas fa-info-circle mr-2"></i>基本信息
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="listener_name" class="form-label">听课人姓名+学院 <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" id="listener_name" name="listener_name" 
+                                                           value="" required>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="listener_number" class="form-label">听课人编号 <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" id="listener_number" name="listener_number" 
+                                                           value="" required>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 听课信息 -->
+                        <div class="row mb-4">
+                            <div class="col-md-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="card-title mb-0">
+                                            <i class="fas fa-calendar-alt mr-2"></i>听课信息
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-4">
+                                                <div class="mb-3">
+                                                    <label for="lecture_date" class="form-label">听课时间 <span class="text-danger">*</span></label>
+                                                    <input type="date" class="form-control" id="lecture_date" name="lecture_date" 
+                                                           onchange="updateDateWithWeekday()" required>
+                                                    <input type="hidden" id="lecture_date_display" name="lecture_date_display">
+                                                </div>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <div class="mb-3">
+                                                    <label for="start_period" class="form-label">第几节 <span class="text-danger">*</span></label>
+                                                    <div class="row">
+                                                        <div class="col-6">
+                                                            <select class="form-control" id="start_period" name="start_period" 
+                                                                    onchange="updateClassPeriod()" required>
+                                                                <option value="">开始节次</option>
+                                                                <option value="1">第1节</option>
+                                                                <option value="2">第2节</option>
+                                                                <option value="3">第3节</option>
+                                                                <option value="4">第4节</option>
+                                                                <option value="5">第5节</option>
+                                                                <option value="6">第6节</option>
+                                                                <option value="7">第7节</option>
+                                                                <option value="8">第8节</option>
+                                                                <option value="9">第9节</option>
+                                                                <option value="10">第10节</option>
+                                                                <option value="11">第11节</option>
+                                                                <option value="12">第12节</option>
+                                                                <option value="13">第13节</option>
+                                                                <option value="14">第14节</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-6">
+                                                            <select class="form-control" id="end_period" name="end_period" 
+                                                                    onchange="updateClassPeriod()" required>
+                                                                <option value="">结束节次</option>
+                                                                <option value="1">第1节</option>
+                                                                <option value="2">第2节</option>
+                                                                <option value="3">第3节</option>
+                                                                <option value="4">第4节</option>
+                                                                <option value="5">第5节</option>
+                                                                <option value="6">第6节</option>
+                                                                <option value="7">第7节</option>
+                                                                <option value="8">第8节</option>
+                                                                <option value="9">第9节</option>
+                                                                <option value="10">第10节</option>
+                                                                <option value="11">第11节</option>
+                                                                <option value="12">第12节</option>
+                                                                <option value="13">第13节</option>
+                                                                <option value="14">第14节</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <input type="hidden" id="class_period" name="class_period">
+                                                </div>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <div class="mb-3">
+                                                    <label for="lecture_location" class="form-label">听课地点 <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" id="lecture_location" name="lecture_location" 
+                                                           placeholder="如:32-302" required>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-12">
+                                                <div class="mb-3">
+                                                    <label for="course_changes" class="form-label">课程信息变化 <span class="text-danger">*</span></label>
+                                                    <textarea class="form-control" id="course_changes" name="course_changes" rows="3" 
+                                                              placeholder='如有课程调整、变更等情况请说明，没有则填"无"' required></textarea>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 课程信息 -->
+                        <div class="row mb-4">
+                            <div class="col-md-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="card-title mb-0">
+                                            <i class="fas fa-chalkboard-teacher mr-2"></i>课程信息
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="teacher_name" class="form-label">授课教师 <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" id="teacher_name" name="teacher_name" 
+                                                           placeholder="谨防错别字" required>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="teacher_college" class="form-label">教师所属学院 <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" id="teacher_college" name="teacher_college" required>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="course_title" class="form-label">课程 <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" id="course_title" name="course_title" required>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="student_grade_class" class="form-label">专业年级 <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" id="student_grade_class" name="student_grade_class" 
+                                                           placeholder="如:2018级植物生产类05、06班" required>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 课堂评价 -->
+                        <div class="row mb-4">
+                            <div class="col-md-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="card-title mb-0">
+                                            <i class="fas fa-star mr-2"></i>课堂评价
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="abnormal_situation" class="form-label">异常情况反映 <span class="text-danger">*</span></label>
+                                                    <textarea class="form-control" id="abnormal_situation" name="abnormal_situation" rows="3" 
+                                                              placeholder='根据事实,没有则填"无"' required></textarea>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="teaching_method" class="form-label">主要教学方法 <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" id="teaching_method" name="teaching_method" required>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="classroom_discipline" class="form-label">管理课堂纪律 <span class="text-danger">*</span></label>
+                                                    <select class="form-control" id="classroom_discipline" name="classroom_discipline" required>
+                                                        <option value="">请选择</option>
+                                                        <option value="非常好">非常好</option>
+                                                        <option value="好">好</option>
+                                                        <option value="一般">一般</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="classroom_atmosphere" class="form-label">调动课堂气氛 <span class="text-danger">*</span></label>
+                                                    <select class="form-control" id="classroom_atmosphere" name="classroom_atmosphere" required>
+                                                        <option value="">请选择</option>
+                                                        <option value="非常好">非常好</option>
+                                                        <option value="好">好</option>
+                                                        <option value="一般">一般</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="courseware_quality" class="form-label">课件制作质量 <span class="text-danger">*</span></label>
+                                                    <select class="form-control" id="courseware_quality" name="courseware_quality" required>
+                                                        <option value="">请选择</option>
+                                                        <option value="非常好">非常好</option>
+                                                        <option value="好">好</option>
+                                                        <option value="一般">一般</option>
+                                                        <option value="无">无</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="overall_effect" class="form-label">整体教学效果 <span class="text-danger">*</span></label>
+                                                    <select class="form-control" id="overall_effect" name="overall_effect" required>
+                                                        <option value="">请选择</option>
+                                                        <option value="非常好">非常好</option>
+                                                        <option value="好">好</option>
+                                                        <option value="一般">一般</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="quality_case" class="form-label">优质案例推荐 <span class="text-danger">*</span></label>
+                                                    <select class="form-control" id="quality_case" name="quality_case" required>
+                                                        <option value="">请选择</option>
+                                                        <option value="推荐">推荐</option>
+                                                        <option value="不推荐">不推荐</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 反馈信息 -->
+                        <div class="row mb-4">
+                            <div class="col-md-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="card-title mb-0">
+                                            <i class="fas fa-comment mr-2"></i>反馈信息
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="course_feedback" class="form-label">课程反馈(优点) <span class="text-danger">*</span></label>
+                                                    <textarea class="form-control" id="course_feedback" name="course_feedback" rows="4" 
+                                                              placeholder="五十字以上,评价的内容实在且有针对性" required></textarea>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="mb-3">
+                                                    <label for="suggestions" class="form-label">不足及建议 <span class="text-danger">*</span></label>
+                                                    <textarea class="form-control" id="suggestions" name="suggestions" rows="4" 
+                                                              placeholder="根据事实，没有则填'无'" required></textarea>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 签名信息 -->
+                        <div class="row mb-4">
+                            <div class="col-md-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="card-title mb-0">
+                                            <i class="fas fa-signature mr-2"></i>签名信息
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-3">
+                                                <div class="mb-3">
+                                                    <label for="student_signature1" class="form-label">学生签名1 <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" id="student_signature1" name="student_signature1" required>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="mb-3">
+                                                    <label for="contact_phone1" class="form-label">联系电话1 <span class="text-danger">*</span></label>
+                                                    <input type="tel" class="form-control" id="contact_phone1" name="contact_phone1" 
+                                                           pattern="^1[3-9]\d{9}$" title="请输入正确的手机号码" required>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="mb-3">
+                                                    <label for="student_signature2" class="form-label">学生签名2 <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" id="student_signature2" name="student_signature2" required>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="mb-3">
+                                                    <label for="contact_phone2" class="form-label">联系电话2 <span class="text-danger">*</span></label>
+                                                    <input type="tel" class="form-control" id="contact_phone2" name="contact_phone2" 
+                                                           pattern="^1[3-9]\d{9}$" title="请输入正确的手机号码" required>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 审核信息 -->
+                        <div class="row mb-4">
+                            <div class="col-md-12">
+                                <div class="card border-warning">
+                                    <div class="card-header bg-warning">
+                                        <h5 class="card-title mb-0">
+                                            <i class="fas fa-clipboard-check mr-2"></i>审核信息
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="form-group">
+                                            <label for="reviewComment">审核意见：</label>
+                                            <textarea class="form-control" id="reviewComment" name="review_comment" rows="4" 
+                                                      placeholder='请填写您的审核意见，如果不修改表格内容可直接提交，审核意见将默认显示为"无"'></textarea>
+                                            <small class="form-text text-muted">
+                                                系统将自动记录您对表单的修改内容并附加到审核意见后
+                                            </small>
+                                        </div>
+                                        
+                                        <!-- 修改记录显示区域 -->
+                                        <div id="changesDisplay" style="display: none;">
+                                            <hr>
+                                            <h6><i class="fas fa-history mr-2"></i>检测到的修改：</h6>
+                                            <div id="changesList" class="alert alert-info">
+                                                <!-- 修改内容将通过JavaScript动态显示 -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 操作按钮 -->
+                        <div class="row">
+                            <div class="col-md-12 text-center">
+                                <button type="button" class="btn btn-success btn-lg mr-3" onclick="submitReview()">
+                                    <i class="fas fa-check"></i> 提交审核
+                                </button>
+                                <button type="button" class="btn btn-danger btn-lg mr-3" onclick="rejectReview()">
+                                    <i class="fas fa-times"></i> 驳回
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-lg mr-3" onclick="resetForm()">
+                                    <i class="fas fa-undo"></i> 重置表单
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- 加载中提示 -->
+                <div class="card-body text-center" id="loadingAlert">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="sr-only">加载中...</span>
+                    </div>
+                    <p class="mt-3">正在加载表单数据...</p>
+                </div>
+
+                <!-- 错误提示 -->
+                <div class="card-body text-center" id="errorAlert" style="display: none;">
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-3"></i>
+                        <h4>加载失败</h4>
+                        <p id="errorMessage">表单数据加载失败，请稍后重试</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 提交确认模态框 -->
+<div class="modal fade" id="submitConfirmModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success">
+                <h4 class="modal-title">
+                    <i class="fas fa-check"></i> 确认提交审核
+                </h4>
+                <button type="button" class="close" data-dismiss="modal" onclick="cancelSubmit()">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p><strong>审核权限：</strong><span id="confirmPermission"></span></p>
+                <p><strong>审核后状态：</strong><span id="confirmNewStatus"></span></p>
+                <div id="confirmChanges">
+                    <!-- 修改内容确认 -->
+                </div>
+                
+                <!-- 评分区域 -->
+                <div id="scoringSection" style="display: none; margin-top: 20px;">
+                    <hr>
+                    <h5><i class="fas fa-star-half-alt mr-2"></i>信息员评分</h5>
+                    <div class="alert alert-info small">
+                        <i class="fas fa-info-circle"></i> 针对修改项进行扣分，未填写则不扣分。
+                    </div>
+                    <table class="table table-sm table-bordered" id="scoringTable">
+                        <thead class="thead-light">
+                            <tr>
+                                <th style="width: 40%">评分原因</th>
+                                <th style="width: 25%">部门扣分</th>
+                                <th style="width: 25%">个人扣分</th>
+                                <th style="width: 10%">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scoringTableBody">
+                            <!-- 评分项动态生成 -->
+                        </tbody>
+                    </table>
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="addScoringRow()">
+                        <i class="fas fa-plus"></i> 添加评分项
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="cancelSubmit()">取消</button>
+                <button type="button" class="btn btn-success" id="confirmSubmitBtn" onclick="confirmSubmit()">确认提交</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 结果提示模态框 -->
+<div class="modal fade" id="resultModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header" id="resultHeader">
+                <h4 class="modal-title" id="resultTitle"></h4>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body" id="resultBody">
+                <!-- 结果内容 -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-dismiss="modal" onclick="window.close()">关闭页面</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 参考数据侧边抽屉 -->
+<div class="reference-drawer" id="referenceDataDrawer" aria-hidden="true">
+    <button type="button" class="reference-drawer-handle" onclick="toggleReferenceDrawer()" aria-label="展开或折叠参考数据">
+        <i class="fas fa-chevron-left" id="referenceDrawerToggleIcon"></i>
+    </button>
+    <div class="reference-drawer-panel">
+        <div class="reference-drawer-header" onclick="toggleReferenceDrawerCollapse()">
+            <div>
+                <h4 class="mb-0">参考数据</h4>
+                <small class="text-muted">按当前表单内容查询</small>
+            </div>
+        </div>
+        <div class="reference-drawer-body">
+            <section class="reference-section">
+                <button type="button" class="reference-section-header" onclick="toggleReferenceSection('scheduleReferenceSection')">
+                    <span><i class="fas fa-calendar-alt me-2"></i> 全校课表</span>
+                    <span>
+                        <span class="badge bg-primary text-white" id="scheduleCount">0</span>
+                        <i class="fas fa-chevron-up ms-2"></i>
+                    </span>
+                </button>
+                <div class="reference-section-body" id="scheduleReferenceSection">
+                    <div id="scheduleResults">点击“查看参考数据”后加载</div>
+                </div>
+            </section>
+            <section class="reference-section">
+                <button type="button" class="reference-section-header" onclick="toggleReferenceSection('contactsReferenceSection')">
+                    <span><i class="fas fa-address-book me-2"></i> 通讯录</span>
+                    <span>
+                        <span class="badge bg-primary text-white" id="contactsCount">0</span>
+                        <i class="fas fa-chevron-up ms-2"></i>
+                    </span>
+                </button>
+                <div class="reference-section-body" id="contactsReferenceSection">
+                    <div id="contactsResults">点击“查看参考数据”后加载</div>
+                </div>
+            </section>
+        </div>
+    </div>
+</div>
+
+<style>
+.reference-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: min(560px, 92vw);
+    height: 100vh;
+    z-index: 1060;
+    transform: translateX(calc(100% + 56px));
+    transition: transform 0.22s ease;
+}
+
+.reference-drawer.is-open {
+    transform: translateX(0);
+}
+
+.reference-drawer.is-collapsed {
+    transform: translateX(calc(100% - 46px));
+}
+
+.reference-drawer-handle {
+    position: absolute;
+    top: 96px;
+    left: -44px;
+    width: 44px;
+    height: 88px;
+    border: 1px solid #ced4da;
+    border-right: 0;
+    background: #fff;
+    color: #0d6efd;
+    border-radius: 8px 0 0 8px;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.12);
+}
+
+.reference-drawer-panel {
+    height: 100%;
+    background: #fff;
+    border-left: 1px solid #dee2e6;
+    box-shadow: -0.75rem 0 1.5rem rgba(0, 0, 0, 0.14);
+    display: flex;
+    flex-direction: column;
+}
+
+.reference-drawer-header {
+    padding: 16px 18px;
+    border-bottom: 1px solid #dee2e6;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    cursor: pointer;
+}
+
+.reference-drawer-body {
+    padding: 14px;
+    overflow-y: auto;
+}
+
+.reference-section {
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+
+.reference-section-header {
+    width: 100%;
+    border: 0;
+    background: #f8f9fa;
+    padding: 12px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+}
+
+.reference-section-body {
+    padding: 12px;
+}
+
+.reference-section.is-collapsed .reference-section-body {
+    display: none;
+}
+
+.reference-section.is-collapsed .reference-section-header .fa-chevron-up {
+    transform: rotate(180deg);
+}
+
+.reference-result-item {
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+    background: #fff;
+}
+
+.reference-result-title {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 8px;
+}
+
+.reference-result-title strong {
+    line-height: 1.35;
+}
+
+.reference-result-meta {
+    margin: 0;
+}
+
+.reference-result-meta div {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.reference-result-meta dt {
+    color: #6c757d;
+    font-weight: 600;
+}
+
+.reference-result-meta dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 576px) {
+    .reference-drawer {
+        width: calc(100vw - 24px);
+    }
+}
+</style>
+
+<script>
+let originalFormData = {};
+let currentFormData = {};
+let formId = null;
+let userPermission = null;
+let existingScoreData = [];
+
+// 页面加载时获取表单数据
+document.addEventListener('DOMContentLoaded', function() {
+    // 从URL获取表单ID
+    const pathParts = window.location.pathname.split('/');
+    formId = pathParts[pathParts.length - 1];
+    
+    if (formId) {
+        loadFormData();
+    } else {
+        showError('无效的表单ID');
+    }
+});
+
+// 加载表单数据
+function loadFormData() {
+    fetch(`/admin/api/review/form/${formId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                originalFormData = data.form;
+                userPermission = data.permission;
+                existingScoreData = Array.isArray(data.score_data) ? data.score_data : [];
+                populateForm(data.form);
+                document.getElementById('statusBadge').textContent = `当前状态：${data.form.status}`;
+                document.getElementById('statusBadge').className = `badge ${getStatusClass(data.form.status)}`;
+                // 移除显式的 style.color，由 getStatusClass 控制
+                document.getElementById('loadingAlert').style.display = 'none';
+                document.getElementById('mainContent').style.display = 'block';
+                
+                // 监听表单变化
+                setupFormChangeDetection();
+            } else {
+                showError(data.message || '加载表单数据失败');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showError('网络错误，请稍后重试');
+        });
+}
+
+// 填充表单数据
+function populateForm(formData) {
+    // 使用正确的元素ID（下划线命名）
+    const setElementValue = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.value = value || '';
+        } else {
+            console.warn(`Element with ID '${id}' not found`);
+        }
+    };
+    
+    // 听课时间逆转化：从 "2025/10/09星期四" 转换为 "2025-10-09"
+    let convertedLectureDate = '';
+    if (formData.lecture_date) {
+        // 匹配格式：YYYY/MM/DD星期X
+        const dateMatch = formData.lecture_date.match(/^(\d{4})\/(\d{2})\/(\d{2})/);
+        if (dateMatch) {
+            convertedLectureDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+        } else {
+            // 如果已经是 YYYY-MM-DD 格式，直接使用
+            convertedLectureDate = formData.lecture_date;
+        }
+    }
+    
+    // 第几节逆转化：从 "第3-4节" 或 "第3节" 转换为开始和结束节次
+    let convertedStartPeriod = '';
+    let convertedEndPeriod = '';
+    if (formData.class_period) {
+        // 匹配格式：第X-Y节 或 第X节
+        const periodMatch = formData.class_period.match(/第(\d+)(?:-(\d+))?节/);
+        if (periodMatch) {
+            convertedStartPeriod = periodMatch[1];
+            convertedEndPeriod = periodMatch[2] || periodMatch[1]; // 如果没有结束节次，使用开始节次
+        }
+    }
+    
+    // 基本信息
+    setElementValue('formId', formData.id);
+    setElementValue('listener_name', formData.listener_name);
+    setElementValue('listener_number', formData.listener_number);
+    setElementValue('course_changes', formData.course_changes);
+    setElementValue('lecture_date', convertedLectureDate); // 使用转换后的日期
+    setElementValue('teacher_name', formData.teacher_name);
+    setElementValue('teacher_college', formData.teacher_college);
+    setElementValue('course_title', formData.course_title);
+    setElementValue('student_grade_class', formData.student_grade_class);
+    setElementValue('lecture_location', formData.lecture_location);
+    setElementValue('start_period', convertedStartPeriod); // 使用转换后的开始节次
+    setElementValue('end_period', convertedEndPeriod); // 使用转换后的结束节次
+    setElementValue('abnormal_situation', formData.abnormal_situation);
+    setElementValue('teaching_method', formData.teaching_method);
+    setElementValue('classroom_discipline', formData.classroom_discipline);
+    setElementValue('classroom_atmosphere', formData.classroom_atmosphere);
+    setElementValue('courseware_quality', formData.courseware_quality);
+    setElementValue('overall_effect', formData.overall_effect);
+    setElementValue('quality_case', formData.quality_case);
+    setElementValue('course_feedback', formData.course_feedback);
+    setElementValue('suggestions', formData.suggestions);
+    setElementValue('student_signature1', formData.student_signature1);
+        setElementValue('contact_phone1', formData.contact_phone1);
+        setElementValue('student_signature2', formData.student_signature2);
+        setElementValue('contact_phone2', formData.contact_phone2);
+    setElementValue('reviewComment', formData.review_comment);
+    
+    // 更新日期显示（这会重新生成带星期几的格式）
+    if (convertedLectureDate) {
+        updateDateWithWeekday();
+    }
+    
+    // 更新课时显示（这会重新生成第X-Y节的格式）
+    if (convertedStartPeriod && convertedEndPeriod) {
+        updateClassPeriod();
+    }
+    
+    // 保存当前表单数据作为基准
+    currentFormData = { ...formData };
+}
+
+// 设置表单变化检测
+function setupFormChangeDetection() {
+    const formElements = document.querySelectorAll('#reviewForm input, #reviewForm textarea, #reviewForm select');
+    
+    formElements.forEach(element => {
+        element.addEventListener('input', detectChanges);
+        element.addEventListener('change', detectChanges);
+    });
+}
+
+// 检测表单变化
+function detectChanges() {
+    const changes = [];
+    const lectureDateDisplay = document.getElementById('lecture_date_display');
+    
+    // 字段映射 - 使用正确的表单字段名称
+    const fieldMap = {
+        'listener_name': '听课人姓名',
+        'listener_number': '听课人工号',
+        'course_changes': '课程信息变化',
+        'lecture_date': '听课日期',
+        'teacher_name': '授课教师',
+        'teacher_college': '教师所属学院',
+        'course_title': '课程标题',
+        'student_grade_class': '专业年级',
+        'lecture_location': '听课地点',
+        'abnormal_situation': '异常情况反映',
+        'teaching_method': '主要教学方法',
+        'classroom_discipline': '管理课堂纪律',
+        'classroom_atmosphere': '调动课堂气氛',
+        'courseware_quality': '课件制作质量',
+        'overall_effect': '整体教学效果',
+        'quality_case': '优质案例推荐',
+        'course_feedback': '课程反馈',
+        'suggestions': '不足及建议',
+            'student_signature1': '学生签名1',
+            'contact_phone1': '联系电话1',
+            'student_signature2': '学生签名2',
+            'contact_phone2': '联系电话2'
+        };
+    
+    // 格式标准化函数
+    function normalizeValue(field, value) {
+        if (!value) return '';
+        
+        // 听课日期格式标准化：将 YYYY/MM/DD星期X 转换为 YYYY-MM-DD
+        if (field === 'lecture_date') {
+            const dateMatch = value.match(/(\d{4})\/(\d{2})\/(\d{2})/);
+            if (dateMatch) {
+                return `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+            }
+        }
+        
+        return value;
+    }
+    
+    // 检查每个字段的变化
+    for (const [field, label] of Object.entries(fieldMap)) {
+        const originalValue = normalizeValue(field, originalFormData[field] || '');
+        const element = document.querySelector(`[name="${field}"]`);
+        let currentRawValue = element ? element.value || '' : '';
+        if (field === 'lecture_date' && lectureDateDisplay && lectureDateDisplay.value) {
+            currentRawValue = lectureDateDisplay.value;
+        }
+        const currentValue = normalizeValue(field, currentRawValue);
+        
+        if (originalValue !== currentValue) {
+            changes.push({
+                field: field,
+                label: label,
+                original: originalFormData[field] || '',
+                current: currentRawValue
+            });
+        }
+    }
+    
+    // 特殊处理节次字段
+    if (originalFormData['class_period']) {
+        const originalClassPeriod = originalFormData['class_period'];
+        const startPeriodElement = document.getElementById('start_period');
+        const endPeriodElement = document.getElementById('end_period');
+        
+        if (startPeriodElement && endPeriodElement) {
+            const startPeriod = startPeriodElement.value;
+            const endPeriod = endPeriodElement.value;
+            
+            // 根据当前选择生成节次格式
+            let currentClassPeriod = '';
+            if (startPeriod && endPeriod) {
+                if (startPeriod === endPeriod) {
+                    currentClassPeriod = `第${startPeriod}节`;
+                } else {
+                    currentClassPeriod = `第${startPeriod}-${endPeriod}节`;
+                }
+            }
+            
+            // 比较节次是否发生变化
+            if (originalClassPeriod !== currentClassPeriod && currentClassPeriod) {
+                changes.push({
+                    field: 'class_period',
+                    label: '第几节',
+                    original: originalClassPeriod,
+                    current: currentClassPeriod
+                });
+            }
+        }
+    }
+    
+    // 显示变化
+    if (changes.length > 0) {
+        displayChanges(changes);
+    } else {
+        document.getElementById('changesDisplay').style.display = 'none';
+    }
+    
+    return changes;
+}
+
+// 显示变化内容
+function displayChanges(changes) {
+    const changesDisplay = document.getElementById('changesDisplay');
+    const changesList = document.getElementById('changesList');
+    
+    let html = '<strong>修改的字段：</strong><ul>';
+    
+    changes.forEach(change => {
+        html += `<li><strong>${change.label}：</strong>`;
+        if (change.original) {
+            html += `从"${change.original}"修改为"${change.current}"`;
+        } else {
+            html += `新增内容"${change.current}"`;
+        }
+        html += '</li>';
+    });
+    
+    html += '</ul>';
+    changesList.innerHTML = html;
+    changesDisplay.style.display = 'block';
+}
+
+
+
+// 重置表单
+function resetForm() {
+    if (confirm('确定要重置表单到原始状态吗？所有修改将丢失。')) {
+        populateForm(originalFormData);
+        document.getElementById('reviewComment').value = originalFormData.review_comment || '';
+        document.getElementById('changesDisplay').style.display = 'none';
+    }
+}
+
+// 驳回表单
+function rejectReview() {
+    const reason = document.getElementById('reviewComment').value.trim();
+    if (!confirm('确定要驳回此表单吗？')) {
+        return;
+    }
+    
+    // 禁用按钮
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 处理中...';
+    
+    fetch(`/admin/api/review/reject/${formId}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            reason: reason
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showResult(true, '表单已驳回', `操作成功，表单状态已更新为：${data.new_status}`);
+        } else {
+            showResult(false, '驳回失败', data.message || '未知错误');
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showResult(false, '驳回失败', '网络错误，请稍后重试');
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
+
+// 提交审核
+function submitReview() {
+    // 验证必填字段 - 使用正确的字段ID（下划线命名）
+    const requiredFields = [
+        'listener_name',
+        'listener_number', 
+        'lecture_date',
+        'start_period',
+        'end_period',
+        'lecture_location',
+        'teacher_name',
+        'teacher_college',
+        'course_title',
+        'student_grade_class',
+        'abnormal_situation',
+        'teaching_method',
+        'classroom_discipline',
+        'classroom_atmosphere',
+        'courseware_quality',
+        'overall_effect',
+        'quality_case',
+        'course_feedback'
+        // 注意：不包含 'suggestions'，因为它不是必填项
+    ];
+    
+    for (const fieldId of requiredFields) {
+        const element = document.getElementById(fieldId);
+        if (!element || !element.value.trim()) {
+            const label = element ? element.previousElementSibling.textContent.replace('：', '').replace(' *', '') : fieldId;
+            alert(`请填写${label}`);
+            if (element) element.focus();
+            return;
+        }
+    }
+    
+    // 检测修改
+    const changes = detectChanges();
+    
+    // 准备确认信息
+    document.getElementById('confirmPermission').textContent = userPermission;
+    
+    // 确定审核后状态
+    let newStatus = '';
+    if (userPermission === '审表_中心') {
+        newStatus = '中心已审核';
+    } else if (userPermission === '审表_部门' || userPermission === '审表_小组') {
+        newStatus = '部门已审核';
+    }
+    document.getElementById('confirmNewStatus').textContent = newStatus;
+    
+    // 显示修改内容
+    const confirmChanges = document.getElementById('confirmChanges');
+    if (changes.length > 0) {
+        let html = '<p><strong>检测到的修改：</strong></p><ul>';
+        changes.forEach(change => {
+            html += `<li><strong>${change.label}：</strong>`;
+            if (change.original) {
+                html += `从"${change.original}"修改为"${change.current}"`;
+            } else {
+                html += `新增内容"${change.current}"`;
+            }
+            html += '</li>';
+        });
+        html += '</ul>';
+        confirmChanges.innerHTML = html;
+    } else {
+        confirmChanges.innerHTML = '<p class="text-muted">未检测到表单内容修改</p>';
+    }
+    
+    // 评分表单逻辑
+    const scoringSection = document.getElementById('scoringSection');
+    const tbody = document.getElementById('scoringTableBody');
+    tbody.innerHTML = ''; // 清空旧数据
+    
+    // 只有超级管理员或具有审表_中心权限的用户才能评分
+    // 注意：这里假设 userPermission 包含具体的权限名称，可能需要根据实际情况调整
+    // 实际上后端返回的 permission 是字符串，如 '审表_中心'
+    // 也可以检查 role，但前端数据可能没有 role
+    // 简单起见，如果 newStatus 是 '中心已审核'，则允许评分
+    if (userPermission === '审表_中心' || userPermission === '超级管理员' || newStatus === '中心已审核') {
+        scoringSection.style.display = 'block';
+
+        const existingReasons = new Set();
+        existingScoreData.forEach(item => {
+            const reason = (item.reason || '').trim();
+            addScoringRow(
+                reason,
+                item.department_score ?? '',
+                item.personal_score ?? '',
+                item.is_auto_generated === true
+            );
+            if (reason) {
+                existingReasons.add(reason);
+            }
+        });
+        
+        // 默认将修改项作为评分项
+        changes.forEach(change => {
+            const reason = `${change.label}错误`;
+            if (!existingReasons.has(reason)) {
+                addScoringRow(reason, '', '', true);
+            }
+        });
+        
+        // 如果没有修改项，默认添加一行空的？或者不添加
+        if (changes.length === 0) {
+            // addScoringRow(); 
+        }
+    } else {
+        scoringSection.style.display = 'none';
+    }
+    
+    // 显示确认模态框
+    $('#submitConfirmModal').modal('show');
+}
+
+// 添加评分行
+function addScoringRow(reason='', deptScore='', persScore='', isAuto=false) {
+    const tbody = document.getElementById('scoringTableBody');
+    const row = document.createElement('tr');
+    
+    const reasonInput = `<input type="text" class="form-control form-control-sm score-reason" value="${reason}" placeholder="评分原因">`;
+    const deptInput = `<input type="number" step="0.5" min="0" class="form-control form-control-sm score-dept" value="${deptScore}" placeholder="0">`;
+    const persInput = `<input type="number" step="0.5" min="0" class="form-control form-control-sm score-pers" value="${persScore}" placeholder="0">`;
+    const deleteBtn = `<button type="button" class="btn btn-xs btn-outline-danger" onclick="this.closest('tr').remove()" title="删除">删除</button>`;
+    const autoFlag = `<input type="hidden" class="score-auto" value="${isAuto}">`;
+
+    row.innerHTML = `
+        <td>${reasonInput}${autoFlag}</td>
+        <td>${deptInput}</td>
+        <td>${persInput}</td>
+        <td class="text-center">${deleteBtn}</td>
+    `;
+    tbody.appendChild(row);
+}
+
+// 收集评分数据
+function collectScoreData() {
+    const rows = document.querySelectorAll('#scoringTableBody tr');
+    const data = [];
+    rows.forEach(row => {
+        const reasonInput = row.querySelector('.score-reason');
+        if (!reasonInput) return; // 跳过无效行
+        
+        const reason = reasonInput.value.trim();
+        const deptScore = row.querySelector('.score-dept').value;
+        const persScore = row.querySelector('.score-pers').value;
+        const autoInput = row.querySelector('.score-auto');
+        const isAuto = autoInput ? autoInput.value === 'true' : false;
+        
+        if (reason) {
+            data.push({
+                reason: reason,
+                department_score: deptScore || 0,
+                personal_score: persScore || 0,
+                is_auto: isAuto
+            });
+        }
+    });
+    return data;
+}
+
+// 取消提交
+function cancelSubmit() {
+    $('#submitConfirmModal').modal('hide');
+}
+
+// 确认提交
+function confirmSubmit() {
+    const submitBtn = document.getElementById('confirmSubmitBtn');
+    
+    // 防止重复点击
+    if (submitBtn.disabled) {
+        return;
+    }
+    
+    // 禁用按钮，显示加载状态
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 提交中...';
+    
+    // 收集评分数据
+    const scoreData = collectScoreData();
+    
+    // 准备提交的数据对象
+    const baseData = collectFormData();
+    
+    const submitData = {
+        form_data: baseData,
+        score_data: scoreData,
+        review_comment: document.getElementById('reviewComment').value || '无'
+    };
+    
+    // 添加修改信息到 review_comment (如果在前端处理)
+    // 注意：后端也会处理修改记录，这里只需传递 review_comment 的基础值
+    // 但为了兼容旧逻辑，我们可以让后端处理修改记录的拼接
+    
+    // 提交审核
+    fetch(`/admin/api/review/submit/${formId}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(submitData)
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        // 恢复按钮状态
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '确认提交';
+        
+        // 关闭确认模态框
+        $('#submitConfirmModal').modal('hide');
+        
+        if (data.success) {
+            showResult(true, '审核提交成功', `表单状态已更新为：${data.new_status}`);
+        } else {
+            showResult(false, '审核提交失败', data.message || '未知错误');
+        }
+    })
+    .catch(error => {
+        // 恢复按钮状态
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '确认提交';
+        
+        // 关闭确认模态框
+        $('#submitConfirmModal').modal('hide');
+        
+        console.error('Error:', error);
+        showResult(false, '审核提交失败', '网络错误，请稍后重试');
+    });
+}
+
+// 时间自动补全星期几
+function updateDateWithWeekday() {
+    const dateInput = document.getElementById('lecture_date');
+    const displayInput = document.getElementById('lecture_date_display');
+    
+    if (dateInput.value) {
+        const parts = dateInput.value.split('-').map(Number);
+        const date = new Date(parts[0], parts[1] - 1, parts[2]);
+        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        const weekday = weekdays[date.getDay()];
+        
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const formattedDate = `${year}/${month}/${day}${weekday}`;
+        
+        displayInput.value = formattedDate;
+    } else {
+        displayInput.value = '';
+    }
+}
+
+// 节次自动补全
+function updateClassPeriod() {
+    const startPeriod = document.getElementById('start_period').value;
+    const endPeriod = document.getElementById('end_period').value;
+    const classPeriodInput = document.getElementById('class_period');
+    
+    if (startPeriod && endPeriod) {
+        if (parseInt(startPeriod) <= parseInt(endPeriod)) {
+            if (startPeriod === endPeriod) {
+                classPeriodInput.value = `第${startPeriod}节`;
+            } else {
+                classPeriodInput.value = `第${startPeriod}-${endPeriod}节`;
+            }
+        } else {
+            alert('开始节次不能大于结束节次');
+            document.getElementById('end_period').value = '';
+            classPeriodInput.value = '';
+        }
+    }
+}
+
+// 显示结果
+function showResult(success, title, message) {
+    const resultHeader = document.getElementById('resultHeader');
+    const resultTitle = document.getElementById('resultTitle');
+    const resultBody = document.getElementById('resultBody');
+    
+    if (success) {
+        resultHeader.className = 'modal-header bg-success';
+        resultTitle.innerHTML = `<i class="fas fa-check"></i> ${title}`;
+        resultBody.innerHTML = `
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle fa-2x mb-3"></i>
+                <h5>${message}</h5>
+                <p>您可以关闭此页面或继续审核其他表单。</p>
+            </div>
+        `;
+    } else {
+        resultHeader.className = 'modal-header bg-danger';
+        resultTitle.innerHTML = `<i class="fas fa-times"></i> ${title}`;
+        resultBody.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle fa-2x mb-3"></i>
+                <h5>${message}</h5>
+                <p>请检查网络连接或联系管理员。</p>
+            </div>
+        `;
+    }
+    
+    $('#resultModal').modal('show');
+}
+
+// 显示错误
+function showError(message) {
+    document.getElementById('errorMessage').textContent = message;
+    document.getElementById('loadingAlert').style.display = 'none';
+    document.getElementById('errorAlert').style.display = 'block';
+}
+
+// 获取状态样式类
+function getStatusClass(status) {
+    switch (status) {
+        case '待审核': return 'bg-warning text-dark';
+        case '部门已审核': return 'bg-info text-dark';
+        case '中心已审核': return 'bg-success text-white';
+        case '已驳回': return 'bg-danger text-white';
+        default: return 'bg-secondary text-white';
+    }
+}
+
+// 显示参考数据
+function showReferenceData() {
+    const formData = collectFormData();
+    openReferenceDrawer();
+    document.getElementById('scheduleResults').innerHTML = '<div class="text-center"><i class="fas fa-spinner fa-spin"></i> 正在搜索...</div>';
+    document.getElementById('contactsResults').innerHTML = '<div class="text-center"><i class="fas fa-spinner fa-spin"></i> 正在搜索...</div>';
+    document.getElementById('scheduleCount').textContent = '0';
+    document.getElementById('contactsCount').textContent = '0';
+    
+    fetch('/admin/api/review/reference_data', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const result = data.result || {};
+            const scheduleMatches = result.schedule_matches || [];
+            const contactMatches = result.contact_matches || [];
+            renderScheduleResults(scheduleMatches);
+            renderContactsResults(contactMatches);
+            document.getElementById('scheduleCount').textContent = scheduleMatches.length;
+            document.getElementById('contactsCount').textContent = contactMatches.length;
+        } else {
+            document.getElementById('scheduleResults').textContent = '搜索失败：' + data.message;
+            document.getElementById('contactsResults').textContent = '搜索失败：' + data.message;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        document.getElementById('scheduleResults').textContent = '请求失败';
+        document.getElementById('contactsResults').textContent = '请求失败';
+    });
+}
+
+function openReferenceDrawer() {
+    const drawer = document.getElementById('referenceDataDrawer');
+    if (!drawer) return;
+    drawer.classList.add('is-open');
+    drawer.classList.remove('is-collapsed');
+    drawer.setAttribute('aria-hidden', 'false');
+    updateReferenceDrawerIcon();
+}
+
+function toggleReferenceDrawer() {
+    const drawer = document.getElementById('referenceDataDrawer');
+    if (!drawer) return;
+    if (!drawer.classList.contains('is-open')) {
+        openReferenceDrawer();
+        return;
+    }
+    drawer.classList.toggle('is-collapsed');
+    updateReferenceDrawerIcon();
+}
+
+function toggleReferenceDrawerCollapse() {
+    const drawer = document.getElementById('referenceDataDrawer');
+    if (!drawer) return;
+    if (!drawer.classList.contains('is-open')) {
+        openReferenceDrawer();
+        return;
+    }
+    drawer.classList.toggle('is-collapsed');
+    updateReferenceDrawerIcon();
+}
+
+function updateReferenceDrawerIcon() {
+    const drawer = document.getElementById('referenceDataDrawer');
+    const toggleIcon = document.getElementById('referenceDrawerToggleIcon');
+    if (!drawer || !toggleIcon) return;
+    const collapsed = drawer.classList.contains('is-collapsed') || !drawer.classList.contains('is-open');
+    toggleIcon.className = collapsed ? 'fas fa-chevron-left' : 'fas fa-chevron-right';
+}
+
+function toggleReferenceSection(sectionId) {
+    const body = document.getElementById(sectionId);
+    if (!body) return;
+    const section = body.closest('.reference-section');
+    if (section) {
+        section.classList.toggle('is-collapsed');
+    }
+}
+
+function collectFormData() {
+    updateDateWithWeekday();
+    const form = document.getElementById('reviewForm');
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+    
+    // 确保包含 ID
+    data.id = document.getElementById('formId').value;
+    
+    // 处理日期和节次（如果在UI上被修改过）
+    const lectureDateDisplay = document.getElementById('lecture_date_display').value;
+    if (lectureDateDisplay) {
+        data.lecture_date = lectureDateDisplay;
+    } else if (data.lecture_date) {
+        const parts = data.lecture_date.split('-').map(Number);
+        if (parts.length === 3 && parts.every(n => !isNaN(n))) {
+            const d = new Date(parts[0], parts[1] - 1, parts[2]);
+            const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+            data.lecture_date = `${parts[0]}/${String(parts[1]).padStart(2, '0')}/${String(parts[2]).padStart(2, '0')}${weekdays[d.getDay()]}`;
+        }
+    }
+    
+    const startPeriod = document.getElementById('start_period').value;
+    const endPeriod = document.getElementById('end_period').value;
+    if (startPeriod && endPeriod) {
+        if (startPeriod === endPeriod) {
+            data.class_period = `第${startPeriod}节`;
+        } else {
+            data.class_period = `第${startPeriod}-${endPeriod}节`;
+        }
+    }
+    
+    return data;
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function displayValue(value) {
+    const text = String(value ?? '').trim();
+    return text && text.toLowerCase() !== 'nan' ? escapeHtml(text) : '-';
+}
+
+function describeScheduleMatchType(matchType) {
+    const type = String(matchType || '');
+    const labels = [];
+    if (type.startsWith('exact')) {
+        labels.push('教师+课程');
+    } else if (type.startsWith('teacher_name')) {
+        labels.push('教师');
+    } else if (type.startsWith('course_name')) {
+        labels.push('课程');
+    }
+    if (type.includes('_with_time')) labels.push('时间');
+    if (type.includes('_with_location')) labels.push('地点');
+    if (type.includes('_with_class')) labels.push('班级');
+    return labels.length ? labels.join(' + ') : '参考匹配';
+}
+
+function describeContactMatch(match) {
+    if (match.match_type === 'id') return '编号匹配';
+    if (match.match_type === 'name') return '姓名匹配';
+    return '通讯录匹配';
+}
+
+function renderScheduleResults(matches) {
+    const container = document.getElementById('scheduleResults');
+    if (!matches || matches.length === 0) {
+        container.innerHTML = '<div class="alert alert-warning">未找到匹配的课程信息</div>';
+        return;
+    }
+
+    container.innerHTML = matches.map(match => `
+        <div class="reference-result-item">
+            <div class="reference-result-title">
+                <strong>${displayValue(match.course_name)}</strong>
+                <span class="badge bg-light text-dark border">${escapeHtml(describeScheduleMatchType(match.match_type))}</span>
+            </div>
+            <dl class="reference-result-meta">
+                <div><dt>教师</dt><dd>${displayValue(match.teacher_name)}（${displayValue(match.teacher_college)}）</dd></div>
+                <div><dt>时间</dt><dd>星期${displayValue(match.weekday)} ${displayValue(match.class_period)}</dd></div>
+                <div><dt>地点</dt><dd>${displayValue(match.location)}</dd></div>
+                <div><dt>班级</dt><dd>${displayValue(match.class_composition)}</dd></div>
+                <div><dt>起始周</dt><dd>${displayValue(match.start_week)}</dd></div>
+            </dl>
+        </div>
+    `).join('');
+}
+
+function renderContactsResults(matches) {
+    const container = document.getElementById('contactsResults');
+    if (!matches || matches.length === 0) {
+        container.innerHTML = '<div class="alert alert-warning">未找到匹配的通讯录信息</div>';
+        return;
+    }
+
+    container.innerHTML = matches.map(match => {
+        const similarity = match.similarity ? `相似度 ${Number(match.similarity).toFixed(2)}` : '精确匹配';
+        return `
+            <div class="reference-result-item">
+                <div class="reference-result-title">
+                    <strong>${displayValue(match.name)}</strong>
+                    <span class="badge bg-light text-dark border">${escapeHtml(describeContactMatch(match))} · ${escapeHtml(similarity)}</span>
+                </div>
+                <dl class="reference-result-meta">
+                    <div><dt>编号</dt><dd>${displayValue(match.id)}</dd></div>
+                    <div><dt>学院</dt><dd>${displayValue(match.college)}</dd></div>
+                    <div><dt>部门/组别</dt><dd>${displayValue(match.department)}</dd></div>
+                    <div><dt>电话</dt><dd>${displayValue(match.phone)}</dd></div>
+                </dl>
+            </div>
+        `;
+    }).join('');
+}
+</script>
+{% endblock %}

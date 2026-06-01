@@ -1,0 +1,555 @@
+{% extends "base.html" %}
+
+{% block title %}查看表单 - 管理员面板{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-list mr-2"></i>
+                        表单列表
+                    </h3>
+                    <div class="card-tools">
+                        {% if user.role == '超级管理员' %}
+                        <a class="btn btn-primary btn-sm mr-2" href="{{ url_for('admin.import_forms_excel_page') }}">
+                            <i class="fas fa-file-import"></i> 导入表单
+                        </a>
+                        {% endif %}
+                        <button class="btn btn-success btn-sm mr-2" data-bs-toggle="modal" data-bs-target="#exportModal">
+                            <i class="fas fa-file-excel"></i> 导出表单
+                        </button>
+                        <span class="badge bg-info text-dark">
+                            共 {{ forms.total }} 条记录
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="card-body">
+                    <!-- 搜索框 -->
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <input type="text" class="form-control" id="searchInput" placeholder="搜索听课人、教师或课程...">
+                        </div>
+                        <div class="col-md-2">
+                            <input type="date" class="form-control" id="dateFilter" placeholder="选择日期">
+                        </div>
+                        <div class="col-md-2">
+                            <select class="form-control" id="statusFilter">
+                                <option value="">所有状态</option>
+                                <option value="待审核">待审核</option>
+                                <option value="已审核">已审核</option>
+                                <option value="已驳回">已驳回</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-primary" onclick="searchForms()">
+                                <i class="fas fa-search"></i> 搜索
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 表格 -->
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped">
+                            <thead>
+                                <tr>
+                                    <th>表单ID</th>
+                                    <th>听课人</th>
+                                    <th>授课教师</th>
+                                    <th>课程名称</th>
+                                    <th>听课日期</th>
+                                    <th>当前状态</th>
+                                    <th>版本数</th>
+                                    <th>最后更新</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for form_group in forms.items %}
+                                {% set latest_form = form_group['latest_form'] %}
+                                {% set versions = form_group['versions'] %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ latest_form.unique_id or ('单独-' + latest_form.id|string) }}</strong>
+                                        {% if versions|length > 1 %}
+                                        <br><small class="text-muted">共{{ versions|length }}个版本</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ latest_form.listener_name }}</td>
+                                    <td>{{ latest_form.teacher_name }}</td>
+                                    <td>{{ latest_form.course_title[:30] }}{% if latest_form.course_title|length > 30 %}...{% endif %}</td>
+                                    <td>{{ latest_form.lecture_date if latest_form.lecture_date else '-' }}</td>
+                                    <td>
+                                        {% if latest_form.status == '待审核' %}
+                                            <span class="badge bg-warning text-dark">{{ latest_form.status }}</span>
+                                        {% elif latest_form.status == '已审核' or latest_form.status == '部门已审核' or latest_form.status == '中心已审核' %}
+                                            <span class="badge bg-success text-white">{{ latest_form.status }}</span>
+                                        {% elif latest_form.status == '已驳回' %}
+                                            <span class="badge bg-danger text-white">{{ latest_form.status }}</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary text-white">{{ latest_form.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info text-dark">{{ versions|length }}</span>
+                                        {% if versions|length > 1 %}
+                                        <button class="btn btn-outline-info ml-1" onclick="toggleVersions('{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}')" title="展开/收起版本">
+                                            <i class="fas fa-chevron-down me-1" id="chevron-{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}"></i> 展开/收起版本
+                                        </button>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ (latest_form.updated_at or latest_form.created_at).strftime('%Y-%m-%d %H:%M') if (latest_form.updated_at or latest_form.created_at) else '-' }}</td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <button class="btn btn-info" onclick="viewFormDetail({{ latest_form.id }})" title="查看最新版本">
+                                                <i class="fas fa-eye"></i> 查看最新版本
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <!-- 版本历史行（默认隐藏） -->
+                                {% if versions|length > 1 %}
+                                <tr id="versions-{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}" class="version-history" style="display: none;">
+                                    <td colspan="10">
+                                        <div class="card">
+                                            <div class="card-header">
+                                                <h6 class="mb-0">版本历史 (按更新时间排序)</h6>
+                                            </div>
+                                            <div class="card-body p-2">
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm table-borderless">
+                                                        <thead>
+                                                            <tr class="text-muted">
+                                                                <th>版本</th>
+                                                                <th>状态</th>
+                                                                <th>更新时间</th>
+                                                                <th>审核人</th>
+                                                                <th>审核意见</th>
+                                                                <th>操作</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {% for version in versions %}
+                                                            <tr>
+                                                                <td>
+                                                                    <span class="badge bg-light text-dark">v{{ loop.revindex }}</span>
+                                                                    {% if loop.first %}
+                                                                    <span class="badge bg-primary">最新</span>
+                                                                    {% endif %}
+                                                                </td>
+                                                                <td>
+                                                                    {% if version.status == '待审核' %}
+                                                                        <span class="badge bg-warning text-dark">{{ version.status }}</span>
+                                                                    {% elif version.status == '已审核' or version.status == '部门已审核' or version.status == '中心已审核' %}
+                                                                        <span class="badge bg-success">{{ version.status }}</span>
+                                                                    {% elif version.status == '已驳回' %}
+                                                                        <span class="badge bg-danger">{{ version.status }}</span>
+                                                                    {% else %}
+                                                                        <span class="badge bg-secondary">{{ version.status }}</span>
+                                                                    {% endif %}
+                                                                </td>
+                                                                <td>{{ (version.updated_at or version.created_at).strftime('%m-%d %H:%M') if (version.updated_at or version.created_at) else '-' }}</td>
+                                                                <td>
+                                                                    {% if version.reviewer %}
+                                                                        {% if reviewer_display_mode == 'number' %}
+                                                                            {{ version.reviewer.number or '-' }}
+                                                                        {% else %}
+                                                                            {{ version.reviewer.name or version.reviewer.number or '-' }}
+                                                                        {% endif %}
+                                                                    {% else %}
+                                                                        -
+                                                                    {% endif %}
+                                                                </td>
+                                                                <td>
+                                                                    {% if version.review_comment %}
+                                                                    <span title="{{ version.review_comment }}">{{ version.review_comment[:20] }}{% if version.review_comment|length > 20 %}...{% endif %}</span>
+                                                                    {% else %}
+                                                                    -
+                                                                    {% endif %}
+                                                                </td>
+                                                                <td>
+                                                                    <button class="btn btn-outline-info" onclick="viewFormDetail({{ version.id }})" title="查看此版本">
+                                                                        <i class="fas fa-eye me-1"></i> 查看此版本
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                            {% endfor %}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                {% else %}
+                                <tr>
+                                    <td colspan="10" class="text-center text-muted">暂无数据</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 分页 -->
+                    {% if forms.pages > 1 %}
+                    <div class="row mt-3">
+                        <div class="col-md-12">
+                            <nav>
+                                <ul class="pagination justify-content-center">
+                                    {% if forms.has_prev %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('admin.view_forms', page=forms.prev_num) }}">上一页</a>
+                                    </li>
+                                    {% endif %}
+                                    
+                                    {% for page_num in forms.iter_pages() %}
+                                        {% if page_num %}
+                                            {% if page_num != forms.page %}
+                                            <li class="page-item">
+                                                <a class="page-link" href="{{ url_for('admin.view_forms', page=page_num) }}">{{ page_num }}</a>
+                                            </li>
+                                            {% else %}
+                                            <li class="page-item active">
+                                                <span class="page-link">{{ page_num }}</span>
+                                            </li>
+                                            {% endif %}
+                                        {% else %}
+                                        <li class="page-item disabled">
+                                            <span class="page-link">…</span>
+                                        </li>
+                                        {% endif %}
+                                    {% endfor %}
+                                    
+                                    {% if forms.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('admin.view_forms', page=forms.next_num) }}">下一页</a>
+                                    </li>
+                                    {% endif %}
+                                </ul>
+                            </nav>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 表单详情模态框 -->
+<div class="modal fade" id="formDetailModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">表单详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="formDetailContent">
+                <!-- 详情内容将通过AJAX加载 -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- 导出配置模态框 -->
+<div class="modal fade" id="exportModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">导出听课反馈表</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="exportForm">
+                    <!-- 导出模式 -->
+                    <div class="form-group">
+                        <label>导出模式</label>
+                        <div class="custom-control custom-radio">
+                            <input type="radio" id="exportModeStandard" name="export_mode" value="standard" class="custom-control-input" checked onchange="handleExportModeChange()">
+                            <label class="custom-control-label" for="exportModeStandard">规范 Excel 文件</label>
+                        </div>
+                        <div class="custom-control custom-radio">
+                            <input type="radio" id="exportModeAllData" name="export_mode" value="all_data" class="custom-control-input" onchange="handleExportModeChange()">
+                            <label class="custom-control-label" for="exportModeAllData">数据库全部字段</label>
+                        </div>
+                    </div>
+
+                    <!-- 导出范围 -->
+                    <div class="form-group">
+                        <label>导出范围</label>
+                        <div class="custom-control custom-radio">
+                            <input type="radio" id="scopeLatest" name="scope" value="latest" class="custom-control-input" checked onchange="handleExportScopeChange()">
+                            <label class="custom-control-label" for="scopeLatest">导出最新 (上次导出后新增的)</label>
+                        </div>
+                        <div class="custom-control custom-radio">
+                            <input type="radio" id="scopeSelected" name="scope" value="selected" class="custom-control-input" onchange="handleExportScopeChange()">
+                            <label class="custom-control-label" for="scopeSelected">选择导出表单</label>
+                        </div>
+                        <div class="custom-control custom-radio">
+                            <input type="radio" id="scopeAll" name="scope" value="all" class="custom-control-input" onchange="handleExportScopeChange()">
+                            <label class="custom-control-label" for="scopeAll">导出所有</label>
+                        </div>
+                    </div>
+
+                    <!-- 排序方式 -->
+                    <div class="form-group">
+                        <label>排序方式</label>
+                        <div class="custom-control custom-radio">
+                            <input type="radio" id="sortTime" name="sort_by" value="time" class="custom-control-input" checked>
+                            <label class="custom-control-label" for="sortTime">按听课时间排序</label>
+                        </div>
+                        <div class="custom-control custom-radio">
+                            <input type="radio" id="sortCourse" name="sort_by" value="course" class="custom-control-input">
+                            <label class="custom-control-label" for="sortCourse">按课程排序 (学院-教师-课程)</label>
+                        </div>
+                    </div>
+
+                    <!-- 状态筛选 -->
+                    <div class="form-group">
+                        <label>状态筛选 (可多选)</label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="custom-control custom-checkbox">
+                                    <input type="checkbox" class="custom-control-input status-checkbox" id="statusCenter" value="中心已审核" checked>
+                                    <label class="custom-control-label" for="statusCenter">中心已审核</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="custom-control custom-checkbox">
+                                    <input type="checkbox" class="custom-control-input status-checkbox" id="statusDept" value="部门已审核" checked>
+                                    <label class="custom-control-label" for="statusDept">部门已审核</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="custom-control custom-checkbox">
+                                    <input type="checkbox" class="custom-control-input status-checkbox" id="statusPending" value="待审核">
+                                    <label class="custom-control-label" for="statusPending">待审核</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="custom-control custom-checkbox">
+                                    <input type="checkbox" class="custom-control-input status-checkbox" id="statusRejected" value="已驳回">
+                                    <label class="custom-control-label" for="statusRejected">已驳回</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 文件名设置 -->
+                    <div class="form-group" id="exportFilenameGroup">
+                        <label>文件名标题 (可选)</label>
+                        <input type="text" class="form-control" name="filename_title" placeholder="默认：未命名">
+                        <small class="form-text text-muted">最终文件名：学生教学信息中心听课反馈表汇总-[标题] [日期].xlsx</small>
+                    </div>
+                    <div class="form-group" id="exportAllDataFilenameHint" style="display: none;">
+                        <label>文件名</label>
+                        <div class="form-control-plaintext text-muted">听课反馈表-[日期].xlsx</div>
+                    </div>
+
+                    <!-- 预检信息显示区域 -->
+                    <div id="exportCheckResult" class="alert alert-info" style="display: none;">
+                        <i class="fas fa-spinner fa-spin"></i> 正在检查数据...
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-info" onclick="checkExportData()">
+                    <i class="fas fa-calculator"></i> 检查数量
+                </button>
+                <button type="button" class="btn btn-primary" id="btnConfirmExport" disabled onclick="executeExport()">
+                    <i class="fas fa-file-export"></i> 确认导出
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function resetExportCheckState() {
+    document.getElementById('exportCheckResult').style.display = 'none';
+    document.getElementById('btnConfirmExport').disabled = true;
+}
+
+function handleExportScopeChange() {
+    const scope = document.querySelector('input[name="scope"]:checked').value;
+    if (scope === 'selected') {
+        alert('请在“审核表单”功能中选择表单导出');
+        document.getElementById('scopeLatest').checked = true;
+    }
+    resetExportCheckState();
+}
+
+function handleExportModeChange() {
+    const mode = document.querySelector('input[name="export_mode"]:checked').value;
+    document.getElementById('exportFilenameGroup').style.display = mode === 'standard' ? 'block' : 'none';
+    document.getElementById('exportAllDataFilenameHint').style.display = mode === 'all_data' ? 'block' : 'none';
+    resetExportCheckState();
+}
+
+function checkExportData() {
+    const form = document.getElementById('exportForm');
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+
+    if (data.scope === 'selected') {
+        alert('请在“审核表单”功能中选择表单导出');
+        document.getElementById('scopeLatest').checked = true;
+        resetExportCheckState();
+        return;
+    }
+    
+    // 处理复选框
+    // data.status_approved = document.getElementById('statusApproved').checked;
+    const statuses = [];
+    document.querySelectorAll('.status-checkbox:checked').forEach(cb => {
+        statuses.push(cb.value);
+    });
+    data.status_list = statuses;
+
+    const resultDiv = document.getElementById('exportCheckResult');
+    resultDiv.style.display = 'block';
+    resultDiv.className = 'alert alert-info';
+    resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在检查数据...';
+
+    fetch('/admin/api/forms/export/check', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(res => {
+        if (res.success) {
+            resultDiv.className = 'alert alert-success';
+            const excludedText = res.excluded_count > 0
+                ? `<br><small>状态筛选已排除 ${res.excluded_count} 条记录。</small>`
+                : '';
+            resultDiv.innerHTML = `
+                <strong>准备就绪:</strong> 将导出 <b>${res.total_count}</b> 条记录。${excludedText}
+            `;
+            if (res.total_count > 0) {
+                document.getElementById('btnConfirmExport').disabled = false;
+            } else {
+                resultDiv.className = 'alert alert-warning';
+                resultDiv.innerHTML = '没有符合条件的记录可导出。';
+                document.getElementById('btnConfirmExport').disabled = true;
+            }
+        } else {
+            resultDiv.className = 'alert alert-danger';
+            resultDiv.innerHTML = '检查失败: ' + res.message;
+        }
+    })
+    .catch(err => {
+        resultDiv.className = 'alert alert-danger';
+        resultDiv.innerHTML = '请求错误: ' + err;
+    });
+}
+
+function executeExport() {
+    const form = document.getElementById('exportForm');
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+
+    if (data.scope === 'selected') {
+        alert('请在“审核表单”功能中选择表单导出');
+        document.getElementById('scopeLatest').checked = true;
+        resetExportCheckState();
+        return;
+    }
+    
+    // 收集状态列表
+    const statuses = [];
+    document.querySelectorAll('.status-checkbox:checked').forEach(cb => {
+        statuses.push(cb.value);
+    });
+    data.status_list = statuses.join(',');
+
+    // 构建查询字符串
+    const params = new URLSearchParams();
+    for (const key in data) {
+        params.append(key, data[key]);
+    }
+
+    // 触发下载
+    window.location.href = `/admin/api/forms/export/download?${params.toString()}`;
+    
+    // 关闭模态框
+    const exportModal = bootstrap.Modal.getInstance(document.getElementById('exportModal'));
+    exportModal.hide();
+}
+function viewFormDetail(formId) {
+    // 显示模态框
+    const modalEl = document.getElementById('formDetailModal');
+    let modal = bootstrap.Modal.getInstance(modalEl);
+    if (!modal) {
+        modal = new bootstrap.Modal(modalEl);
+    }
+    modal.show();
+    
+    // 加载表单详情
+    fetch(`/admin/form/${formId}?format=json`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('formDetailContent').innerHTML = data.html;
+            } else {
+                document.getElementById('formDetailContent').innerHTML = '<p class="text-danger">加载失败：' + data.message + '</p>';
+            }
+        })
+        .catch(error => {
+            document.getElementById('formDetailContent').innerHTML = '<p class="text-danger">加载失败，请重试</p>';
+        });
+}
+
+function exportForm(formId) {
+    window.open(`/admin/export_form/${formId}`, '_blank');
+}
+
+function searchForms() {
+    const searchText = document.getElementById('searchInput').value;
+    const dateFilter = document.getElementById('dateFilter').value;
+    const statusFilter = document.getElementById('statusFilter').value;
+    
+    let url = new URL(window.location.href);
+    url.searchParams.set('search', searchText);
+    url.searchParams.set('date', dateFilter);
+    url.searchParams.set('status', statusFilter);
+    url.searchParams.set('page', '1'); // 重置到第一页
+    
+    window.location.href = url.toString();
+}
+
+// 回车搜索
+document.getElementById('searchInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        searchForms();
+    }
+});
+
+// 切换版本历史显示
+function toggleVersions(uniqueId) {
+    const versionRow = document.getElementById('versions-' + uniqueId);
+    const chevron = document.getElementById('chevron-' + uniqueId);
+    
+    if (versionRow.style.display === 'none' || versionRow.style.display === '') {
+        versionRow.style.display = 'table-row';
+        chevron.classList.remove('fa-chevron-down');
+        chevron.classList.add('fa-chevron-up');
+    } else {
+        versionRow.style.display = 'none';
+        chevron.classList.remove('fa-chevron-up');
+        chevron.classList.add('fa-chevron-down');
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block title %}表单详情 - 听课表单系统{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>听课表单详情 <small class="text-muted">#{{ form.id }}</small></h2>
+            <div>
+                <a href="{{ url_for('user.my_forms') }}" class="btn btn-outline-secondary">返回列表</a>
+            <a href="{{ url_for('main.index') }}" class="btn btn-primary ms-2">填写新表单</a>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="row">
+                    <div class="col-md-6">
+                        <strong>提交时间：</strong> {{ form.created_at.strftime('%Y年%m月%d日 %H:%M:%S') }}
+                    </div>
+                    <div class="col-md-6 text-md-end">
+                        <span class="badge bg-success">已提交</span>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- 基本信息 -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <h5 class="text-primary border-bottom pb-2">基本信息</h5>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">听课人姓名+学院</label>
+                        <p class="form-control-plaintext">{{ form.listener_name }}</p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">听课人编号</label>
+                        <p class="form-control-plaintext">{{ form.listener_number }}</p>
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-bold">课程信息变化</label>
+                        <p class="form-control-plaintext">{{ form.course_changes }}</p>
+                    </div>
+                </div>
+
+                <!-- 时间地点信息 -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <h5 class="text-primary border-bottom pb-2">时间地点信息</h5>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">听课时间</label>
+                        <p class="form-control-plaintext">{{ form.lecture_date }}</p>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">第几节</label>
+                        <p class="form-control-plaintext">{{ form.class_period }}</p>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">听课地点</label>
+                        <p class="form-control-plaintext">{{ form.lecture_location }}</p>
+                    </div>
+                </div>
+
+                <!-- 教师课程信息 -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <h5 class="text-primary border-bottom pb-2">教师课程信息</h5>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">授课教师</label>
+                        <p class="form-control-plaintext">{{ form.teacher_name }}</p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">教师所属学院</label>
+                        <p class="form-control-plaintext">{{ form.teacher_college }}</p>
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-bold">课程(总标题)</label>
+                        <p class="form-control-plaintext">{{ form.course_title }}</p>
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-bold">专业年级</label>
+                        <p class="form-control-plaintext">{{ form.student_grade_class }}</p>
+                    </div>
+                </div>
+
+                <!-- 课堂情况评价 -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <h5 class="text-primary border-bottom pb-2">课堂情况评价</h5>
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-bold">异常情况反映</label>
+                        <div class="border rounded p-3 bg-light">
+                            {{ form.abnormal_situation | replace('\n', '<br>') | safe }}
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">主要教学方法</label>
+                        <div class="border rounded p-3 bg-light">
+                            {{ form.teaching_method | replace('\n', '<br>') | safe }}
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">管理课堂纪律</label>
+                        <div class="border rounded p-3 bg-light">
+                            {{ form.classroom_discipline | replace('\n', '<br>') | safe }}
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">调动课堂气氛</label>
+                        <div class="border rounded p-3 bg-light">
+                            {{ form.classroom_atmosphere | replace('\n', '<br>') | safe }}
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">课件制作质量</label>
+                        <div class="border rounded p-3 bg-light">
+                            {{ form.courseware_quality | replace('\n', '<br>') | safe }}
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">整体教学效果</label>
+                        <div class="border rounded p-3 bg-light">
+                            {{ form.overall_effect | replace('\n', '<br>') | safe }}
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">优质案例推荐</label>
+                        <div class="border rounded p-3 bg-light">
+                            {{ form.quality_case | replace('\n', '<br>') | safe }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 评价反馈 -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <h5 class="text-primary border-bottom pb-2">评价反馈</h5>
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-bold">课程反馈(优点)</label>
+                        <div class="border rounded p-3 bg-light">
+                            {{ form.course_feedback | replace('\n', '<br>') | safe }}
+                        </div>
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-bold">不足及建议</label>
+                        <div class="border rounded p-3 bg-light">
+                            {{ form.suggestions | replace('\n', '<br>') | safe }}
+                        </div>
+                    </div>
+                </div>
+
+                {% if score_record %}
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <h5 class="text-danger border-bottom pb-2">扣分情况</h5>
+                    </div>
+                    <div class="col-12">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-sm">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>扣分原因</th>
+                                        <th>部门扣分</th>
+                                        <th>个人扣分</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in score_record.items %}
+                                    <tr>
+                                        <td>{{ item.reason }}</td>
+                                        <td>{{ item.department_score }}</td>
+                                        <td>{{ item.personal_score }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="text-end">
+                            <span class="me-3">部门累计扣分：{{ score_record.total_department_score }}</span>
+                            <span>个人累计扣分：{{ score_record.total_personal_score }}</span>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- 听课人信息 -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <h5 class="text-primary border-bottom pb-2">听课人信息</h5>
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-bold">所在小组</label>
+                        <p class="form-control-plaintext">{{ form.group_name }}</p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">听课班级同学签名1</label>
+                        <p class="form-control-plaintext">{{ form.student_signature1 }}</p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">联系电话1</label>
+                        <p class="form-control-plaintext">{{ form.contact_phone1 }}</p>
+                    </div>
+                    {% if form.student_signature2 %}
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">听课班级同学签名2</label>
+                        <p class="form-control-plaintext">{{ form.student_signature2 }}</p>
+                    </div>
+                    {% endif %}
+                    {% if form.contact_phone2 %}
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">联系电话2</label>
+                        <p class="form-control-plaintext">{{ form.contact_phone2 }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-4">
+            <a href="{{ url_for('user.my_forms') }}" class="btn btn-outline-secondary">返回列表</a>
+            <a href="{{ url_for('main.index') }}" class="btn btn-primary ms-3">填写新表单</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

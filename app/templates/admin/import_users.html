@@ -1,0 +1,506 @@
+{% extends "base.html" %}
+
+{% block title %}导入用户 - 西南大学教学信息中心{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>
+                <i class="bi bi-upload"></i> 导入用户
+            </h2>
+            <a href="{{ url_for('admin.system_management') }}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> 返回管理面板
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 导入步骤说明 -->
+    <div class="col-md-4">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-list-ol"></i> 导入步骤
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="step-item">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h6>下载模板</h6>
+                        <p class="text-muted small">下载标准Excel模板文件</p>
+                    </div>
+                </div>
+                <div class="step-item">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h6>填写数据</h6>
+                        <p class="text-muted small">按照模板格式填写用户信息</p>
+                    </div>
+                </div>
+                <div class="step-item">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h6>上传文件</h6>
+                        <p class="text-muted small">选择填写好的Excel文件上传</p>
+                    </div>
+                </div>
+                <div class="step-item">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h6>确认导入</h6>
+                        <p class="text-muted small">检查数据无误后确认导入</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 注意事项 -->
+        <div class="card shadow">
+            <div class="card-header bg-warning text-dark">
+                <h6 class="mb-0">
+                    <i class="bi bi-exclamation-triangle"></i> 注意事项
+                </h6>
+            </div>
+            <div class="card-body">
+                <ul class="small mb-0">
+                    <li>Excel文件必须与模板格式完全一致</li>
+                    <li>学号不能重复，系统会自动检查</li>
+                    <li>密码将自动生成，导入后可下载</li>
+                    <li>部门字段必须是：办公部、策划部、技术部、宣传部之一</li>
+                    <li>手机号格式必须正确（11位数字）</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 导入操作区 -->
+    <div class="col-md-8">
+        <!-- 下载模板 -->
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-download"></i> 第一步：下载模板
+                </h5>
+            </div>
+            <div class="card-body">
+                <p>请先下载标准模板文件，按照模板格式填写用户信息。</p>
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('admin.download_template') }}" class="btn btn-primary">
+                        <i class="bi bi-file-earmark-excel"></i> 下载Excel模板
+                    </a>
+                    <a href="{{ url_for('admin.view_sample') }}" class="btn btn-outline-info" target="_blank">
+                        <i class="bi bi-eye"></i> 查看示例
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 上传文件 -->
+        <div class="card shadow mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-upload"></i> 第二步：上传文件
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data" id="uploadForm">
+                    <div class="mb-3">
+                        <label for="file" class="form-label">选择Excel文件</label>
+                        <input type="file" class="form-control" id="file" name="file" 
+                               accept=".xlsx,.xls" required>
+                        <div class="form-text">支持 .xlsx 和 .xls 格式</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="overwrite" name="overwrite">
+                            <label class="form-check-label" for="overwrite">
+                                覆盖已存在的用户（相同学号）
+                            </label>
+                        </div>
+                        <div class="form-text text-warning">
+                            <i class="bi bi-exclamation-triangle"></i> 
+                            勾选此项将覆盖数据库中已存在的用户信息
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success" id="uploadBtn">
+                            <i class="bi bi-upload"></i> 上传并预览
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- 预览和确认区域（动态显示） -->
+        <div id="previewSection" class="card shadow" style="display: none;">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0">
+                    <i class="bi bi-eye"></i> 第三步：预览数据
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="previewContent">
+                    <!-- 预览内容将通过JavaScript动态加载 -->
+                </div>
+                
+                <div class="d-flex justify-content-between mt-3">
+                    <button type="button" class="btn btn-secondary" onclick="cancelImport()">
+                        <i class="bi bi-x-circle"></i> 取消
+                    </button>
+                    <button type="button" class="btn btn-warning" id="confirmImportBtn" onclick="confirmImport()">
+                        <i class="bi bi-check-circle"></i> 确认导入
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 导入结果区域 -->
+        <div id="resultSection" class="card shadow" style="display: none;">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-check-circle"></i> 导入完成
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="resultContent">
+                    <!-- 结果内容将通过JavaScript动态加载 -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.step-item {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.step-number {
+    width: 30px;
+    height: 30px;
+    background: #007bff;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    margin-right: 15px;
+    flex-shrink: 0;
+}
+
+.step-content h6 {
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+.upload-area {
+    border: 2px dashed #dee2e6;
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.upload-area:hover {
+    border-color: #007bff;
+    background-color: #f8f9fa;
+}
+
+.upload-area.dragover {
+    border-color: #28a745;
+    background-color: #d4edda;
+}
+
+.preview-table {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.error-row {
+    background-color: #f8d7da;
+}
+
+.warning-row {
+    background-color: #fff3cd;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let uploadedData = null;
+
+// 文件上传处理
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const fileInput = document.getElementById('file');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('请选择文件');
+        return;
+    }
+    
+    // 检查文件类型
+    const allowedTypes = ['.xlsx', '.xls'];
+    const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+    if (!allowedTypes.includes(fileExtension)) {
+        alert('请选择Excel文件（.xlsx或.xls格式）');
+        return;
+    }
+    
+    // 显示上传进度
+    const uploadBtn = document.getElementById('uploadBtn');
+    uploadBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> 上传中...';
+    uploadBtn.disabled = true;
+    
+    // 创建FormData
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('overwrite', document.getElementById('overwrite').checked);
+    
+    // 上传文件
+    fetch('/admin/preview_import', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            uploadedData = data;
+            showPreview(data);
+        } else {
+            alert('上传失败：' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('上传失败：' + error.message);
+    })
+    .finally(() => {
+        uploadBtn.innerHTML = '<i class="bi bi-upload"></i> 上传并预览';
+        uploadBtn.disabled = false;
+    });
+});
+
+// 显示预览
+function showPreview(data) {
+    const previewSection = document.getElementById('previewSection');
+    const previewContent = document.getElementById('previewContent');
+    
+    let html = `
+        <div class="alert alert-info">
+            <h6><i class="bi bi-info-circle"></i> 数据预览</h6>
+            <p>共 ${data.total_rows} 行数据，其中 ${data.valid_rows} 行有效，${data.error_rows} 行有错误</p>
+        </div>
+    `;
+    
+    if (data.errors && data.errors.length > 0) {
+        html += `
+            <div class="alert alert-warning">
+                <h6><i class="bi bi-exclamation-triangle"></i> 发现错误</h6>
+                <ul class="mb-0">
+        `;
+        data.errors.forEach(error => {
+            html += `<li>${error}</li>`;
+        });
+        html += `</ul></div>`;
+    }
+    
+    if (data.preview && data.preview.length > 0) {
+        html += `
+            <div class="preview-table">
+                <table class="table table-sm table-bordered">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>行号</th>
+                            <th>姓名</th>
+                            <th>性别</th>
+                            <th>学号</th>
+                            <th>手机号</th>
+                            <th>部门</th>
+                            <th>角色</th>
+                            <th>状态</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        data.preview.forEach((row, index) => {
+            const rowClass = row.has_error ? 'error-row' : (row.is_duplicate ? 'warning-row' : '');
+            html += `
+                <tr class="${rowClass}">
+                    <td>${row.row_number}</td>
+                    <td>${row.name || ''}</td>
+                    <td>${row.gender || ''}</td>
+                    <td>${row.student_id || ''}</td>
+                    <td>${row.phone || ''}</td>
+                    <td>${row.department || ''}</td>
+                    <td>${row.role || ''}</td>
+                    <td>
+                        ${row.has_error ? '<span class="badge bg-danger">错误</span>' : 
+                          row.is_duplicate ? '<span class="badge bg-warning">重复</span>' : 
+                          '<span class="badge bg-success">正常</span>'}
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += `</tbody></table></div>`;
+    }
+    
+    previewContent.innerHTML = html;
+    previewSection.style.display = 'block';
+    
+    // 滚动到预览区域
+    previewSection.scrollIntoView({ behavior: 'smooth' });
+}
+
+// 确认导入
+function confirmImport() {
+    if (!uploadedData) {
+        alert('没有可导入的数据');
+        return;
+    }
+    
+    if (uploadedData.error_rows > 0) {
+        if (!confirm('存在错误数据，确定要继续导入吗？只有有效数据会被导入。')) {
+            return;
+        }
+    }
+    
+    const confirmBtn = document.getElementById('confirmImportBtn');
+    confirmBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> 导入中...';
+    confirmBtn.disabled = true;
+    
+    fetch('/admin/confirm_import', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            import_id: uploadedData.import_id,
+            overwrite: document.getElementById('overwrite').checked
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showResult(data);
+        } else {
+            alert('导入失败：' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('导入失败：' + error.message);
+    })
+    .finally(() => {
+        confirmBtn.innerHTML = '<i class="bi bi-check-circle"></i> 确认导入';
+        confirmBtn.disabled = false;
+    });
+}
+
+// 显示导入结果
+function showResult(data) {
+    const resultSection = document.getElementById('resultSection');
+    const resultContent = document.getElementById('resultContent');
+    
+    let html = `
+        <div class="alert alert-success">
+            <h6><i class="bi bi-check-circle"></i> 导入成功</h6>
+            <p>成功导入 ${data.imported_count} 个用户</p>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <h6>导入统计：</h6>
+                <ul>
+                    <li>新增用户：${data.imported_count} 个</li>
+                    <li>更新用户：${data.updated_count} 个</li>
+                    <li>跳过用户：${data.skipped_count} 个</li>
+                    <li>当前系统总用户数：${data.total_users} 个</li>
+                </ul>
+            </div>
+            <div class="col-md-6">
+                <h6>密码文件：</h6>
+                <p>系统已为导入/更新的用户生成随机密码</p>
+                ${data.password_file_url ? `
+                    <a href="${data.password_file_url}" class="btn btn-primary" download>
+                        <i class="bi bi-download"></i> 下载密码文件
+                    </a>
+                ` : `
+                    <div class="alert alert-secondary">无新密码需要生成</div>
+                `}
+            </div>
+        </div>
+    `;
+    
+    resultContent.innerHTML = html;
+    resultSection.style.display = 'block';
+    
+    // 隐藏预览区域
+    document.getElementById('previewSection').style.display = 'none';
+    
+    // 滚动到结果区域
+    resultSection.scrollIntoView({ behavior: 'smooth' });
+}
+
+// 取消导入
+function cancelImport() {
+    document.getElementById('previewSection').style.display = 'none';
+    document.getElementById('resultSection').style.display = 'none';
+    document.getElementById('uploadForm').reset();
+    uploadedData = null;
+}
+
+// 拖拽上传
+const fileInput = document.getElementById('file');
+const uploadArea = fileInput.closest('.card-body');
+
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    uploadArea.addEventListener(eventName, preventDefaults, false);
+});
+
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+['dragenter', 'dragover'].forEach(eventName => {
+    uploadArea.addEventListener(eventName, highlight, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    uploadArea.addEventListener(eventName, unhighlight, false);
+});
+
+function highlight(e) {
+    uploadArea.classList.add('dragover');
+}
+
+function unhighlight(e) {
+    uploadArea.classList.remove('dragover');
+}
+
+uploadArea.addEventListener('drop', handleDrop, false);
+
+function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    
+    if (files.length > 0) {
+        fileInput.files = files;
+    }
+}
+</script>
+{% endblock %}

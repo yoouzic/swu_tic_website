@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}听课表单系统{% endblock %}</title>
+    <link href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='vendor/bootstrap-icons/font/bootstrap-icons.css') }}" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('main.index') }}">听课表单系统</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="{{ url_for('user.submit_form') }}">填写表单</a>
+                <a class="nav-link" href="{{ url_for('user.listening_registration') }}">听课登记</a>
+                <a class="nav-link" href="{{ url_for('user.my_forms') }}">查看记录</a>
+                {% if current_user.role in ['管理员', '超级管理员'] %}
+                    <a class="nav-link" href="{{ url_for('admin.super_admin_dashboard') if current_user.role == '超级管理员' else url_for('admin.admin_dashboard') }}">管理后台</a>
+                {% endif %}
+                <a class="nav-link" href="{{ url_for('auth.logout') }}">登出</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="{{ url_for('static', filename='vendor/jquery/jquery-3.6.0.min.js') }}" onerror="var s=document.createElement('script'); s.src='https://code.jquery.com/jquery-3.6.0.min.js'; document.head.appendChild(s);"></script>
+    <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 为所有内部链接添加 target="_blank"，除了登出、锚点和模态框触发器
+            document.querySelectorAll('a').forEach(function(link) {
+                var href = link.getAttribute('href');
+                if (href && 
+                    !href.startsWith('#') && 
+                    !href.startsWith('javascript') && 
+                    !link.hasAttribute('target') &&
+                    !link.hasAttribute('data-bs-toggle') &&
+                    !link.hasAttribute('data-toggle') &&
+                    !href.includes('logout')) {
+                    link.setAttribute('target', '_blank');
+                }
+            });
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
