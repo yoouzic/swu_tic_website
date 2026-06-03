@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import json
 import re
 
 from ..models import AssessmentOverride, LectureForm, SystemSetting
@@ -8,6 +9,7 @@ from .audit_tags import LATE_TAG_LATE, parse_audit_tag
 LEAVE_OVERRIDE_TYPE = 'leave'
 ASSESSMENT_EXEMPT_OVERRIDE_TYPES = ('exempt', LEAVE_OVERRIDE_TYPE)
 LEAVE_PROMPT_COOLDOWN_HOURS = 12
+LEAVE_MAKEUP_FORMS_KEY = 'makeup_forms'
 
 
 def get_teaching_settings():
@@ -142,26 +144,114 @@ def count_user_effective_forms_for_week(user_number, week_no, settings):
     return total
 
 
-def _resolve_leave_status(record, current_week):
-    if not record or not current_week:
+def parse_leave_override_value(raw_value):
+    if not raw_value:
+        return {}
+    try:
+        data = json.loads(raw_value)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def get_leave_makeup_forms(record):
+    data = parse_leave_override_value(getattr(record, 'override_value', None))
+    forms = data.get(LEAVE_MAKEUP_FORMS_KEY)
+    return forms if isinstance(forms, list) else []
+
+
+def is_leave_makeup_completed(record):
+    return len(get_leave_makeup_forms(record)) > 0
+
+
+def _normalize_form_unique_id(form):
+    value = getattr(form, 'unique_id', None) or getattr(form, 'id', None)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
+def _build_leave_makeup_form_entry(form, source='manual', operator_user_id=None):
+    return {
+        'form_id': getattr(form, 'id', None),
+        'unique_id': _normalize_form_unique_id(form),
+        'course_title': getattr(form, 'course_title', '') or '',
+        'teacher_name': getattr(form, 'teacher_name', '') or '',
+        'lecture_date': getattr(form, 'lecture_date', '') or '',
+        'status': getattr(form, 'status', '') or '',
+        'source': source,
+        'recorded_by': operator_user_id,
+        'recorded_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    }
+
+
+def set_leave_makeup_forms(record, forms, source='manual', operator_user_id=None):
+    if not record:
+        return []
+    data = parse_leave_override_value(record.override_value)
+    entries = [
+        _build_leave_makeup_form_entry(form, source=source, operator_user_id=operator_user_id)
+        for form in (forms or [])
+        if form is not None
+    ]
+    data[LEAVE_MAKEUP_FORMS_KEY] = entries
+    record.override_value = json.dumps(data, ensure_ascii=False)
+    record.updated_at = datetime.now()
+    return entries
+
+
+def add_leave_makeup_form(record, form, source='auto', operator_user_id=None):
+    if not record or not form:
+        return []
+    data = parse_leave_override_value(record.override_value)
+    entries = get_leave_makeup_forms(record)
+    unique_id = _normalize_form_unique_id(form)
+    form_id = getattr(form, 'id', None)
+    filtered = [
+        entry for entry in entries
+        if entry.get('unique_id') != unique_id and entry.get('form_id') != form_id
+    ]
+    filtered.append(_build_leave_makeup_form_entry(form, source=source, operator_user_id=operator_user_id))
+    data[LEAVE_MAKEUP_FORMS_KEY] = filtered
+    record.override_value = json.dumps(data, ensure_ascii=False)
+    record.updated_at = datetime.now()
+    return filtered
+
+
+def record_leave_makeup_form(user, leave_status, form, source='auto', operator_user_id=None):
+    if not user or not leave_status or not form:
         return None
-    if record.start_week <= current_week <= record.end_week:
-        return 'active', '请假中', current_week
-    if current_week == record.end_week + 1:
-        return 'ending', '请假结束期', record.end_week
-    return None
+    override_id = leave_status.get('override_id')
+    if not override_id:
+        return None
+    record = AssessmentOverride.query.filter_by(
+        id=override_id,
+        user_id=user.id,
+        override_type=LEAVE_OVERRIDE_TYPE,
+    ).first()
+    if not record:
+        return None
+    add_leave_makeup_form(record, form, source=source, operator_user_id=operator_user_id)
+    return record
 
 
 def build_leave_status_payload(record, current_week, user=None, settings=None):
-    resolved = _resolve_leave_status(record, current_week)
-    if not resolved:
+    if not record or not current_week or current_week < record.start_week:
         return None
-    status, status_label, leave_week = resolved
+    makeup_forms = get_leave_makeup_forms(record)
+    makeup_completed = len(makeup_forms) > 0
+    if record.start_week <= current_week <= record.end_week:
+        status = 'active'
+        status_label = '请假中'
+        leave_week = current_week
+    else:
+        status = 'completed' if makeup_completed else 'pending'
+        status_label = '已补交' if makeup_completed else '待补交'
+        leave_week = record.end_week
     required_submission = int((settings or {}).get('required_submission') or 0)
-    submitted_count = 0
-    if user is not None and settings:
-        submitted_count = count_user_effective_forms_for_week(user.number, leave_week, settings)
-    pending_count = max(required_submission - submitted_count, 0)
+    submitted_count = len(makeup_forms)
+    pending_count = 0 if makeup_completed else max(required_submission, 0)
 
     payload = {
         'override_id': record.id,
@@ -174,6 +264,8 @@ def build_leave_status_payload(record, current_week, user=None, settings=None):
         'required_submission': required_submission,
         'submitted_count': submitted_count,
         'pending_makeup_count': pending_count,
+        'makeup_completed': makeup_completed,
+        'makeup_forms': makeup_forms,
         'reason': record.reason or '',
         'created_at': record.created_at.strftime('%Y-%m-%d %H:%M:%S') if record.created_at else '',
     }

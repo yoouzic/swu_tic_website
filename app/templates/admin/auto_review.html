@@ -3,17 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>自动审核 (Excel版) - 听课管理系统</title>
+    <title>自动审核设置与EXCEL审核 - 听课管理系统</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
     <link href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='vendor/bootstrap-icons/font/bootstrap-icons.css') }}" rel="stylesheet">
     <style>
         .card { border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .file-status-item { gap: .75rem; flex-wrap: wrap; }
+        .file-path { word-break: break-all; overflow-wrap: anywhere; }
     </style>
 </head>
 <body class="bg-light">
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="#"><i class="bi bi-robot"></i> 自动审核 (Excel版)</a>
+            <a class="navbar-brand" href="#"><i class="bi bi-robot"></i> 自动审核设置与EXCEL审核</a>
             <div class="navbar-nav ms-auto">
                 <a class="nav-link" href="{{ url_for('admin.super_admin_dashboard') }}">
                     <i class="bi bi-arrow-left"></i> 返回仪表盘
@@ -27,7 +30,7 @@
             <div class="col-md-6">
                 <div class="card mb-3">
                     <div class="card-header">
-                        <h5 class="mb-0"><i class="bi bi-gear"></i> 基础设置</h5>
+                        <h5 class="mb-0"><i class="bi bi-gear"></i> 自动审核基础设置</h5>
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
@@ -36,34 +39,25 @@
                             <div class="form-text">用于计算听课周次与日期有效性</div>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">文件状态</label>
+                            <label class="form-label">共用参考文件状态</label>
                             <ul class="list-group">
-                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <li class="list-group-item d-flex justify-content-between align-items-center file-status-item">
                                     课表文件
                                     {% if status.schedule_exists %}
                                         <span class="badge bg-success">已检测到</span>
                                     {% else %}
                                         <span class="badge bg-danger">未检测到</span>
                                     {% endif %}
-                                    <span class="text-muted small" id="schedulePath">{{ status.schedule_path }}</span>
+                                    <span class="text-muted small file-path" id="schedulePath">{{ status.schedule_path }}</span>
                                 </li>
-                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <li class="list-group-item d-flex justify-content-between align-items-center file-status-item">
                                     通讯录文件
                                     {% if status.contacts_exists %}
                                         <span class="badge bg-success">已检测到</span>
                                     {% else %}
                                         <span class="badge bg-danger">未检测到</span>
                                     {% endif %}
-                                    <span class="text-muted small" id="contactsPath">{{ status.contacts_path }}</span>
-                                </li>
-                                <li class="list-group-item d-flex justify-content-between align-items-center">
-                                    反馈文件
-                                    {% if status.feedback_exists %}
-                                        <span class="badge bg-success">已检测到</span>
-                                    {% else %}
-                                        <span class="badge bg-danger">未检测到</span>
-                                    {% endif %}
-                                    <span class="text-muted small" id="feedbackPath">{{ status.feedback_path }}</span>
+                                    <span class="text-muted small file-path" id="contactsPath">{{ status.contacts_path }}</span>
                                 </li>
                             </ul>
                         </div>
@@ -82,14 +76,6 @@
                             </div>
                             <input type="file" id="fileContacts" accept=".xls,.xlsx" style="display:none;">
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">上传反馈文件（拖拽或选择）</label>
-                            <div id="dropFeedback" class="border border-secondary rounded p-3 text-center bg-white" style="cursor:pointer;">
-                                <i class="bi bi-chat-text"></i> 拖拽到此或点击选择
-                            </div>
-                            <input type="file" id="fileFeedback" accept=".xls,.xlsx" style="display:none;">
-                            <div class="form-text">参考“办公部第7周反馈表-自动审表版.xlsx”结构</div>
-                        </div>
                         <button class="btn btn-primary" id="saveSettings"><i class="bi bi-save"></i> 保存设置</button>
                     </div>
                 </div>
@@ -97,14 +83,36 @@
             <div class="col-md-6">
                 <div class="card mb-3">
                     <div class="card-header">
-                        <h5 class="mb-0"><i class="bi bi-play-circle"></i> 执行审核</h5>
+                        <h5 class="mb-0"><i class="bi bi-play-circle"></i> 自动审核（EXCEL版）</h5>
                     </div>
                     <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">待审核EXCEL文件状态</label>
+                            <ul class="list-group">
+                                <li class="list-group-item d-flex justify-content-between align-items-center file-status-item">
+                                    反馈文件
+                                    {% if status.feedback_exists %}
+                                        <span class="badge bg-success">已检测到</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">未检测到</span>
+                                    {% endif %}
+                                    <span class="text-muted small file-path" id="feedbackPath">{{ status.feedback_path }}</span>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">上传待审核EXCEL文件（拖拽或选择）</label>
+                            <div id="dropFeedback" class="border border-secondary rounded p-3 text-center bg-white" style="cursor:pointer;">
+                                <i class="bi bi-file-earmark-spreadsheet"></i> 拖拽到此或点击选择
+                            </div>
+                            <input type="file" id="fileFeedback" accept=".xls,.xlsx" style="display:none;">
+                            <div class="form-text">参考“办公部第7周反馈表-自动审表版.xlsx”结构</div>
+                        </div>
                         <div class="form-check mb-3">
                             <input class="form-check-input" type="checkbox" id="exportReport" checked>
-                            <label class="form-check-label" for="exportReport">导出报告（xlsx）</label>
+                            <label class="form-check-label" for="exportReport">导出审核报告（xlsx）</label>
                         </div>
-                        <button class="btn btn-outline-success" id="runFeedback"><i class="bi bi-chat-left-dots"></i> 运行反馈审核</button>
+                        <button class="btn btn-outline-success" id="runFeedback"><i class="bi bi-play-fill"></i> 自动审核（EXCEL版）</button>
                     </div>
                 </div>
             </div>
@@ -112,13 +120,13 @@
 
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="bi bi-list-check"></i> 审核结果</h5>
+                <h5 class="mb-0"><i class="bi bi-list-check"></i> EXCEL审核结果</h5>
                 <a id="downloadLink" class="btn btn-sm btn-outline-secondary" style="display:none;" target="_blank">
                     <i class="bi bi-download"></i> 下载报告
                 </a>
             </div>
             <div class="card-body">
-                <div id="summary" class="mb-3 text-muted">尚未运行审核</div>
+                <div id="summary" class="mb-3 text-muted">尚未运行自动审核（EXCEL版）</div>
                 <div class="table-responsive">
                     <table class="table table-hover">
                         <thead>
@@ -154,7 +162,7 @@
             }
         }
         async function runFeedback() {
-            document.getElementById('summary').textContent = '反馈审核运行中...';
+            document.getElementById('summary').textContent = '自动审核（EXCEL版）运行中...';
             document.getElementById('downloadLink').style.display = 'none';
             const exportReport = document.getElementById('exportReport').checked;
             const resp = await fetch('{{ url_for('admin.auto_review_feedback_run') }}', {

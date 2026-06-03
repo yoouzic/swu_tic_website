@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>超级管理员仪表板 - 听课管理系统</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
     <link href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='vendor/bootstrap-icons/font/bootstrap-icons.css') }}" rel="stylesheet">
     <script src="{{ url_for('static', filename='vendor/chart.js/chart.min.js') }}"></script>
@@ -236,7 +237,7 @@
                             <div class="col-6 mb-3">
                                 <a href="{{ url_for('admin.auto_review_page') }}" class="quick-action-btn btn btn-outline-primary">
                                     <i class="bi bi-robot fs-1 mb-2"></i>
-                                    <span>自动审核 (Excel版)</span>
+                                    <span>自动审核设置与EXCEL审核</span>
                                 </a>
                             </div>
                         </div>

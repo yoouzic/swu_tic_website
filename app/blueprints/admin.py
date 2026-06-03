@@ -33,8 +33,11 @@ from ..utils.leave_management import (
     LEAVE_OVERRIDE_TYPE,
     build_leave_status_payload,
     get_current_teaching_week as get_leave_current_teaching_week,
+    get_form_effective_week_no as get_leave_form_effective_week_no,
+    get_leave_makeup_forms,
     get_teaching_settings as get_leave_teaching_settings,
     parse_lecture_date_value,
+    set_leave_makeup_forms,
 )
 from ..utils.user_status import (
     UNASSIGNED_DEPARTMENT_NAME,
@@ -6292,7 +6295,7 @@ def statistics():
     current_user = User.query.get(session['user_id'])
     manage_permission = get_user_manage_permission(session['user_id'])
     can_access_extended_stats = manage_permission in ['超级管理员', '管理部门']
-    can_manage_department_leave = manage_permission == '管理部门'
+    can_manage_department_leave = manage_permission == '超级管理员'
     available_departments = list(_get_accessible_department_users(session['user_id']).keys()) if can_access_extended_stats else []
 
     form_query = LectureForm.query.join(User, LectureForm.listener_number == User.number).filter(active_user_filter())
@@ -6491,10 +6494,10 @@ def _resolve_selected_departments(current_user_id, department_names):
 
 def _resolve_department_leave_users(current_user_id, user_ids=None):
     current_user = User.query.get(current_user_id)
-    if not current_user or get_user_manage_permission(current_user_id) != '管理部门':
+    if not current_user or get_user_manage_permission(current_user_id) != '超级管理员':
         return []
 
-    query = _active_user_query().filter(User.department == current_user.department)
+    query = _active_user_query().filter(User.role == '信息员')
     if user_ids:
         selected_ids = set()
         for uid in user_ids:
@@ -6506,13 +6509,13 @@ def _resolve_department_leave_users(current_user_id, user_ids=None):
             return []
         query = query.filter(User.id.in_(list(selected_ids)))
 
-    return query.order_by(User.number.asc(), User.name.asc(), User.id.asc()).all()
+    return query.order_by(User.department.asc(), User.group.asc(), User.number.asc(), User.name.asc(), User.id.asc()).all()
 
 
 @admin_bp.route('/api/leave-management/status', methods=['GET'])
 @login_required
 def get_leave_management_status():
-    if get_user_manage_permission(session['user_id']) != '管理部门':
+    if get_user_manage_permission(session['user_id']) != '超级管理员':
         return jsonify({'success': False, 'message': '权限不足'}), 403
 
     settings, settings_err = get_leave_teaching_settings()
@@ -6532,7 +6535,8 @@ def get_leave_management_status():
 
     current_leave_user_ids = set()
     active_items = []
-    ending_items = []
+    pending_items = []
+    completed_items = []
     if current_week and settings:
         for record in leave_records:
             user = user_map.get(record.user_id)
@@ -6542,8 +6546,10 @@ def get_leave_management_status():
             if payload['status'] == 'active':
                 active_items.append(payload)
                 current_leave_user_ids.add(record.user_id)
-            elif payload['status'] == 'ending':
-                ending_items.append(payload)
+            elif payload['status'] == 'pending':
+                pending_items.append(payload)
+            elif payload['status'] == 'completed':
+                completed_items.append(payload)
 
     candidates = []
     for user in sorted(users, key=lambda item: (item.number or '', item.name or '')):
@@ -6562,16 +6568,22 @@ def get_leave_management_status():
         'current_week': current_week,
         'settings_error': settings_err,
         'required_submission': int((settings or {}).get('required_submission') or 0),
+        'summary': {
+            'active_count': len(active_items),
+            'pending_makeup_count': len(pending_items),
+            'completed_makeup_count': len(completed_items),
+        },
         'candidates': candidates,
         'active': active_items,
-        'ending': ending_items,
+        'pending': pending_items,
+        'completed': completed_items,
     })
 
 
 @admin_bp.route('/api/leave-management/current-week', methods=['POST'])
 @login_required
 def create_current_week_leave():
-    if get_user_manage_permission(session['user_id']) != '管理部门':
+    if get_user_manage_permission(session['user_id']) != '超级管理员':
         return jsonify({'success': False, 'message': '权限不足'}), 403
 
     settings, settings_err = get_leave_teaching_settings()
@@ -6597,7 +6609,7 @@ def create_current_week_leave():
     if existing:
         return jsonify({'success': False, 'message': f'{target_user.name} 当前教学周已处于请假中'}), 400
 
-    reason = (data.get('reason') or '').strip() or '管理部门管理员发起当前教学周请假'
+    reason = (data.get('reason') or '').strip() or '超级管理员发起当前教学周请假'
     record = AssessmentOverride(
         user_id=target_user.id,
         start_week=current_week,
@@ -6613,6 +6625,137 @@ def create_current_week_leave():
         'message': f'已为 {target_user.name} 设置第{current_week}周请假',
         'leave': build_leave_status_payload(record, current_week, user=target_user, settings=settings),
     })
+
+
+def _get_super_admin_leave_record(override_id):
+    if get_user_manage_permission(session['user_id']) != '超级管理员':
+        return None, jsonify({'success': False, 'message': '权限不足'}), 403
+    record = AssessmentOverride.query.filter_by(
+        id=override_id,
+        override_type=LEAVE_OVERRIDE_TYPE,
+    ).first()
+    if not record:
+        return None, jsonify({'success': False, 'message': '请假记录不存在'}), 404
+    return record, None, None
+
+
+def _serialize_leave_form_option(group_data, settings, selected_unique_ids):
+    latest_form = group_data.get('latest_form')
+    if not latest_form:
+        return None
+    unique_id = latest_form.unique_id or latest_form.id
+    try:
+        normalized_unique_id = int(unique_id)
+    except (TypeError, ValueError):
+        normalized_unique_id = unique_id
+    effective_week = get_leave_form_effective_week_no(latest_form, settings) if settings else None
+    return {
+        'form_id': latest_form.id,
+        'unique_id': normalized_unique_id,
+        'course_title': latest_form.course_title or '',
+        'teacher_name': latest_form.teacher_name or '',
+        'lecture_date': latest_form.lecture_date or '',
+        'status': latest_form.status or '',
+        'effective_week': effective_week,
+        'created_at': latest_form.created_at.strftime('%Y-%m-%d %H:%M:%S') if latest_form.created_at else '',
+        'selected': normalized_unique_id in selected_unique_ids,
+    }
+
+
+@admin_bp.route('/api/leave-management/<int:override_id>/forms', methods=['GET'])
+@login_required
+def get_leave_makeup_form_options(override_id):
+    record, error_response, status_code = _get_super_admin_leave_record(override_id)
+    if error_response:
+        return error_response, status_code
+    user = User.query.get(record.user_id)
+    if not user:
+        return jsonify({'success': False, 'message': '请假人员不存在'}), 404
+
+    settings, settings_err = get_leave_teaching_settings()
+    selected_unique_ids = set()
+    for item in get_leave_makeup_forms(record):
+        value = item.get('unique_id') or item.get('form_id')
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            pass
+        selected_unique_ids.add(value)
+
+    form_options = []
+    for group_data in _latest_form_groups_for_users([user.number]):
+        item = _serialize_leave_form_option(group_data, settings, selected_unique_ids)
+        if item:
+            form_options.append(item)
+    form_options.sort(key=lambda item: item.get('created_at') or '', reverse=True)
+
+    return jsonify({
+        'success': True,
+        'settings_error': settings_err,
+        'leave': {
+            'override_id': record.id,
+            'user_id': record.user_id,
+            'name': user.name,
+            'number': user.number,
+            'department': user.department,
+            'group': user.group,
+            'start_week': record.start_week,
+            'end_week': record.end_week,
+            'reason': record.reason or '',
+        },
+        'forms': form_options,
+    })
+
+
+@admin_bp.route('/api/leave-management/<int:override_id>/makeup-forms', methods=['PUT'])
+@login_required
+def update_leave_makeup_forms(override_id):
+    record, error_response, status_code = _get_super_admin_leave_record(override_id)
+    if error_response:
+        return error_response, status_code
+    user = User.query.get(record.user_id)
+    if not user:
+        return jsonify({'success': False, 'message': '请假人员不存在'}), 404
+
+    data = request.get_json() or {}
+    selected_unique_ids = set()
+    for raw_value in data.get('unique_ids') or []:
+        try:
+            selected_unique_ids.add(int(raw_value))
+        except (TypeError, ValueError):
+            continue
+
+    selected_forms = []
+    for group_data in _latest_form_groups_for_users([user.number]):
+        latest_form = group_data.get('latest_form')
+        if not latest_form:
+            continue
+        unique_id = latest_form.unique_id or latest_form.id
+        try:
+            normalized_unique_id = int(unique_id)
+        except (TypeError, ValueError):
+            continue
+        if normalized_unique_id in selected_unique_ids:
+            selected_forms.append(latest_form)
+
+    set_leave_makeup_forms(
+        record,
+        selected_forms,
+        source='manual',
+        operator_user_id=session['user_id'],
+    )
+    db.session.commit()
+
+    settings, settings_err = get_leave_teaching_settings()
+    current_week = None
+    if not settings_err:
+        current_week, _ = get_leave_current_teaching_week(settings)
+    return jsonify({
+        'success': True,
+        'message': '补交表单已更新',
+        'leave': build_leave_status_payload(record, current_week, user=user, settings=settings) if current_week else None,
+    })
+
 
 def _latest_forms_in_range(listener_numbers, start_date, end_date):
     if not listener_numbers:

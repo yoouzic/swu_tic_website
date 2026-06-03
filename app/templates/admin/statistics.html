@@ -44,7 +44,7 @@
                     <button type="button" class="btn btn-warning" id="btnCreateLeave">
                         <i class="fas fa-check mr-1"></i> 为当前教学周请假
                     </button>
-                    <div class="small text-muted mt-2">管理部门权限仅能为本部门成员发起当前教学周请假。</div>
+                    <div class="small text-muted mt-2">该功能仅对超级管理员开放，用于为信息员登记当前教学周请假。</div>
                 </div>
             </div>
         </div>
@@ -325,10 +325,35 @@
     </div>
 </div>
 
+<!-- 请假补交表单选择模态框 -->
+<div class="modal fade" id="leaveMakeupModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="leaveMakeupModalTitle">选择补交表单</h4>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3 text-muted" id="leaveMakeupModalHint"></div>
+                <div id="leaveMakeupFormList">
+                    <div class="text-muted">正在加载...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="btnSaveLeaveMakeup">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="{{ url_for('static', filename='vendor/chart.js/chart.min.js') }}"></script>
 <script>
 const canManageDepartmentLeave = {{ can_manage_department_leave|tojson }};
 let leaveStatusCache = null;
+let currentLeaveOverrideId = null;
 
 function escapeHtml(value) {
     return String(value || '').replace(/[&<>"']/g, function(s) {
@@ -363,6 +388,45 @@ function renderLeaveCandidates(data) {
     }).join('');
 }
 
+function renderLeaveSummary(summary) {
+    const safeSummary = summary || {};
+    return `
+        <div class="row mb-3">
+            <div class="col-md-4 mb-2">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">当前请假中</div>
+                    <div class="h4 mb-0 text-warning">${Number(safeSummary.active_count || 0)}</div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-2">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">请假后未交表</div>
+                    <div class="h4 mb-0 text-danger">${Number(safeSummary.pending_makeup_count || 0)}</div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-2">
+                <div class="border rounded p-3 h-100">
+                    <div class="text-muted small">已经补交表</div>
+                    <div class="h4 mb-0 text-success">${Number(safeSummary.completed_makeup_count || 0)}</div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderMakeupForms(forms) {
+    const safeForms = forms || [];
+    if (safeForms.length === 0) {
+        return '<span class="text-danger">未登记</span>';
+    }
+    return safeForms.map(form => {
+        const title = form.course_title || '未命名课程';
+        const teacher = form.teacher_name ? ` / ${escapeHtml(form.teacher_name)}` : '';
+        const formId = form.form_id ? `#${form.form_id}` : `unique:${escapeHtml(form.unique_id || '-')}`;
+        return `<div class="small"><span class="badge badge-light border mr-1">${escapeHtml(formId)}</span>${escapeHtml(title)}${teacher}</div>`;
+    }).join('');
+}
+
 function buildLeaveStatusTable(title, rows, badgeClass) {
     if (!rows || rows.length === 0) {
         return `
@@ -381,11 +445,13 @@ function buildLeaveStatusTable(title, rows, badgeClass) {
                         <tr>
                             <th>姓名</th>
                             <th>编号</th>
+                            <th>部门</th>
                             <th>角色</th>
                             <th>小组</th>
                             <th>请假周</th>
                             <th>补交情况</th>
                             <th>说明</th>
+                            <th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -393,13 +459,17 @@ function buildLeaveStatusTable(title, rows, badgeClass) {
                             <tr>
                                 <td><span class="badge ${badgeClass} mr-1">${escapeHtml(item.status_label)}</span>${escapeHtml(item.name)}</td>
                                 <td>${escapeHtml(item.number || '-')}</td>
+                                <td>${escapeHtml(item.department || '-')}</td>
                                 <td>${escapeHtml(item.role || '-')}</td>
                                 <td>${escapeHtml(item.group || '-')}</td>
                                 <td>第${Number(item.leave_week || item.start_week || 0)}周</td>
-                                <td>${Number(item.submitted_count || 0)}/${Number(item.required_submission || 0)}
-                                    ${Number(item.pending_makeup_count || 0) > 0 ? `<span class="text-danger ms-1">缺${Number(item.pending_makeup_count || 0)}</span>` : '<span class="text-success ms-1">已足额</span>'}
-                                </td>
+                                <td>${renderMakeupForms(item.makeup_forms)}</td>
                                 <td>${escapeHtml(item.reason || '-')}</td>
+                                <td>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="openLeaveMakeupModal(${Number(item.override_id)})">
+                                        选择表单
+                                    </button>
+                                </td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -427,9 +497,128 @@ function renderLeaveStatus(data) {
         return;
     }
     body.innerHTML = [
+        renderLeaveSummary(data.summary || {}),
         buildLeaveStatusTable('请假中', data.active || [], 'bg-warning text-dark'),
-        buildLeaveStatusTable('请假结束期', data.ending || [], 'bg-info text-dark')
+        buildLeaveStatusTable('请假后未交表', data.pending || [], 'bg-danger'),
+        buildLeaveStatusTable('已经补交表', data.completed || [], 'bg-success')
     ].join('');
+}
+
+function showLeaveMakeupModal() {
+    const modal = document.getElementById('leaveMakeupModal');
+    if (window.$ && modal) {
+        $('#leaveMakeupModal').modal('show');
+    } else if (modal) {
+        modal.style.display = 'block';
+        modal.classList.add('show');
+    }
+}
+
+function hideLeaveMakeupModal() {
+    const modal = document.getElementById('leaveMakeupModal');
+    if (window.$ && modal) {
+        $('#leaveMakeupModal').modal('hide');
+    } else if (modal) {
+        modal.style.display = 'none';
+        modal.classList.remove('show');
+    }
+}
+
+function renderLeaveMakeupFormOptions(data) {
+    const hint = document.getElementById('leaveMakeupModalHint');
+    const list = document.getElementById('leaveMakeupFormList');
+    const leave = data.leave || {};
+    if (hint) {
+        hint.textContent = `${leave.name || '-'}（${leave.number || '-'}），请假周：第${leave.start_week || '-'}-${leave.end_week || '-'}周`;
+    }
+    if (!list) {
+        return;
+    }
+    const forms = data.forms || [];
+    if (forms.length === 0) {
+        list.innerHTML = '<div class="alert alert-info mb-0">该信息员暂无可选择的听课表单。</div>';
+        return;
+    }
+    list.innerHTML = `
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 60px;">选择</th>
+                        <th>表单</th>
+                        <th>听课日期</th>
+                        <th>有效周</th>
+                        <th>状态</th>
+                        <th>提交时间</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${forms.map(form => `
+                        <tr>
+                            <td class="text-center">
+                                <input type="checkbox" class="leave-makeup-form-option" value="${escapeHtml(form.unique_id)}" ${form.selected ? 'checked' : ''}>
+                            </td>
+                            <td>
+                                <div>${escapeHtml(form.course_title || '未命名课程')}</div>
+                                <div class="small text-muted">#${escapeHtml(form.form_id || '-')} / ${escapeHtml(form.teacher_name || '-')}</div>
+                            </td>
+                            <td>${escapeHtml(form.lecture_date || '-')}</td>
+                            <td>${form.effective_week ? `第${Number(form.effective_week)}周` : '-'}</td>
+                            <td>${escapeHtml(form.status || '-')}</td>
+                            <td>${escapeHtml(form.created_at || '-')}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function openLeaveMakeupModal(overrideId) {
+    currentLeaveOverrideId = overrideId;
+    document.getElementById('leaveMakeupModalTitle').textContent = '选择补交表单';
+    document.getElementById('leaveMakeupModalHint').textContent = '';
+    document.getElementById('leaveMakeupFormList').innerHTML = '<div class="text-muted">正在加载...</div>';
+    showLeaveMakeupModal();
+    fetch(`/admin/api/leave-management/${overrideId}/forms`)
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                throw new Error(data.message || '加载表单失败');
+            }
+            renderLeaveMakeupFormOptions(data);
+        })
+        .catch(error => {
+            document.getElementById('leaveMakeupFormList').innerHTML = `<div class="alert alert-danger mb-0">${escapeHtml(error.message || '加载表单失败')}</div>`;
+        });
+}
+
+function saveLeaveMakeupSelection() {
+    if (!currentLeaveOverrideId) {
+        return;
+    }
+    const btn = document.getElementById('btnSaveLeaveMakeup');
+    const uniqueIds = Array.from(document.querySelectorAll('.leave-makeup-form-option:checked')).map(input => input.value);
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+    fetch(`/admin/api/leave-management/${currentLeaveOverrideId}/makeup-forms`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({unique_ids: uniqueIds})
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                throw new Error(data.message || '保存失败');
+            }
+            hideLeaveMakeupModal();
+            loadLeaveStatus();
+        })
+        .catch(error => alert(error.message || '保存失败'))
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = '保存';
+        });
 }
 
 function loadLeaveStatus() {
@@ -498,6 +687,10 @@ if (canManageDepartmentLeave) {
         }
         if (createBtn) {
             createBtn.addEventListener('click', createCurrentWeekLeave);
+        }
+        const saveLeaveMakeupBtn = document.getElementById('btnSaveLeaveMakeup');
+        if (saveLeaveMakeupBtn) {
+            saveLeaveMakeupBtn.addEventListener('click', saveLeaveMakeupSelection);
         }
     });
 }

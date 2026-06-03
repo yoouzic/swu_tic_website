@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import and_, func
 from ..utils.time_validator import validate_listening_time, TimeValidator
 from ..utils.audit_tags import build_audit_tag, build_week_correction_tag, parse_audit_tag
-from ..utils.leave_management import append_leave_system_note, get_pending_leave_makeup, parse_lecture_date_value
+from ..utils.leave_management import append_leave_system_note, get_pending_leave_makeup, parse_lecture_date_value, record_leave_makeup_form
 from ..utils.profile_settings import PROFILE_EDITABLE_FIELD_KEYS, get_profile_editable_fields
 from ..utils.course_registration_limits import (
     get_current_teaching_week_no,
@@ -752,6 +752,15 @@ def submit_form():
                 # 全新表单
                 duplicate_form = _find_recent_duplicate_submission(user.number, form_data, datetime.now())
                 if duplicate_form:
+                    if leave_makeup:
+                        record_leave_makeup_form(
+                            user,
+                            leave_makeup,
+                            duplicate_form,
+                            source='auto',
+                            operator_user_id=user.id,
+                        )
+                        db.session.commit()
                     flash('检测到重复提交，系统已保留首次提交结果。', 'info')
                     return redirect(url_for('user.success', form_id=duplicate_form.id))
                 target_form = LectureForm(**form_data)
@@ -762,6 +771,15 @@ def submit_form():
                 db.session.flush() # 获取ID
                 if not target_form.unique_id:
                     target_form.unique_id = target_form.id
+
+            if leave_makeup:
+                record_leave_makeup_form(
+                    user,
+                    leave_makeup,
+                    target_form,
+                    source='auto',
+                    operator_user_id=user.id,
+                )
             
             db.session.commit()
             flash(f'表单提交成功！{" " if is_new_version else "原有表单已更新，等待重新审核。"}', 'success')
