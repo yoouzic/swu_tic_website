@@ -1,0 +1,150 @@
+import json
+import os
+import tempfile
+import unittest
+
+from werkzeug.security import generate_password_hash
+
+TEST_DB_DIR = tempfile.TemporaryDirectory()
+os.environ['SQLITE_DB_PATH'] = os.path.join(TEST_DB_DIR.name, 'lecture_form_draft_test.db')
+os.environ['INSTANCE_DIR'] = TEST_DB_DIR.name
+os.environ['SECRET_KEY'] = 'test-secret-key'
+
+from app.app import app
+from app.models import db, LectureForm, LectureFormDraft, User
+from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
+
+
+INFO_MEMBER = '\u4fe1\u606f\u5458'
+PPT_METHOD = 'PPT\u6f14\u793a\u6cd5'
+GOOD = '\u597d'
+RECOMMENDED = '\u63a8\u8350'
+
+
+class LectureFormDraftTest(unittest.TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        with app.app_context():
+            cleanup_sqlite_database(db)
+        TEST_DB_DIR.cleanup()
+
+    def setUp(self):
+        configure_sqlite_database(app, db, os.environ['SQLITE_DB_PATH'])
+        app.config.update(
+            TESTING=True,
+            WTF_CSRF_ENABLED=False,
+        )
+        self.app_context = app.app_context()
+        self.app_context.push()
+        db.drop_all()
+        db.create_all()
+        self.client = app.test_client()
+        self.user = self._create_user('1001', 'student-1001')
+        self.other_user = self._create_user('1002', 'student-1002')
+
+    def tearDown(self):
+        cleanup_sqlite_database(db, drop_all=True)
+        self.app_context.pop()
+
+    def _create_user(self, number, student_id):
+        user = User(
+            number=number,
+            department='test',
+            name='Test User',
+            gender='-',
+            grade='-',
+            college='Test College',
+            major='-',
+            dormitory='-',
+            phone='-',
+            qq='-',
+            student_id=student_id,
+            password_hash=generate_password_hash('password'),
+            role=INFO_MEMBER,
+            group='test',
+            is_active=True,
+        )
+        db.session.add(user)
+        db.session.commit()
+        return user
+
+    def _login_as(self, user):
+        with self.client.session_transaction() as sess:
+            sess['user_id'] = user.id
+            sess['user_role'] = user.role
+            sess['user_name'] = user.name
+
+    def _valid_form_payload(self):
+        return {
+            'lecture_date': '2026-06-04',
+            'lecture_date_display': '2026/06/04',
+            'start_period': '3',
+            'end_period': '4',
+            'class_period': '\u7b2c3-4\u8282',
+            'lecture_location': '32-302',
+            'teacher_name': 'Teacher A',
+            'teacher_college': 'Test College',
+            'course_title': 'Database Systems',
+            'student_grade_class': '2024 Test Class',
+            'course_changes': '\u65e0',
+            'abnormal_situation': '\u65e0',
+            'teaching_method': PPT_METHOD,
+            'classroom_discipline': GOOD,
+            'classroom_atmosphere': GOOD,
+            'courseware_quality': GOOD,
+            'overall_effect': GOOD,
+            'quality_case': RECOMMENDED,
+            'course_feedback': 'This course feedback is intentionally longer than fifty characters for testing submit.',
+            'suggestions': '\u65e0',
+            'student_signature1': 'Student One',
+            'contact_phone1': '13800000001',
+            'student_signature2': 'Student Two',
+            'contact_phone2': '13800000002',
+        }
+
+    def test_save_load_and_delete_current_user_draft(self):
+        self._login_as(self.user)
+        payload = {
+            'lecture_location': '32-302',
+            'course_title': 'Database Systems',
+            'teaching_method': PPT_METHOD,
+        }
+
+        save_response = self.client.put('/user/api/lecture_form_draft', json={'data': payload})
+        self.assertEqual(save_response.status_code, 200)
+        self.assertTrue(save_response.get_json()['success'])
+
+        load_response = self.client.get('/user/api/lecture_form_draft')
+        load_json = load_response.get_json()
+        self.assertEqual(load_response.status_code, 200)
+        self.assertTrue(load_json['exists'])
+        self.assertEqual(load_json['data'], payload)
+        self.assertIn('updated_at', load_json)
+
+        delete_response = self.client.delete('/user/api/lecture_form_draft')
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertFalse(self.client.get('/user/api/lecture_form_draft').get_json()['exists'])
+
+    def test_draft_is_scoped_to_current_user(self):
+        self._login_as(self.user)
+        self.client.put('/user/api/lecture_form_draft', json={'data': {'course_title': 'User One Draft'}})
+
+        self._login_as(self.other_user)
+        response = self.client.get('/user/api/lecture_form_draft')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()['exists'])
+
+    def test_successful_form_submit_clears_current_user_draft(self):
+        self._login_as(self.user)
+        self.client.put('/user/api/lecture_form_draft', json={'data': {'course_title': 'Old Draft'}})
+        self.assertEqual(LectureFormDraft.query.filter_by(user_id=self.user.id).count(), 1)
+
+        response = self.client.post('/user/submit_form', data=self._valid_form_payload())
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(LectureForm.query.filter_by(listener_number=self.user.number).count(), 1)
+        self.assertEqual(LectureFormDraft.query.filter_by(user_id=self.user.id).count(), 0)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -57,6 +57,13 @@ from ..utils.course_registration_limits import (
     get_course_weekly_limit_settings,
     normalize_course_weekly_limit_count,
 )
+from ..utils.review_drafts import (
+    delete_review_form_draft,
+    load_review_form_draft,
+    normalize_review_draft_payload,
+    parse_review_form_draft,
+    save_review_form_draft,
+)
 from ..utils.env_config import env_path
 import pandas as pd
 import openpyxl
@@ -85,6 +92,250 @@ DEFAULT_AUTO_REVIEW_REPORT_DIR = os.path.join('data', 'storage', 'exports', 'aut
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+@admin_bp.route('/download_template')
+@role_required('超级管理员')
+def download_template():
+    """下载通讯录模板文件"""
+    template_path = env_path('CONTACT_TEMPLATE_PATH', DEFAULT_CONTACT_TEMPLATE_PATH)
+    return send_file(template_path, as_attachment=True)
+
+
+@admin_bp.route('/view_sample')
+@role_required('超级管理员')
+def view_sample():
+    """在线查看模板示例"""
+    template_path = env_path('CONTACT_TEMPLATE_PATH', DEFAULT_CONTACT_TEMPLATE_PATH)
+    return send_file(template_path, as_attachment=False)
+
+
+@admin_bp.route('/download_passwords/<filename>')
+@role_required('超级管理员')
+def download_passwords(filename):
+    """下载密码文件"""
+    file_path = os.path.join(env_path('EXPORT_DIR', DEFAULT_EXPORT_DIR), filename)
+    if os.path.exists(file_path):
+        return send_file(file_path, as_attachment=True)
+    else:
+        flash('文件不存在', 'error')
+        return redirect(url_for('admin.super_admin_dashboard'))
+
+
+@admin_bp.route('/auto_review')
+@role_required('超级管理员')
+def auto_review_page():
+    """自动审核页面入口"""
+    engine = AutoReviewEngine()
+    status = engine.files_status()
+    return render_template('admin/auto_review.html', status=status)
+
+
+@admin_bp.route('/api/auto_review/settings', methods=['GET', 'POST'])
+@role_required('超级管理员')
+def auto_review_settings():
+    """自动审核基础设置：获取/设置第一周星期一，并检查文件存在"""
+    if request.method == 'GET':
+        engine = AutoReviewEngine()
+        return jsonify({'success': True, 'status': engine.files_status()})
+
+    data = request.get_json() or {}
+    monday = data.get('semester_monday')
+    if not monday:
+        return jsonify({'success': False, 'message': '缺少第一周星期一日期（YYYY-MM-DD）'}), 400
+    try:
+        datetime.strptime(monday, '%Y-%m-%d')
+    except Exception:
+        return jsonify({'success': False, 'message': '日期格式错误，应为YYYY-MM-DD'}), 400
+    SystemSetting.set(SETTING_KEY_SEMESTER_MONDAY, monday)
+    engine = AutoReviewEngine()
+    return jsonify({'success': True, 'status': engine.files_status()})
+
+
+@admin_bp.route('/api/auto_review/upload', methods=['POST'])
+@role_required('超级管理员')
+def auto_review_upload():
+    """上传/替换课表、通讯录或反馈文件，并保存路径到系统设置"""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': '未选择文件'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': '未选择文件'}), 400
+    file_type = request.form.get('file_type') or request.form.get('type')
+    if file_type not in ('schedule', 'contacts', 'feedback'):
+        return jsonify({'success': False, 'message': '缺少或错误的文件类型（schedule/contacts/feedback）'}), 400
+    if not allowed_file(file.filename):
+        return jsonify({'success': False, 'message': '文件格式不支持，请上传.xls或.xlsx文件'}), 400
+
+    upload_dir = env_path('AUTO_REVIEW_UPLOAD_DIR', DEFAULT_AUTO_REVIEW_UPLOAD_DIR)
+    os.makedirs(upload_dir, exist_ok=True)
+
+    ext = file.filename.rsplit('.', 1)[1].lower()
+    prefix = 'schedule' if file_type == 'schedule' else ('contacts' if file_type == 'contacts' else 'feedback')
+    save_name = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
+    save_path = os.path.join(upload_dir, save_name)
+    file.save(save_path)
+
+    if file_type == 'schedule':
+        SystemSetting.set(SETTING_KEY_SCHEDULE_PATH, save_path)
+    elif file_type == 'contacts':
+        SystemSetting.set(SETTING_KEY_CONTACTS_PATH, save_path)
+    else:
+        SystemSetting.set(SETTING_KEY_FEEDBACK_PATH, save_path)
+
+    engine = AutoReviewEngine()
+    return jsonify({'success': True, 'message': '上传成功', 'path': save_path, 'status': engine.files_status()})
+
+
+@admin_bp.route('/api/auto_review/feedback_run', methods=['POST'])
+@role_required('超级管理员')
+def auto_review_feedback_run():
+    """执行反馈文件审核，并可导出报告"""
+    data = request.get_json() or {}
+    export = data.get('export', True)
+
+    engine = AutoReviewEngine()
+    result = engine.review_feedback()
+
+    report_path = None
+    if export:
+        report_path = engine.export_report(result)
+
+    download_url = None
+    if report_path:
+        basename = os.path.basename(report_path)
+        download_url = url_for('admin.auto_review_download', filename=basename)
+
+    return jsonify({'success': True, 'data': result, 'report_path': report_path, 'download_url': download_url})
+
+
+@admin_bp.route('/auto_review/download')
+@role_required('超级管理员')
+def auto_review_download():
+    """下载自动审核报告"""
+    filename = request.args.get('filename')
+    if not filename:
+        return jsonify({'success': False, 'message': '缺少文件名'}), 400
+    reports_dir = env_path('AUTO_REVIEW_REPORT_DIR', DEFAULT_AUTO_REVIEW_REPORT_DIR)
+    real_path = os.path.join(reports_dir, os.path.basename(filename))
+    if not os.path.exists(real_path):
+        return jsonify({'success': False, 'message': '报告不存在'}), 404
+    return send_file(real_path, as_attachment=True)
+
+
+@admin_bp.route('/api/settings/teaching', methods=['GET'])
+@role_required('超级管理员')
+def get_teaching_settings():
+    """获取听课制度设置"""
+    try:
+        settings = {
+            'first_week_monday': SystemSetting.query.filter_by(key='teaching_first_week_monday').first(),
+            'week_start_day': SystemSetting.query.filter_by(key='teaching_week_start_day').first(),
+            'total_weeks': SystemSetting.query.filter_by(key='teaching_total_weeks').first(),
+            'required_submission_count': SystemSetting.query.filter_by(key='teaching_required_submission').first(),
+            'check_dept_review': SystemSetting.query.filter_by(key='teaching_check_dept_review').first(),
+            'check_center_review': SystemSetting.query.filter_by(key='teaching_check_center_review').first(),
+            'show_auto_review_details': SystemSetting.query.filter_by(
+                key='teaching_show_auto_review_details'
+            ).first(),
+            'enable_typos_check': SystemSetting.query.filter_by(key='teaching_enable_typos_check').first(),
+            'reviewer_display_mode': SystemSetting.query.filter_by(key='teaching_reviewer_display_mode').first(),
+        }
+        profile_editable_fields = get_profile_editable_fields()
+        course_weekly_limit = get_course_weekly_limit_settings()
+
+        data = {
+            'first_week_monday': settings['first_week_monday'].value if settings['first_week_monday'] else None,
+            'week_start_day': int(settings['week_start_day'].value) if settings['week_start_day'] else 0,
+            'total_weeks': int(settings['total_weeks'].value) if settings['total_weeks'] else 20,
+            'required_submission_count': (
+                int(settings['required_submission_count'].value)
+                if settings['required_submission_count']
+                else 1
+            ),
+            'required_listening_count': (
+                int(settings['required_submission_count'].value)
+                if settings['required_submission_count']
+                else 1
+            ),
+            'check_dept_review': settings['check_dept_review'].value == 'true'
+            if settings['check_dept_review']
+            else False,
+            'check_center_review': settings['check_center_review'].value == 'true'
+            if settings['check_center_review']
+            else False,
+            'show_auto_review_details': settings['show_auto_review_details'].value == 'true'
+            if settings['show_auto_review_details']
+            else True,
+            'enable_typos_check': settings['enable_typos_check'].value == 'true'
+            if settings['enable_typos_check']
+            else True,
+            'reviewer_display_mode': (
+                settings['reviewer_display_mode'].value
+                if settings['reviewer_display_mode']
+                else 'name'
+            ),
+            'profile_editable_fields': profile_editable_fields,
+            'profile_editable_field_options': PROFILE_EDITABLE_FIELD_OPTIONS,
+            'course_weekly_limit_enabled': course_weekly_limit['enabled'],
+            'course_weekly_limit_count': course_weekly_limit['limit_count'],
+        }
+
+        return jsonify({'success': True, 'data': data})
+    except Exception as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 500
+
+
+@admin_bp.route('/api/settings/teaching', methods=['POST'])
+@role_required('超级管理员')
+def update_teaching_settings():
+    """更新听课制度设置"""
+    try:
+        data = request.get_json()
+        required_fields = ['first_week_monday', 'total_weeks', 'required_submission_count']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'success': False, 'message': f'缺少必填字段: {field}'}), 400
+
+        settings_map = {
+            'teaching_first_week_monday': str(data['first_week_monday']),
+            'teaching_week_start_day': str(data.get('week_start_day', 0)),
+            'teaching_total_weeks': str(data['total_weeks']),
+            'teaching_required_submission': str(data['required_submission_count']),
+            'teaching_check_dept_review': 'true' if data.get('check_dept_review') else 'false',
+            'teaching_check_center_review': 'true' if data.get('check_center_review') else 'false',
+            'teaching_show_auto_review_details': 'true'
+            if data.get('show_auto_review_details')
+            else 'false',
+            'teaching_enable_typos_check': 'true' if data.get('enable_typos_check') else 'false',
+            'teaching_reviewer_display_mode': data.get('reviewer_display_mode', 'name')
+            if data.get('reviewer_display_mode', 'name') in ['name', 'number']
+            else 'name',
+            SETTING_KEY_COURSE_WEEKLY_LIMIT_ENABLED: 'true'
+            if data.get('course_weekly_limit_enabled')
+            else 'false',
+            SETTING_KEY_COURSE_WEEKLY_LIMIT_COUNT: str(
+                normalize_course_weekly_limit_count(data.get('course_weekly_limit_count'))
+            ),
+            SETTING_KEY_PROFILE_EDITABLE_FIELDS: json.dumps(
+                normalize_profile_editable_fields(data.get('profile_editable_fields')),
+                ensure_ascii=False,
+            ),
+        }
+
+        for key, value in settings_map.items():
+            setting = SystemSetting.query.filter_by(key=key).first()
+            if not setting:
+                setting = SystemSetting(key=key, value=value)
+                db.session.add(setting)
+            else:
+                setting.value = value
+
+        db.session.commit()
+        return jsonify({'success': True, 'message': '设置已更新'})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(exc)}), 500
 
 def generate_random_password(length=8):
     """生成随机密码"""
@@ -213,6 +464,53 @@ def _create_personnel_movement_record(operator_user_id, target_snapshot, action_
 
 def _active_user_query():
     return User.query.filter(active_user_filter())
+
+
+@admin_bp.route('/api/review/form/<int:form_id>/draft', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def review_form_draft(form_id):
+    """Save, load, or delete the current reviewer's draft for one form."""
+    try:
+        user_id = session['user_id']
+        permission = get_user_review_permission(user_id)
+        if not permission:
+            return jsonify({'success': False, 'message': '您不具有审表权限，如有疑问，请联系管理员'}), 403
+
+        form = LectureForm.query.get_or_404(form_id)
+        reviewable_user_ids = get_reviewable_users(user_id)
+        form_user = _active_user_query().filter_by(number=form.listener_number).first()
+        if not form_user or form_user.id not in reviewable_user_ids:
+            return jsonify({'success': False, 'message': '您没有权限审核此表单'}), 403
+
+        if request.method == 'GET':
+            draft = load_review_form_draft(user_id, form_id)
+            return jsonify({
+                'success': True,
+                'exists': draft is not None,
+                'data': parse_review_form_draft(draft),
+                'updated_at': draft.updated_at.strftime('%Y-%m-%d %H:%M:%S') if draft else None,
+            })
+
+        if request.method == 'DELETE':
+            deleted = delete_review_form_draft(user_id, form_id)
+            db.session.commit()
+            return jsonify({'success': True, 'deleted': deleted})
+
+        body = request.get_json(silent=True) or {}
+        raw_payload = body.get('data', body)
+        payload = normalize_review_draft_payload(raw_payload)
+        if payload is None:
+            return jsonify({'success': False, 'message': 'Draft payload must be a JSON object'}), 400
+
+        draft = save_review_form_draft(user_id, form_id, payload)
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'updated_at': draft.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 def _serialize_user_basic(user):
@@ -1350,31 +1648,6 @@ def confirm_import():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'导入失败：{str(e)}'}), 500
 
-@admin_bp.route('/download_template')
-@role_required('超级管理员')
-def download_template():
-    """下载通讯录模板文件"""
-    template_path = env_path('CONTACT_TEMPLATE_PATH', DEFAULT_CONTACT_TEMPLATE_PATH)
-    return send_file(template_path, as_attachment=True)
-
-@admin_bp.route('/view_sample')
-@role_required('超级管理员')
-def view_sample():
-    """在线查看模板示例"""
-    template_path = env_path('CONTACT_TEMPLATE_PATH', DEFAULT_CONTACT_TEMPLATE_PATH)
-    return send_file(template_path, as_attachment=False)
-
-@admin_bp.route('/download_passwords/<filename>')
-@role_required('超级管理员')
-def download_passwords(filename):
-    """下载密码文件"""
-    file_path = os.path.join(env_path('EXPORT_DIR', DEFAULT_EXPORT_DIR), filename)
-    if os.path.exists(file_path):
-        return send_file(file_path, as_attachment=True)
-    else:
-        flash('文件不存在', 'error')
-        return redirect(url_for('admin.super_admin_dashboard'))
-
 @admin_bp.route('/manage_groups')
 @role_required('管理员')
 def manage_groups():
@@ -1820,6 +2093,7 @@ def reject_form_review(form_id):
             latest_form.updated_at = datetime.now()
             
             db.session.add(latest_form)
+            delete_review_form_draft(session['user_id'], form_id)
             db.session.commit()
             
             return jsonify({
@@ -1875,6 +2149,7 @@ def reject_form_review(form_id):
                 db.session.add(original_form)
                 
             db.session.add(new_form)
+            delete_review_form_draft(session['user_id'], form_id)
             db.session.commit()
             
             return jsonify({
@@ -2060,6 +2335,7 @@ def submit_review(form_id):
                 print(f"Error processing score data: {e}")
                 # 不中断主流程，只记录错误
         
+        delete_review_form_draft(session['user_id'], form_id)
         db.session.commit()
         
         return jsonify({
@@ -2082,7 +2358,7 @@ def review_form_page(form_id):
     permission = get_user_review_permission(session['user_id'])
     if not permission:
         flash('您不具有审表权限，如有疑问，请联系管理员', 'error')
-        return redirect(url_for('admin.dashboard'))
+        return redirect(url_for('main.index'))
     
     return render_template('admin/review_form.html')
 
@@ -2310,98 +2586,6 @@ def auto_review_results_page():
     if permission != '审表_中心':
         return redirect(url_for('admin.review_forms'))
     return render_template('admin/auto_review_results.html')
-
-@admin_bp.route('/api/settings/teaching', methods=['GET'])
-@role_required('超级管理员')
-def get_teaching_settings():
-    """获取听课制度设置"""
-    try:
-        settings = {
-            'first_week_monday': SystemSetting.query.filter_by(key='teaching_first_week_monday').first(),
-            'week_start_day': SystemSetting.query.filter_by(key='teaching_week_start_day').first(),
-            'total_weeks': SystemSetting.query.filter_by(key='teaching_total_weeks').first(),
-            'required_submission_count': SystemSetting.query.filter_by(key='teaching_required_submission').first(),
-            # required_listening_count 不再单独存储，默认与 submission 相同
-            'check_dept_review': SystemSetting.query.filter_by(key='teaching_check_dept_review').first(),
-            'check_center_review': SystemSetting.query.filter_by(key='teaching_check_center_review').first(),
-            'show_auto_review_details': SystemSetting.query.filter_by(key='teaching_show_auto_review_details').first(),
-            'enable_typos_check': SystemSetting.query.filter_by(key='teaching_enable_typos_check').first(),
-            'reviewer_display_mode': SystemSetting.query.filter_by(key='teaching_reviewer_display_mode').first(),
-        }
-        profile_editable_fields = get_profile_editable_fields()
-        course_weekly_limit = get_course_weekly_limit_settings()
-        
-        data = {
-            'first_week_monday': settings['first_week_monday'].value if settings['first_week_monday'] else None,
-            'week_start_day': int(settings['week_start_day'].value) if settings['week_start_day'] else 0, # 默认0=周一
-            'total_weeks': int(settings['total_weeks'].value) if settings['total_weeks'] else 20,
-            'required_submission_count': int(settings['required_submission_count'].value) if settings['required_submission_count'] else 1,
-            # 前端可能还需要这个字段，保持一致
-            'required_listening_count': int(settings['required_submission_count'].value) if settings['required_submission_count'] else 1,
-            'check_dept_review': settings['check_dept_review'].value == 'true' if settings['check_dept_review'] else False,
-            'check_center_review': settings['check_center_review'].value == 'true' if settings['check_center_review'] else False,
-            'show_auto_review_details': settings['show_auto_review_details'].value == 'true' if settings['show_auto_review_details'] else True, # 默认开启
-            'enable_typos_check': settings['enable_typos_check'].value == 'true' if settings['enable_typos_check'] else True, # 默认开启
-            'reviewer_display_mode': settings['reviewer_display_mode'].value if settings['reviewer_display_mode'] else 'name',
-            'profile_editable_fields': profile_editable_fields,
-            'profile_editable_field_options': PROFILE_EDITABLE_FIELD_OPTIONS,
-            'course_weekly_limit_enabled': course_weekly_limit['enabled'],
-            'course_weekly_limit_count': course_weekly_limit['limit_count'],
-        }
-        
-        return jsonify({'success': True, 'data': data})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@admin_bp.route('/api/settings/teaching', methods=['POST'])
-@role_required('超级管理员')
-def update_teaching_settings():
-    """更新听课制度设置"""
-    try:
-        data = request.get_json()
-        
-        # 验证必填字段
-        required_fields = ['first_week_monday', 'total_weeks', 'required_submission_count']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({'success': False, 'message': f'缺少必填字段: {field}'}), 400
-                
-        # 更新设置
-        settings_map = {
-            'teaching_first_week_monday': str(data['first_week_monday']),
-            'teaching_week_start_day': str(data.get('week_start_day', 0)),
-            'teaching_total_weeks': str(data['total_weeks']),
-            'teaching_required_submission': str(data['required_submission_count']),
-            # 同时也更新 listening 设置，虽然我们逻辑上合并了，但为了兼容旧代码或防止意外，保持同步是个好习惯，
-            # 或者干脆不存了。这里选择同步更新，确保如果未来拆分也能回退。
-            # 但既然需求说是一个东西，那我们就只存 submission，listening 默认等于 submission。
-            # 为了彻底合并，我们不再写入 teaching_required_listening，而是让读取时 fallback。
-            'teaching_check_dept_review': 'true' if data.get('check_dept_review') else 'false',
-            'teaching_check_center_review': 'true' if data.get('check_center_review') else 'false',
-            'teaching_show_auto_review_details': 'true' if data.get('show_auto_review_details') else 'false',
-            'teaching_enable_typos_check': 'true' if data.get('enable_typos_check') else 'false',
-            'teaching_reviewer_display_mode': data.get('reviewer_display_mode', 'name') if data.get('reviewer_display_mode', 'name') in ['name', 'number'] else 'name',
-            SETTING_KEY_COURSE_WEEKLY_LIMIT_ENABLED: 'true' if data.get('course_weekly_limit_enabled') else 'false',
-            SETTING_KEY_COURSE_WEEKLY_LIMIT_COUNT: str(normalize_course_weekly_limit_count(data.get('course_weekly_limit_count'))),
-            SETTING_KEY_PROFILE_EDITABLE_FIELDS: json.dumps(
-                normalize_profile_editable_fields(data.get('profile_editable_fields')),
-                ensure_ascii=False
-            ),
-        }
-        
-        for key, value in settings_map.items():
-            setting = SystemSetting.query.filter_by(key=key).first()
-            if not setting:
-                setting = SystemSetting(key=key, value=value)
-                db.session.add(setting)
-            else:
-                setting.value = value
-        
-        db.session.commit()
-        return jsonify({'success': True, 'message': '设置已更新'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
 
 @admin_bp.route('/api/review/user-structure', methods=['GET'])
 @login_required
@@ -3071,6 +3255,7 @@ def submit_form_review(form_id):
             target_form.review_comment = (review_comment or '无') + modification_note
 
         db.session.add(target_form)
+        delete_review_form_draft(session['user_id'], form_id)
         db.session.commit()
 
         return jsonify({
@@ -8765,103 +8950,6 @@ def get_statistics_detail():
         }
     })
 
-@admin_bp.route('/auto_review')
-@role_required('超级管理员')
-def auto_review_page():
-    """自动审核页面入口"""
-    engine = AutoReviewEngine()
-    status = engine.files_status()
-    return render_template('admin/auto_review.html', status=status)
-
-@admin_bp.route('/api/auto_review/settings', methods=['GET', 'POST'])
-@role_required('超级管理员')
-def auto_review_settings():
-    """自动审核基础设置：获取/设置第一周星期一，并检查文件存在"""
-    if request.method == 'GET':
-        engine = AutoReviewEngine()
-        return jsonify({'success': True, 'status': engine.files_status()})
-    else:
-        data = request.get_json() or {}
-        monday = data.get('semester_monday')
-        if not monday:
-            return jsonify({'success': False, 'message': '缺少第一周星期一日期（YYYY-MM-DD）'}), 400
-        try:
-            datetime.strptime(monday, '%Y-%m-%d')
-        except Exception:
-            return jsonify({'success': False, 'message': '日期格式错误，应为YYYY-MM-DD'}), 400
-        SystemSetting.set(SETTING_KEY_SEMESTER_MONDAY, monday)
-        engine = AutoReviewEngine()
-        return jsonify({'success': True, 'status': engine.files_status()})
-
-@admin_bp.route('/api/auto_review/upload', methods=['POST'])
-@role_required('超级管理员')
-def auto_review_upload():
-    """上传/替换课表、通讯录或反馈文件，并保存路径到系统设置"""
-    if 'file' not in request.files:
-        return jsonify({'success': False, 'message': '未选择文件'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'success': False, 'message': '未选择文件'}), 400
-    file_type = request.form.get('file_type') or request.form.get('type')
-    if file_type not in ('schedule', 'contacts', 'feedback'):
-        return jsonify({'success': False, 'message': '缺少或错误的文件类型（schedule/contacts/feedback）'}), 400
-    if not allowed_file(file.filename):
-        return jsonify({'success': False, 'message': '文件格式不支持，请上传.xls或.xlsx文件'}), 400
-
-    upload_dir = env_path('AUTO_REVIEW_UPLOAD_DIR', DEFAULT_AUTO_REVIEW_UPLOAD_DIR)
-    os.makedirs(upload_dir, exist_ok=True)
-
-    ext = file.filename.rsplit('.', 1)[1].lower()
-    safe_name = secure_filename(file.filename)
-    prefix = 'schedule' if file_type == 'schedule' else ('contacts' if file_type == 'contacts' else 'feedback')
-    save_name = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
-    save_path = os.path.join(upload_dir, save_name)
-    file.save(save_path)
-
-    if file_type == 'schedule':
-        SystemSetting.set(SETTING_KEY_SCHEDULE_PATH, save_path)
-    elif file_type == 'contacts':
-        SystemSetting.set(SETTING_KEY_CONTACTS_PATH, save_path)
-    else:
-        SystemSetting.set(SETTING_KEY_FEEDBACK_PATH, save_path)
-
-    engine = AutoReviewEngine()
-    return jsonify({'success': True, 'message': '上传成功', 'path': save_path, 'status': engine.files_status()})
-
-@admin_bp.route('/api/auto_review/feedback_run', methods=['POST'])
-@role_required('超级管理员')
-def auto_review_feedback_run():
-    """执行反馈文件审核，并可导出报告"""
-    data = request.get_json() or {}
-    export = data.get('export', True)
-
-    engine = AutoReviewEngine()
-    result = engine.review_feedback()
-
-    report_path = None
-    if export:
-        report_path = engine.export_report(result)
-
-    download_url = None
-    if report_path:
-        basename = os.path.basename(report_path)
-        download_url = url_for('admin.auto_review_download', filename=basename)
-
-    return jsonify({'success': True, 'data': result, 'report_path': report_path, 'download_url': download_url})
-
-@admin_bp.route('/auto_review/download')
-@role_required('超级管理员')
-def auto_review_download():
-    """下载自动审核报告"""
-    filename = request.args.get('filename')
-    if not filename:
-        return jsonify({'success': False, 'message': '缺少文件名'}), 400
-    reports_dir = env_path('AUTO_REVIEW_REPORT_DIR', DEFAULT_AUTO_REVIEW_REPORT_DIR)
-    real_path = os.path.join(reports_dir, os.path.basename(filename))
-    if not os.path.exists(real_path):
-        return jsonify({'success': False, 'message': '报告不存在'}), 404
-    return send_file(real_path, as_attachment=True)
-
 @admin_bp.route('/api/review/auto_check', methods=['POST'])
 @login_required
 def auto_check_form():
@@ -9298,8 +9386,6 @@ def get_reference_data():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
-# ==================== 考核对象与指标设定 ====================
-
 @admin_bp.route('/assessment-exemption-settings')
 @role_required('管理员')
 def assessment_exemption_settings():
@@ -9321,7 +9407,10 @@ def list_assessment_overrides():
     if not _has_assessment_stats_access(session['user_id']):
         return jsonify({'success': False, 'message': '权限不足'}), 403
     department_names = request.args.getlist('departments')
-    selected_departments, department_user_map = _resolve_selected_departments(session['user_id'], department_names)
+    selected_departments, department_user_map = _resolve_selected_departments(
+        session['user_id'],
+        department_names,
+    )
     if not selected_departments:
         return jsonify({'success': True, 'departments': []})
 
@@ -9342,7 +9431,7 @@ def list_assessment_overrides():
                 'start_week': ov.start_week,
                 'end_week': ov.end_week,
                 'reason': ov.reason,
-                'created_at': ov.created_at.strftime('%Y-%m-%d %H:%M:%S') if ov.created_at else ''
+                'created_at': ov.created_at.strftime('%Y-%m-%d %H:%M:%S') if ov.created_at else '',
             })
 
     result_departments = []
@@ -9360,15 +9449,15 @@ def list_assessment_overrides():
                     'user_id': user.id,
                     'name': user.name,
                     'number': user.number,
-                    'overrides': overrides_by_user.get(user.id, [])
+                    'overrides': overrides_by_user.get(user.id, []),
                 })
             groups.append({
                 'group_name': group_name,
-                'members': members
+                'members': members,
             })
         result_departments.append({
             'department': dept_name,
-            'groups': groups
+            'groups': groups,
         })
 
     return jsonify({'success': True, 'departments': result_departments})
@@ -9420,7 +9509,7 @@ def create_assessment_override():
             user_id=uid_int,
             start_week=start_week,
             end_week=end_week,
-            override_type=override_type
+            override_type=override_type,
         ).first()
         if existing:
             skipped_count += 1
@@ -9432,7 +9521,7 @@ def create_assessment_override():
             override_type=override_type,
             override_value=override_value,
             reason=reason,
-            created_by=session['user_id']
+            created_by=session['user_id'],
         )
         db.session.add(record)
         created_count += 1
@@ -9441,7 +9530,12 @@ def create_assessment_override():
     message = f'成功添加 {created_count} 条规则'
     if skipped_count > 0:
         message += f'，跳过 {skipped_count} 条已存在的规则'
-    return jsonify({'success': True, 'message': message, 'created_count': created_count, 'skipped_count': skipped_count})
+    return jsonify({
+        'success': True,
+        'message': message,
+        'created_count': created_count,
+        'skipped_count': skipped_count,
+    })
 
 
 @admin_bp.route('/api/assessment-overrides/<int:override_id>', methods=['DELETE'])
@@ -9449,7 +9543,7 @@ def create_assessment_override():
 def delete_assessment_override(override_id):
     if not _has_assessment_stats_access(session['user_id']):
         return jsonify({'success': False, 'message': '权限不足'}), 403
-    record = AssessmentOverride.query.get(override_id)
+    record = db.session.get(AssessmentOverride, override_id)
     if not record:
         return jsonify({'success': False, 'message': '规则不存在'}), 404
     manage_permission = get_user_manage_permission(session['user_id'])
@@ -9462,8 +9556,6 @@ def delete_assessment_override(override_id):
     return jsonify({'success': True, 'message': '规则已删除'})
 
 
-# ==================== 教学月设置 ====================
-
 @admin_bp.route('/api/teaching-month-definitions', methods=['GET'])
 @login_required
 def get_teaching_month_definitions():
@@ -9472,12 +9564,15 @@ def get_teaching_month_definitions():
     custom = _load_custom_month_definitions()
     if custom:
         return jsonify({'success': True, 'is_custom': True, 'months': custom})
-    # 返回默认的 4 周一月配置（最多生成 5 个教学月）
     defaults = []
     for i in range(5):
-        s = i * 4 + 1
-        e = s + 3
-        defaults.append({'start_week': s, 'end_week': e, 'label': f'第{i+1}教学月'})
+        start_week = i * 4 + 1
+        end_week = start_week + 3
+        defaults.append({
+            'start_week': start_week,
+            'end_week': end_week,
+            'label': f'第{i + 1}教学月',
+        })
     return jsonify({'success': True, 'is_custom': False, 'months': defaults})
 
 
@@ -9488,24 +9583,28 @@ def save_teaching_month_definitions():
         return jsonify({'success': False, 'message': '权限不足'}), 403
     data = request.get_json() or {}
     months = data.get('months')
-    # 允许传空数组或 null 来恢复默认
     if not months:
         SystemSetting.set('teaching_month_definitions', '')
         return jsonify({'success': True, 'message': '已恢复为默认教学月设置（每4周一个教学月）'})
     if not isinstance(months, list):
         return jsonify({'success': False, 'message': 'months 必须是数组'}), 400
+
     validated = []
     for idx, item in enumerate(months):
         try:
-            s = int(item.get('start_week'))
-            e = int(item.get('end_week'))
+            start_week = int(item.get('start_week'))
+            end_week = int(item.get('end_week'))
         except (TypeError, ValueError):
-            return jsonify({'success': False, 'message': f'第{idx+1}项的周次必须为整数'}), 400
-        if s < 1 or e < 1:
-            return jsonify({'success': False, 'message': f'第{idx+1}项的周次必须大于0'}), 400
-        if s > e:
-            return jsonify({'success': False, 'message': f'第{idx+1}项的起始周({s})不能大于结束周({e})'}), 400
+            return jsonify({'success': False, 'message': f'第{idx + 1}项的周次必须为整数'}), 400
+        if start_week < 1 or end_week < 1:
+            return jsonify({'success': False, 'message': f'第{idx + 1}项的周次必须大于0'}), 400
+        if start_week > end_week:
+            return jsonify({
+                'success': False,
+                'message': f'第{idx + 1}项的起始周({start_week})不能大于结束周({end_week})',
+            }), 400
         label = str(item.get('label') or '').strip()
-        validated.append({'start_week': s, 'end_week': e, 'label': label})
+        validated.append({'start_week': start_week, 'end_week': end_week, 'label': label})
+
     SystemSetting.set('teaching_month_definitions', json.dumps(validated, ensure_ascii=False))
     return jsonify({'success': True, 'message': f'已保存自定义教学月设置（{len(validated)}个教学月）'})

@@ -33,6 +33,15 @@ class User(db.Model):
     
     def __repr__(self):
         return f'<User {self.name} - {self.number}>'
+
+    @property
+    def group_name(self):
+        """Return the normalized group name, falling back to legacy users.group."""
+        if self.group_id:
+            group = db.session.get(Group, self.group_id)
+            if group:
+                return group.name
+        return self.group
     
     def get_role_display(self):
         """获取角色显示名称"""
@@ -381,6 +390,25 @@ class CourseRegistration(db.Model):
     
     def __repr__(self):
         return f'<CourseRegistration {self.course_code} {self.selection_code} user={self.user_id}>'
+
+class LectureFormDraft(db.Model):
+    __tablename__ = 'lecture_form_drafts'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    draft_key = db.Column(db.String(50), nullable=False, default='submit_form')
+    payload_json = db.Column(db.Text, nullable=False, default='{}')
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+    user = db.relationship('User', backref='lecture_form_drafts')
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'draft_key', name='unique_user_lecture_form_draft'),
+    )
+
+    def __repr__(self):
+        return f'<LectureFormDraft user={self.user_id} key={self.draft_key}>'
 
 # 系统设置：用于保存学期第一周星期一日期等键值
 class SystemSetting(db.Model):

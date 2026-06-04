@@ -26,6 +26,7 @@
                 <div class="card-body" id="mainContent" style="display: none;">
                     <form id="reviewForm">
                         <input type="hidden" id="formId" name="form_id">
+                        <div id="reviewDraftStatus" class="alert alert-secondary py-2 small" style="display: none;"></div>
                         
                         <!-- 基本信息 -->
                         <div class="row mb-4">
@@ -682,6 +683,9 @@ let currentFormData = {};
 let formId = null;
 let userPermission = null;
 let existingScoreData = [];
+let reviewDraftTimer = null;
+let reviewDraftInterval = null;
+let reviewDraftRestoring = false;
 
 // 页面加载时获取表单数据
 document.addEventListener('DOMContentLoaded', function() {
@@ -714,6 +718,8 @@ function loadFormData() {
                 
                 // 监听表单变化
                 setupFormChangeDetection();
+                loadReviewFormDraft();
+                startReviewDraftAutosave();
             } else {
                 showError(data.message || '加载表单数据失败');
             }
@@ -810,7 +816,15 @@ function setupFormChangeDetection() {
     formElements.forEach(element => {
         element.addEventListener('input', detectChanges);
         element.addEventListener('change', detectChanges);
+        element.addEventListener('input', scheduleReviewFormDraftSave);
+        element.addEventListener('change', scheduleReviewFormDraftSave);
     });
+
+    const scoringBody = document.getElementById('scoringTableBody');
+    if (scoringBody) {
+        scoringBody.addEventListener('input', scheduleReviewFormDraftSave);
+        scoringBody.addEventListener('change', scheduleReviewFormDraftSave);
+    }
 }
 
 // 检测表单变化
@@ -945,12 +959,149 @@ function displayChanges(changes) {
 
 
 
+function getReviewDraftUrl() {
+    return `/admin/api/review/form/${formId}/draft`;
+}
+
+function setReviewDraftStatus(message, level = 'secondary') {
+    const statusEl = document.getElementById('reviewDraftStatus');
+    if (!statusEl) return;
+    statusEl.className = `alert alert-${level} py-2 small`;
+    statusEl.textContent = message;
+    statusEl.style.display = message ? 'block' : 'none';
+}
+
+function collectReviewDraftData() {
+    return {
+        form_data: collectFormData(),
+        review_comment: document.getElementById('reviewComment').value || '',
+        score_data: collectScoreData()
+    };
+}
+
+function applyReviewDraftData(data) {
+    if (!data || typeof data !== 'object') return;
+    reviewDraftRestoring = true;
+    try {
+        const formData = data.form_data || {};
+        if (Object.keys(formData).length > 0) {
+            populateForm({ ...originalFormData, ...formData });
+        }
+        if (typeof data.review_comment === 'string') {
+            document.getElementById('reviewComment').value = data.review_comment;
+        }
+        if (Array.isArray(data.score_data)) {
+            existingScoreData = data.score_data;
+            const scoringBody = document.getElementById('scoringTableBody');
+            const scoringSection = document.getElementById('scoringSection');
+            if (scoringBody && scoringSection && scoringSection.style.display !== 'none') {
+                scoringBody.innerHTML = '';
+                existingScoreData.forEach(item => {
+                    addScoringRow(
+                        item.reason || '',
+                        item.department_score ?? '',
+                        item.personal_score ?? '',
+                        item.is_auto_generated === true || item.is_auto === true
+                    );
+                });
+            }
+        }
+        detectChanges();
+    } finally {
+        reviewDraftRestoring = false;
+    }
+}
+
+async function loadReviewFormDraft() {
+    try {
+        const response = await fetch(getReviewDraftUrl());
+        const result = await response.json();
+        if (!result.success) {
+            setReviewDraftStatus(result.message || '草稿加载失败', 'warning');
+            return;
+        }
+        if (result.exists) {
+            applyReviewDraftData(result.data);
+            setReviewDraftStatus(
+                result.updated_at ? `已恢复审核草稿，保存时间：${result.updated_at}` : '已恢复审核草稿',
+                'info'
+            );
+        }
+    } catch (error) {
+        console.error('Failed to load review draft:', error);
+        setReviewDraftStatus('草稿加载失败，刷新后可重试', 'warning');
+    }
+}
+
+async function saveReviewFormDraft() {
+    if (reviewDraftRestoring || !formId) return;
+    try {
+        const data = collectReviewDraftData();
+        setReviewDraftStatus('草稿保存中...', 'secondary');
+        const response = await fetch(getReviewDraftUrl(), {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        const result = await response.json();
+        if (!result.success) {
+            setReviewDraftStatus(result.message || '草稿保存失败', 'warning');
+            return;
+        }
+        setReviewDraftStatus(
+            result.updated_at ? `草稿已保存：${result.updated_at}` : '草稿已保存',
+            'success'
+        );
+    } catch (error) {
+        console.error('Failed to save review draft:', error);
+        setReviewDraftStatus('草稿保存失败，稍后会自动重试', 'warning');
+    }
+}
+
+function scheduleReviewFormDraftSave() {
+    if (reviewDraftRestoring || !formId) return;
+    if (reviewDraftTimer) {
+        window.clearTimeout(reviewDraftTimer);
+    }
+    setReviewDraftStatus('草稿尚未保存', 'secondary');
+    reviewDraftTimer = window.setTimeout(saveReviewFormDraft, 1500);
+}
+
+function startReviewDraftAutosave() {
+    if (reviewDraftInterval) return;
+    reviewDraftInterval = window.setInterval(() => {
+        const form = document.getElementById('reviewForm');
+        if (form && document.getElementById('mainContent').style.display !== 'none') {
+            saveReviewFormDraft();
+        }
+    }, 30000);
+}
+
+async function deleteReviewFormDraft() {
+    if (!formId) return;
+    try {
+        await fetch(getReviewDraftUrl(), { method: 'DELETE' });
+        setReviewDraftStatus('草稿已清除', 'secondary');
+    } catch (error) {
+        console.error('Failed to delete review draft:', error);
+    }
+}
+
+
 // 重置表单
 function resetForm() {
     if (confirm('确定要重置表单到原始状态吗？所有修改将丢失。')) {
         populateForm(originalFormData);
         document.getElementById('reviewComment').value = originalFormData.review_comment || '';
         document.getElementById('changesDisplay').style.display = 'none';
+        existingScoreData = [];
+        const scoringBody = document.getElementById('scoringTableBody');
+        if (scoringBody) {
+            scoringBody.innerHTML = '';
+        }
+        deleteReviewFormDraft();
     }
 }
 
@@ -979,6 +1130,7 @@ function rejectReview() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
+            deleteReviewFormDraft();
             showResult(true, '表单已驳回', `操作成功，表单状态已更新为：${data.new_status}`);
         } else {
             showResult(false, '驳回失败', data.message || '未知错误');
@@ -1108,6 +1260,7 @@ function submitReview() {
     
     // 显示确认模态框
     $('#submitConfirmModal').modal('show');
+    scheduleReviewFormDraftSave();
 }
 
 // 添加评分行
@@ -1118,7 +1271,7 @@ function addScoringRow(reason='', deptScore='', persScore='', isAuto=false) {
     const reasonInput = `<input type="text" class="form-control form-control-sm score-reason" value="${reason}" placeholder="评分原因">`;
     const deptInput = `<input type="number" step="0.5" min="0" class="form-control form-control-sm score-dept" value="${deptScore}" placeholder="0">`;
     const persInput = `<input type="number" step="0.5" min="0" class="form-control form-control-sm score-pers" value="${persScore}" placeholder="0">`;
-    const deleteBtn = `<button type="button" class="btn btn-xs btn-outline-danger" onclick="this.closest('tr').remove()" title="删除">删除</button>`;
+    const deleteBtn = `<button type="button" class="btn btn-xs btn-outline-danger" onclick="this.closest('tr').remove(); scheduleReviewFormDraftSave()" title="删除">删除</button>`;
     const autoFlag = `<input type="hidden" class="score-auto" value="${isAuto}">`;
 
     row.innerHTML = `
@@ -1128,6 +1281,7 @@ function addScoringRow(reason='', deptScore='', persScore='', isAuto=false) {
         <td class="text-center">${deleteBtn}</td>
     `;
     tbody.appendChild(row);
+    scheduleReviewFormDraftSave();
 }
 
 // 收集评分数据
@@ -1213,6 +1367,7 @@ function confirmSubmit() {
         $('#submitConfirmModal').modal('hide');
         
         if (data.success) {
+            deleteReviewFormDraft();
             showResult(true, '审核提交成功', `表单状态已更新为：${data.new_status}`);
         } else {
             showResult(false, '审核提交失败', data.message || '未知错误');

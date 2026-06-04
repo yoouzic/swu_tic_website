@@ -101,6 +101,7 @@
                     <h4 class="mb-0"><i class="fas fa-edit"></i> 听课表单</h4>
                 </div>
                 <div class="card-body">
+                    <div id="draftSaveStatus" class="alert alert-secondary py-2 small" style="display: none;"></div>
                     <form method="POST" action="{{ url_for('user.submit_form') }}" id="lectureForm">
                         <!-- 关联登记ID (隐藏域) -->
                         <input type="hidden" id="registration_id" name="registration_id">
@@ -447,6 +448,12 @@
 </div>
 
 <script>
+const lectureFormIsEditMode = {{ 'true' if form else 'false' }};
+const lectureFormDraftUrl = "{{ url_for('user.lecture_form_draft') }}";
+let lectureFormDraftTimer = null;
+let lectureFormDraftDirty = false;
+let lectureFormDraftSubmitting = false;
+
 // 页面加载完成后检查未使用的登记
 document.addEventListener('DOMContentLoaded', function() {
     checkUnusedRegistrations();
@@ -601,6 +608,169 @@ function syncCoursewareQualityWithTeachingMethod() {
     }
 }
 
+function setLectureDraftStatus(message, level) {
+    const statusEl = document.getElementById('draftSaveStatus');
+    if (!statusEl) {
+        return;
+    }
+    statusEl.className = `alert alert-${level || 'secondary'} py-2 small`;
+    statusEl.textContent = message;
+    statusEl.style.display = 'block';
+}
+
+function collectLectureFormDraftData() {
+    const form = document.getElementById('lectureForm');
+    const data = {};
+    if (!form) {
+        return data;
+    }
+    if (typeof updateDateWithWeekday === 'function') {
+        updateDateWithWeekday();
+    }
+    if (typeof updateClassPeriod === 'function') {
+        updateClassPeriod();
+    }
+
+    const tmValues = [];
+    ['tm_ppt', 'tm_lecture', 'tm_interactive'].forEach(id => {
+        const checkbox = document.getElementById(id);
+        if (checkbox && checkbox.checked) {
+            tmValues.push(checkbox.value);
+        }
+    });
+    const teachingInput = document.getElementById('teaching_method');
+    if (teachingInput) {
+        teachingInput.value = tmValues.join('、');
+    }
+
+    const formData = new FormData(form);
+    formData.forEach((value, key) => {
+        data[key] = value;
+    });
+    data.teaching_method = tmValues.join('、');
+    data.start_period = document.getElementById('start_period')?.value || '';
+    data.end_period = document.getElementById('end_period')?.value || '';
+    return data;
+}
+
+function applyLectureFormDraftData(data) {
+    if (!data || typeof data !== 'object') {
+        return;
+    }
+    Object.keys(data).forEach(key => {
+        const selector = `[name="${CSS.escape(key)}"]`;
+        document.querySelectorAll(selector).forEach(element => {
+            if (element.type === 'checkbox' || element.type === 'radio') {
+                element.checked = Array.isArray(data[key])
+                    ? data[key].includes(element.value)
+                    : data[key] === element.value;
+            } else {
+                element.value = data[key] == null ? '' : data[key];
+            }
+        });
+    });
+
+    if (data.teaching_method) {
+        const methods = String(data.teaching_method).split('、');
+        ['tm_ppt', 'tm_lecture', 'tm_interactive'].forEach(id => {
+            const checkbox = document.getElementById(id);
+            if (checkbox) {
+                checkbox.checked = methods.includes(checkbox.value);
+            }
+        });
+    }
+    if (data.start_period) {
+        const startEl = document.getElementById('start_period');
+        if (startEl) startEl.value = data.start_period;
+    }
+    if (data.end_period) {
+        const endEl = document.getElementById('end_period');
+        if (endEl) endEl.value = data.end_period;
+    }
+    if (typeof updateDateWithWeekday === 'function') {
+        updateDateWithWeekday();
+    }
+    if (typeof updateClassPeriod === 'function') {
+        updateClassPeriod();
+    }
+    if (typeof syncCoursewareQualityWithTeachingMethod === 'function') {
+        syncCoursewareQualityWithTeachingMethod();
+    }
+    const feedback = document.getElementById('course_feedback');
+    const counter = document.getElementById('feedback_counter');
+    if (feedback && counter) {
+        counter.textContent = `已输入 ${feedback.value.trim().length} 字`;
+    }
+}
+
+async function loadLectureFormDraft() {
+    if (lectureFormIsEditMode) {
+        return;
+    }
+    try {
+        const response = await fetch(lectureFormDraftUrl);
+        const result = await response.json();
+        if (result.success && result.exists) {
+            applyLectureFormDraftData(result.data);
+            setLectureDraftStatus(
+                result.updated_at
+                    ? `已恢复上次未提交草稿，保存时间：${result.updated_at}`
+                    : '已恢复上次未提交草稿',
+                'info'
+            );
+        }
+    } catch (error) {
+        console.error('Failed to load lecture form draft:', error);
+    }
+}
+
+async function saveLectureFormDraft() {
+    if (lectureFormIsEditMode || lectureFormDraftSubmitting) {
+        return;
+    }
+    const data = collectLectureFormDraftData();
+    lectureFormDraftDirty = false;
+    setLectureDraftStatus('草稿保存中...', 'secondary');
+    try {
+        const response = await fetch(lectureFormDraftUrl, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({data})
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || 'save failed');
+        }
+        setLectureDraftStatus(
+            result.updated_at ? `草稿已保存：${result.updated_at}` : '草稿已保存',
+            'success'
+        );
+    } catch (error) {
+        lectureFormDraftDirty = true;
+        setLectureDraftStatus('草稿保存失败，稍后会自动重试', 'warning');
+        console.error('Failed to save lecture form draft:', error);
+    }
+}
+
+function scheduleLectureFormDraftSave() {
+    if (lectureFormIsEditMode || lectureFormDraftSubmitting) {
+        return;
+    }
+    lectureFormDraftDirty = true;
+    setLectureDraftStatus('草稿尚未保存', 'secondary');
+    window.clearTimeout(lectureFormDraftTimer);
+    lectureFormDraftTimer = window.setTimeout(saveLectureFormDraft, 1500);
+}
+
+async function deleteLectureFormDraft() {
+    try {
+        await fetch(lectureFormDraftUrl, {method: 'DELETE'});
+        setLectureDraftStatus('草稿已清除', 'secondary');
+    } catch (error) {
+        console.error('Failed to delete lecture form draft:', error);
+    }
+}
+
 // 表单验证
 document.getElementById('lectureForm').addEventListener('submit', function(e) {
     if (this.dataset.submitting === '1') {
@@ -665,6 +835,7 @@ document.getElementById('lectureForm').addEventListener('submit', function(e) {
         e.preventDefault();
         return;
     }
+    lectureFormDraftSubmitting = true;
     this.dataset.submitting = '1';
     const submitBtn = this.querySelector('button[type="submit"]');
     if (submitBtn) {
@@ -708,5 +879,30 @@ document.getElementById('course_feedback').addEventListener('input', function() 
     }
 });
 syncCoursewareQualityWithTeachingMethod();
+
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('lectureForm');
+    if (!form || lectureFormIsEditMode) {
+        return;
+    }
+    loadLectureFormDraft();
+    form.addEventListener('input', scheduleLectureFormDraftSave);
+    form.addEventListener('change', scheduleLectureFormDraftSave);
+    form.addEventListener('reset', function() {
+        window.clearTimeout(lectureFormDraftTimer);
+        lectureFormDraftDirty = false;
+        window.setTimeout(deleteLectureFormDraft, 0);
+    });
+    window.setInterval(function() {
+        if (lectureFormDraftDirty && !lectureFormDraftSubmitting) {
+            saveLectureFormDraft();
+        }
+    }, 15000);
+    window.addEventListener('beforeunload', function() {
+        if (lectureFormDraftDirty && !lectureFormDraftSubmitting) {
+            saveLectureFormDraft();
+        }
+    });
+});
 </script>
 {% endblock %}

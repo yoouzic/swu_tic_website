@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
-from ..models import User, db, Course, ListeningBan, CourseRegistration as Reservation, Teacher, LectureForm
+from ..models import User, db, Course, ListeningBan, CourseRegistration as Reservation, Teacher, LectureForm, LectureFormDraft
 from .auth import login_required
 from ..utils.user_status import active_user_filter
 from datetime import datetime, timedelta
@@ -18,6 +18,50 @@ import json
 import re
 
 user_bp = Blueprint('user', __name__, url_prefix='/user')
+
+LECTURE_FORM_DRAFT_KEY = 'submit_form'
+
+
+def _load_lecture_form_draft(user_id):
+    return LectureFormDraft.query.filter_by(
+        user_id=user_id,
+        draft_key=LECTURE_FORM_DRAFT_KEY,
+    ).first()
+
+
+def _delete_lecture_form_draft(user_id):
+    draft = _load_lecture_form_draft(user_id)
+    if draft:
+        db.session.delete(draft)
+        return True
+    return False
+
+
+def _parse_draft_payload(draft):
+    if not draft or not draft.payload_json:
+        return {}
+    try:
+        payload = json.loads(draft.payload_json)
+    except (TypeError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _normalize_draft_payload(raw_payload):
+    if not isinstance(raw_payload, dict):
+        return None
+    normalized = {}
+    for key, value in raw_payload.items():
+        if not isinstance(key, str):
+            continue
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            normalized[key] = value
+        elif isinstance(value, list):
+            normalized[key] = [
+                item for item in value
+                if isinstance(item, (str, int, float, bool)) or item is None
+            ]
+    return normalized
 
 def _normalize_submission_value(value):
     if value is None:
@@ -440,6 +484,46 @@ def profile():
     leave_prompt = get_pending_leave_makeup(user)
     return render_template('user/profile.html', user=user, stats=stats, leave_prompt=leave_prompt)
 
+
+@user_bp.route('/api/lecture_form_draft', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def lecture_form_draft():
+    user_id = session['user_id']
+
+    if request.method == 'GET':
+        draft = _load_lecture_form_draft(user_id)
+        return jsonify({
+            'success': True,
+            'exists': draft is not None,
+            'data': _parse_draft_payload(draft),
+            'updated_at': draft.updated_at.strftime('%Y-%m-%d %H:%M:%S') if draft else None,
+        })
+
+    if request.method == 'DELETE':
+        deleted = _delete_lecture_form_draft(user_id)
+        db.session.commit()
+        return jsonify({'success': True, 'deleted': deleted})
+
+    body = request.get_json(silent=True) or {}
+    raw_payload = body.get('data', body)
+    payload = _normalize_draft_payload(raw_payload)
+    if payload is None:
+        return jsonify({'success': False, 'message': 'Draft payload must be a JSON object'}), 400
+
+    draft = _load_lecture_form_draft(user_id)
+    if not draft:
+        draft = LectureFormDraft(user_id=user_id, draft_key=LECTURE_FORM_DRAFT_KEY)
+        db.session.add(draft)
+
+    draft.payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    draft.updated_at = datetime.now()
+    db.session.commit()
+    return jsonify({
+        'success': True,
+        'updated_at': draft.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+    })
+
+
 @user_bp.route('/edit_profile', methods=['GET', 'POST'])
 @login_required
 def edit_profile():
@@ -752,6 +836,7 @@ def submit_form():
                 # 全新表单
                 duplicate_form = _find_recent_duplicate_submission(user.number, form_data, datetime.now())
                 if duplicate_form:
+                    _delete_lecture_form_draft(user.id)
                     if leave_makeup:
                         record_leave_makeup_form(
                             user,
@@ -778,8 +863,10 @@ def submit_form():
                     leave_makeup,
                     target_form,
                     source='auto',
-                    operator_user_id=user.id,
+                        operator_user_id=user.id,
                 )
+
+            _delete_lecture_form_draft(user.id)
             
             db.session.commit()
             flash(f'表单提交成功！{" " if is_new_version else "原有表单已更新，等待重新审核。"}', 'success')
