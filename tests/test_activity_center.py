@@ -64,6 +64,35 @@ class ActivityCenterTest(unittest.TestCase):
         self.assertIn('id="draftSaveStatus"', template)
         self.assertNotIn('bg-primary text-white', template)
 
+    def test_activity_actions_use_in_page_feedback_instead_of_browser_dialogs(self):
+        script = Path('app/static/js/activity-center.js').read_text(encoding='utf-8')
+        for forbidden in ('window.prompt', 'window.confirm', 'window.alert', 'window.location.reload'):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, script)
+
+    def test_activity_templates_do_not_depend_on_external_select2(self):
+        for relative_path in (
+            'app/templates/user/activity_center.html',
+            'app/templates/user/lecture_reservation.html',
+        ):
+            template = Path(relative_path).read_text(encoding='utf-8')
+            with self.subTest(template=relative_path):
+                self.assertNotIn('https://cdn.jsdelivr.net', template)
+                self.assertNotIn('select2', template.lower())
+
+    def test_records_have_accessible_in_page_dialogs_and_stable_rows(self):
+        template = Path('app/templates/user/_records_panel.html').read_text(encoding='utf-8')
+        for marker in (
+            'id="editReservationModal"',
+            'id="deleteReservationModal"',
+            'id="editReservationFeedback"',
+            'id="deleteReservationFeedback"',
+            'data-reservation-row=',
+            'data-reservation-description=',
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, template)
+
 
 if __name__ == '__main__':
     unittest.main()

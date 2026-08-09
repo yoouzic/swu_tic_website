@@ -1,10 +1,10 @@
 <div class="registration-panel" data-registration-panel>
     <div class="registration-search">
-        <label for="courseSelect" class="form-label">选择课程</label>
-        <select id="courseSelect" class="form-select" style="width: 100%;">
-            <option value="">请输入课程名称、教师或课程号进行搜索...</option>
-        </select>
+        <label for="courseSearchInput" class="form-label">选择课程</label>
+        <input type="search" id="courseSearchInput" class="form-control" autocomplete="off" placeholder="请输入课程名称、教师或课程号进行搜索..." aria-controls="courseResults" aria-expanded="false">
         <div class="form-text">支持按课程名称、教师或课程号搜索。选择课程后可在当前页面完成登记。</div>
+        <div id="courseSearchFeedback" class="activity-feedback" role="status" aria-live="polite" hidden></div>
+        <div id="courseResults" class="course-results" role="listbox" aria-label="课程搜索结果"></div>
     </div>
 
     <div id="registrationFeedback" class="activity-feedback" role="status" aria-live="polite" hidden></div>

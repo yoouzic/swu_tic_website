@@ -22,6 +22,8 @@
         </div>
     </div>
 
+    <div id="recordsFeedback" class="activity-feedback" role="status" aria-live="polite" hidden></div>
+
     <div class="activity-panel mb-4">
         <div class="activity-panel__header activity-panel__header--split">
             <div>
@@ -34,13 +36,13 @@
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead><tr><th>登记时间</th><th>课程</th><th>教师</th><th>计划说明</th><th>绑定状态</th><th>操作</th></tr></thead>
-                    <tbody>
+                    <tbody id="reservationsTableBody">
                     {% for item in my_reservations %}
-                        <tr>
+                        <tr data-reservation-row="{{ item.id }}">
                             <td>{{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '-' }}</td>
                             <td><strong>{{ item.course_name }}</strong><small class="d-block text-muted">{{ item.course_code }}-{{ item.selection_code }}</small></td>
                             <td>{{ item.teacher_name }}<small class="d-block text-muted">{{ item.class_time or '-' }}</small></td>
-                            <td class="record-description">{{ item.listening_info or '-' }}</td>
+                            <td class="record-description"><span data-reservation-description="{{ item.id }}">{{ item.listening_info or '-' }}</span></td>
                             <td>
                                 {% if item.is_bound %}<span class="badge bg-secondary">已绑定反馈表 ({{ item.bind_count }})</span>
                                 {% else %}<span class="badge bg-success">未绑定</span>{% endif %}
@@ -57,7 +59,7 @@
                 </table>
             </div>
             {% else %}
-            <div class="activity-empty">暂无听课预约。可以先切换到“听课登记”选择课程。</div>
+            <div id="reservationsEmptyState" class="activity-empty">暂无听课预约。可以先切换到“听课登记”选择课程。</div>
             {% endif %}
         </div>
     </div>
@@ -79,7 +81,7 @@
                         {% set latest_form = form_group['latest_form'] %}
                         {% set versions = form_group['versions'] %}
                         {% set version_key = latest_form.unique_id or ('single_' + latest_form.id|string) %}
-                        <tr>
+                        <tr data-form-row="{{ latest_form.id }}" data-form-key="{{ version_key|e }}">
                             <td><strong>{{ latest_form.unique_id or ('单独-' + latest_form.id|string) }}</strong>{% if versions|length > 1 %}<small class="d-block text-muted">共{{ versions|length }}个版本</small>{% endif %}</td>
                             <td>{{ latest_form.lecture_date }}</td>
                             <td><strong>{{ latest_form.course_title }}</strong><small class="d-block text-muted">{{ latest_form.class_period }}</small></td>
@@ -104,7 +106,7 @@
                             </td>
                         </tr>
                         {% if versions|length > 1 %}
-                        <tr id="versions-{{ version_key|e }}" class="version-history" hidden>
+                        <tr id="versions-{{ version_key|e }}" data-version-row="{{ version_key|e }}" class="version-history" hidden>
                             <td colspan="9">
                                 <div class="version-history__inner">
                                     <h3 class="h6">版本历史</h3>
@@ -133,7 +135,7 @@
                 </table>
             </div>
         {% else %}
-            <div class="activity-empty">暂无听课表单。填写并提交第一份听课表单后，记录会显示在这里。</div>
+            <div id="formsEmptyState" class="activity-empty">暂无听课表单。填写并提交第一份听课表单后，记录会显示在这里。</div>
         {% endif %}
         </div>
     </div>
@@ -146,10 +148,56 @@
                 <h2 class="modal-title h5" id="deleteModalLabel">确认删除</h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
-            <div class="modal-body">确定要删除这个听课表单吗？此操作不可撤销。</div>
+            <div class="modal-body">
+                <p>确定要删除这个听课表单吗？此操作不可撤销。</p>
+                <div id="deleteFormFeedback" class="activity-feedback" role="alert" aria-live="assertive" hidden></div>
+            </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
                 <button type="button" class="btn btn-danger" id="confirmDelete">确认删除</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editReservationModal" tabindex="-1" aria-labelledby="editReservationModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form id="editReservationForm" novalidate>
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="editReservationModalLabel">修改听课预约</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editReservationId">
+                    <label for="editReservationInfo" class="form-label">听课计划说明</label>
+                    <textarea class="form-control" id="editReservationInfo" rows="4" required aria-describedby="editReservationFeedback"></textarea>
+                    <div id="editReservationFeedback" class="activity-feedback" role="alert" aria-live="assertive" hidden></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="saveReservationEdit">保存修改</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="deleteReservationModal" tabindex="-1" aria-labelledby="deleteReservationModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5" id="deleteReservationModalLabel">删除听课预约</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <p id="deleteReservationMessage">确定要删除该听课登记记录吗？此操作不可撤销。</p>
+                <input type="hidden" id="deleteReservationId">
+                <div id="deleteReservationFeedback" class="activity-feedback" role="alert" aria-live="assertive" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteReservation">确认删除</button>
             </div>
         </div>
     </div>

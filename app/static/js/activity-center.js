@@ -230,43 +230,159 @@
         }
     }
 
-    function initRegistrationPanel() {
-        const courseSelect = $('#courseSelect');
-        if (!courseSelect.length) {
+    function clearCourseSelection() {
+        $('#courseCode').val('');
+        $('#selectionCode').val('');
+        const detail = document.getElementById('courseDetailSection');
+        const tip = document.getElementById('initialTip');
+        if (detail) {
+            detail.hidden = true;
+        }
+        if (tip) {
+            tip.hidden = false;
+        }
+    }
+
+    function courseResultLabel(course) {
+        return course.text || `${course.course_name || '未知课程'} | ${course.teacher_name || '未知教师'} | ${course.class_time || '时间未知'} (${course.course_code || '-'}-${course.selection_code || '-'})`;
+    }
+
+    function closeCourseResults() {
+        const input = document.getElementById('courseSearchInput');
+        const results = document.getElementById('courseResults');
+        if (results) {
+            results.replaceChildren();
+        }
+        if (input) {
+            input.setAttribute('aria-expanded', 'false');
+        }
+    }
+
+    function selectCourse(course) {
+        const input = document.getElementById('courseSearchInput');
+        if (input) {
+            input.value = courseResultLabel(course);
+        }
+        closeCourseResults();
+        setFeedback(document.getElementById('courseSearchFeedback'), '', '');
+        showCourseDetail(course);
+    }
+
+    function renderCourseResults(items) {
+        const input = document.getElementById('courseSearchInput');
+        const results = document.getElementById('courseResults');
+        if (!results) {
+            return;
+        }
+        results.replaceChildren();
+        if (!items.length) {
+            if (input) {
+                input.setAttribute('aria-expanded', 'false');
+            }
+            setFeedback(document.getElementById('courseSearchFeedback'), '未找到匹配的课程', 'info');
             return;
         }
 
-        if ($.fn.select2) {
-            courseSelect.select2({
-                theme: 'bootstrap-5',
-                language: {
-                    inputTooShort: () => '请输入至少 1 个字符进行搜索',
-                    searching: () => '搜索中...',
-                    noResults: () => '未找到匹配的课程'
-                },
-                ajax: {
-                    url: '/user/api/available_courses',
-                    dataType: 'json',
-                    delay: 250,
-                    data: (params) => ({q: params.term, page: params.page || 1}),
-                    processResults: (data, params) => ({
-                        results: data.results || [],
-                        pagination: {more: Boolean(data.pagination && data.pagination.more)}
-                    }),
-                    cache: true
-                },
-                placeholder: '请输入课程名称、教师或课程号',
-                minimumInputLength: 1
+        if (input) {
+            input.setAttribute('aria-expanded', 'true');
+        }
+        setFeedback(document.getElementById('courseSearchFeedback'), '', '');
+        items.forEach((course, index) => {
+            const result = document.createElement('button');
+            result.type = 'button';
+            result.className = 'course-result';
+            result.dataset.courseIndex = String(index);
+            result.setAttribute('role', 'option');
+            result.setAttribute('aria-selected', 'false');
+            result.textContent = courseResultLabel(course);
+            result.addEventListener('click', () => selectCourse(course));
+            result.addEventListener('keydown', (event) => {
+                const resultButtons = Array.from(results.querySelectorAll('[data-course-index]'));
+                const currentIndex = resultButtons.indexOf(result);
+                if (event.key === 'ArrowDown' && resultButtons[currentIndex + 1]) {
+                    event.preventDefault();
+                    resultButtons[currentIndex + 1].focus();
+                } else if (event.key === 'ArrowUp' && resultButtons[currentIndex - 1]) {
+                    event.preventDefault();
+                    resultButtons[currentIndex - 1].focus();
+                } else if (event.key === 'ArrowUp' && currentIndex === 0) {
+                    event.preventDefault();
+                    input.focus();
+                } else if (event.key === 'Escape') {
+                    closeCourseResults();
+                    input.focus();
+                }
             });
-            courseSelect.on('select2:select', (event) => showCourseDetail(event.params.data));
-            courseSelect.on('select2:clear', () => {
-                const detail = document.getElementById('courseDetailSection');
-                const tip = document.getElementById('initialTip');
-                if (detail) detail.hidden = true;
-                if (tip) tip.hidden = false;
-            });
+            results.appendChild(result);
+        });
+    }
+
+    let courseSearchTimer = null;
+    let courseSearchToken = 0;
+
+    function searchAvailableCourses(query) {
+        const feedback = document.getElementById('courseSearchFeedback');
+        const input = document.getElementById('courseSearchInput');
+        const token = ++courseSearchToken;
+        if (!query) {
+            closeCourseResults();
+            setFeedback(feedback, '请输入至少 1 个字符进行搜索', 'info');
+            clearCourseSelection();
+            return;
         }
 
+        if (input) {
+            input.setAttribute('aria-busy', 'true');
+        }
+        setFeedback(feedback, '正在加载课程', 'info');
+        fetch(`/user/api/available_courses?q=${encodeURIComponent(query)}&page=1`, {
+            headers: {'Accept': 'application/json'}
+        }).then((response) => response.json().then((data) => ({response, data}))).then(({response, data}) => {
+            if (token !== courseSearchToken) {
+                return;
+            }
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || '课程加载失败，请稍后重试');
+            }
+            renderCourseResults(data.results || []);
+        }).catch((error) => {
+            if (token !== courseSearchToken) {
+                return;
+            }
+            closeCourseResults();
+            setFeedback(feedback, error.message || '课程加载失败，请稍后重试', 'error');
+        }).finally(() => {
+            if (token === courseSearchToken && input) {
+                input.removeAttribute('aria-busy');
+            }
+        });
+    }
+
+    function initCourseSearch() {
+        const input = document.getElementById('courseSearchInput');
+        if (!input) {
+            return;
+        }
+        input.addEventListener('input', () => {
+            window.clearTimeout(courseSearchTimer);
+            courseSearchTimer = window.setTimeout(() => searchAvailableCourses(input.value.trim()), 250);
+        });
+        input.addEventListener('keydown', (event) => {
+            const firstResult = document.querySelector('#courseResults [data-course-index]');
+            if (event.key === 'ArrowDown' && firstResult) {
+                event.preventDefault();
+                firstResult.focus();
+            } else if (event.key === 'Escape') {
+                closeCourseResults();
+            }
+        });
+    }
+
+    function initRegistrationPanel() {
+        if (!document.getElementById('courseSearchInput')) {
+            return;
+        }
+        initCourseSearch();
         $('#submitReservationButton').on('click', submitReservation);
         $('#viewAllHistoryButton').on('click', () => loadHistory(true));
         $('#timeSuggestionButton').on('click', getTimeSuggestion);
@@ -274,51 +390,209 @@
     }
 
     let deleteFormId = null;
+    let editingReservationId = null;
+    let deletingReservationId = null;
 
-    window.deleteForm = function (formId) {
-        deleteFormId = formId;
-        const modal = document.getElementById('deleteModal');
+    function showBootstrapModal(id) {
+        const modal = document.getElementById(id);
         if (modal && window.bootstrap) {
             bootstrap.Modal.getOrCreateInstance(modal).show();
         }
-    };
+        return modal;
+    }
 
-    window.editReservation = function (reservationId, originalInfo) {
-        const nextInfo = window.prompt('请修改听课计划说明：', originalInfo || '');
-        if (nextInfo === null) {
+    function hideBootstrapModal(id) {
+        const modal = document.getElementById(id);
+        if (modal && window.bootstrap) {
+            bootstrap.Modal.getOrCreateInstance(modal).hide();
+        }
+    }
+
+    function parseApiResponse(response) {
+        return response.json().then((result) => {
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || '操作失败');
+            }
+            return result;
+        });
+    }
+
+    function setRecordsFeedback(message, tone) {
+        setFeedback(document.getElementById('recordsFeedback'), message, tone);
+    }
+
+    function findReservationNode(selector, reservationId) {
+        return Array.from(document.querySelectorAll(selector)).find((node) => node.dataset.reservationId === String(reservationId) || node.dataset.reservationDescription === String(reservationId));
+    }
+
+    function removeReservationRow(reservationId) {
+        const row = Array.from(document.querySelectorAll('[data-reservation-row]')).find((node) => node.dataset.reservationRow === String(reservationId));
+        if (!row) {
             return;
         }
-        const payload = {listening_info: nextInfo.trim()};
-        if (!payload.listening_info) {
-            window.alert('听课计划说明不能为空');
+        row.remove();
+        const body = document.getElementById('reservationsTableBody');
+        if (body && !body.querySelector('[data-reservation-row]')) {
+            const tableWrapper = body.closest('.table-responsive');
+            if (tableWrapper) {
+                tableWrapper.hidden = true;
+            }
+            let emptyState = document.getElementById('reservationsEmptyState');
+            if (!emptyState && tableWrapper && tableWrapper.parentElement) {
+                emptyState = document.createElement('div');
+                emptyState.id = 'reservationsEmptyState';
+                emptyState.className = 'activity-empty';
+                emptyState.textContent = '暂无听课预约。可以先切换到“听课登记”选择课程。';
+                tableWrapper.parentElement.appendChild(emptyState);
+            }
+            if (emptyState) {
+                emptyState.hidden = false;
+            }
+        }
+    }
+
+    function removeFormRow(formId) {
+        const row = Array.from(document.querySelectorAll('[data-form-row]')).find((node) => node.dataset.formRow === String(formId));
+        if (!row) {
             return;
         }
+        const versionKey = row.dataset.formKey;
+        const body = row.closest('tbody');
+        row.remove();
+        if (versionKey) {
+            const versionRow = Array.from(document.querySelectorAll('[data-version-row]')).find((node) => node.dataset.versionRow === versionKey);
+            if (versionRow) {
+                versionRow.remove();
+            }
+        }
+        if (body && !body.querySelector('[data-form-row]')) {
+            const tableWrapper = body.closest('.table-responsive');
+            if (tableWrapper) {
+                tableWrapper.hidden = true;
+            }
+            const panelBody = tableWrapper && tableWrapper.closest('.activity-panel__body');
+            let emptyState = document.getElementById('formsEmptyState');
+            if (!emptyState && panelBody) {
+                emptyState = document.createElement('div');
+                emptyState.id = 'formsEmptyState';
+                emptyState.className = 'activity-empty';
+                emptyState.textContent = '暂无听课表单。填写并提交第一份听课表单后，记录会显示在这里。';
+                panelBody.appendChild(emptyState);
+            }
+            if (emptyState) {
+                emptyState.hidden = false;
+            }
+        }
+    }
+
+    function openEditReservation(reservationId, originalInfo) {
+        editingReservationId = String(reservationId);
+        const idInput = document.getElementById('editReservationId');
+        const infoInput = document.getElementById('editReservationInfo');
+        if (idInput) {
+            idInput.value = editingReservationId;
+        }
+        if (infoInput) {
+            infoInput.value = originalInfo || '';
+        }
+        setFeedback(document.getElementById('editReservationFeedback'), '', '');
+        const modal = showBootstrapModal('editReservationModal');
+        if (modal) {
+            modal.addEventListener('shown.bs.modal', () => infoInput && infoInput.focus(), {once: true});
+        }
+    }
+
+    function saveReservationEdit(event) {
+        event.preventDefault();
+        const idInput = document.getElementById('editReservationId');
+        const infoInput = document.getElementById('editReservationInfo');
+        const feedback = document.getElementById('editReservationFeedback');
+        const saveButton = document.getElementById('saveReservationEdit');
+        const reservationId = editingReservationId || (idInput && idInput.value);
+        const listeningInfo = infoInput ? infoInput.value.trim() : '';
+        if (!reservationId || !listeningInfo) {
+            setFeedback(feedback, '听课计划说明不能为空', 'error');
+            if (infoInput) {
+                infoInput.focus();
+            }
+            return;
+        }
+        if (saveButton) {
+            saveButton.disabled = true;
+        }
+        setFeedback(feedback, '正在保存修改', 'info');
         fetch(`/user/api/my_reservations/${reservationId}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
-        }).then((response) => response.json()).then((result) => {
-            if (!result.success) {
-                throw new Error(result.message || '修改失败');
+            body: JSON.stringify({listening_info: listeningInfo})
+        }).then(parseApiResponse).then(() => {
+            const description = findReservationNode('[data-reservation-description]', reservationId);
+            if (description) {
+                description.textContent = listeningInfo;
             }
-            window.location.reload();
-        }).catch((error) => window.alert(`修改失败：${error.message}`));
-    };
+            const editButton = findReservationNode('[data-reservation-id]', reservationId);
+            if (editButton) {
+                editButton.dataset.listeningInfo = listeningInfo;
+            }
+            setFeedback(feedback, '听课预约已更新', 'success');
+            setRecordsFeedback('听课预约已更新', 'success');
+        }).catch((error) => {
+            setFeedback(feedback, error.message || '修改失败，请稍后重试', 'error');
+        }).finally(() => {
+            if (saveButton) {
+                saveButton.disabled = false;
+            }
+        });
+    }
 
-    window.deleteReservation = function (reservationId) {
-        if (!window.confirm('确定删除该听课登记记录吗？此操作不可撤销。')) {
+    function openDeleteReservation(reservationId) {
+        deletingReservationId = String(reservationId);
+        const idInput = document.getElementById('deleteReservationId');
+        if (idInput) {
+            idInput.value = deletingReservationId;
+        }
+        setFeedback(document.getElementById('deleteReservationFeedback'), '', '');
+        showBootstrapModal('deleteReservationModal');
+    }
+
+    function confirmDeleteReservation() {
+        const idInput = document.getElementById('deleteReservationId');
+        const feedback = document.getElementById('deleteReservationFeedback');
+        const button = document.getElementById('confirmDeleteReservation');
+        const reservationId = deletingReservationId || (idInput && idInput.value);
+        if (!reservationId) {
+            setFeedback(feedback, '未找到要删除的预约记录', 'error');
             return;
         }
+        if (button) {
+            button.disabled = true;
+        }
+        setFeedback(feedback, '正在删除预约', 'info');
         fetch(`/user/api/my_reservations/${reservationId}`, {method: 'DELETE'})
-            .then((response) => response.json())
-            .then((result) => {
-                if (!result.success) {
-                    throw new Error(result.message || '删除失败');
-                }
-                window.location.reload();
+            .then(parseApiResponse)
+            .then(() => {
+                removeReservationRow(reservationId);
+                setRecordsFeedback('听课预约已删除', 'success');
+                hideBootstrapModal('deleteReservationModal');
             })
-            .catch((error) => window.alert(`删除失败：${error.message}`));
+            .catch((error) => {
+                setFeedback(feedback, error.message || '删除失败，请稍后重试', 'error');
+            })
+            .finally(() => {
+                if (button) {
+                    button.disabled = false;
+                }
+            });
+    }
+
+    window.deleteForm = function (formId) {
+        deleteFormId = formId;
+        setFeedback(document.getElementById('deleteFormFeedback'), '', '');
+        showBootstrapModal('deleteModal');
     };
+
+    window.editReservation = openEditReservation;
+    window.deleteReservation = openDeleteReservation;
 
     window.toggleVersions = function (uniqueId) {
         const row = document.getElementById(`versions-${uniqueId}`);
@@ -331,19 +605,36 @@
         const confirmButton = document.getElementById('confirmDelete');
         if (confirmButton) {
             confirmButton.addEventListener('click', () => {
-                if (!deleteFormId) {
+                const feedback = document.getElementById('deleteFormFeedback');
+                if (deleteFormId === null || deleteFormId === undefined) {
+                    setFeedback(feedback, '未找到要删除的表单', 'error');
                     return;
                 }
+                confirmButton.disabled = true;
+                setFeedback(feedback, '正在删除表单', 'info');
                 fetch(`/user/delete_form/${deleteFormId}`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'}
-                }).then((response) => response.json()).then((result) => {
-                    if (!result.success) {
-                        throw new Error(result.message || '删除失败');
-                    }
-                    window.location.reload();
-                }).catch((error) => window.alert(`删除失败：${error.message}`));
+                }).then(parseApiResponse).then(() => {
+                    removeFormRow(deleteFormId);
+                    setRecordsFeedback('听课表单已删除', 'success');
+                    deleteFormId = null;
+                    hideBootstrapModal('deleteModal');
+                }).catch((error) => {
+                    setFeedback(feedback, error.message || '删除失败，请稍后重试', 'error');
+                }).finally(() => {
+                    confirmButton.disabled = false;
+                });
             });
+        }
+
+        const editForm = document.getElementById('editReservationForm');
+        if (editForm) {
+            editForm.addEventListener('submit', saveReservationEdit);
+        }
+        const reservationDeleteButton = document.getElementById('confirmDeleteReservation');
+        if (reservationDeleteButton) {
+            reservationDeleteButton.addEventListener('click', confirmDeleteReservation);
         }
 
         const dateFrom = document.getElementById('date_from');

@@ -3,11 +3,6 @@
 
 {% block title %}听课登记 - 西大听课工作台{% endblock %}
 
-{% block head %}
-<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
-{% endblock %}
-
 {% block content %}
 {{ page_header('听课登记', '选择课程并在当前页面完成听课预约。', '填写听课表', url_for('user.submit_form')) }}
 <div class="activity-compatibility">
@@ -16,6 +11,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="{{ url_for('static', filename='js/activity-center.js') }}"></script>
 {% endblock %}
