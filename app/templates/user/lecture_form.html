@@ -1,9 +1,19 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 
 {% block title %}填写听课表单{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
+{{ page_header('填写听课表单', '按分区完成听课信息、课堂评价和签名，系统会持续保存草稿。') }}
+<div class="lecture-form-layout">
+    <nav class="form-section-nav" aria-label="表单分区">
+        <a href="#basic-information">基本信息</a>
+        <a href="#course-information">课程信息</a>
+        <a href="#classroom-review">课堂评价</a>
+        <a href="#feedback-information">反馈信息</a>
+        <a href="#signature-information">签名信息</a>
+    </nav>
+    <div class="lecture-form-content">
     {% if form_data_json %}
     <script>
         var initialFormData = {{ form_data_json|safe }};
@@ -97,11 +107,11 @@
     <div class="row justify-content-center">
         <div class="col-md-10">
             <div class="card">
-                <div class="card-header bg-primary text-white">
-                    <h4 class="mb-0"><i class="fas fa-edit"></i> 听课表单</h4>
+                <div class="section-heading">
+                    <h2 class="h5 mb-0"><i class="fas fa-edit"></i> 听课表单</h2>
                 </div>
                 <div class="card-body">
-                    <div id="draftSaveStatus" class="alert alert-secondary py-2 small" style="display: none;"></div>
+                    <div id="draftSaveStatus" class="draft-save-status" role="status" aria-live="polite">尚未保存</div>
                     <form method="POST" action="{{ url_for('user.submit_form') }}" id="lectureForm">
                         <!-- 关联登记ID (隐藏域) -->
                         <input type="hidden" id="registration_id" name="registration_id">
@@ -109,9 +119,9 @@
                         <input type="hidden" id="unique_id" name="unique_id" value="{{ form.unique_id if form else '' }}">
 
                         <!-- 基本信息 -->
-                        <div class="row mb-4">
+                        <div id="basic-information" class="row mb-4 form-section">
                             <div class="col-12">
-                                <h5 class="text-primary border-bottom pb-2">基本信息</h5>
+                                <h3 class="form-section-title">基本信息</h3>
                             </div>
                             <div class="col-md-6">
                                 <div class="mb-3">
@@ -130,9 +140,9 @@
                         </div>
 
                         <!-- 课程信息 -->
-                        <div class="row mb-4">
+                        <div id="course-information" class="row mb-4 form-section">
                             <div class="col-12">
-                                <h5 class="text-primary border-bottom pb-2">课程信息</h5>
+                                <h3 class="form-section-title">课程信息</h3>
                                 <div id="autoFillAlert" class="alert alert-info alert-dismissible fade show" style="display: none;">
                                     <i class="bi bi-info-circle"></i> 已根据您的听课登记自动填充部分课程信息，您可以根据实际情况进行修改。
                                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -235,9 +245,9 @@
                         </div>
 
                         <!-- 课堂评价 -->
-                        <div class="row mb-4">
+                        <div id="classroom-review" class="row mb-4 form-section">
                             <div class="col-12">
-                                <h5 class="text-primary border-bottom pb-2">课堂评价</h5>
+                                <h3 class="form-section-title">课堂评价</h3>
                             </div>
                             <div class="col-12">
                                 <div class="mb-3">
@@ -323,9 +333,9 @@
                         </div>
 
                         <!-- 反馈信息 -->
-                        <div class="row mb-4">
+                        <div id="feedback-information" class="row mb-4 form-section">
                             <div class="col-12">
-                                <h5 class="text-primary border-bottom pb-2">反馈信息</h5>
+                                <h3 class="form-section-title">反馈信息</h3>
                             </div>
                             <div class="col-md-6">
                                 <div class="mb-3">
@@ -348,9 +358,9 @@
                         </div>
 
                         <!-- 签名信息 -->
-                        <div class="row mb-4">
+                        <div id="signature-information" class="row mb-4 form-section">
                             <div class="col-12">
-                                <h5 class="text-primary border-bottom pb-2">签名信息</h5>
+                                <h3 class="form-section-title">签名信息</h3>
                             </div>
                             <div class="col-md-6">
                                 <div class="mb-3">
@@ -384,7 +394,7 @@
                         <!--
                         <div class="row mb-4">
                             <div class="col-12">
-                                <h5 class="text-primary border-bottom pb-2">备注</h5>
+                                <h3 class="form-section-title">备注</h3>
                             </div>
                             <div class="col-12">
                                 <div class="mb-3">
@@ -395,7 +405,7 @@
                         </div>
                         -->
 
-                        <div class="text-center">
+                        <div class="form-actions">
                             <button type="submit" class="btn btn-primary btn-lg me-3">
                                 <i class="fas fa-save"></i> 提交表单
                             </button>
@@ -408,6 +418,8 @@
             </div>
         </div>
     </div>
+</div>
+</div>
 </div>
 
 <!-- 登记选择模态框 -->
@@ -613,9 +625,16 @@ function setLectureDraftStatus(message, level) {
     if (!statusEl) {
         return;
     }
-    statusEl.className = `alert alert-${level || 'secondary'} py-2 small`;
+    statusEl.className = `draft-save-status${level ? ` draft-save-status--${level}` : ''}`;
     statusEl.textContent = message;
-    statusEl.style.display = 'block';
+    statusEl.hidden = !message;
+}
+
+function formatLectureDraftTime(timestamp) {
+    if (timestamp && timestamp.length >= 16) {
+        return timestamp.slice(11, 16);
+    }
+    return new Date().toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'});
 }
 
 function collectLectureFormDraftData() {
@@ -712,12 +731,7 @@ async function loadLectureFormDraft() {
         const result = await response.json();
         if (result.success && result.exists) {
             applyLectureFormDraftData(result.data);
-            setLectureDraftStatus(
-                result.updated_at
-                    ? `已恢复上次未提交草稿，保存时间：${result.updated_at}`
-                    : '已恢复上次未提交草稿',
-                'info'
-            );
+            setLectureDraftStatus(`已保存 ${formatLectureDraftTime(result.updated_at)}`, 'success');
         }
     } catch (error) {
         console.error('Failed to load lecture form draft:', error);
@@ -730,7 +744,7 @@ async function saveLectureFormDraft() {
     }
     const data = collectLectureFormDraftData();
     lectureFormDraftDirty = false;
-    setLectureDraftStatus('草稿保存中...', 'secondary');
+    setLectureDraftStatus('正在保存', 'saving');
     try {
         const response = await fetch(lectureFormDraftUrl, {
             method: 'PUT',
@@ -741,13 +755,10 @@ async function saveLectureFormDraft() {
         if (!response.ok || !result.success) {
             throw new Error(result.message || 'save failed');
         }
-        setLectureDraftStatus(
-            result.updated_at ? `草稿已保存：${result.updated_at}` : '草稿已保存',
-            'success'
-        );
+        setLectureDraftStatus(`已保存 ${formatLectureDraftTime(result.updated_at)}`, 'success');
     } catch (error) {
         lectureFormDraftDirty = true;
-        setLectureDraftStatus('草稿保存失败，稍后会自动重试', 'warning');
+        setLectureDraftStatus('保存失败，请检查网络后重试', 'error');
         console.error('Failed to save lecture form draft:', error);
     }
 }
@@ -757,7 +768,7 @@ function scheduleLectureFormDraftSave() {
         return;
     }
     lectureFormDraftDirty = true;
-    setLectureDraftStatus('草稿尚未保存', 'secondary');
+    setLectureDraftStatus('尚未保存', 'pending');
     window.clearTimeout(lectureFormDraftTimer);
     lectureFormDraftTimer = window.setTimeout(saveLectureFormDraft, 1500);
 }
@@ -765,7 +776,7 @@ function scheduleLectureFormDraftSave() {
 async function deleteLectureFormDraft() {
     try {
         await fetch(lectureFormDraftUrl, {method: 'DELETE'});
-        setLectureDraftStatus('草稿已清除', 'secondary');
+        setLectureDraftStatus('草稿已清除', 'pending');
     } catch (error) {
         console.error('Failed to delete lecture form draft:', error);
     }

@@ -1,0 +1,156 @@
+<div class="records-panel">
+    <div class="records-filters activity-panel">
+        <div class="activity-panel__body">
+            <form method="GET" action="{{ url_for('user.listening_registration') }}" class="row g-3 align-items-end">
+                <input type="hidden" name="tab" value="records">
+                <div class="col-md-3">
+                    <label for="date_from" class="form-label">开始日期</label>
+                    <input type="date" class="form-control" id="date_from" name="date_from" value="{{ request.args.get('date_from', '') }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="date_to" class="form-label">结束日期</label>
+                    <input type="date" class="form-control" id="date_to" name="date_to" value="{{ request.args.get('date_to', '') }}">
+                </div>
+                <div class="col-md-4">
+                    <label for="search" class="form-label">搜索</label>
+                    <input type="search" class="form-control" id="search" name="search" placeholder="课程名称、教师姓名或地点" value="{{ request.args.get('search', '') }}">
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button type="submit" class="btn btn-outline-secondary">搜索</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="activity-panel mb-4">
+        <div class="activity-panel__header activity-panel__header--split">
+            <div>
+                <h2>我的听课预约</h2>
+                <p>未绑定反馈表单时可以修改或删除。</p>
+            </div>
+        </div>
+        <div class="activity-panel__body p-0">
+            {% if my_reservations %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead><tr><th>登记时间</th><th>课程</th><th>教师</th><th>计划说明</th><th>绑定状态</th><th>操作</th></tr></thead>
+                    <tbody>
+                    {% for item in my_reservations %}
+                        <tr>
+                            <td>{{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '-' }}</td>
+                            <td><strong>{{ item.course_name }}</strong><small class="d-block text-muted">{{ item.course_code }}-{{ item.selection_code }}</small></td>
+                            <td>{{ item.teacher_name }}<small class="d-block text-muted">{{ item.class_time or '-' }}</small></td>
+                            <td class="record-description">{{ item.listening_info or '-' }}</td>
+                            <td>
+                                {% if item.is_bound %}<span class="badge bg-secondary">已绑定反馈表 ({{ item.bind_count }})</span>
+                                {% else %}<span class="badge bg-success">未绑定</span>{% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-secondary" data-reservation-id="{{ item.id }}" data-listening-info="{{ (item.listening_info or '')|e }}" onclick="editReservation(this.dataset.reservationId, this.dataset.listeningInfo)"{% if not item.can_edit %} disabled{% endif %}>修改</button>
+                                    <button type="button" class="btn btn-outline-danger" onclick="deleteReservation({{ item.id }})"{% if not item.can_delete %} disabled{% endif %}>删除</button>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="activity-empty">暂无听课预约。可以先切换到“听课登记”选择课程。</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="activity-panel">
+        <div class="activity-panel__header activity-panel__header--split">
+            <div>
+                <h2>我的表单</h2>
+                <p>查看提交状态、版本历史和审核意见。</p>
+            </div>
+        </div>
+        <div class="activity-panel__body p-0">
+        {% if forms %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead><tr><th>表单ID</th><th>听课日期</th><th>课程名称</th><th>授课教师</th><th>听课地点</th><th>当前状态</th><th>版本数</th><th>最后更新</th><th>操作</th></tr></thead>
+                    <tbody>
+                    {% for form_group in forms %}
+                        {% set latest_form = form_group['latest_form'] %}
+                        {% set versions = form_group['versions'] %}
+                        {% set version_key = latest_form.unique_id or ('single_' + latest_form.id|string) %}
+                        <tr>
+                            <td><strong>{{ latest_form.unique_id or ('单独-' + latest_form.id|string) }}</strong>{% if versions|length > 1 %}<small class="d-block text-muted">共{{ versions|length }}个版本</small>{% endif %}</td>
+                            <td>{{ latest_form.lecture_date }}</td>
+                            <td><strong>{{ latest_form.course_title }}</strong><small class="d-block text-muted">{{ latest_form.class_period }}</small></td>
+                            <td>{{ latest_form.teacher_name }}<small class="d-block text-muted">{{ latest_form.teacher_college }}</small></td>
+                            <td>{{ latest_form.lecture_location }}</td>
+                            <td>
+                                {% if latest_form.status == '待审核' %}<span class="badge bg-warning text-dark">{{ latest_form.status }}</span>
+                                {% elif latest_form.status in ['已审核', '部门已审核', '中心已审核'] %}<span class="badge bg-success">{{ latest_form.status }}</span>
+                                {% elif latest_form.status == '已驳回' %}<span class="badge bg-danger">{{ latest_form.status }}</span>
+                                {% else %}<span class="badge bg-secondary">{{ latest_form.status or '草稿' }}</span>{% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">{{ versions|length }}</span>
+                                {% if versions|length > 1 %}<button type="button" class="btn btn-sm btn-link" data-version-key="{{ version_key|e }}" onclick="toggleVersions(this.dataset.versionKey)">展开/收起</button>{% endif %}
+                            </td>
+                            <td>{{ (latest_form.updated_at or latest_form.created_at).strftime('%Y-%m-%d %H:%M') if (latest_form.updated_at or latest_form.created_at) else '-' }}</td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{{ url_for('admin.get_form_detail', form_id=latest_form.id) }}" class="btn btn-outline-secondary">查看</a>
+                                    {% if versions|length == 1 and latest_form.status == '待审核' %}<button type="button" class="btn btn-outline-danger" onclick="deleteForm({{ latest_form.id }})">删除</button>{% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% if versions|length > 1 %}
+                        <tr id="versions-{{ version_key|e }}" class="version-history" hidden>
+                            <td colspan="9">
+                                <div class="version-history__inner">
+                                    <h3 class="h6">版本历史</h3>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm align-middle mb-0">
+                                            <thead><tr><th>版本</th><th>状态</th><th>更新时间</th><th>审核意见</th><th>操作</th></tr></thead>
+                                            <tbody>
+                                            {% for version in versions %}
+                                                <tr>
+                                                    <td>v{{ versions|length - loop.index0 }}{% if loop.first %}<span class="badge bg-secondary ms-1">最新</span>{% endif %}</td>
+                                                    <td>{{ version.status or '草稿' }}</td>
+                                                    <td>{{ (version.updated_at or version.created_at).strftime('%m-%d %H:%M') if (version.updated_at or version.created_at) else '-' }}</td>
+                                                    <td>{{ version.review_comment or '-' }}</td>
+                                                    <td><a href="{{ url_for('admin.get_form_detail', form_id=version.id) }}" class="btn btn-sm btn-outline-secondary">查看</a>{% if version.status in [None, '草稿'] or (version.status == '已驳回' and loop.first) %}<a href="{{ url_for('user.edit_form', form_id=version.id) }}" class="btn btn-sm btn-outline-secondary ms-1">编辑</a>{% endif %}</td>
+                                                </tr>
+                                            {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endif %}
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="activity-empty">暂无听课表单。填写并提交第一份听课表单后，记录会显示在这里。</div>
+        {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5" id="deleteModalLabel">确认删除</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">确定要删除这个听课表单吗？此操作不可撤销。</div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirmDelete">确认删除</button>
+            </div>
+        </div>
+    </div>
+</div>

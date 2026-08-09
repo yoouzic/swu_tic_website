@@ -1,29 +1,28 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 
 {% block title %}个人资料 - 西南大学教学信息中心{% endblock %}
 
 {% block content %}
-<div class="row">
+{{ page_header('个人资料', '查看并维护个人信息、听课统计和最近活动。', '编辑资料', url_for('user.edit_profile')) }}
+<div class="profile-layout">
     <!-- 个人信息卡片 -->
-    <div class="col-md-4">
-        <div class="card shadow mb-4">
-            <div class="card-header bg-primary text-white text-center">
-                <h5 class="mb-0">
+    <div class="profile-sidebar">
+        <div class="profile-section mb-4">
+            <div class="profile-section__header text-center">
+                <h2 class="h5 mb-0">
                     <i class="bi bi-person-circle"></i> 个人信息
-                </h5>
+                </h2>
             </div>
-            <div class="card-body text-center">
+            <div class="profile-section__body text-center">
                 <div class="mb-3">
-                    <i class="bi bi-person-circle text-primary" style="font-size: 4rem;"></i>
+                    <i class="bi bi-person-circle profile-avatar" aria-hidden="true"></i>
                 </div>
                 <h5 class="card-title">{{ user.name }}</h5>
                 <p class="text-muted">{{ user.role }}</p>
                 <p class="text-muted">{{ user.department }} - {{ user.group_name or '未分配小组' }}</p>
                 
                 <div class="d-grid gap-2">
-                    <a href="{{ url_for('user.edit_profile') }}" class="btn btn-outline-primary">
-                        <i class="bi bi-pencil"></i> 编辑资料
-                    </a>
                     <a href="{{ url_for('auth.change_password') }}" class="btn btn-outline-warning">
                         <i class="bi bi-shield-lock"></i> 修改密码
                     </a>
@@ -32,13 +31,13 @@
         </div>
         
         <!-- 快速操作 -->
-        <div class="card shadow">
-            <div class="card-header bg-success text-white">
-                <h6 class="mb-0">
+        <div class="profile-section">
+            <div class="profile-section__header">
+                <h2 class="h6 mb-0">
                     <i class="bi bi-lightning"></i> 快速操作
-                </h6>
+                </h2>
             </div>
-            <div class="card-body">
+            <div class="profile-section__body">
                 {% if user.role == '信息员' %}
                     <div class="d-grid gap-2">
                         <a href="{{ url_for('user.listening_registration') }}" class="btn btn-primary btn-sm">
@@ -47,7 +46,7 @@
                         <a href="{{ url_for('user.submit_form') }}" class="btn btn-success btn-sm">
                             <i class="bi bi-plus-circle"></i> 提交听课表单
                         </a>
-                        <a href="{{ url_for('user.my_forms') }}" class="btn btn-info btn-sm">
+                        <a href="{{ url_for('user.my_forms') }}" class="btn btn-outline-secondary btn-sm">
                             <i class="bi bi-list-ul"></i> 我的表单
                         </a>
                     </div>
@@ -62,10 +61,10 @@
                                 <i class="bi bi-speedometer2"></i> 管理面板
                             </a>
                         {% endif %}
-                        <a href="{{ url_for('user.my_forms') }}" class="btn btn-info btn-sm">
+                        <a href="{{ url_for('user.my_forms') }}" class="btn btn-outline-secondary btn-sm">
                             <i class="bi bi-list-ul"></i> 我的表单
                         </a>
-                        <a href="{{ url_for('admin.view_forms') }}" class="btn btn-info btn-sm">
+                        <a href="{{ url_for('admin.view_forms') }}" class="btn btn-outline-secondary btn-sm">
                             <i class="bi bi-file-earmark-text"></i> 查看表单
                         </a>
                         {% if user.role == '超级管理员' %}
@@ -80,14 +79,14 @@
     </div>
     
     <!-- 详细信息 -->
-    <div class="col-md-8">
-        <div class="card shadow">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0">
+    <div class="profile-main">
+        <div class="profile-section">
+            <div class="profile-section__header">
+                <h2 class="h5 mb-0">
                     <i class="bi bi-info-circle"></i> 详细信息
-                </h5>
+                </h2>
             </div>
-            <div class="card-body">
+            <div class="profile-section__body">
                 <div class="row">
                     <div class="col-md-6">
                         <table class="table table-borderless">
@@ -138,7 +137,7 @@
                             <tr>
                                 <td><strong><i class="bi bi-shield"></i> 角色：</strong></td>
                                 <td>
-                                    <span class="badge bg-{{ 'danger' if user.role == '超级管理员' else 'warning' if user.role == '管理员' else 'primary' }}">
+                                    <span class="badge bg-{{ 'danger' if user.role == '超级管理员' else 'warning' if user.role == '管理员' else 'secondary' }}">
                                         {{ user.role }}
                                     </span>
                                 </td>
@@ -155,19 +154,19 @@
         
         <!-- 统计信息 -->
         {% if user.role in ['信息员', '管理员', '超级管理员'] %}
-        <div class="card shadow mt-4">
-            <div class="card-header bg-secondary text-white">
-                <h6 class="mb-0">
+        <div class="profile-section mt-4">
+            <div class="profile-section__header">
+                <h2 class="h6 mb-0">
                     <i class="bi bi-bar-chart"></i> 听课填表统计
-                </h6>
+                </h2>
             </div>
-            <div class="card-body">
+            <div class="profile-section__body">
                 <!-- 本周统计 -->
-                <h6 class="text-primary border-bottom pb-2 mb-3">当前教学周（第 {{ stats.current_week }} 周）</h6>
+                <h3 class="profile-subheading">当前教学周（第 {{ stats.current_week }} 周）</h3>
                 <div class="row text-center mb-4">
                     <div class="col-md-4">
                         <div class="border-end">
-                            <h4 class="text-primary">{{ stats.week_submitted }}</h4>
+                            <h4 class="profile-metric-value">{{ stats.week_submitted }}</h4>
                             <small class="text-muted">已交表单</small>
                         </div>
                     </div>
@@ -184,7 +183,7 @@
                 </div>
 
                 <!-- 累计统计 -->
-                <h6 class="text-info border-bottom pb-2 mb-3">历史累计</h6>
+                <h3 class="profile-subheading">历史累计</h3>
                 <div class="row text-center">
                     <div class="col-md-3">
                         <div class="border-end">
@@ -214,12 +213,12 @@
                 <div class="row text-center">
                     <div class="col-md-6">
                         <div class="border-end">
-                            <h4 class="text-primary">{{ '%.1f'|format(stats.average_feedback_chars or 0) }}</h4>
+                            <h4 class="profile-metric-value">{{ '%.1f'|format(stats.average_feedback_chars or 0) }}</h4>
                             <small class="text-muted">平均反馈字数</small>
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <h4 class="text-info">{{ stats.total_feedback_chars or 0 }}</h4>
+                            <h4 class="profile-metric-value">{{ stats.total_feedback_chars or 0 }}</h4>
                         <small class="text-muted">总反馈字数</small>
                     </div>
                 </div>
@@ -227,13 +226,13 @@
         </div>
         
         <!-- 个人评价 -->
-        <div class="card shadow mt-4">
-            <div class="card-header bg-warning text-dark">
-                <h6 class="mb-0">
+        <div class="profile-section mt-4">
+            <div class="profile-section__header">
+                <h2 class="h6 mb-0">
                     <i class="bi bi-award"></i> 个人评价
-                </h6>
+                </h2>
             </div>
-            <div class="card-body">
+            <div class="profile-section__body">
                 <div class="row align-items-center text-center">
                     <div class="col-md-6 border-end">
                         <h3 class="mb-1 text-danger">-{{ '%.2f'|format(stats.total_deduction or 0) }}</h3>
@@ -259,9 +258,9 @@
 
                 <div class="assessment-items mt-4">
                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 border-top pt-3 mb-3">
-                        <h6 class="mb-0 text-start">
+                        <h3 class="h6 mb-0 text-start">
                             <i class="bi bi-list-check"></i> 历史考评项
-                        </h6>
+                        </h3>
                         {% if stats.assessment_items %}
                         <div class="btn-group btn-group-sm" role="group" aria-label="考评项排序">
                             <button type="button" class="btn btn-warning active assessment-sort-btn" data-sort="score">
@@ -325,21 +324,20 @@
         {% endif %}
         
         <!-- 最近活动 -->
-        <div class="card shadow mt-4">
-            <div class="card-header bg-dark text-white">
-                <h6 class="mb-0">
+        <div class="profile-section mt-4">
+            <div class="profile-section__header">
+                <h2 class="h6 mb-0">
                     <i class="bi bi-clock-history"></i> 最近活动
-                </h6>
+                </h2>
             </div>
-            <div class="card-body">
+            <div class="profile-section__body">
                 {% if recent_activities %}
-                    <div class="timeline">
+                    <div class="profile-timeline">
                         {% for activity in recent_activities %}
-                        <div class="timeline-item">
-                            <div class="timeline-marker bg-primary"></div>
-                            <div class="timeline-content">
-                                <h6 class="timeline-title">{{ activity.title }}</h6>
-                                <p class="timeline-text text-muted">{{ activity.description }}</p>
+                        <div class="profile-timeline__item">
+                            <div class="profile-timeline__content">
+                                <h3>{{ activity.title }}</h3>
+                                <p>{{ activity.description }}</p>
                                 <small class="text-muted">
                                     <i class="bi bi-clock"></i> {{ activity.created_at.strftime('%Y-%m-%d %H:%M') }}
                                 </small>
@@ -348,77 +346,12 @@
                         {% endfor %}
                     </div>
                 {% else %}
-                    <div class="text-center text-muted py-4">
-                        <i class="bi bi-inbox" style="font-size: 2rem;"></i>
-                        <p class="mt-2">暂无活动记录</p>
-                    </div>
+                    <div class="activity-empty">暂无活动记录</div>
                 {% endif %}
             </div>
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block extra_css %}
-<style>
-.timeline {
-    position: relative;
-    padding-left: 30px;
-}
-
-.timeline-item {
-    position: relative;
-    margin-bottom: 20px;
-}
-
-.timeline-marker {
-    position: absolute;
-    left: -35px;
-    top: 5px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    border: 2px solid #fff;
-    box-shadow: 0 0 0 2px #dee2e6;
-}
-
-.timeline-item:not(:last-child)::before {
-    content: '';
-    position: absolute;
-    left: -30px;
-    top: 17px;
-    width: 2px;
-    height: calc(100% + 5px);
-    background-color: #dee2e6;
-}
-
-.timeline-content {
-    background: #f8f9fa;
-    padding: 15px;
-    border-radius: 8px;
-    border-left: 3px solid #007bff;
-}
-
-.timeline-title {
-    margin-bottom: 5px;
-    font-size: 0.9rem;
-}
-
-.timeline-text {
-    margin-bottom: 5px;
-    font-size: 0.85rem;
-}
-
-.assessment-table {
-    font-size: 0.9rem;
-}
-
-.assessment-reason {
-    max-width: 260px;
-    white-space: normal;
-    word-break: break-word;
-}
-</style>
 {% endblock %}
 
 {% block scripts %}

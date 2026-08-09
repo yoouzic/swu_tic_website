@@ -1,26 +1,26 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 
 {% block title %}提交成功 - 听课表单系统{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-lg-8">
-        <div class="alert alert-success text-center" role="alert">
-            <h4 class="alert-heading">✅ 表单提交成功！</h4>
-            <p>您的听课表单已成功提交，表单编号：<strong>{{ form.id }}</strong></p>
-            <hr>
-            <p class="mb-0">提交时间：{{ form.created_at.strftime('%Y年%m月%d日 %H:%M:%S') }}</p>
-        </div>
+{{ page_header('表单提交成功', '表单已进入审核流程，以下是本次提交的摘要。') }}
+<div class="profile-section success-summary mb-4" role="status">
+    <div class="profile-section__body">
+        <p class="mb-2">表单编号：<strong>{{ form.id }}</strong></p>
+        <p class="mb-0 text-muted">提交时间：{{ form.created_at.strftime('%Y年%m月%d日 %H:%M:%S') }}</p>
+    </div>
+</div>
 
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">表单详情</h5>
-            </div>
-            <div class="card-body">
+<div class="profile-section">
+    <div class="profile-section__header">
+        <h2 class="h5 mb-0">表单详情</h2>
+    </div>
+    <div class="profile-section__body">
                 <div class="row">
                     <!-- 基本信息 -->
                     <div class="col-12 mb-4">
-                        <h6 class="text-primary border-bottom pb-2">基本信息</h6>
+                        <h3 class="profile-subheading">基本信息</h3>
                         <div class="row">
                             <div class="col-md-6">
                                 <strong>听课人姓名+学院：</strong> {{ form.listener_name }}
@@ -36,7 +36,7 @@
 
                     <!-- 时间地点信息 -->
                     <div class="col-12 mb-4">
-                        <h6 class="text-primary border-bottom pb-2">时间地点信息</h6>
+                        <h3 class="profile-subheading">时间地点信息</h3>
                         <div class="row">
                             <div class="col-md-4">
                                 <strong>听课时间：</strong> {{ form.lecture_date }}
@@ -52,7 +52,7 @@
 
                     <!-- 教师课程信息 -->
                     <div class="col-12 mb-4">
-                        <h6 class="text-primary border-bottom pb-2">教师课程信息</h6>
+                        <h3 class="profile-subheading">教师课程信息</h3>
                         <div class="row">
                             <div class="col-md-6">
                                 <strong>授课教师：</strong> {{ form.teacher_name }}
@@ -71,7 +71,7 @@
 
                     <!-- 听课人信息 -->
                     <div class="col-12 mb-4">
-                        <h6 class="text-primary border-bottom pb-2">听课人信息</h6>
+                        <h3 class="profile-subheading">听课人信息</h3>
                         <div class="row">
                             <div class="col-12 mb-2">
                                 <strong>所在小组：</strong> {{ form.group_name }}
@@ -95,13 +95,11 @@
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <div class="text-center mt-4">
-            <a href="{{ url_for('main.index') }}" class="btn btn-primary">继续填写表单</a>
-            <a href="{{ url_for('user.my_forms') }}" class="btn btn-outline-primary ms-3">查看所有记录</a>
-        </div>
     </div>
+</div>
+
+<div class="form-actions mt-4">
+    <a class="btn btn-primary" href="{{ url_for('user.listening_registration', tab='records') }}">查看记录</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('user.submit_form') }}">继续填写</a>
 </div>
 {% endblock %}

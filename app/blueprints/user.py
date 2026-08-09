@@ -581,24 +581,15 @@ def edit_profile():
     
     return render_template('user/edit_profile.html', user=user, editable_fields=editable_fields)
 
-@user_bp.route('/my_forms')
-@login_required
-def my_forms():
-    """我的听课表单 - 按unique_id分组显示"""
-    from ..models import LectureForm
+def _build_activity_records(user, request_args):
+    """Build the existing form and reservation view model for the activity center."""
     from collections import defaultdict
-    
-    user = User.query.get(session['user_id'])
-    
-    # 获取搜索参数
-    search = request.args.get('search', '')
-    date_from = request.args.get('date_from', '')
-    date_to = request.args.get('date_to', '')
-    
-    # 基础查询 - 用户只能查看自己的表单
+
+    search = request_args.get('search', '')
+    date_from = request_args.get('date_from', '')
+    date_to = request_args.get('date_to', '')
+
     query = LectureForm.query.filter_by(listener_number=user.number)
-    
-    # 应用搜索过滤
     if search:
         query = query.filter(
             db.or_(
@@ -607,64 +598,68 @@ def my_forms():
                 LectureForm.lecture_location.contains(search)
             )
         )
-    
+
     if date_from:
         query = query.filter(LectureForm.lecture_date >= date_from)
-    
     if date_to:
         query = query.filter(LectureForm.lecture_date <= date_to)
-    
-    # 获取所有表单
+
     all_forms = query.order_by(LectureForm.updated_at.desc()).all()
-    
-    # 按unique_id分组
     grouped_forms = defaultdict(list)
     for form in all_forms:
         unique_key = form.unique_id if form.unique_id else f"single_{form.id}"
         grouped_forms[unique_key].append(form)
-    
-    # 为每个分组排序并创建表单组字典
+
     form_groups = []
     for unique_id, versions in grouped_forms.items():
-        # 按updated_at降序排序
-        versions.sort(key=lambda x: x.updated_at or x.created_at, reverse=True)
-        
-        # 创建表单组字典
-        form_group = {
+        versions.sort(key=lambda item: item.updated_at or item.created_at, reverse=True)
+        form_groups.append({
             'unique_id': unique_id,
             'latest_form': versions[0],
             'versions': versions,
             'version_count': len(versions)
-        }
-        
-        form_groups.append(form_group)
-    
-    # 按最新表单的更新时间排序
-    form_groups.sort(key=lambda x: x['latest_form'].updated_at or x['latest_form'].created_at, reverse=True)
+        })
+
+    form_groups.sort(
+        key=lambda item: item['latest_form'].updated_at or item['latest_form'].created_at,
+        reverse=True,
+    )
 
     registrations = Reservation.query.filter_by(user_id=user.id).order_by(Reservation.created_at.desc()).all()
     my_reservations = []
-    for r in registrations:
-        course = Course.query.filter_by(course_code=r.course_code, selection_code=r.selection_code).first()
-        bind_count = LectureForm.query.filter_by(registration_id=r.id).count()
+    for reservation in registrations:
+        course = Course.query.filter_by(
+            course_code=reservation.course_code,
+            selection_code=reservation.selection_code,
+        ).first()
+        bind_count = LectureForm.query.filter_by(registration_id=reservation.id).count()
         is_bound = bind_count > 0
         my_reservations.append({
-            'id': r.id,
-            'course_code': r.course_code,
-            'selection_code': r.selection_code,
+            'id': reservation.id,
+            'course_code': reservation.course_code,
+            'selection_code': reservation.selection_code,
             'course_name': course.course_name if course else '课程已删除',
             'teacher_name': course.teacher.name if course and course.teacher else '未知',
             'class_time': course.class_time if course else '',
             'class_location': course.class_location if course else '',
-            'listening_info': r.listening_info,
-            'created_at': r.created_at,
+            'listening_info': reservation.listening_info,
+            'created_at': reservation.created_at,
             'is_bound': is_bound,
             'bind_count': bind_count,
             'can_edit': not is_bound,
-            'can_delete': not is_bound
+            'can_delete': not is_bound,
         })
-    
-    return render_template('user/my_forms.html', forms=form_groups, user=user, my_reservations=my_reservations)
+
+    return {'forms': form_groups, 'my_reservations': my_reservations}
+
+
+@user_bp.route('/my_forms')
+@login_required
+def my_forms():
+    """Compatibility entry for the records tab in the activity center."""
+    query_args = request.args.to_dict(flat=True)
+    query_args['tab'] = 'records'
+    return redirect(url_for('user.listening_registration', **query_args))
 
 @user_bp.route('/delete_form/<int:form_id>', methods=['POST'])
 @login_required
@@ -969,11 +964,17 @@ def view_form(form_id):
 @user_bp.route('/listening_registration')
 @login_required
 def listening_registration():
-    """听课登记页面"""
+    """Information officer activity center."""
+    user = User.query.get(session['user_id'])
+    active_tab = request.args.get('tab', 'registration')
+    if active_tab not in {'registration', 'records'}:
+        active_tab = 'registration'
+    records = _build_activity_records(user, request.args)
     return render_template(
-        'admin/course_feedback_management.html',
-        page_mode='registration',
-        page_title='听课登记'
+        'user/activity_center.html',
+        user=user,
+        active_tab=active_tab,
+        **records,
     )
 
 

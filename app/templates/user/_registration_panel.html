@@ -1,0 +1,92 @@
+<div class="registration-panel" data-registration-panel>
+    <div class="registration-search">
+        <label for="courseSelect" class="form-label">选择课程</label>
+        <select id="courseSelect" class="form-select" style="width: 100%;">
+            <option value="">请输入课程名称、教师或课程号进行搜索...</option>
+        </select>
+        <div class="form-text">支持按课程名称、教师或课程号搜索。选择课程后可在当前页面完成登记。</div>
+    </div>
+
+    <div id="registrationFeedback" class="activity-feedback" role="status" aria-live="polite" hidden></div>
+
+    <div id="courseDetailSection" class="registration-detail" hidden>
+        <div class="row g-3">
+            <div class="col-lg-7">
+                <div class="activity-panel">
+                    <div class="activity-panel__header">
+                        <h2>新增登记</h2>
+                    </div>
+                    <div class="activity-panel__body">
+                        <div class="course-summary" aria-live="polite">
+                            <div><strong>课程</strong><span id="dispCourseName"></span></div>
+                            <div><strong>教师</strong><span id="dispTeacher"></span></div>
+                            <div><strong>时间</strong><span id="dispTime"></span></div>
+                            <div><strong>地点</strong><span id="dispLocation"></span></div>
+                            <div class="course-summary__code"><span id="dispCode"></span></div>
+                        </div>
+
+                        <form id="reservationForm">
+                            <input type="hidden" id="courseCode" name="course_code">
+                            <input type="hidden" id="selectionCode" name="selection_code">
+                            <div class="mb-3">
+                                <label for="listeningInfo" class="form-label">听课计划说明 <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <textarea class="form-control" id="listeningInfo" name="listening_info" rows="4" placeholder="请填写您要在什么地点听哪一节课"></textarea>
+                                    <button class="btn btn-outline-secondary" type="button" id="timeSuggestionButton">建议</button>
+                                </div>
+                                <div id="timeSuggestion" class="suggestion-box" hidden>
+                                    <div class="d-flex justify-content-between align-items-center gap-2">
+                                        <span><strong>建议：</strong><span id="suggestionText"></span></span>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="useSuggestionButton">使用</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="d-grid">
+                                <button type="button" class="btn btn-primary" id="submitReservationButton">确认登记</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-5">
+                <div class="activity-panel">
+                    <div class="activity-panel__header activity-panel__header--split">
+                        <h2>该课程登记历史</h2>
+                        <button class="btn btn-sm btn-link" type="button" id="viewAllHistoryButton">查看全部</button>
+                    </div>
+                    <div class="activity-panel__body p-0">
+                        <div class="list-group list-group-flush" id="historyList">
+                            <div class="activity-empty">请选择课程后查看历史记录</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="initialTip" class="activity-empty activity-empty--large">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <h2>先选择一门课程</h2>
+        <p>选择课程后，登记信息和该课程的历史记录会在此处显示。</p>
+    </div>
+</div>
+
+<div class="modal fade" id="allHistoryModal" tabindex="-1" aria-labelledby="allHistoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5" id="allHistoryModalLabel">全部登记历史</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead><tr><th>登记时间</th><th>计划说明</th><th>状态</th></tr></thead>
+                        <tbody id="allHistoryTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

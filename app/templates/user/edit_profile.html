@@ -1,17 +1,19 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 
 {% block title %}编辑资料 - 西南大学教学信息中心{% endblock %}
 
 {% block content %}
+{{ page_header('编辑资料', '更新可编辑的信息，保存后会返回个人资料页。') }}
 <div class="row justify-content-center">
     <div class="col-md-8">
-        <div class="card shadow">
-            <div class="card-header bg-primary text-white">
-                <h4 class="mb-0">
+        <div class="profile-section">
+            <div class="section-heading">
+                <h2 class="h5 mb-0">
                     <i class="bi bi-pencil-square"></i> 编辑个人资料
-                </h4>
+                </h2>
             </div>
-            <div class="card-body">
+            <div class="profile-section__body">
                 <div class="alert alert-info" role="alert">
                     <i class="bi bi-info-circle"></i>
                     请确保信息准确无误。带 <span class="text-danger">*</span> 的字段为必填项。
@@ -26,9 +28,9 @@
                     <div class="row">
                         <!-- 基本信息 -->
                         <div class="col-md-6">
-                            <h6 class="text-primary mb-3">
+                            <h3 class="profile-subheading">
                                 <i class="bi bi-person"></i> 基本信息
-                            </h6>
+                            </h3>
                             
                             <div class="mb-3">
                                 {% set can_edit_name = 'name' in editable_fields %}
@@ -91,9 +93,9 @@
                         
                         <!-- 联系信息 -->
                         <div class="col-md-6">
-                            <h6 class="text-success mb-3">
+                            <h3 class="profile-subheading">
                                 <i class="bi bi-telephone"></i> 联系信息
-                            </h6>
+                            </h3>
                             
                             <div class="mb-3">
                                 {% set can_edit_dormitory = 'dormitory' in editable_fields %}
