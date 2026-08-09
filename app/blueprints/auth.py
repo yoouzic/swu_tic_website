@@ -80,13 +80,7 @@ def login():
             session['user_name'] = user.name
             flash(f'欢迎回来，{user.name}！', 'success')
             
-            # 根据角色重定向到不同页面
-            if user.role == '超级管理员':
-                return redirect(url_for('admin.super_admin_dashboard'))
-            elif user.role == '管理员':
-                return redirect(url_for('admin.admin_dashboard'))
-            else:
-                return redirect(url_for('user.profile'))
+            return redirect(url_for('main.index'))
         else:
             flash('学号或密码错误', 'error')
     

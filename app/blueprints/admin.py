@@ -1262,50 +1262,13 @@ def _prepare_import_form_row(row, row_no, importer_id, import_time):
 @role_required('超级管理员')
 def super_admin_dashboard():
     """超级管理员仪表板"""
-    # 统计数据
-    total_users = _active_user_query().count()
-    total_departments = Department.query.count()
-    total_groups = Group.query.count()
-    # 统计表单组数量（按unique_id去重）
-    total_forms = db.session.query(db.func.count(db.func.distinct(LectureForm.unique_id)))\
-        .select_from(LectureForm)\
-        .join(User, LectureForm.listener_number == User.number)\
-        .filter(active_user_filter())\
-        .scalar() or 0
-    
-    recent_forms = LectureForm.query.join(User, LectureForm.listener_number == User.number)\
-        .filter(active_user_filter())\
-        .order_by(LectureForm.created_at.desc()).limit(5).all()
-    
-    return render_template('admin/super_admin_dashboard.html', 
-                         total_users=total_users,
-                         total_departments=total_departments,
-                         total_groups=total_groups,
-                         total_forms=total_forms,
-                         recent_forms=recent_forms)
+    return redirect(url_for('main.index'))
 
 @admin_bp.route('/admin_dashboard')
 @role_required('管理员')
 def admin_dashboard():
     """管理员仪表板"""
-    user = User.query.get(session['user_id'])
-    
-    # 获取该管理员所在部门的统计数据
-    department_users = _active_user_query().filter_by(department=user.department).count()
-    department_groups = Group.query.filter_by(department=user.department).count()
-    department_forms = LectureForm.query.join(User, LectureForm.listener_number == User.number)\
-                                       .filter(User.department == user.department, active_user_filter()).count()
-    
-    recent_forms = LectureForm.query.join(User, LectureForm.listener_number == User.number)\
-                                   .filter(User.department == user.department, active_user_filter())\
-                                   .order_by(LectureForm.created_at.desc()).limit(5).all()
-    
-    return render_template('admin/admin_dashboard.html',
-                         department_users=department_users,
-                         department_groups=department_groups,
-                         department_forms=department_forms,
-                         recent_forms=recent_forms,
-                         user=user)
+    return redirect(url_for('main.index'))
 
 @admin_bp.route('/manage_departments')
 @role_required('管理员')

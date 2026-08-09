@@ -13,6 +13,33 @@ class WorkspaceSnapshot:
     draft_saved: bool = False
 
 
+def load_workspace_snapshot(user):
+    from app.models import CourseRegistration, LectureForm, LectureFormDraft, User
+
+    if user.role == '信息员':
+        return WorkspaceSnapshot(
+            total_forms=LectureForm.query.filter_by(listener_number=user.number).count(),
+            reservation_count=CourseRegistration.query.filter_by(user_id=user.id).count(),
+            draft_saved=LectureFormDraft.query.filter_by(user_id=user.id, draft_key='submit_form').first() is not None,
+        )
+    if user.role == '管理员':
+        return WorkspaceSnapshot(
+            pending_forms=LectureForm.query.join(User, LectureForm.listener_number == User.number).filter(
+                User.department == user.department,
+                LectureForm.status.in_(['待审核', '部门已审核']),
+            ).count(),
+            department_users=User.query.filter_by(department=user.department, is_active=True).count(),
+            department_forms=LectureForm.query.join(User, LectureForm.listener_number == User.number).filter(
+                User.department == user.department,
+            ).count(),
+        )
+    return WorkspaceSnapshot(
+        pending_forms=LectureForm.query.filter(LectureForm.status.in_(['待审核', '部门已审核'])).count(),
+        total_users=User.query.filter_by(is_active=True).count(),
+        total_forms=LectureForm.query.count(),
+    )
+
+
 def build_workspace(user, snapshot):
     if user.role == '信息员':
         tasks = []

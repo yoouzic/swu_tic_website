@@ -55,6 +55,22 @@ a { color: var(--color-accent-strong); }
 .empty-state { max-width: 520px; margin: 40px auto; padding: 28px; text-align: center; }
 .empty-state i { color: var(--color-accent); font-size: 2rem; }
 .app-backdrop { display: none; }
+.workspace-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); margin-bottom: 24px; border-block: 1px solid var(--color-border); }
+.workspace-metric { padding: 20px 22px 20px 0; }
+.workspace-metric + .workspace-metric { padding-left: 22px; border-left: 1px solid var(--color-border); }
+.workspace-metric strong,.workspace-metric span { display: block; }
+.workspace-metric strong { font-size: 2rem; font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
+.workspace-metric span { margin-top: 6px; color: var(--color-text-muted); }
+.workspace-grid { display: grid; grid-template-columns: minmax(0,1.45fr) minmax(260px,.75fr); gap: 18px; }
+.workspace-panel { overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--surface-radius); background: var(--color-surface); }
+.workspace-panel__header { padding: 16px 18px; border-bottom: 1px solid var(--color-border); }
+.workspace-panel__header h2 { margin: 0; font-size: 1rem; }
+.workspace-task { display: flex; justify-content: space-between; gap: 18px; align-items: center; padding: 16px 18px; }
+.workspace-task + .workspace-task { border-top: 1px solid var(--color-border); }
+.workspace-task h3 { margin: 0 0 4px; font-size: .95rem; }
+.workspace-task p { margin: 0; color: var(--color-text-muted); font-size: .85rem; }
+.workspace-launch-list a { display: flex; justify-content: space-between; padding: 14px 18px; color: var(--color-text); text-decoration: none; }
+.workspace-launch-list a + a { border-top: 1px solid var(--color-border); }
 @media (max-width: 1024px) { :root { --sidebar-width: 216px; } .app-content { padding: 24px; } }
 @media (max-width: 768px) {
     .app-shell { display: block; }
@@ -67,5 +83,8 @@ a { color: var(--color-accent-strong); }
     .app-content { padding: 20px 16px 88px; }
     .page-header { align-items: stretch; flex-direction: column; }
     .page-header .btn { width: 100%; }
+    .workspace-grid { grid-template-columns: 1fr; }
+    .workspace-metrics { grid-template-columns: 1fr 1fr; }
+    .workspace-metric:nth-child(n+3) { border-top: 1px solid var(--color-border); }
 }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
