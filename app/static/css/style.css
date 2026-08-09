@@ -38,7 +38,18 @@ a { color: var(--color-accent-strong); }
 .app-topbar__actions { display: flex; gap: 16px; align-items: center; }
 .app-search { width: min(320px,34vw); }
 .app-content { width: min(100%,1440px); margin: 0 auto; padding: 30px; }
-.public-shell { min-height: 100dvh; }
+.public-shell { min-height: 100dvh; display: grid; place-items: center; padding: 32px; background: var(--color-background); }
+.auth-layout { width: min(1080px,100%); display: grid; grid-template-columns: 1.15fr minmax(340px,.65fr); border: 1px solid var(--color-border); border-radius: var(--dialog-radius); overflow: hidden; background: var(--color-surface); }
+.auth-intro { min-height: 560px; display: flex; flex-direction: column; justify-content: flex-end; padding: 54px; color: #f6f1ed; background: var(--color-nav); }
+.auth-kicker { color: #c6beb8; font-size: .78rem; letter-spacing: .08em; }
+.auth-intro h1 { max-width: 13ch; margin: 12px 0 16px; font-size: clamp(2rem,4vw,3.5rem); line-height: 1.05; letter-spacing: -.045em; }
+.auth-intro p { max-width: 36ch; color: #c6beb8; }
+.auth-panel { display: flex; flex-direction: column; justify-content: center; padding: 42px; }
+.auth-panel__icon { margin-bottom: 18px; color: var(--color-accent); font-size: 1.75rem; }
+.auth-panel h2 { margin-bottom: 8px; font-size: 1.5rem; }
+.auth-panel > p { color: var(--color-text-muted); }
+.auth-panel__help { margin: 20px 0 0; font-size: .82rem; }
+.auth-help-link { align-self: flex-start; padding-left: 0; }
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
 .page-header h1 { margin: 0; font-size: clamp(1.55rem,2vw,2rem); letter-spacing: -.035em; }
 .page-header p { max-width: 65ch; margin: 8px 0 0; color: var(--color-text-muted); }
@@ -87,4 +98,5 @@ a { color: var(--color-accent-strong); }
     .workspace-metrics { grid-template-columns: 1fr 1fr; }
     .workspace-metric:nth-child(n+3) { border-top: 1px solid var(--color-border); }
 }
+@media (max-width: 768px) { .public-shell { padding: 16px; } .auth-layout { grid-template-columns: 1fr; } .auth-intro { min-height: auto; padding: 30px; } .auth-panel { padding: 30px; } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }

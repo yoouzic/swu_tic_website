@@ -1,71 +1,59 @@
 {% extends "base.html" %}
 
-{% block title %}登录 - 西南大学教学信息中心{% endblock %}
+{% block title %}登录工作台 - 西南大学教学信息中心{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6 col-lg-4">
-        <div class="card shadow">
-            <div class="card-header bg-primary text-white text-center">
-                <h4 class="mb-0">
-                    <i class="bi bi-person-circle"></i> 用户登录
-                </h4>
+<div class="auth-layout">
+    <section class="auth-intro">
+        <span class="auth-kicker">西南大学教学信息中心</span>
+        <h1>听课、审核与教学管理，在一个工作台完成。</h1>
+        <p>面向信息员、管理员和超级管理员的校内听课业务系统。</p>
+    </section>
+    <section class="auth-panel" aria-labelledby="login-panel-title">
+        <i class="bi bi-person-lock auth-panel__icon" aria-hidden="true"></i>
+        <h2 id="login-panel-title">登录工作台</h2>
+        <p>请输入系统分配的账号和密码。</p>
+        <form method="POST">
+            <div class="mb-3">
+                <label for="student_id" class="form-label">账号或学号</label>
+                <input type="text" class="form-control" id="student_id" name="student_id" placeholder="请输入账号或学号" required>
+                <div class="form-text">账号可以是系统分配的本地账号或学号。</div>
             </div>
-            <div class="card-body">
-                <form method="POST">
-                    <div class="mb-3">
-                        <label for="student_id" class="form-label">
-                            <i class="bi bi-person"></i> 账号/学号
-                        </label>
-                        <input type="text" class="form-control" id="student_id" name="student_id" 
-                               placeholder="请输入账号或学号" required>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="password" class="form-label">
-                            <i class="bi bi-lock"></i> 密码
-                        </label>
-                        <div class="input-group">
-                            <input type="password" class="form-control" id="password" name="password" 
-                                   placeholder="请输入密码" required>
-                            <button class="btn btn-outline-secondary" type="button" id="togglePassword">
-                                <i class="bi bi-eye" id="toggleIcon"></i>
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-box-arrow-in-right"></i> 登录
-                        </button>
-                    </div>
-                </form>
+
+            <div class="mb-3">
+                <label for="password" class="form-label">密码</label>
+                <div class="input-group">
+                    <input type="password" class="form-control" id="password" name="password" placeholder="请输入密码" required>
+                    <button class="btn btn-outline-secondary" type="button" id="togglePassword" aria-label="显示或隐藏密码">
+                        <i class="bi bi-eye" id="toggleIcon" aria-hidden="true"></i>
+                    </button>
+                </div>
             </div>
-            <div class="card-footer text-center text-muted">
-                <small>
-                    首次登录请使用系统分配的初始密码<br>
-                    如有问题请联系管理员
-                </small>
+
+            <div class="d-grid">
+                <button type="submit" class="btn btn-primary">登录工作台</button>
             </div>
-        </div>
-    </div>
+        </form>
+        <button type="button" class="btn btn-link auth-help-link" data-bs-toggle="modal" data-bs-target="#helpModal">
+            <i class="bi bi-question-circle" aria-hidden="true"></i> 登录帮助
+        </button>
+    </section>
 </div>
 
-<!-- 登录帮助模态框 -->
-<div class="modal fade" id="helpModal" tabindex="-1">
+<div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalTitle" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">登录帮助</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h2 class="modal-title fs-5" id="helpModalTitle">登录帮助</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
-                <h6>登录说明：</h6>
+                <h3 class="fs-6">登录说明</h3>
                 <ul>
-                    <li>使用系统分配的账号或学号作为用户名</li>
-                    <li>首次登录使用系统分配的初始密码</li>
-                    <li>建议首次登录后立即修改密码</li>
-                    <li>如忘记密码，请联系管理员重置</li>
+                    <li>使用系统分配的账号或学号作为用户名。</li>
+                    <li>首次登录使用系统分配的初始密码。</li>
+                    <li>建议首次登录后立即修改密码。</li>
+                    <li>如忘记密码，请联系管理员重置。</li>
                 </ul>
             </div>
             <div class="modal-footer">
@@ -74,22 +62,14 @@
         </div>
     </div>
 </div>
-
-<!-- 帮助按钮 -->
-<div class="text-center mt-3">
-    <button type="button" class="btn btn-link" data-bs-toggle="modal" data-bs-target="#helpModal">
-        <i class="bi bi-question-circle"></i> 登录帮助
-    </button>
-</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-// 密码显示/隐藏切换
 document.getElementById('togglePassword').addEventListener('click', function() {
     const passwordField = document.getElementById('password');
     const toggleIcon = document.getElementById('toggleIcon');
-    
+
     if (passwordField.type === 'password') {
         passwordField.type = 'text';
         toggleIcon.className = 'bi bi-eye-slash';
@@ -99,21 +79,19 @@ document.getElementById('togglePassword').addEventListener('click', function() {
     }
 });
 
-// 表单验证
-document.querySelector('form').addEventListener('submit', function(e) {
+document.querySelector('form').addEventListener('submit', function(event) {
     const studentId = document.getElementById('student_id').value.trim();
     const password = document.getElementById('password').value;
-    
+
     if (!studentId) {
-        e.preventDefault();
+        event.preventDefault();
         alert('请输入账号或学号');
         return;
     }
-    
+
     if (!password) {
-        e.preventDefault();
+        event.preventDefault();
         alert('请输入密码');
-        return;
     }
 });
 </script>
