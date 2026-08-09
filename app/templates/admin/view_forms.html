@@ -512,7 +512,7 @@ function viewFormDetail(formId) {
 }
 
 function exportForm(formId) {
-    window.open(`/admin/export_form/${formId}`, '_blank');
+    window.location.assign(`/admin/export_form/${formId}`);
 }
 
 function searchForms() {

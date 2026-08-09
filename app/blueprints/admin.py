@@ -1311,16 +1311,30 @@ def view_managed_user(user_id):
     date_from = request.args.get('date_from', '').strip()
     date_to = request.args.get('date_to', '').strip()
 
+    detail_context = {
+        'stats': _build_user_profile_stats(target_user),
+        'forms': _build_user_form_groups(target_user, search=search, date_from=date_from, date_to=date_to),
+        'my_reservations': _build_user_reservations(target_user, search=search, date_from=date_from, date_to=date_to),
+        'search': search,
+        'date_from': date_from,
+        'date_to': date_to,
+    }
+    if request.args.get('format') == 'fragment':
+        return render_template(
+            'admin/_user_detail_panel.html',
+            user=target_user,
+            target_user=target_user,
+            current_user=current_user,
+            is_fragment=True,
+            **detail_context
+        )
     return render_template(
         'admin/user_detail.html',
-        current_user=current_user,
+        user=target_user,
         target_user=target_user,
-        stats=_build_user_profile_stats(target_user),
-        forms=_build_user_form_groups(target_user, search=search, date_from=date_from, date_to=date_to),
-        my_reservations=_build_user_reservations(target_user, search=search, date_from=date_from, date_to=date_to),
-        search=search,
-        date_from=date_from,
-        date_to=date_to
+        current_user=current_user,
+        is_fragment=False,
+        **detail_context
     )
 
 @admin_bp.route('/preview_import', methods=['POST'])
@@ -2313,6 +2327,13 @@ def submit_review(form_id):
         return jsonify({'success': False, 'message': f'审核提交失败：{str(e)}'})
 
 
+def _safe_review_return_url(value):
+    candidate = (value or '').strip()
+    if candidate.startswith('/admin/review_forms'):
+        return candidate
+    return url_for('admin.review_forms')
+
+
 @admin_bp.route('/review/form/<int:form_id>')
 @login_required
 def review_form_page(form_id):
@@ -2323,7 +2344,10 @@ def review_form_page(form_id):
         flash('您不具有审表权限，如有疑问，请联系管理员', 'error')
         return redirect(url_for('main.index'))
     
-    return render_template('admin/review_form.html')
+    return render_template(
+        'admin/review_form.html',
+        review_return_url=_safe_review_return_url(request.args.get('return_to'))
+    )
 
 @admin_bp.route('/form/<int:form_id>')
 @login_required

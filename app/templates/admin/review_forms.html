@@ -18,6 +18,8 @@
                 </div>
                 
                 <div class="card-body" id="mainContent" style="display: none;">
+                    <div class="review-layout" id="reviewWorkspace">
+                        <section class="review-queue" aria-label="审核队列">
                     <!-- 筛选条件 -->
                     <div class="row mb-4">
                         <div class="col-md-12">
@@ -174,6 +176,21 @@
                                 </div>
                             </div>
                         </div>
+                        </section>
+                        <aside class="review-preview" id="reviewPreviewPanel" aria-labelledby="reviewPreviewTitle">
+                            <div class="review-preview__header">
+                                <div>
+                                    <h2 id="reviewPreviewTitle">表单预览</h2>
+                                    <p class="mb-0 text-muted small">从左侧列表选择一份表单，查看摘要和规则检查。</p>
+                                </div>
+                            </div>
+                            <div class="review-preview__body" id="reviewPreviewContent" aria-live="polite">
+                                <div class="review-preview__empty">
+                                    <i class="bi bi-layout-text-sidebar-reverse" aria-hidden="true"></i>
+                                    <p class="mb-0">尚未选择表单</p>
+                                </div>
+                            </div>
+                        </aside>
                     </div>
                 </div>
 
@@ -664,13 +681,18 @@ function checkPermission() {
                 document.getElementById('permissionBadge').className = 'badge bg-success text-white';
                 document.getElementById('mainContent').style.display = 'block';
                 
-                // 设置默认时间范围（最近一周）
+                // 优先恢复队列 URL 中的筛选条件，首次进入时才使用最近一周。
+                const queueParams = new URLSearchParams(window.location.search);
                 const endDate = new Date();
                 const startDate = new Date();
                 startDate.setDate(endDate.getDate() - 7);
-                
-                document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
-                document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+                document.getElementById('startDate').value = queueParams.get('start_date') || startDate.toISOString().split('T')[0];
+                document.getElementById('endDate').value = queueParams.get('end_date') || endDate.toISOString().split('T')[0];
+                document.getElementById('timeFilterType').value = queueParams.get('time_filter_type') || 'created';
+                document.getElementById('statusFilter').value = queueParams.get('status') || '';
+                if (queueParams.get('review_queue') === '1') {
+                    loadUserStructure();
+                }
             } else {
                 document.getElementById('permissionBadge').textContent = '无审核权限';
                 document.getElementById('permissionBadge').className = 'badge bg-danger text-white';
@@ -682,6 +704,18 @@ function checkPermission() {
             document.getElementById('permissionBadge').textContent = '权限检查失败';
             document.getElementById('permissionBadge').className = 'badge badge-danger';
         });
+}
+
+function restoreReviewQueueUserSelection() {
+    const requestedIds = new Set(new URLSearchParams(window.location.search).getAll('user_ids'));
+    if (requestedIds.size === 0) {
+        return;
+    }
+    document.querySelectorAll('#userStructure .user-checkbox').forEach((checkbox) => {
+        checkbox.checked = requestedIds.has(String(checkbox.value));
+    });
+    selectedUserIds = Array.from(document.querySelectorAll('#userStructure .user-checkbox:checked'))
+        .map((checkbox) => checkbox.value);
 }
 
 // 加载用户结构
@@ -716,6 +750,10 @@ function loadUserStructure() {
                     searchInput.value = '';
                 }
                 applyScopeSearch();
+                restoreReviewQueueUserSelection();
+                if (new URLSearchParams(window.location.search).get('review_queue') === '1') {
+                    loadForms();
+                }
             } else {
                 alert(data.message || '加载用户结构失败');
             }
@@ -1046,6 +1084,10 @@ function loadForms() {
     // 获取选中的用户ID
     const checkedUsers = document.querySelectorAll('.user-checkbox:checked');
     selectedUserIds = Array.from(checkedUsers).map(cb => cb.value);
+
+    if (window.syncReviewQueueUrl) {
+        window.syncReviewQueueUrl();
+    }
     
     if (selectedUserIds.length === 0) {
         alert('请至少选择一个用户');
@@ -1114,7 +1156,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
         const groupDisabled = groupLocked || !groupSelectable;
 
         html += `
-            <tr>
+            <tr data-review-row-form-id="${latestForm.id}" data-reviewable="${latestCanReview ? '1' : '0'}">
                 <td>
                     <input type="checkbox"
                            class="group-select-checkbox"
@@ -1151,7 +1193,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                             </button>
                         ` : ''}
                         ${latestCanReview ? `
-                            <button class="btn btn-success btn-sm" onclick="reviewForm(${latestForm.id})" title="审核">
+                            <button class="btn btn-success btn-sm" type="button" data-open-review="${latestForm.id}" title="审核">
                                 <i class="fas fa-edit me-1"></i> 审核
                             </button>
                         ` : ''}
@@ -1196,7 +1238,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                                                 const versionChecked = versionLocked || checkedIdSet.has(String(version.id));
                                                 const versionDisabled = versionLocked || !canSelectVersion;
                                                 return `
-                                                    <tr>
+                                                                <tr data-review-row-form-id="${version.id}" data-reviewable="${canReviewVersion ? '1' : '0'}">
                                                         <td>
                                                             <input type="checkbox"
                                                                    class="form-checkbox"
@@ -1221,7 +1263,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                                                                     <i class="fas fa-eye me-1"></i> 查看此版本
                                                                 </button>
                                                                 ${canReviewVersion ? `
-                                                                    <button class="btn btn-outline-success btn-sm" onclick="reviewForm(${version.id})" title="审核">
+                                                                    <button class="btn btn-outline-success btn-sm" type="button" data-open-review="${version.id}" title="审核">
                                                                         <i class="fas fa-edit me-1"></i> 审核
                                                                     </button>
                                                                 ` : ''}
@@ -1250,6 +1292,9 @@ function renderFormsList(formGroups, checkedFormIds = []) {
     document.getElementById('formsCount').textContent = totalGroups;
     bindSelectionEvents();
     updateBatchButtons();
+    if (window.restoreReviewQueueSelection) {
+        window.restoreReviewQueueSelection();
+    }
 }
 
 // 获取状态样式类
@@ -1275,16 +1320,28 @@ function canReviewForm(status) {
 
 // 查看表单详情
 function viewForm(formId) {
-    // 显示模态框
+    if (window.markReviewQueueSelection) {
+        window.markReviewQueueSelection(formId);
+    }
+
+    // 桌面端在当前页展示预览，窄屏继续使用 Bootstrap 模态框。
     const modalEl = document.getElementById('formDetailModal');
     let modal = bootstrap.Modal.getInstance(modalEl);
     if (!modal) {
         modal = new bootstrap.Modal(modalEl);
     }
-    modal.show();
+    const previewEl = document.getElementById('reviewPreviewContent');
+    const useModal = !previewEl || window.matchMedia('(max-width: 1024px)').matches;
+    if (useModal) {
+        modal.show();
+    }
     
     // 加载表单详情
-    document.getElementById('formDetailContent').innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin"></i> 正在加载...</div>';
+    const loadingHtml = '<div class="review-preview__loading" role="status"><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div><span class="visually-hidden">正在加载表单预览</span></div>';
+    document.getElementById('formDetailContent').innerHTML = loadingHtml;
+    if (previewEl) {
+        previewEl.innerHTML = loadingHtml;
+    }
     
     fetch(`/admin/form/${formId}?format=json`)
         .then(response => response.json())
@@ -1293,17 +1350,31 @@ function viewForm(formId) {
                 // 如果后端返回的是JSON包装的HTML字符串
                 if (data.html) {
                     document.getElementById('formDetailContent').innerHTML = data.html;
+                    if (previewEl) {
+                        previewEl.innerHTML = data.html;
+                    }
                 } else {
                     // 如果直接返回HTML片段（视后端实现而定，这里假设admin/form/id返回的是JSON {success:true, html:...}）
-                    document.getElementById('formDetailContent').innerHTML = '数据加载成功，但格式不符'; 
+                    document.getElementById('formDetailContent').innerHTML = '数据加载成功，但格式不符';
+                    if (previewEl) {
+                        previewEl.innerHTML = '<div class="alert alert-warning" role="status">数据加载成功，但格式不符</div>';
+                    }
                 }
             } else {
-                document.getElementById('formDetailContent').innerHTML = '<div class="alert alert-danger">' + (data.message || '加载失败') + '</div>';
+                const errorHtml = '<div class="alert alert-danger" role="alert">' + (data.message || '加载失败') + '<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="viewForm(' + formId + ')">重试</button></div>';
+                document.getElementById('formDetailContent').innerHTML = errorHtml;
+                if (previewEl) {
+                    previewEl.innerHTML = errorHtml;
+                }
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            document.getElementById('formDetailContent').innerHTML = '<div class="alert alert-danger">加载失败，请重试</div>';
+            const errorHtml = '<div class="alert alert-danger" role="alert">加载失败，请重试<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="viewForm(' + formId + ')">重试</button></div>';
+            document.getElementById('formDetailContent').innerHTML = errorHtml;
+            if (previewEl) {
+                previewEl.innerHTML = errorHtml;
+            }
         });
 }
 
@@ -1319,8 +1390,9 @@ function reviewForm(formId) {
                     showPermissionWarning(`您无权限审核处于"${form.status}"状态的表单`);
                     return;
                 }
-                // 在新标签页打开审核页面
-                window.open(`/admin/review/form/${formId}`, '_blank');
+                if (window.openFullReview) {
+                    window.openFullReview(formId);
+                }
             } else {
                 alert(data.message || '获取表单信息失败');
             }
@@ -1896,6 +1968,12 @@ function resetFilters() {
     selectionLocked = false;
     lockedFormIds.clear();
     lockedFormGroups.clear();
+    if (window.clearReviewQueueUrl) {
+        window.clearReviewQueueUrl();
+    }
 }
 </script>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/review-queue.js') }}"></script>
 {% endblock %}

@@ -4,6 +4,12 @@
 
 {% block content %}
 <div class="container-fluid">
+    <div class="review-toolbar">
+        <a class="btn btn-outline-secondary" data-review-return href="{{ review_return_url or url_for('admin.review_forms') }}">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i> 返回审核队列
+        </a>
+        <div class="draft-save-status" id="draftSaveStatus" role="status" aria-live="polite">尚未保存</div>
+    </div>
     <div class="row">
         <div class="col-12">
             <div class="card">
@@ -17,9 +23,9 @@
                             <i class="fas fa-search"></i> 查看参考数据
                         </button>
                         <span class="badge bg-info text-dark" id="statusBadge">加载中...</span>
-                        <button type="button" class="btn btn-sm btn-secondary" onclick="window.close()">
-                            <i class="fas fa-times"></i> 关闭
-                        </button>
+                        <a class="btn btn-sm btn-outline-secondary" data-review-return href="{{ review_return_url or url_for('admin.review_forms') }}">
+                            <i class="fas fa-arrow-left"></i> 返回队列
+                        </a>
                     </div>
                 </div>·
                 
@@ -396,7 +402,7 @@
                                 <button type="button" class="btn btn-success btn-lg mr-3" onclick="submitReview()">
                                     <i class="fas fa-check"></i> 提交审核
                                 </button>
-                                <button type="button" class="btn btn-danger btn-lg mr-3" onclick="rejectReview()">
+                                <button type="button" class="btn btn-danger btn-lg mr-3" onclick="rejectReview(event)">
                                     <i class="fas fa-times"></i> 驳回
                                 </button>
                                 <button type="button" class="btn btn-secondary btn-lg mr-3" onclick="resetForm()">
@@ -494,7 +500,7 @@
                 <!-- 结果内容 -->
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-primary" data-dismiss="modal" onclick="window.close()">关闭页面</button>
+                <button type="button" class="btn btn-primary" data-dismiss="modal" onclick="returnToReviewQueue()">返回审核队列</button>
             </div>
         </div>
     </div>
@@ -686,6 +692,16 @@ let existingScoreData = [];
 let reviewDraftTimer = null;
 let reviewDraftInterval = null;
 let reviewDraftRestoring = false;
+
+function getReviewReturnUrl() {
+    const link = document.querySelector('[data-review-return]');
+    const candidate = link ? link.getAttribute('href') : '';
+    return candidate && candidate.startsWith('/admin/review_forms') ? candidate : '/admin/review_forms';
+}
+
+function returnToReviewQueue() {
+    window.location.assign(getReviewReturnUrl());
+}
 
 // 页面加载时获取表单数据
 document.addEventListener('DOMContentLoaded', function() {
@@ -965,10 +981,16 @@ function getReviewDraftUrl() {
 
 function setReviewDraftStatus(message, level = 'secondary') {
     const statusEl = document.getElementById('reviewDraftStatus');
-    if (!statusEl) return;
-    statusEl.className = `alert alert-${level} py-2 small`;
-    statusEl.textContent = message;
-    statusEl.style.display = message ? 'block' : 'none';
+    if (statusEl) {
+        statusEl.className = `alert alert-${level} py-2 small`;
+        statusEl.textContent = message;
+        statusEl.style.display = message ? 'block' : 'none';
+    }
+    const toolbarStatus = document.getElementById('draftSaveStatus');
+    if (toolbarStatus) {
+        toolbarStatus.textContent = message || '尚未保存';
+        toolbarStatus.dataset.state = level;
+    }
 }
 
 function collectReviewDraftData() {
@@ -1106,14 +1128,14 @@ function resetForm() {
 }
 
 // 驳回表单
-function rejectReview() {
+function rejectReview(event) {
     const reason = document.getElementById('reviewComment').value.trim();
     if (!confirm('确定要驳回此表单吗？')) {
         return;
     }
     
     // 禁用按钮
-    const btn = event.target;
+    const btn = event.currentTarget || event.target;
     const originalText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 处理中...';
@@ -1132,6 +1154,7 @@ function rejectReview() {
         if (data.success) {
             deleteReviewFormDraft();
             showResult(true, '表单已驳回', `操作成功，表单状态已更新为：${data.new_status}`);
+            window.setTimeout(returnToReviewQueue, 650);
         } else {
             showResult(false, '驳回失败', data.message || '未知错误');
             btn.disabled = false;
@@ -1369,6 +1392,7 @@ function confirmSubmit() {
         if (data.success) {
             deleteReviewFormDraft();
             showResult(true, '审核提交成功', `表单状态已更新为：${data.new_status}`);
+            window.setTimeout(returnToReviewQueue, 650);
         } else {
             showResult(false, '审核提交失败', data.message || '未知错误');
         }

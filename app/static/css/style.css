@@ -157,7 +157,26 @@ a { color: var(--color-accent-strong); }
 .profile-timeline__content p { margin: 0 0 4px; color: var(--color-text-muted); font-size: .84rem; }
 .assessment-table { font-size: .9rem; }
 .assessment-reason { max-width: 260px; white-space: normal; word-break: break-word; }
+.review-layout { display: grid; grid-template-columns: minmax(320px,.85fr) minmax(0,1.45fr); gap: 18px; }
+.review-queue,.review-preview { min-width: 0; border: 1px solid var(--color-border); border-radius: var(--surface-radius); background: var(--color-surface); }
+.review-queue { padding: 14px; }
+.review-preview { position: sticky; top: 82px; align-self: start; overflow: hidden; }
+.review-preview__header { padding: 16px 18px; border-bottom: 1px solid var(--color-border); }
+.review-preview__header h2 { margin: 0 0 4px; font-size: 1rem; }
+.review-preview__body { max-height: calc(100vh - 170px); overflow: auto; padding: 18px; }
+.review-preview__empty,.review-preview__loading { color: var(--color-text-muted); text-align: center; }
+.review-preview__empty { padding: 48px 18px; }
+.review-preview__empty i { display: block; margin-bottom: 10px; color: var(--color-accent); font-size: 2rem; }
+.review-row--current > td { background: var(--color-accent-soft) !important; }
+.review-row--current > td:first-child { box-shadow: inset 3px 0 0 var(--color-accent); }
+.review-toolbar { position: sticky; top: 64px; z-index: 10; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 0; background: var(--color-background); }
+.app-detail-drawer { width: min(720px,100vw); background: var(--color-surface); }
+.app-detail-drawer .offcanvas-body { padding: 20px; }
+.skeleton-line { height: 12px; margin: 10px 0; border-radius: 6px; background: #e8e2de; }
+.user-detail-panel .card { box-shadow: none; }
+.user-detail-panel .table { font-size: .86rem; }
 @media (max-width: 1024px) { :root { --sidebar-width: 216px; } .app-content { padding: 24px; } }
+@media (max-width: 1024px) { .review-layout { grid-template-columns: 1fr; } .review-preview { display: none; } }
 @media (max-width: 768px) {
     .app-shell { display: block; }
     .app-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 50; width: min(86vw,320px); transform: translateX(-100%); transition: transform var(--transition-fast); }
@@ -182,6 +201,9 @@ a { color: var(--color-accent-strong); }
     .profile-layout { grid-template-columns: 1fr; }
     .profile-stat-grid { grid-template-columns: 1fr 1fr; }
     .profile-stat:nth-child(3) { border-top: 1px solid var(--color-border); }
+    .review-queue { padding: 8px; }
+    .review-toolbar { top: 0; align-items: stretch; flex-direction: column; }
+    .review-toolbar .btn { width: 100%; }
 }
 @media (max-width: 768px) { .public-shell { padding: 16px; } .auth-layout { grid-template-columns: 1fr; } .auth-intro { min-height: auto; padding: 30px; } .auth-panel { padding: 30px; } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }

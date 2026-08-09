@@ -82,6 +82,19 @@
     </div>
 </div>
 
+<div class="offcanvas offcanvas-end app-detail-drawer" tabindex="-1" id="userDetailDrawer" aria-labelledby="userDetailDrawerTitle">
+    <div class="offcanvas-header">
+        <h2 class="offcanvas-title fs-5" id="userDetailDrawerTitle">成员详情</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="关闭"></button>
+    </div>
+    <div class="offcanvas-body" id="userDetailDrawerBody" aria-live="polite">
+        <div class="review-preview__empty">
+            <i class="bi bi-person-lines-fill" aria-hidden="true"></i>
+            <p class="mb-0">选择成员后查看详情</p>
+        </div>
+    </div>
+</div>
+
 <!-- 通讯录导入/导出区域 -->
 {% if manage_permission == '超级管理员' %}
 <div class="container-fluid">
@@ -96,7 +109,7 @@
                         <a href="{{ url_for('admin.download_template') }}" class="btn btn-sm btn-primary">
                             <i class="bi bi-file-earmark-excel"></i> 下载Excel模板
                         </a>
-                        <a href="{{ url_for('admin.view_sample') }}" class="btn btn-sm btn-outline-info" target="_blank">
+                        <a href="{{ url_for('admin.view_sample') }}" class="btn btn-sm btn-outline-info">
                             <i class="bi bi-eye"></i> 查看示例
                         </a>
                     </div>
@@ -1219,9 +1232,55 @@ function clearDepartmentLocator() {
     updateDepartmentSearchStats(allDepartmentsData);
 }
 
-function viewUser(userId) {
-    window.open(`/admin/users/${userId}/view`, '_blank');
+function userDetailSkeleton() {
+    return `
+        <div class="review-preview__loading" role="status">
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line"></div>
+            <span class="visually-hidden">正在加载成员详情</span>
+        </div>
+    `;
 }
+
+function viewUser(userId) {
+    const drawerEl = document.getElementById('userDetailDrawer');
+    const body = document.getElementById('userDetailDrawerBody');
+    if (!drawerEl || !body) {
+        return;
+    }
+    body.dataset.userId = String(userId);
+    body.innerHTML = userDetailSkeleton();
+    fetch(`/admin/users/${encodeURIComponent(userId)}/view?format=fragment`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.text();
+        })
+        .then(html => {
+            body.innerHTML = html;
+            bootstrap.Offcanvas.getOrCreateInstance(drawerEl).show();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            body.innerHTML = `
+                <div class="alert alert-danger" role="alert">
+                    <strong>成员详情加载失败。</strong> 请检查网络连接后重试。
+                    <button type="button" class="btn btn-sm btn-outline-danger mt-3" data-user-detail-retry data-user-id="${String(userId)}">重试</button>
+                </div>
+            `;
+            bootstrap.Offcanvas.getOrCreateInstance(drawerEl).show();
+        });
+}
+
+document.addEventListener('click', function(event) {
+    const retryButton = event.target.closest('[data-user-detail-retry]');
+    if (retryButton) {
+        viewUser(retryButton.dataset.userId);
+    }
+});
 
 // 绑定表单事件
 function bindFormEvents() {
