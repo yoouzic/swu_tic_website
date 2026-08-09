@@ -1,0 +1,12 @@
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<div class="app-messages" aria-live="polite">
+    {% for category, message in messages %}
+    <div class="app-message app-message--{{ category }}" role="status">
+        <span>{{ message }}</span>
+        <button type="button" data-bs-dismiss="alert" aria-label="关闭"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endwith %}

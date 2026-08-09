@@ -43,7 +43,10 @@ app.config['DEBUG'] = env_bool('FLASK_DEBUG', False)
 # 导入数据库模型（统一使用绝对包导入）
 from app.models import db, User, Department, Group, LectureForm, Permission, RolePermission
 from app.utils.user_status import is_user_active
+from app.utils.manage_permissions import get_user_manage_permission
+from app.utils.review_permissions import get_user_review_permission
 from app.utils.storage_cleanup import run_scheduled_storage_cleanup
+from app.ui.navigation import build_navigation
 
 
 # 初始化数据库
@@ -80,22 +83,30 @@ class AnonymousUser:
     is_active = False
     is_authenticated = False
 
-# 全局上下文处理器：注入 current_user
+# 全局上下文处理器：注入当前用户和应用壳层数据
 @app.context_processor
-def inject_current_user():
-    """将当前登录用户注入到所有模板中"""
+def inject_app_context():
+    """将当前登录用户、导航和当前端点注入到所有模板中"""
     user_id = session.get('user_id')
-    if user_id:
-        # 这里需要注意：User模型已经在上面导入
-        user = User.query.get(user_id)
-        if user and is_user_active(user):
-            # 动态添加属性以兼容 Flask-Login 风格的检查
-            user.is_authenticated = True
-            return dict(current_user=user)
-        if user and not is_user_active(user):
+    user = db.session.get(User, user_id) if user_id else None
+    if not user or not is_user_active(user):
+        if user_id:
             session.clear()
-    
-    return dict(current_user=AnonymousUser())
+        return {
+            'current_user': AnonymousUser(),
+            'app_navigation': [],
+            'current_endpoint': request.endpoint or '',
+        }
+
+    user.is_authenticated = True
+    review_permission = get_user_review_permission(user.id) if user.role == '管理员' else None
+    manage_permission = get_user_manage_permission(user.id) if user.role == '管理员' else None
+    return {
+        'current_user': user,
+        'app_navigation': build_navigation(user, request.endpoint or '', review_permission, manage_permission),
+        'current_endpoint': request.endpoint or '',
+        'app_search_endpoint': 'user.my_forms' if user.role == '信息员' else 'admin.view_forms',
+    }
 
 # 创建上传目录
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True

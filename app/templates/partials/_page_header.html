@@ -1,0 +1,6 @@
+{% macro page_header(title, description='', action_label='', action_href='') %}
+<div class="page-header">
+    <div><h1>{{ title }}</h1>{% if description %}<p>{{ description }}</p>{% endif %}</div>
+    {% if action_label and action_href %}<a class="btn btn-primary" href="{{ action_href }}">{{ action_label }}</a>{% endif %}
+</div>
+{% endmacro %}

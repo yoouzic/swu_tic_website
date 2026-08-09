@@ -1,0 +1,3 @@
+{% macro empty_state(title, description, action_label='', action_href='') %}
+<div class="empty-state"><i class="bi bi-inbox" aria-hidden="true"></i><h2>{{ title }}</h2><p>{{ description }}</p>{% if action_label %}<a class="btn btn-primary" href="{{ action_href }}">{{ action_label }}</a>{% endif %}</div>
+{% endmacro %}

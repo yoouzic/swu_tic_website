@@ -1,0 +1,14 @@
+<header class="app-topbar">
+    <button class="app-topbar__menu" type="button" data-shell-toggle aria-controls="appSidebar" aria-expanded="false" aria-label="打开导航">
+        <i class="bi bi-list" aria-hidden="true"></i>
+    </button>
+    <div class="app-breadcrumb">{{ page_breadcrumb|default('今日工作') }}</div>
+    <div class="app-topbar__actions">
+        <form class="app-search" action="{{ url_for(app_search_endpoint) }}" method="get" role="search">
+            <label class="visually-hidden" for="appSearch">搜索</label>
+            <input class="form-control form-control-sm" id="appSearch" name="search" type="search" placeholder="搜索表单、人员或课程">
+        </form>
+        <a href="{{ url_for('user.profile') }}">{{ current_user.name }}</a>
+        <a href="{{ url_for('auth.logout') }}">退出</a>
+    </div>
+</header>
