@@ -4,6 +4,7 @@
 
 {% block content %}
 <div class="container-fluid">
+    <div id="reviewQueueFeedback" class="activity-feedback" role="status" aria-live="polite" hidden></div>
     <div class="row">
         <div class="col-12">
             <div class="card">
@@ -207,6 +208,22 @@
     </div>
 </div>
 
+<div id="reviewQueueConfirmModal" class="modal fade" tabindex="-1" aria-labelledby="reviewQueueConfirmTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title fs-5" id="reviewQueueConfirmTitle">确认操作</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body" data-admin-confirm-message></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" data-admin-confirm-submit>确认</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- 统计详情模态框 -->
 <div class="modal fade" id="statisticsModal" tabindex="-1">
     <div class="modal-dialog modal-xl">
@@ -251,14 +268,59 @@
 
 <script>
 
+function setReviewQueueFeedback(message, level = 'info') {
+    if (typeof window.setAdminFeedback === 'function') {
+        window.setAdminFeedback('reviewQueueFeedback', message, level);
+    }
+}
+
+function setReviewQueueContainerMessage(element, message, level = 'danger') {
+    if (!element) {
+        return;
+    }
+    element.replaceChildren();
+    const box = document.createElement('div');
+    box.className = `alert alert-${level}`;
+    box.textContent = String(message || '');
+    element.appendChild(box);
+}
+
+function setReviewFormPreviewError(element, formId, message) {
+    if (!element) {
+        return;
+    }
+    element.replaceChildren();
+    const box = document.createElement('div');
+    box.className = 'alert alert-danger';
+    const text = document.createElement('span');
+    text.textContent = String(message || '加载失败，请重试。');
+    const retryButton = document.createElement('button');
+    retryButton.type = 'button';
+    retryButton.className = 'btn btn-sm btn-outline-danger ms-2';
+    retryButton.textContent = '重试';
+    retryButton.addEventListener('click', () => viewForm(formId));
+    box.append(text, retryButton);
+    element.appendChild(box);
+}
+
+function showReviewQueueActionDialog(message, action) {
+    if (typeof window.showAdminConfirmation === 'function') {
+        window.showAdminConfirmation('reviewQueueConfirmModal', message, action);
+    } else {
+        setReviewQueueFeedback('确认对话框暂不可用，请刷新页面后重试。', 'error');
+    }
+}
+
 // 显示统计信息
 function showStatistics() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        alert('请先选择开始时间和结束时间');
+        setReviewQueueFeedback('请先选择开始时间和结束时间。', 'warning');
         return;
     }
+
+    setReviewQueueFeedback('正在加载统计数据...', 'info');
 
     // 显示模态框
     const modal = new bootstrap.Modal(document.getElementById('statisticsModal'));
@@ -275,21 +337,22 @@ function showStatistics() {
         .then(data => {
             if (data.success) {
                 renderStatistics(data.stats, data.range_info);
+                setReviewQueueFeedback('统计数据已更新。', 'success');
             } else {
-                document.getElementById('statisticsContent').innerHTML = `
-                    <div class="alert alert-danger">
-                        <i class="fas fa-exclamation-circle mr-2"></i> ${data.message || '加载统计数据失败'}
-                    </div>
-                `;
+                setReviewQueueContainerMessage(
+                    document.getElementById('statisticsContent'),
+                    data.message || '加载统计数据失败。'
+                );
+                setReviewQueueFeedback(data.message || '加载统计数据失败。', 'error');
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            document.getElementById('statisticsContent').innerHTML = `
-                <div class="alert alert-danger">
-                    <i class="fas fa-exclamation-circle mr-2"></i> 加载统计数据失败，请检查网络连接
-                </div>
-            `;
+            setReviewQueueContainerMessage(
+                document.getElementById('statisticsContent'),
+                '加载统计数据失败，请检查网络连接。'
+            );
+            setReviewQueueFeedback('加载统计数据失败，请检查网络连接。', 'error');
         });
 }
 
@@ -672,6 +735,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // 检查用户审核权限
 function checkPermission() {
+    setReviewQueueFeedback('正在检查审核权限...', 'info');
     fetch('/admin/api/review/permission')
         .then(response => response.json())
         .then(data => {
@@ -680,6 +744,7 @@ function checkPermission() {
                 document.getElementById('permissionBadge').textContent = `审核权限：${data.permission}`;
                 document.getElementById('permissionBadge').className = 'badge bg-success text-white';
                 document.getElementById('mainContent').style.display = 'block';
+                setReviewQueueFeedback('审核权限已确认。', 'success');
                 
                 // 优先恢复队列 URL 中的筛选条件，首次进入时才使用最近一周。
                 const queueParams = new URLSearchParams(window.location.search);
@@ -697,12 +762,14 @@ function checkPermission() {
                 document.getElementById('permissionBadge').textContent = '无审核权限';
                 document.getElementById('permissionBadge').className = 'badge bg-danger text-white';
                 document.getElementById('noPermissionAlert').style.display = 'block';
+                setReviewQueueFeedback(data.message || '您不具有审表权限。', 'error');
             }
         })
         .catch(error => {
             console.error('Error:', error);
             document.getElementById('permissionBadge').textContent = '权限检查失败';
             document.getElementById('permissionBadge').className = 'badge badge-danger';
+            setReviewQueueFeedback('权限检查失败，请稍后重试。', 'error');
         });
 }
 
@@ -724,9 +791,11 @@ function loadUserStructure() {
     const endDate = document.getElementById('endDate').value;
     
     if (!startDate || !endDate) {
-        alert('请选择时间范围');
+        setReviewQueueFeedback('请选择时间范围。', 'warning');
         return;
     }
+
+    setReviewQueueFeedback('正在加载用户范围...', 'info');
     
     fetch('/admin/api/review/user-structure')
         .then(response => response.json())
@@ -751,16 +820,17 @@ function loadUserStructure() {
                 }
                 applyScopeSearch();
                 restoreReviewQueueUserSelection();
+                setReviewQueueFeedback('用户范围已加载，请选择要查看的成员。', 'success');
                 if (new URLSearchParams(window.location.search).get('review_queue') === '1') {
                     loadForms();
                 }
             } else {
-                alert(data.message || '加载用户结构失败');
+                setReviewQueueFeedback(data.message || '加载用户结构失败。', 'error');
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('加载用户结构失败');
+            setReviewQueueFeedback('加载用户结构失败，请检查网络连接。', 'error');
         });
 }
 
@@ -962,6 +1032,9 @@ function applyScopeSearch() {
             stats.textContent = `搜索命中信息员：${matchedUsers} 人`;
         }
     }
+    if (keyword && matchedUsers === 0) {
+        setReviewQueueFeedback('当前筛选没有匹配的信息员。', 'warning');
+    }
 }
 
 function selectAllDepartments() {
@@ -1069,7 +1142,7 @@ function toggleSelectionLock() {
 
     const formIds = getSelectedReviewableFormIds();
     if (formIds.length === 0) {
-        alert('请选择需要锁定的表单');
+        setReviewQueueFeedback('请选择需要锁定的表单。', 'warning');
         return;
     }
 
@@ -1090,7 +1163,7 @@ function loadForms() {
     }
     
     if (selectedUserIds.length === 0) {
-        alert('请至少选择一个用户');
+        setReviewQueueFeedback('请至少选择一个用户。', 'warning');
         return;
     }
     
@@ -1112,20 +1185,29 @@ function loadForms() {
     selectedUserIds.forEach(id => {
         params.append('user_ids', id);
     });
+
+    setReviewQueueFeedback('正在加载审核队列...', 'info');
     
     fetch(`/admin/api/review/forms?${params}`)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                renderFormsList(mergeLockedFormGroups(data.forms || []));
+                const formGroups = mergeLockedFormGroups(data.forms || []);
+                renderFormsList(formGroups);
                 document.getElementById('formsListArea').style.display = 'block';
+                setReviewQueueFeedback(
+                    formGroups.length > 0
+                        ? `审核队列已更新，共 ${formGroups.length} 个表单组。`
+                        : '当前筛选暂无符合条件的表单。',
+                    formGroups.length > 0 ? 'success' : 'warning'
+                );
             } else {
-                alert(data.message || '加载表单列表失败');
+                setReviewQueueFeedback(data.message || '加载表单列表失败。', 'error');
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('加载表单列表失败');
+            setReviewQueueFeedback('加载表单列表失败，请检查网络连接。', 'error');
         });
 }
 
@@ -1289,6 +1371,9 @@ function renderFormsList(formGroups, checkedFormIds = []) {
     });
 
     tbody.innerHTML = html;
+    if (totalGroups === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">当前筛选暂无符合条件的表单。</td></tr>';
+    }
     document.getElementById('formsCount').textContent = totalGroups;
     bindSelectionEvents();
     updateBatchButtons();
@@ -1361,20 +1446,15 @@ function viewForm(formId) {
                     }
                 }
             } else {
-                const errorHtml = '<div class="alert alert-danger" role="alert">' + (data.message || '加载失败') + '<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="viewForm(' + formId + ')">重试</button></div>';
-                document.getElementById('formDetailContent').innerHTML = errorHtml;
-                if (previewEl) {
-                    previewEl.innerHTML = errorHtml;
-                }
+                const errorMessage = data.message || '加载失败。';
+                setReviewFormPreviewError(document.getElementById('formDetailContent'), formId, errorMessage);
+                setReviewFormPreviewError(previewEl, formId, errorMessage);
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            const errorHtml = '<div class="alert alert-danger" role="alert">加载失败，请重试<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="viewForm(' + formId + ')">重试</button></div>';
-            document.getElementById('formDetailContent').innerHTML = errorHtml;
-            if (previewEl) {
-                previewEl.innerHTML = errorHtml;
-            }
+            setReviewFormPreviewError(document.getElementById('formDetailContent'), formId, '加载失败，请重试。');
+            setReviewFormPreviewError(previewEl, formId, '加载失败，请重试。');
         });
 }
 
@@ -1394,12 +1474,12 @@ function reviewForm(formId) {
                     window.openFullReview(formId);
                 }
             } else {
-                alert(data.message || '获取表单信息失败');
+                setReviewQueueFeedback(data.message || '获取表单信息失败。', 'error');
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('获取表单信息失败');
+            setReviewQueueFeedback('获取表单信息失败，请检查网络连接。', 'error');
         });
 }
 
@@ -1475,46 +1555,44 @@ function getSelectedReviewableFormIds() {
 }
 
 function deleteFormGroup(uniqueId) {
-    if (!confirm('确定删除整个表单组吗？将删除该组所有版本及关联评分记录，并清理无引用的课程登记记录。')) {
-        return;
-    }
-    fetch(`/admin/api/review/group/${uniqueId}`, {
-        method: 'DELETE'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert(data.message);
-            loadForms();
-        } else {
-            alert(data.message || '删除失败');
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('删除操作失败，请检查网络');
+    showReviewQueueActionDialog('确定删除整个表单组吗？将删除该组所有版本及关联评分记录，并清理无引用的课程登记记录。', () => {
+        fetch(`/admin/api/review/group/${uniqueId}`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                setReviewQueueFeedback(data.message || '表单组已删除。', 'success');
+                loadForms();
+            } else {
+                setReviewQueueFeedback(data.message || '删除失败。', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            setReviewQueueFeedback('删除操作失败，请检查网络连接。', 'error');
+        });
     });
 }
 
 function deleteForm(formId) {
-    if (!confirm('确定删除此版本表单吗？')) {
-        return;
-    }
-    fetch(`/admin/api/review/form/${formId}`, {
-        method: 'DELETE'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert(data.message);
-            loadForms();
-        } else {
-            alert(data.message || '删除失败');
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('删除操作失败，请检查网络');
+    showReviewQueueActionDialog('确定删除此版本表单吗？', () => {
+        fetch(`/admin/api/review/form/${formId}`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                setReviewQueueFeedback(data.message || '表单版本已删除。', 'success');
+                loadForms();
+            } else {
+                setReviewQueueFeedback(data.message || '删除失败。', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            setReviewQueueFeedback('删除操作失败，请检查网络连接。', 'error');
+        });
     });
 }
 
@@ -1596,11 +1674,11 @@ function handleSelectedExportModeChange() {
 function openSelectedFormsExportModal() {
     const formIds = getSelectedReviewableFormIds();
     if (formIds.length === 0) {
-        alert('请选择需要导出的表单');
+        setReviewQueueFeedback('请选择需要导出的表单。', 'warning');
         return;
     }
     if (!isSuperAdmin) {
-        alert('仅超级管理员可以导出表单');
+        setReviewQueueFeedback('仅超级管理员可以导出表单。', 'error');
         return;
     }
     document.getElementById('selectedFormsExportSummary').textContent = `导出范围：已选择 ${formIds.length} 份表单`;
@@ -1626,14 +1704,15 @@ function collectSelectedExportData() {
 function checkSelectedExportData() {
     const data = collectSelectedExportData();
     if (data.form_ids.length === 0) {
-        alert('请选择需要导出的表单');
+        setReviewQueueFeedback('请选择需要导出的表单。', 'warning');
         return;
     }
 
     const resultDiv = document.getElementById('selectedExportCheckResult');
     resultDiv.style.display = 'block';
     resultDiv.className = 'alert alert-info';
-    resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在检查数据...';
+    resultDiv.textContent = '正在检查数据...';
+    setReviewQueueFeedback('正在检查导出数据...', 'info');
 
     fetch('/admin/api/forms/export/check', {
         method: 'POST',
@@ -1647,33 +1726,42 @@ function checkSelectedExportData() {
         if (res.success) {
             resultDiv.className = 'alert alert-success';
             const excludedText = res.excluded_count > 0
-                ? `<br><small>状态筛选已排除 ${res.excluded_count} 条记录。</small>`
+                ? `；状态筛选已排除 ${res.excluded_count} 条记录`
                 : '';
-            resultDiv.innerHTML = `<strong>准备就绪:</strong> 将导出 <b>${res.total_count}</b> 条记录。${excludedText}`;
+            resultDiv.textContent = `准备就绪：将导出 ${res.total_count} 条记录${excludedText}。`;
+            setReviewQueueFeedback(
+                res.total_count > 0
+                    ? `导出数据检查完成，共 ${res.total_count} 条记录。`
+                    : '没有符合条件的记录可导出。',
+                res.total_count > 0 ? 'success' : 'warning'
+            );
             document.getElementById('btnConfirmSelectedExport').disabled = res.total_count <= 0;
             if (res.total_count <= 0) {
                 resultDiv.className = 'alert alert-warning';
-                resultDiv.innerHTML = '没有符合条件的记录可导出。';
+                resultDiv.textContent = '没有符合条件的记录可导出。';
             }
         } else {
             resultDiv.className = 'alert alert-danger';
-            resultDiv.innerHTML = '检查失败: ' + (res.message || '未知错误');
+            resultDiv.textContent = `检查失败：${res.message || '未知错误'}`;
+            setReviewQueueFeedback(res.message || '导出数据检查失败。', 'error');
         }
     })
     .catch(err => {
         resultDiv.className = 'alert alert-danger';
-        resultDiv.innerHTML = '请求错误: ' + err;
+        resultDiv.textContent = `请求错误：${err}`;
+        setReviewQueueFeedback('导出数据检查失败，请检查网络连接。', 'error');
     });
 }
 
 function executeSelectedExport() {
     const data = collectSelectedExportData();
     if (data.form_ids.length === 0) {
-        alert('请选择需要导出的表单');
+        setReviewQueueFeedback('请选择需要导出的表单。', 'warning');
         return;
     }
     data.status_list = data.status_list.join(',');
     data.form_ids = data.form_ids.join(',');
+    setReviewQueueFeedback('正在准备导出文件...', 'info');
 
     const params = new URLSearchParams();
     Object.keys(data).forEach(key => {
@@ -1691,7 +1779,7 @@ function defineSingleForm(formId, triggerButton = null) {
 function batchDefineForms() {
     const formIds = getSelectedReviewableFormIds();
     if (formIds.length === 0) {
-        alert('请选择需要定义标签的表单或表单组');
+        setReviewQueueFeedback('请选择需要定义标签的表单或表单组。', 'warning');
         return;
     }
     const triggerButton = document.getElementById('btnBatchDefineTags');
@@ -1700,7 +1788,7 @@ function batchDefineForms() {
 
 function openFormTagDefinitionModal(formIds, triggerButton = null) {
     if (!isSuperAdmin) {
-        alert('仅超级管理员可以定义表单标签');
+        setReviewQueueFeedback('仅超级管理员可以定义表单标签。', 'error');
         return;
     }
     const summaryEl = document.getElementById('formTagDefinitionSummary');
@@ -1714,6 +1802,7 @@ function openFormTagDefinitionModal(formIds, triggerButton = null) {
         triggerButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在加载...';
     }
 
+    setReviewQueueFeedback('正在加载标签定义...', 'info');
     summaryEl.textContent = '正在分析当前标签...';
     tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">正在加载...</td></tr>';
 
@@ -1731,12 +1820,16 @@ function openFormTagDefinitionModal(formIds, triggerButton = null) {
         }
         currentTagDefinitionForms = data.forms || [];
         renderFormTagDefinitionRows(currentTagDefinitionForms);
-    summaryEl.textContent = `共加载 ${currentTagDefinitionForms.length} 个表单组。这里展示的是每个表单组的最新版本，保存后会同步更新该组全部历史版本。第一个下拉框定义“是否需要人工审核”，第二个下拉框定义“教学周修正（第x周）”。`;
+        setReviewQueueFeedback(
+            currentTagDefinitionForms.length > 0 ? '标签定义已加载。' : '当前没有可定义标签的表单。',
+            currentTagDefinitionForms.length > 0 ? 'success' : 'warning'
+        );
+        summaryEl.textContent = `共加载 ${currentTagDefinitionForms.length} 个表单组。这里展示的是每个表单组的最新版本，保存后会同步更新该组全部历史版本。第一个下拉框定义“是否需要人工审核”，第二个下拉框定义“教学周修正（第x周）”。`;
         modal.show();
     })
     .catch(error => {
         console.error('Error:', error);
-        alert(error.message || '加载标签定义失败');
+        setReviewQueueFeedback(error.message || '加载标签定义失败。', 'error');
     })
     .finally(() => {
         if (triggerButton) {
@@ -1785,7 +1878,7 @@ function renderFormTagDefinitionRows(forms) {
 
 function saveFormTagDefinitions() {
     if (!isSuperAdmin) {
-        alert('仅超级管理员可以定义表单标签');
+        setReviewQueueFeedback('仅超级管理员可以定义表单标签。', 'error');
         return;
     }
 
@@ -1802,12 +1895,13 @@ function saveFormTagDefinitions() {
     });
 
     if (definitions.length === 0) {
-        alert('没有可保存的标签定义');
+        setReviewQueueFeedback('没有可保存的标签定义。', 'warning');
         return;
     }
 
     saveBtn.disabled = true;
     saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
+    setReviewQueueFeedback('正在保存标签定义...', 'info');
 
     fetch('/admin/api/review/form-tags', {
         method: 'PUT',
@@ -1821,14 +1915,14 @@ function saveFormTagDefinitions() {
         if (!data.success) {
             throw new Error(data.message || '保存标签定义失败');
         }
-        alert(data.message || '保存成功');
+        setReviewQueueFeedback(data.message || '保存成功。', 'success');
         bootstrap.Modal.getOrCreateInstance(document.getElementById('formTagDefinitionModal')).hide();
         currentTagDefinitionForms = [];
         loadForms();
     })
     .catch(error => {
         console.error('Error:', error);
-        alert(error.message || '保存标签定义失败');
+        setReviewQueueFeedback(error.message || '保存标签定义失败。', 'error');
     })
     .finally(() => {
         saveBtn.disabled = false;
@@ -1839,7 +1933,7 @@ function saveFormTagDefinitions() {
 function batchAutoReview() {
     const formIds = getSelectedReviewableFormIds();
     if (formIds.length === 0) {
-        alert('请选择可审核的表单或表单组');
+        setReviewQueueFeedback('请选择可审核的表单或表单组。', 'warning');
         return;
     }
 
@@ -1847,6 +1941,7 @@ function batchAutoReview() {
     const originalBtnContent = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在分析...';
+    setReviewQueueFeedback('正在分析所选表单...', 'info');
 
     fetch('/admin/api/review/batch_auto_check/preview', {
         method: 'POST',
@@ -1872,20 +1967,22 @@ function batchAutoReview() {
             msg += '请选择执行方式。\n强制模式仅放开“需人工审核”标签限制，不会强制审核已驳回等状态不允许的表单。';
             const decision = await showAutoReviewDecision(msg);
             if (decision === 'normal') {
+                setReviewQueueFeedback('正在启动自动审核...', 'info');
                 startBatchReview(formIds, btn, false);
                 return;
             }
             if (decision === 'force') {
+                setReviewQueueFeedback('正在启动自动审核...', 'info');
                 startBatchReview(formIds, btn, true);
                 return;
             }
         } else {
-            alert(data.message || '预览失败');
+            setReviewQueueFeedback(data.message || '预览失败。', 'error');
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('操作失败，请检查网络');
+        setReviewQueueFeedback('操作失败，请检查网络连接。', 'error');
         btn.disabled = false;
         btn.innerHTML = originalBtnContent;
     });
@@ -1913,6 +2010,7 @@ function showAutoReviewDecision(message) {
 function startBatchReview(formIds, btn, forceAll = false) {
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 启动中...';
+    setReviewQueueFeedback('正在启动自动审核...', 'info');
 
     fetch('/admin/api/review/batch_auto_check', {
         method: 'POST',
@@ -1924,17 +2022,19 @@ function startBatchReview(formIds, btn, forceAll = false) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            alert(data.message);
-            window.location.href = '/admin/super_admin_dashboard';
+            setReviewQueueFeedback(data.message || '自动审核任务已启动。', 'success');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-magic"></i> 一键自动审核';
+            loadForms();
         } else {
-            alert(data.message || '启动失败');
+            setReviewQueueFeedback(data.message || '启动失败。', 'error');
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-magic"></i> 一键自动审核';
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('启动失败，请检查网络');
+        setReviewQueueFeedback('启动失败，请检查网络连接。', 'error');
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-magic"></i> 一键自动审核';
     });

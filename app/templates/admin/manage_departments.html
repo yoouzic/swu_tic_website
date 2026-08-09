@@ -4,6 +4,7 @@
 
 {% block content %}
 <div class="container-fluid">
+    <div id="peopleManagementFeedback" class="activity-feedback" role="status" aria-live="polite" hidden></div>
     <div class="row">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
@@ -91,6 +92,22 @@
         <div class="review-preview__empty">
             <i class="bi bi-person-lines-fill" aria-hidden="true"></i>
             <p class="mb-0">选择成员后查看详情</p>
+        </div>
+    </div>
+</div>
+
+<div id="peopleManagementConfirmModal" class="modal fade" tabindex="-1" aria-labelledby="peopleManagementConfirmTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title fs-5" id="peopleManagementConfirmTitle">确认操作</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body" data-admin-confirm-message></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" data-admin-confirm-submit>确认</button>
+            </div>
         </div>
     </div>
 </div>
@@ -797,6 +814,20 @@ let deleteCallback = null;
 let currentMoveType = null; // 'department' or 'group'
 let allDepartmentsData = [];
 
+function setPeopleManagementFeedback(message, level = 'info') {
+    if (typeof window.setAdminFeedback === 'function') {
+        window.setAdminFeedback('peopleManagementFeedback', message, level);
+    }
+}
+
+function showPeopleActionDialog(message, action) {
+    if (typeof window.showAdminConfirmation === 'function') {
+        window.showAdminConfirmation('peopleManagementConfirmModal', message, action);
+    } else {
+        setPeopleManagementFeedback('确认对话框暂不可用，请刷新页面后重试。', 'error');
+    }
+}
+
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {
     loadDepartments();
@@ -847,7 +878,7 @@ function showMoveMembersModal(type) {
         modalTitle.textContent = '批量移动成员到部门';
         targetId = document.getElementById('editDeptId').value; 
         if (!targetId) {
-             alert('无法获取部门ID，请先打开编辑框');
+             setPeopleManagementFeedback('无法获取部门ID，请先打开编辑框。', 'warning');
              return;
         }
         apiUrl = '/admin/api/users'; 
@@ -855,7 +886,7 @@ function showMoveMembersModal(type) {
         modalTitle.textContent = '批量移动成员到小组';
         targetId = document.getElementById('editGroupId').value;
         if (!targetId) {
-             alert('无法获取小组ID，请先打开编辑框');
+             setPeopleManagementFeedback('无法获取小组ID，请先打开编辑框。', 'warning');
              return;
         }
         const dept = document.getElementById('editGroupDepartment').value;
@@ -930,7 +961,7 @@ function submitMoveMembers() {
     const userIds = Array.from(checkboxes).map(cb => cb.value);
     
     if (userIds.length === 0) {
-        alert('请选择至少一名用户');
+        setPeopleManagementFeedback('请选择至少一名用户。', 'warning');
         return;
     }
     
@@ -955,18 +986,19 @@ function submitMoveMembers() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showAlert(data.message, 'success');
+            setPeopleManagementFeedback(data.message || '人员移动成功。', 'success');
             // 关闭当前模态框
             bootstrap.Modal.getInstance(document.getElementById('moveMembersModal')).hide();
-            // 刷新页面
-             setTimeout(() => location.reload(), 1000);
+            loadDepartments();
+            loadUsersForSelect();
+            refreshPersonnelMovementRecordsIfOpen();
         } else {
-            alert(data.message || '操作失败');
+            setPeopleManagementFeedback(data.message || '操作失败。', 'error');
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('操作失败');
+        setPeopleManagementFeedback('操作失败，请检查网络连接。', 'error');
     });
 }
 
@@ -1340,15 +1372,19 @@ function bindFormEvents() {
             e.preventDefault();
             const formData = new FormData(this);
             const password = String(formData.get('password') || '').trim();
-            if (password) {
-                if (!confirm('检测到你填写了“重置密码”。保存后将修改该用户密码，是否继续？')) {
-                    return;
+            const saveEditedUser = () => {
+                if (password) {
+                    formData.set('new_password', password);
                 }
-                formData.set('new_password', password);
+                formData.delete('password');
+                const id = formData.get('id');
+                submitForm(`/admin/api/users/${id}`, formData, 'editUserModal', 'PUT');
+            };
+            if (password) {
+                showPeopleActionDialog('检测到你填写了“重置密码”。保存后将修改该用户密码，是否继续？', saveEditedUser);
+                return;
             }
-            formData.delete('password');
-            const id = formData.get('id');
-            submitForm(`/admin/api/users/${id}`, formData, 'editUserModal', 'PUT');
+            saveEditedUser();
         });
     }
 }
@@ -1689,7 +1725,11 @@ function loadPersonnelMovementRecords() {
                 renderPersonnelMovementRecords(data.records || []);
             } else {
                 if (body) {
-                    body.innerHTML = `<div class="alert alert-danger">${data.message || '加载失败'}</div>`;
+                    body.replaceChildren();
+                    const errorBox = document.createElement('div');
+                    errorBox.className = 'alert alert-danger';
+                    errorBox.textContent = data.message || '加载失败';
+                    body.appendChild(errorBox);
                 }
             }
         })
@@ -2119,7 +2159,7 @@ function showPasswordConfirm(message, actionLabel, callback) {
     confirmBtn.onclick = function() {
         const password = document.getElementById('deletePassword').value;
         if (!password) {
-            alert('请输入密码');
+            setPeopleManagementFeedback('请输入密码后再确认操作。', 'warning');
             return;
         }
         
@@ -2153,25 +2193,7 @@ function hideAddUserError() {
 
 // 显示提示信息
 function showAlert(message, type) {
-    const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
-    const alertHtml = `
-        <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    `;
-    
-    // 在页面顶部显示提示
-    const container = document.querySelector('.container-fluid');
-    container.insertAdjacentHTML('afterbegin', alertHtml);
-    
-    // 3秒后自动消失
-    setTimeout(() => {
-        const alert = container.querySelector('.alert');
-        if (alert) {
-            alert.remove();
-        }
-    }, 3000);
+    setPeopleManagementFeedback(message, type === 'success' ? 'success' : (type === 'warning' ? 'warning' : 'error'));
 }
 
 // 通讯录导入（部门页内）
@@ -2185,30 +2207,56 @@ function initContactsImport() {
     form.addEventListener('submit', function(e) {
         e.preventDefault();
         const file = fileInput.files[0];
-        if (!file) return alert('请选择文件');
+        if (!file) {
+            setPeopleManagementFeedback('请选择文件。', 'warning');
+            return;
+        }
         btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 上传中...';
         const fd = new FormData();
         fd.append('file', file);
         fd.append('overwrite', document.getElementById('deptOverwrite').checked);
         fetch('/admin/preview_import', { method:'POST', body: fd })
         .then(r=>r.json()).then(data=>{
-            if (!data.success) { alert('上传失败：'+(data.message||'')); return; }
-            window.__deptImportData = data;
-            // 简要预览
-            let html = `<div class="alert alert-info">共 ${data.total_rows} 行，${data.valid_rows} 行有效，${data.error_rows} 行错误</div>`;
-            if (data.errors && data.errors.length) {
-                html += `<div class="alert alert-warning"><ul>${data.errors.map(e=>`<li>${e}</li>`).join('')}</ul></div>`;
+            if (!data.success) {
+                setPeopleManagementFeedback(`上传失败：${data.message || ''}`, 'error');
+                return;
             }
-            html += `<button class="btn btn-warning" onclick="confirmDeptImport()"><i class="bi bi-check-circle"></i> 确认导入</button>`;
-            preview.innerHTML = html; preview.style.display='block'; result.style.display='none';
-        }).catch(err=>{ alert('上传失败：'+err.message); })
+            window.__deptImportData = data;
+            preview.replaceChildren();
+            const summary = document.createElement('div');
+            summary.className = 'alert alert-info';
+            summary.textContent = `共 ${data.total_rows} 行，${data.valid_rows} 行有效，${data.error_rows} 行错误`;
+            preview.appendChild(summary);
+            if (data.errors && data.errors.length) {
+                const errorBox = document.createElement('div');
+                errorBox.className = 'alert alert-warning';
+                const errorList = document.createElement('ul');
+                data.errors.forEach(errorMessage => {
+                    const item = document.createElement('li');
+                    item.textContent = String(errorMessage);
+                    errorList.appendChild(item);
+                });
+                errorBox.appendChild(errorList);
+                preview.appendChild(errorBox);
+            }
+            const confirmButton = document.createElement('button');
+            confirmButton.type = 'button';
+            confirmButton.className = 'btn btn-warning';
+            confirmButton.textContent = '确认导入';
+            confirmButton.addEventListener('click', confirmDeptImport);
+            preview.appendChild(confirmButton);
+            preview.style.display='block'; result.style.display='none';
+        }).catch(err=>{ setPeopleManagementFeedback(`上传失败：${err.message}`, 'error'); })
         .finally(()=>{ btn.disabled=false; btn.innerHTML='<i class="bi bi-upload"></i> 上传并预览'; });
     });
 }
 
 function confirmDeptImport() {
     const data = window.__deptImportData;
-    if (!data || !data.import_id) return alert('无效的导入数据');
+    if (!data || !data.import_id) {
+        setPeopleManagementFeedback('无效的导入数据。', 'error');
+        return;
+    }
     
     const overwrite = document.getElementById('deptOverwrite').checked;
     const btn = document.querySelector('#deptPreviewSection button');
@@ -2238,11 +2286,6 @@ function confirmDeptImport() {
     `;
     document.body.appendChild(loadingOverlay);
 
-    // 添加页面关闭警告
-    window.onbeforeunload = function() {
-        return "通讯录正在导入中，确定要离开吗？这可能会导致导入中断。";
-    };
-
     fetch('/admin/confirm_import', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -2257,22 +2300,30 @@ function confirmDeptImport() {
         if (document.body.contains(loadingOverlay)) {
             document.body.removeChild(loadingOverlay);
         }
-        window.onbeforeunload = null;
-
         if (res.success) {
             const result = document.getElementById('deptResultSection');
-            result.innerHTML = `
-                <div class="alert alert-success">
-                    <h5><i class="bi bi-check-circle"></i> 导入成功</h5>
-                    <p>新增: ${res.imported_count}, 更新: ${res.updated_count}, 跳过: ${res.skipped_count}</p>
-                    ${res.password_file_url ? `<a href="${res.password_file_url}" class="btn btn-primary btn-sm"><i class="bi bi-download"></i> 下载密码表</a>` : ''}
-                </div>
-            `;
+            result.replaceChildren();
+            const successBox = document.createElement('div');
+            successBox.className = 'alert alert-success';
+            const successTitle = document.createElement('h5');
+            successTitle.textContent = '导入成功';
+            const successSummary = document.createElement('p');
+            successSummary.textContent = `新增: ${res.imported_count}, 更新: ${res.updated_count}, 跳过: ${res.skipped_count}`;
+            successBox.append(successTitle, successSummary);
+            if (typeof res.password_file_url === 'string' && res.password_file_url.startsWith('/')) {
+                const downloadLink = document.createElement('a');
+                downloadLink.href = res.password_file_url;
+                downloadLink.className = 'btn btn-primary btn-sm';
+                downloadLink.textContent = '下载密码表';
+                successBox.appendChild(downloadLink);
+            }
+            result.appendChild(successBox);
             result.style.display = 'block';
             document.getElementById('deptPreviewSection').style.display = 'none';
+            setPeopleManagementFeedback('通讯录导入成功。', 'success');
             loadDepartments(); // 刷新列表
         } else {
-            alert('导入失败: ' + res.message);
+            setPeopleManagementFeedback(`导入失败：${res.message || ''}`, 'error');
             if(btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle"></i> 确认导入'; }
         }
     })
@@ -2281,10 +2332,8 @@ function confirmDeptImport() {
         if (document.body.contains(loadingOverlay)) {
             document.body.removeChild(loadingOverlay);
         }
-        window.onbeforeunload = null;
-
         console.error(err);
-        alert('系统错误: ' + err.message);
+        setPeopleManagementFeedback(`系统错误：${err.message}`, 'error');
         if(btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle"></i> 确认导入'; }
     });
 }
@@ -2308,7 +2357,11 @@ function initContactsExport() {
         progressBar.style.width='5%'; progressText.textContent='开始导出...';
         fetch(`/admin/api/export/contacts?${params.toString()}`)
         .then(r=>r.json()).then(data=>{
-            if (!data.success) { progressText.textContent='导出失败'; alert(data.message || '导出失败'); return; }
+            if (!data.success) {
+                progressText.textContent='导出失败';
+                setPeopleManagementFeedback(data.message || '导出失败。', 'error');
+                return;
+            }
             const jobId = data.job_id;
             // 轮询进度
             const timer = setInterval(()=>{
@@ -2320,12 +2373,26 @@ function initContactsExport() {
                     if (p.status === 'completed') {
                         clearInterval(timer);
                         result.style.display='block';
-                        result.innerHTML = `<div class=\"alert alert-success\">导出完成，共 ${data.total} 条记录<br><a class=\"btn btn-primary btn-sm mt-2\" href=\"${p.download_url}\"><i class=\"bi bi-download\"></i> 下载文件</a></div>`;
+                        result.replaceChildren();
+                        const successBox = document.createElement('div');
+                        successBox.className = 'alert alert-success';
+                        const successMessage = document.createElement('p');
+                        successMessage.textContent = `导出完成，共 ${data.total} 条记录`;
+                        successBox.appendChild(successMessage);
+                        if (typeof p.download_url === 'string' && p.download_url.startsWith('/')) {
+                            const downloadLink = document.createElement('a');
+                            downloadLink.href = p.download_url;
+                            downloadLink.className = 'btn btn-primary btn-sm mt-2';
+                            downloadLink.textContent = '下载文件';
+                            successBox.appendChild(downloadLink);
+                        }
+                        result.appendChild(successBox);
+                        setPeopleManagementFeedback('通讯录导出完成。', 'success');
                     }
                 });
             }, 1000);
         }).catch(err=>{
-            alert('导出失败：'+err.message);
+            setPeopleManagementFeedback(`导出失败：${err.message}`, 'error');
         });
     });
 }
@@ -2356,4 +2423,7 @@ function initContactsExport() {
     font-size: 0.7rem;
 }
 </style>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/review-queue.js') }}"></script>
 {% endblock %}

@@ -123,6 +123,45 @@ function clearReviewQueueUrl() {
     }
 }
 
+function setAdminFeedback(elementId, message, level = 'info') {
+    const element = document.getElementById(elementId);
+    if (!element) {
+        return;
+    }
+    const allowedLevels = new Set(['info', 'success', 'error', 'warning']);
+    const safeLevel = allowedLevels.has(level) ? level : 'info';
+    element.className = `activity-feedback activity-feedback--${safeLevel}`;
+    element.setAttribute('role', safeLevel === 'error' ? 'alert' : 'status');
+    element.setAttribute('aria-live', 'polite');
+    element.textContent = String(message || '');
+    element.hidden = !message;
+}
+
+function showAdminConfirmation(modalId, message, onConfirm) {
+    const modalElement = document.getElementById(modalId);
+    const messageElement = modalElement?.querySelector('[data-admin-confirm-message]');
+    const confirmButton = modalElement?.querySelector('[data-admin-confirm-submit]');
+    if (!modalElement || !messageElement || !confirmButton) {
+        return;
+    }
+
+    messageElement.textContent = String(message || '');
+    modalElement.__adminConfirmAction = onConfirm;
+    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+    confirmButton.onclick = () => {
+        const action = modalElement.__adminConfirmAction;
+        modalElement.__adminConfirmAction = null;
+        modal.hide();
+        if (typeof action === 'function') {
+            action();
+        }
+    };
+    modalElement.addEventListener('hidden.bs.modal', () => {
+        modalElement.__adminConfirmAction = null;
+    }, { once: true });
+    modal.show();
+}
+
 function openFullReview(formId) {
     const returnUrl = syncReviewQueueUrl();
     saveQueueState(formId);
@@ -156,6 +195,8 @@ window.saveQueueState = saveQueueState;
 window.markReviewQueueSelection = markReviewQueueSelection;
 window.restoreReviewQueueSelection = restoreReviewQueueSelection;
 window.clearReviewQueueUrl = clearReviewQueueUrl;
+window.setAdminFeedback = setAdminFeedback;
+window.showAdminConfirmation = showAdminConfirmation;
 window.openFullReview = openFullReview;
 
 if (document.readyState === 'loading') {

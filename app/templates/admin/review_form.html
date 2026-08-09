@@ -10,6 +10,22 @@
         </a>
         <div class="draft-save-status" id="draftSaveStatus" role="status" aria-live="polite">尚未保存</div>
     </div>
+    <div id="reviewFormFeedback" class="activity-feedback" role="status" aria-live="polite" hidden></div>
+    <div id="reviewFormActionConfirmModal" class="modal fade" tabindex="-1" aria-labelledby="reviewFormActionConfirmTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title fs-5" id="reviewFormActionConfirmTitle">确认操作</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body" data-admin-confirm-message></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger" data-admin-confirm-submit>确认</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <div class="row">
         <div class="col-12">
             <div class="card">
@@ -27,7 +43,7 @@
                             <i class="fas fa-arrow-left"></i> 返回队列
                         </a>
                     </div>
-                </div>·
+                </div>
                 
                 <div class="card-body" id="mainContent" style="display: none;">
                     <form id="reviewForm">
@@ -699,6 +715,20 @@ function getReviewReturnUrl() {
     return candidate && candidate.startsWith('/admin/review_forms') ? candidate : '/admin/review_forms';
 }
 
+function setReviewFormFeedback(message, level = 'error') {
+    if (typeof window.setAdminFeedback === 'function') {
+        window.setAdminFeedback('reviewFormFeedback', message, level);
+    }
+}
+
+function showReviewActionDialog(message, action) {
+    if (typeof window.showAdminConfirmation === 'function') {
+        window.showAdminConfirmation('reviewFormActionConfirmModal', message, action);
+    } else {
+        setReviewFormFeedback('确认对话框暂不可用，请刷新页面后重试。', 'error');
+    }
+}
+
 function returnToReviewQueue() {
     window.location.assign(getReviewReturnUrl());
 }
@@ -1114,7 +1144,7 @@ async function deleteReviewFormDraft() {
 
 // 重置表单
 function resetForm() {
-    if (confirm('确定要重置表单到原始状态吗？所有修改将丢失。')) {
+    showReviewActionDialog('确定要重置表单到原始状态吗？所有修改将丢失。', () => {
         populateForm(originalFormData);
         document.getElementById('reviewComment').value = originalFormData.review_comment || '';
         document.getElementById('changesDisplay').style.display = 'none';
@@ -1124,48 +1154,47 @@ function resetForm() {
             scoringBody.innerHTML = '';
         }
         deleteReviewFormDraft();
-    }
+        setReviewFormFeedback('表单已重置为原始内容。', 'info');
+    });
 }
 
 // 驳回表单
 function rejectReview(event) {
     const reason = document.getElementById('reviewComment').value.trim();
-    if (!confirm('确定要驳回此表单吗？')) {
-        return;
-    }
-    
-    // 禁用按钮
     const btn = event.currentTarget || event.target;
-    const originalText = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 处理中...';
-    
-    fetch(`/admin/api/review/reject/${formId}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            reason: reason
+    showReviewActionDialog('确定要驳回此表单吗？', () => {
+        // 禁用按钮
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 处理中...';
+
+        fetch(`/admin/api/review/reject/${formId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                reason: reason
+            })
         })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            deleteReviewFormDraft();
-            showResult(true, '表单已驳回', `操作成功，表单状态已更新为：${data.new_status}`);
-            window.setTimeout(returnToReviewQueue, 650);
-        } else {
-            showResult(false, '驳回失败', data.message || '未知错误');
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                deleteReviewFormDraft();
+                showResult(true, '表单已驳回', `操作成功，表单状态已更新为：${data.new_status}`);
+                window.setTimeout(returnToReviewQueue, 650);
+            } else {
+                showResult(false, '驳回失败', data.message || '未知错误');
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showResult(false, '驳回失败', '网络错误，请稍后重试');
             btn.disabled = false;
             btn.innerHTML = originalText;
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showResult(false, '驳回失败', '网络错误，请稍后重试');
-        btn.disabled = false;
-        btn.innerHTML = originalText;
+        });
     });
 }
 
@@ -1198,7 +1227,7 @@ function submitReview() {
         const element = document.getElementById(fieldId);
         if (!element || !element.value.trim()) {
             const label = element ? element.previousElementSibling.textContent.replace('：', '').replace(' *', '') : fieldId;
-            alert(`请填写${label}`);
+            setReviewFormFeedback(`请填写${label}`);
             if (element) element.focus();
             return;
         }
@@ -1446,9 +1475,10 @@ function updateClassPeriod() {
                 classPeriodInput.value = `第${startPeriod}-${endPeriod}节`;
             }
         } else {
-            alert('开始节次不能大于结束节次');
+            setReviewFormFeedback('开始节次不能大于结束节次');
             document.getElementById('end_period').value = '';
             classPeriodInput.value = '';
+            document.getElementById('end_period').focus();
         }
     }
 }
@@ -1458,28 +1488,20 @@ function showResult(success, title, message) {
     const resultHeader = document.getElementById('resultHeader');
     const resultTitle = document.getElementById('resultTitle');
     const resultBody = document.getElementById('resultBody');
-    
-    if (success) {
-        resultHeader.className = 'modal-header bg-success';
-        resultTitle.innerHTML = `<i class="fas fa-check"></i> ${title}`;
-        resultBody.innerHTML = `
-            <div class="alert alert-success">
-                <i class="fas fa-check-circle fa-2x mb-3"></i>
-                <h5>${message}</h5>
-                <p>您可以关闭此页面或继续审核其他表单。</p>
-            </div>
-        `;
-    } else {
-        resultHeader.className = 'modal-header bg-danger';
-        resultTitle.innerHTML = `<i class="fas fa-times"></i> ${title}`;
-        resultBody.innerHTML = `
-            <div class="alert alert-danger">
-                <i class="fas fa-exclamation-triangle fa-2x mb-3"></i>
-                <h5>${message}</h5>
-                <p>请检查网络连接或联系管理员。</p>
-            </div>
-        `;
-    }
+
+    resultHeader.className = `modal-header ${success ? 'bg-success' : 'bg-danger'}`;
+    resultTitle.textContent = String(title || '操作结果');
+    resultBody.replaceChildren();
+    const resultAlert = document.createElement('div');
+    resultAlert.className = `alert ${success ? 'alert-success' : 'alert-danger'}`;
+    const resultMessage = document.createElement('h5');
+    resultMessage.textContent = String(message || '');
+    const resultHint = document.createElement('p');
+    resultHint.textContent = success
+        ? '您可以关闭此页面或继续审核其他表单。'
+        : '请检查网络连接或联系管理员。';
+    resultAlert.append(resultMessage, resultHint);
+    resultBody.appendChild(resultAlert);
     
     $('#resultModal').modal('show');
 }
@@ -1709,4 +1731,7 @@ function renderContactsResults(matches) {
     }).join('');
 }
 </script>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/review-queue.js') }}"></script>
 {% endblock %}
