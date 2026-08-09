@@ -1,0 +1,174 @@
+<div class="activity-panel">
+    <div class="activity-panel__header"><h2>考核对象与指标设定</h2><p>设置免于考核和请假规则，规则会影响部门月度考评统计。</p></div>
+    <div class="activity-panel__body">
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            <button class="btn btn-primary" id="btnLoadMembers" type="button">查询成员</button>
+            <button class="btn btn-outline-secondary" id="btnSelectAllDepts" type="button">全选部门</button>
+            <button class="btn btn-outline-secondary" id="btnClearDepts" type="button">清空选择</button>
+        </div>
+        <div class="row g-3">
+            <div class="col-lg-3">
+                <section class="border rounded p-3 h-100">
+                    <h3 class="fs-6">部门范围</h3>
+                    <label class="visually-hidden" for="deptSearchInput">搜索部门</label>
+                    <input type="text" id="deptSearchInput" class="form-control mb-2" placeholder="搜索部门">
+                    <div id="deptList" class="vstack gap-2" style="max-height: 600px; overflow-y: auto;"></div>
+                </section>
+            </div>
+            <div class="col-lg-9">
+                <section class="border rounded">
+                    <div class="p-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <h3 class="fs-6 mb-0">成员列表与考核规则设定</h3>
+                        <div id="memberSelectionToolbar" hidden>
+                            <button class="btn btn-sm btn-outline-secondary" id="btnSelectAllMembers" type="button">全选</button>
+                            <button class="btn btn-sm btn-outline-secondary" id="btnInvertMembers" type="button">反选</button>
+                            <button class="btn btn-sm btn-outline-secondary" id="btnClearMembers" type="button">清空选择</button>
+                        </div>
+                    </div>
+                    <div class="p-3" id="memberBody"><div class="activity-empty">请先选择部门后点击“查询成员”。</div></div>
+                    <div class="p-3 border-top" id="batchActionBar" hidden>
+                        <div class="d-flex align-items-center justify-content-between gap-3">
+                            <span id="selectedCountLabel" class="text-muted">已选择 0 人</span>
+                            <button class="btn btn-warning" id="btnBatchAddRule" type="button" disabled><i class="bi bi-plus-circle" aria-hidden="true"></i> 为选中成员添加规则</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="addRuleModal" tabindex="-1" aria-labelledby="addRuleTitle" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h2 class="modal-title fs-5" id="addRuleTitle">添加特殊考核规则</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button></div>
+        <div class="modal-body">
+            <div class="mb-3"><span class="form-label d-block">成员</span><div id="ruleTargetMembers" class="form-control-plaintext fw-bold"></div></div>
+            <div class="mb-3"><label for="ruleType" class="form-label">规则类型</label><select class="form-select" id="ruleType"><option value="exempt">免于考核</option>{% if is_super_admin %}<option value="leave">请假</option>{% endif %}</select></div>
+            <div class="row mb-3"><div class="col-6"><label for="ruleStartWeek" class="form-label">起始周</label><input type="number" class="form-control" id="ruleStartWeek" min="1" value="1"></div><div class="col-6"><label for="ruleEndWeek" class="form-label">结束周</label><input type="number" class="form-control" id="ruleEndWeek" min="1" value="20"></div></div>
+            <div class="mb-3"><label for="ruleReason" class="form-label">理由 <span class="text-danger">*</span></label><input type="text" class="form-control" id="ruleReason" placeholder="请填写理由（必填）" maxlength="200"></div>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button type="button" class="btn btn-primary" id="btnSaveRule">保存</button></div>
+    </div></div>
+</div>
+
+<script>
+(() => {
+    const availableDepartments = {{ available_departments|tojson }};
+    const isSuperAdmin = {{ is_super_admin|tojson }};
+    let currentMembersData = null;
+    let pendingRuleUserIds = [];
+    const feedback = (text, variant) => window.appFeedback ? window.appFeedback(text, variant) : console.warn(text);
+    const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (s) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+
+    function renderDeptList() {
+        const root = document.getElementById('deptList');
+        if (!availableDepartments || availableDepartments.length === 0) { root.innerHTML = '<div class="text-muted">暂无可选部门</div>'; return; }
+        root.innerHTML = availableDepartments.map((name) => `<label class="form-check dept-item-row"><input class="form-check-input dept-item" type="checkbox" value="${escapeHtml(name)}"> ${escapeHtml(name)}</label>`).join('');
+    }
+    function filterDepts() {
+        const keyword = document.getElementById('deptSearchInput').value.trim().toLowerCase();
+        document.querySelectorAll('.dept-item-row').forEach((row) => { row.hidden = Boolean(keyword) && !row.textContent.toLowerCase().includes(keyword); });
+    }
+    function getSelectedDepts() { return Array.from(document.querySelectorAll('.dept-item:checked')).map((el) => el.value); }
+    function getCheckedMemberIds() { return Array.from(document.querySelectorAll('.member-checkbox:checked')).map((el) => Number.parseInt(el.value, 10)); }
+    function updateSelectionCount() {
+        const count = getCheckedMemberIds().length;
+        document.getElementById('selectedCountLabel').textContent = `已选择 ${count} 人`;
+        document.getElementById('btnBatchAddRule').disabled = count === 0;
+    }
+    function renderOverrideTypeBadge(type) {
+        const map = {exempt: '<span class="badge bg-danger">免于考核</span>', leave: '<span class="badge bg-primary">请假</span>', custom_requirement: '<span class="badge bg-warning text-dark">自定义指标</span>', partial_exempt: '<span class="badge bg-info">部分减免</span>'};
+        return map[type] || `<span class="badge bg-secondary">${escapeHtml(type)}</span>`;
+    }
+    function renderMembers(data) {
+        const root = document.getElementById('memberBody');
+        const departments = data.departments || [];
+        if (departments.length === 0) { root.innerHTML = '<div class="activity-empty">无可展示的成员。</div>'; document.getElementById('memberSelectionToolbar').hidden = true; document.getElementById('batchActionBar').hidden = true; return; }
+        document.getElementById('memberSelectionToolbar').hidden = false;
+        document.getElementById('batchActionBar').hidden = false;
+        let html = '';
+        for (const dept of departments) for (const group of (dept.groups || [])) {
+            html += `<section class="border rounded mb-3"><div class="p-2 border-bottom bg-light"><strong>${escapeHtml(dept.department)}</strong> · ${escapeHtml(group.group_name)}</div><div class="list-group list-group-flush">`;
+            for (const member of (group.members || [])) {
+                html += `<div class="list-group-item"><div class="d-flex align-items-center gap-2"><input class="form-check-input member-checkbox" type="checkbox" value="${member.user_id}" data-name="${escapeHtml(member.name)}"><strong>${escapeHtml(member.name)}</strong><span class="text-muted">(${escapeHtml(member.number || '-')})</span><button class="btn btn-sm btn-outline-primary ms-auto" type="button" onclick="openAddRuleModal([{id:${member.user_id},name:'${escapeHtml(member.name)}'}])"><i class="bi bi-plus-circle" aria-hidden="true"></i> 添加规则</button></div>`;
+                const overrides = member.overrides || [];
+                if (!overrides.length) html += '<div class="text-muted small mt-1 ms-4">无特殊考核规则</div>';
+                for (const ov of overrides) html += `<div class="d-flex align-items-center gap-2 mt-1 ms-4"><span>${renderOverrideTypeBadge(ov.override_type)}</span><span class="small">第${ov.start_week}-${ov.end_week}周</span><span class="small text-muted">(${escapeHtml(ov.reason)})</span><button class="btn btn-sm btn-outline-danger ms-auto" type="button" onclick="deleteOverride(${ov.id})">删除</button></div>`;
+                html += '</div>';
+            }
+            html += '</div></section>';
+        }
+        root.innerHTML = html;
+        document.querySelectorAll('.member-checkbox').forEach((input) => input.addEventListener('change', updateSelectionCount));
+        updateSelectionCount();
+    }
+    function loadMembers() {
+        const departments = getSelectedDepts();
+        if (!departments.length) { feedback('请先选择至少一个部门', 'warning'); return; }
+        const params = new URLSearchParams();
+        departments.forEach((name) => params.append('departments', name));
+        fetch(`/admin/api/assessment-overrides/list?${params.toString()}`).then((r) => r.json()).then((data) => {
+            if (!data.success) { feedback(data.message || '查询失败', 'error'); return; }
+            currentMembersData = data;
+            renderMembers(data);
+        }).catch(() => feedback('查询失败，请稍后重试', 'error'));
+    }
+    window.openAddRuleModal = (users) => {
+        pendingRuleUserIds = users.map((user) => user.id);
+        document.getElementById('ruleTargetMembers').textContent = users.map((user) => user.name).join('，');
+        document.getElementById('ruleType').value = 'exempt';
+        document.getElementById('ruleStartWeek').value = '1';
+        document.getElementById('ruleEndWeek').value = '20';
+        document.getElementById('ruleReason').value = '';
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('addRuleModal')).show();
+    };
+    function openBatchAddRuleModal() {
+        const checked = document.querySelectorAll('.member-checkbox:checked');
+        if (!checked.length) { feedback('请先勾选至少一个成员', 'warning'); return; }
+        window.openAddRuleModal(Array.from(checked).map((el) => ({id: Number.parseInt(el.value, 10), name: el.dataset.name})));
+    }
+    function saveRule() {
+        const overrideType = document.getElementById('ruleType').value;
+        const startWeek = Number.parseInt(document.getElementById('ruleStartWeek').value, 10);
+        const endWeek = Number.parseInt(document.getElementById('ruleEndWeek').value, 10);
+        const reason = document.getElementById('ruleReason').value.trim();
+        if (!reason) { feedback('请填写理由', 'warning'); return; }
+        if (!Number.isInteger(startWeek) || !Number.isInteger(endWeek) || startWeek < 1 || endWeek < 1) { feedback('周次必须为大于 0 的整数', 'warning'); return; }
+        if (startWeek > endWeek) { feedback('起始周不能大于结束周', 'warning'); return; }
+        const button = document.getElementById('btnSaveRule');
+        button.disabled = true;
+        button.textContent = '保存中...';
+        fetch('/admin/api/assessment-overrides', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_ids: pendingRuleUserIds, override_type: overrideType, start_week: startWeek, end_week: endWeek, reason})}).then((r) => r.json()).then((data) => {
+            if (!data.success) { feedback(data.message || '添加失败', 'error'); return; }
+            feedback(data.message || '添加成功', 'success');
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('addRuleModal')).hide();
+            loadMembers();
+        }).catch(() => feedback('添加失败，请稍后重试', 'error')).finally(() => { button.disabled = false; button.textContent = '保存'; });
+    }
+    window.deleteOverride = async (overrideId) => {
+        const confirmed = window.appConfirm ? await window.appConfirm('确定要删除该考核规则吗？') : true;
+        if (!confirmed) return;
+        fetch(`/admin/api/assessment-overrides/${overrideId}`, {method: 'DELETE'}).then((r) => r.json()).then((data) => {
+            if (!data.success) { feedback(data.message || '删除失败', 'error'); return; }
+            feedback(data.message || '规则已删除', 'success');
+            loadMembers();
+        }).catch(() => feedback('删除失败，请稍后重试', 'error'));
+    };
+    function selectAllMembers() { document.querySelectorAll('.member-checkbox').forEach((el) => { el.checked = true; }); updateSelectionCount(); }
+    function invertMembers() { document.querySelectorAll('.member-checkbox').forEach((el) => { el.checked = !el.checked; }); updateSelectionCount(); }
+    function clearMemberSelection() { document.querySelectorAll('.member-checkbox').forEach((el) => { el.checked = false; }); updateSelectionCount(); }
+    function initPage() {
+        renderDeptList();
+        document.getElementById('deptSearchInput').addEventListener('input', filterDepts);
+        document.getElementById('btnLoadMembers').addEventListener('click', loadMembers);
+        document.getElementById('btnSelectAllDepts').addEventListener('click', () => document.querySelectorAll('.dept-item').forEach((el) => { el.checked = true; }));
+        document.getElementById('btnClearDepts').addEventListener('click', () => document.querySelectorAll('.dept-item').forEach((el) => { el.checked = false; }));
+        document.getElementById('btnSelectAllMembers').addEventListener('click', selectAllMembers);
+        document.getElementById('btnInvertMembers').addEventListener('click', invertMembers);
+        document.getElementById('btnClearMembers').addEventListener('click', clearMemberSelection);
+        document.getElementById('btnBatchAddRule').addEventListener('click', openBatchAddRuleModal);
+        document.getElementById('btnSaveRule').addEventListener('click', saveRule);
+    }
+    document.addEventListener('DOMContentLoaded', initPage);
+})();
+</script>

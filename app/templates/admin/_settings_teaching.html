@@ -1,0 +1,82 @@
+<section class="activity-panel" aria-labelledby="teachingSettingsTitle">
+    <div class="activity-panel__header"><h2 id="teachingSettingsTitle">听课制度设置</h2><p>维护教学周、提交要求、审表展示和个人资料修改范围。</p></div>
+    <div class="activity-panel__body">
+        <div class="row g-3 mb-3" aria-label="当前设置概览">
+            <div class="col-sm-6 col-xl-3"><div class="border rounded p-3"><strong class="d-block text-muted small">第一周周一</strong><span id="previewFirstWeek">-</span></div></div>
+            <div class="col-sm-6 col-xl-3"><div class="border rounded p-3"><strong class="d-block text-muted small">总教学周数</strong><span id="previewTotalWeeks">-</span></div></div>
+            <div class="col-sm-6 col-xl-3"><div class="border rounded p-3"><strong class="d-block text-muted small">每周需交/听表</strong><span id="previewRequiredSubmit">-</span></div></div>
+            <div class="col-sm-6 col-xl-3"><div class="border rounded p-3"><strong class="d-block text-muted small">课程登记周限制</strong><span id="previewCourseWeeklyLimit">-</span></div></div>
+        </div>
+        <div class="activity-feedback activity-feedback--info" id="teachingSettingsFeedback" role="status" aria-live="polite" hidden></div>
+        <form id="teachingSettingsForm">
+            <div class="row g-3">
+                <div class="col-md-6"><label for="firstWeekMonday" class="form-label">第一周起始日期</label><input type="date" class="form-control" id="firstWeekMonday" name="first_week_monday" required><div class="form-text">该日期作为第一周的第一天。</div></div>
+                <div class="col-md-6"><label for="weekStartDay" class="form-label">教学周起始日</label><select class="form-select" id="weekStartDay" name="week_start_day" required><option value="0">周一</option><option value="1">周二</option><option value="2">周三</option><option value="3">周四</option><option value="4">周五</option><option value="5">周六</option><option value="6">周日</option></select></div>
+                <div class="col-md-6"><label for="totalWeeks" class="form-label">总教学周数</label><input type="number" class="form-control" id="totalWeeks" name="total_weeks" min="1" max="52" value="20" required></div>
+                <div class="col-md-6"><label for="requiredSubmission" class="form-label">每周需交表数量</label><input type="number" class="form-control" id="requiredSubmission" name="required_submission_count" min="0" value="1" required><div class="form-text">同时也是需听表单数量。</div></div>
+                <div class="col-md-6"><label for="courseWeeklyLimitCount" class="form-label">课程每周最大被登记次数</label><div class="d-flex align-items-center gap-3"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="courseWeeklyLimitEnabled"><label class="form-check-label" for="courseWeeklyLimitEnabled">启用限制</label></div><input type="number" class="form-control" id="courseWeeklyLimitCount" name="course_weekly_limit_count" min="1" value="1"></div></div>
+                <div class="col-md-6"><span class="form-label d-block">无错误表单定义</span><div class="border rounded p-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="checkDeptReview" name="check_dept_review"><label class="form-check-label" for="checkDeptReview">部门审核阶段无修改</label></div><div class="form-check"><input class="form-check-input" type="checkbox" id="checkCenterReview" name="check_center_review"><label class="form-check-label" for="checkCenterReview">中心审核阶段无修改</label></div></div></div>
+                <div class="col-md-6"><label for="reviewerDisplayMode" class="form-label">审表人信息展示方式</label><select class="form-select" id="reviewerDisplayMode" name="reviewer_display_mode" required><option value="name">显示姓名</option><option value="number">显示信息员编号</option></select></div>
+                <div class="col-md-6"><span class="form-label d-block">自动审核设置</span><div class="border rounded p-3"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="showAutoReviewDetails" name="show_auto_review_details" checked><label class="form-check-label" for="showAutoReviewDetails">将自动审核详情作为审核意见</label></div><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="enableTyposCheck" name="enable_typos_check" checked><label class="form-check-label" for="enableTyposCheck">启用错别字智能检测</label></div></div></div>
+                <div class="col-12"><span class="form-label d-block">普通用户个人资料修改范围</span><div class="border rounded p-3"><div class="form-text mb-2">学号和密码不在此处开放。</div><div class="row g-2">{% for field in [('name','姓名'),('gender','性别'),('grade','年级'),('college','学院'),('major','专业'),('dormitory','宿舍'),('phone','手机号码'),('qq','QQ号码')] %}<div class="col-6 col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="profileField{{ field[0]|capitalize }}" value="{{ field[0] }}" data-profile-editable-field><label class="form-check-label" for="profileField{{ field[0]|capitalize }}">{{ field[1] }}</label></div></div>{% endfor %}</div></div></div>
+                <div class="col-12"><div class="border rounded p-3"><strong class="d-block mb-2">当前规则摘要</strong><p class="mb-1"><span class="text-muted">无错误定义：</span><span id="previewErrorFree">-</span></p><p class="mb-1"><span class="text-muted">审表人展示：</span><span id="previewReviewerDisplay">-</span></p><p class="mb-0"><span class="text-muted">个人资料可改项：</span><span id="previewProfileEditableFields">-</span></p></div></div>
+            </div>
+            <div class="form-actions mt-3"><button type="submit" class="btn btn-primary" id="saveSettingsBtn">保存设置</button></div>
+        </form>
+    </div>
+</section>
+
+<script>
+(() => {
+    const feedback = document.getElementById('teachingSettingsFeedback');
+    const showFeedback = (text, variant = 'info') => { feedback.textContent = text; feedback.className = `activity-feedback activity-feedback--${variant}`; feedback.hidden = false; };
+    const fields = () => document.querySelectorAll('[data-profile-editable-field]');
+    function renderSettings(settings) {
+        document.getElementById('previewFirstWeek').textContent = settings.first_week_monday || '未设置';
+        document.getElementById('previewTotalWeeks').textContent = settings.total_weeks || 20;
+        document.getElementById('previewRequiredSubmit').textContent = settings.required_submission_count || 1;
+        const errorFree = [];
+        if (settings.check_dept_review) errorFree.push('部门审核无修改');
+        if (settings.check_center_review) errorFree.push('中心审核无修改');
+        document.getElementById('previewErrorFree').textContent = errorFree.length ? errorFree.join(' + ') : '未设置';
+        document.getElementById('previewReviewerDisplay').textContent = settings.reviewer_display_mode === 'number' ? '信息员编号' : '姓名';
+        document.getElementById('previewCourseWeeklyLimit').textContent = settings.course_weekly_limit_enabled ? `启用，每周最多 ${settings.course_weekly_limit_count || 1} 次` : '未启用';
+        const options = settings.profile_editable_field_options || [];
+        const selected = new Set(settings.profile_editable_fields || []);
+        document.getElementById('previewProfileEditableFields').textContent = selected.size ? options.filter((item) => selected.has(item.key)).map((item) => item.label).join('、') : '全部禁止';
+        document.getElementById('firstWeekMonday').value = settings.first_week_monday || '';
+        document.getElementById('totalWeeks').value = settings.total_weeks || 20;
+        document.getElementById('requiredSubmission').value = settings.required_submission_count || 1;
+        document.getElementById('weekStartDay').value = settings.week_start_day || 0;
+        document.getElementById('reviewerDisplayMode').value = settings.reviewer_display_mode || 'name';
+        document.getElementById('courseWeeklyLimitEnabled').checked = Boolean(settings.course_weekly_limit_enabled);
+        document.getElementById('courseWeeklyLimitCount').value = settings.course_weekly_limit_count || 1;
+        document.getElementById('checkDeptReview').checked = Boolean(settings.check_dept_review);
+        document.getElementById('checkCenterReview').checked = Boolean(settings.check_center_review);
+        document.getElementById('showAutoReviewDetails').checked = settings.show_auto_review_details !== false;
+        document.getElementById('enableTyposCheck').checked = settings.enable_typos_check !== false;
+        const selectedFields = new Set(settings.profile_editable_fields || []);
+        fields().forEach((input) => { input.checked = selectedFields.has(input.value); });
+    }
+    function loadTeachingSettings() {
+        fetch('{{ url_for('admin.get_teaching_settings') }}').then((response) => response.json()).then((data) => { if (data.success) renderSettings(data.data); else showFeedback(data.message || '加载设置失败', 'error'); }).catch(() => showFeedback('加载设置失败，请稍后重试', 'error'));
+    }
+    document.getElementById('teachingSettingsForm').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const formData = new FormData(event.currentTarget);
+        const data = Object.fromEntries(formData.entries());
+        data.check_dept_review = document.getElementById('checkDeptReview').checked;
+        data.check_center_review = document.getElementById('checkCenterReview').checked;
+        data.show_auto_review_details = document.getElementById('showAutoReviewDetails').checked;
+        data.enable_typos_check = document.getElementById('enableTyposCheck').checked;
+        data.course_weekly_limit_enabled = document.getElementById('courseWeeklyLimitEnabled').checked;
+        data.course_weekly_limit_count = document.getElementById('courseWeeklyLimitCount').value;
+        data.profile_editable_fields = Array.from(document.querySelectorAll('[data-profile-editable-field]:checked')).map((input) => input.value);
+        const button = document.getElementById('saveSettingsBtn');
+        button.disabled = true;
+        button.textContent = '保存中...';
+        fetch('{{ url_for('admin.update_teaching_settings') }}', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)}).then((response) => response.json()).then((result) => { showFeedback(result.success ? '设置已保存' : (result.message || '保存失败'), result.success ? 'success' : 'error'); if (result.success) loadTeachingSettings(); }).catch(() => showFeedback('保存失败，请稍后重试', 'error')).finally(() => { button.disabled = false; button.textContent = '保存设置'; });
+    });
+    document.addEventListener('DOMContentLoaded', loadTeachingSettings);
+})();
+</script>

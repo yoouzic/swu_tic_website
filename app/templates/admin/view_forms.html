@@ -382,7 +382,7 @@ function resetExportCheckState() {
 function handleExportScopeChange() {
     const scope = document.querySelector('input[name="scope"]:checked').value;
     if (scope === 'selected') {
-        alert('请在“审核表单”功能中选择表单导出');
+        window.appFeedback('请在“审核表单”功能中选择表单导出');
         document.getElementById('scopeLatest').checked = true;
     }
     resetExportCheckState();
@@ -401,7 +401,7 @@ function checkExportData() {
     const data = Object.fromEntries(formData.entries());
 
     if (data.scope === 'selected') {
-        alert('请在“审核表单”功能中选择表单导出');
+        window.appFeedback('请在“审核表单”功能中选择表单导出');
         document.getElementById('scopeLatest').checked = true;
         resetExportCheckState();
         return;
@@ -461,7 +461,7 @@ function executeExport() {
     const data = Object.fromEntries(formData.entries());
 
     if (data.scope === 'selected') {
-        alert('请在“审核表单”功能中选择表单导出');
+        window.appFeedback('请在“审核表单”功能中选择表单导出');
         document.getElementById('scopeLatest').checked = true;
         resetExportCheckState();
         return;

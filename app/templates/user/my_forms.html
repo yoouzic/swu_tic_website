@@ -63,9 +63,9 @@
                                     <th>操作</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody data-reservation-list>
                                 {% for item in my_reservations %}
-                                <tr>
+                                <tr data-reservation-id="{{ item.id }}">
                                     <td>{{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '-' }}</td>
                                     <td>
                                         <div class="fw-bold">{{ item.course_name }}</div>
@@ -76,7 +76,7 @@
                                         <small class="text-muted">{{ item.class_time or '-' }}</small>
                                     </td>
                                     <td style="max-width: 360px;">
-                                        <span title="{{ item.listening_info or '' }}">{{ item.listening_info or '-' }}</span>
+                                        <span data-reservation-info title="{{ item.listening_info or '' }}">{{ item.listening_info or '-' }}</span>
                                     </td>
                                     <td>
                                         {% if item.is_bound %}
@@ -129,7 +129,7 @@
                                 {% for form_group in forms %}
                                 {% set latest_form = form_group['latest_form'] %}
                                 {% set versions = form_group['versions'] %}
-                                <tr>
+                                <tr data-form-row="{{ latest_form.id }}">
                                     <td>
                                         <strong>{{ latest_form.unique_id or ('单独-' + latest_form.id|string) }}</strong>
                                         {% if versions|length > 1 %}
@@ -341,18 +341,45 @@
 <script>
 let deleteFormId = null;
 
+function updateReservationRow(reservationId, listeningInfo) {
+    const row = document.querySelector(`[data-reservation-id="${reservationId}"]`);
+    const info = row ? row.querySelector('[data-reservation-info]') : null;
+    if (info) {
+        info.textContent = listeningInfo;
+        info.title = listeningInfo;
+    }
+}
+
+function removeReservationRow(reservationId) {
+    const row = document.querySelector(`[data-reservation-id="${reservationId}"]`);
+    if (!row) return;
+    const list = row.parentElement;
+    row.remove();
+    if (list && !list.querySelector('[data-reservation-id]')) {
+        list.innerHTML = '<tr><td colspan="6" class="text-center text-muted">暂无听课登记记录</td></tr>';
+    }
+}
+
+function removeFormRow(formId) {
+    const row = document.querySelector(`[data-form-row="${formId}"]`);
+    if (!row) return;
+    const versionRow = row.nextElementSibling;
+    if (versionRow && versionRow.classList.contains('version-history')) versionRow.remove();
+    row.remove();
+}
+
 function deleteForm(formId) {
     deleteFormId = formId;
     const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
     modal.show();
 }
 
-function editReservation(reservationId, originalInfo) {
-    const nextInfo = prompt('请修改听课计划说明：', originalInfo || '');
-    if (nextInfo === null) return;
+async function editReservation(reservationId, originalInfo) {
+    const nextInfo = window.appPrompt ? await window.appPrompt('请修改听课计划说明：', originalInfo || '', '修改听课计划') : originalInfo || '';
+    if (nextInfo === false) return;
     const payload = { listening_info: nextInfo.trim() };
     if (!payload.listening_info) {
-        alert('听课计划说明不能为空');
+        window.appFeedback('听课计划说明不能为空');
         return;
     }
     fetch(`/user/api/my_reservations/${reservationId}`, {
@@ -365,31 +392,34 @@ function editReservation(reservationId, originalInfo) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            location.reload();
+            updateReservationRow(reservationId, payload.listening_info);
+            window.appFeedback('修改成功', 'success');
         } else {
-            alert('修改失败：' + data.message);
+            window.appFeedback('修改失败：' + data.message);
         }
     })
     .catch(error => {
-        alert('修改失败：' + error.message);
+        window.appFeedback('修改失败：' + error.message);
     });
 }
 
-function deleteReservation(reservationId) {
-    if (!confirm('确定删除该听课登记记录吗？此操作不可撤销。')) return;
+async function deleteReservation(reservationId) {
+    const confirmed = window.appConfirm ? await window.appConfirm('确定删除该听课登记记录吗？此操作不可撤销。') : true;
+    if (!confirmed) return;
     fetch(`/user/api/my_reservations/${reservationId}`, {
         method: 'DELETE'
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            location.reload();
+            removeReservationRow(reservationId);
+            window.appFeedback('删除成功', 'success');
         } else {
-            alert('删除失败：' + data.message);
+            window.appFeedback('删除失败：' + data.message);
         }
     })
     .catch(error => {
-        alert('删除失败：' + error.message);
+        window.appFeedback('删除失败：' + error.message);
     });
 }
 
@@ -404,13 +434,16 @@ document.getElementById('confirmDelete').addEventListener('click', function() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                location.reload();
+                removeFormRow(deleteFormId);
+                window.appFeedback('删除成功', 'success');
+                deleteFormId = null;
+                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
             } else {
-                alert('删除失败：' + data.message);
+                window.appFeedback('删除失败：' + data.message);
             }
         })
         .catch(error => {
-            alert('删除失败：' + error.message);
+            window.appFeedback('删除失败：' + error.message);
         });
     }
 });

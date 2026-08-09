@@ -614,7 +614,7 @@ function saveLeaveMakeupSelection() {
             hideLeaveMakeupModal();
             loadLeaveStatus();
         })
-        .catch(error => alert(error.message || '保存失败'))
+        .catch(error => window.appFeedback(error.message || '保存失败'))
         .finally(() => {
             btn.disabled = false;
             btn.textContent = '保存';
@@ -644,7 +644,7 @@ function loadLeaveStatus() {
 function createCurrentWeekLeave() {
     const select = document.getElementById('leaveUserSelect');
     if (!select || !select.value) {
-        alert('请先选择成员');
+        window.appFeedback('请先选择成员');
         return;
     }
     const reasonInput = document.getElementById('leaveReasonInput');
@@ -664,13 +664,13 @@ function createCurrentWeekLeave() {
             if (!data.success) {
                 throw new Error(data.message || '请假发起失败');
             }
-            alert(data.message || '请假已发起');
+            window.appFeedback(data.message || '请假已发起');
             if (reasonInput) {
                 reasonInput.value = '';
             }
             loadLeaveStatus();
         })
-        .catch(error => alert(error.message || '请假发起失败'))
+        .catch(error => window.appFeedback(error.message || '请假发起失败'))
         .finally(() => {
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-check mr-1"></i> 为当前教学周请假';
@@ -731,8 +731,8 @@ const trendChart = new Chart(trendCtx, {
         datasets: [{
             label: '提交数量',
             data: {{ trend_data|safe }},
-            borderColor: '#007bff',
-            backgroundColor: 'rgba(0, 123, 255, 0.1)',
+            borderColor: '#9b493c',
+            backgroundColor: 'rgba(155, 73, 60, 0.1)',
             tension: 0.4,
             fill: true
         }]
@@ -780,14 +780,19 @@ function viewDetails(name, dimension) {
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('加载详情失败');
+            window.appFeedback('加载详情失败');
         });
 }
 
 // 导出统计
 function exportStatistics() {
     const params = new URLSearchParams(window.location.search);
-    window.open(`/admin/export_statistics?${params.toString()}`, '_blank');
+    const link = document.createElement('a');
+    link.href = `/admin/export_statistics?${params.toString()}`;
+    link.download = '';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
 }
 
 // 维度变化时自动提交

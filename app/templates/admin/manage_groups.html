@@ -498,7 +498,7 @@ function showPasswordConfirm(message, callback) {
     document.getElementById('confirmDeleteBtn').onclick = function() {
         const password = document.getElementById('deletePassword').value;
         if (!password) {
-            alert('请输入密码');
+            window.appFeedback('请输入密码');
             return;
         }
         

@@ -85,13 +85,13 @@ document.querySelector('form').addEventListener('submit', function(event) {
 
     if (!studentId) {
         event.preventDefault();
-        alert('请输入账号或学号');
+        window.appFeedback('请输入账号或学号');
         return;
     }
 
     if (!password) {
         event.preventDefault();
-        alert('请输入密码');
+        window.appFeedback('请输入密码');
     }
 });
 </script>

@@ -319,7 +319,7 @@ function loadStats() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        alert('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间');
         return;
     }
     const userIds = getSelectedUserIds();
@@ -328,7 +328,7 @@ function loadStats() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '查询失败');
+                window.appFeedback(data.message || '查询失败');
                 return;
             }
             renderStatsTable(data.users || []);
@@ -337,10 +337,10 @@ function loadStats() {
             }
             const rewardMeta = {has_full_weeks: true};
             if (!rewardMeta.has_full_weeks) {
-                alert('???????????????????? 0 ???');
+                window.appFeedback('???????????????????? 0 ???');
             }
 })
-        .catch(() => alert('查询失败，请稍后重试'));
+        .catch(() => window.appFeedback('查询失败，请稍后重试'));
 }
 
 function toggleVersions(collapseId, chevronId) {
@@ -382,7 +382,7 @@ function viewDetail(userId) {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        alert('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间');
         return;
     }
     const params = new URLSearchParams({
@@ -394,7 +394,7 @@ function viewDetail(userId) {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '加载详情失败');
+                window.appFeedback(data.message || '加载详情失败');
                 return;
             }
             document.getElementById('detailTitle').textContent = `${data.user.name}（${data.user.number}）交表详情`;
@@ -502,7 +502,7 @@ function viewDetail(userId) {
             const modal = new bootstrap.Modal(document.getElementById('detailModal'));
             modal.show();
         })
-        .catch(() => alert('加载详情失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载详情失败，请稍后重试'));
 }
 
 function renderStatsTable(users) {
@@ -559,7 +559,7 @@ function loadStats() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        alert('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间');
         return;
     }
     const userIds = getSelectedUserIds();
@@ -568,7 +568,7 @@ function loadStats() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '查询失败');
+                window.appFeedback(data.message || '查询失败');
                 return;
             }
             currentSubmissionPayload = data;
@@ -583,13 +583,13 @@ function loadStats() {
             renderStatsTable(data.users || []);
             const rewardMeta = data.reward_meta || {};
             if (!rewardMeta.has_full_weeks) {
-                alert('当前筛选范围内无完整教学周，奖励表数量按 0 统计。');
+                window.appFeedback('当前筛选范围内无完整教学周，奖励表数量按 0 统计。');
             }
         })
-        .catch(() => alert('查询失败，请稍后重试'));
+        .catch(() => window.appFeedback('查询失败，请稍后重试'));
 }
 
-function exportSubmissionStats() {
+async function exportSubmissionStats() {
     if (currentSubmissionSnapshotId) {
         window.location.href = `/admin/api/review/submission-count/snapshots/${currentSubmissionSnapshotId}/export`;
         return;
@@ -597,13 +597,13 @@ function exportSubmissionStats() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        alert('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间');
         return;
     }
     const userIds = getSelectedUserIds();
     const defaultTitle = `${startDate}至${endDate}交表统计`;
-    const filenameTitle = window.prompt('请输入导出文件名', defaultTitle);
-    if (filenameTitle === null) {
+    const filenameTitle = window.appPrompt ? await window.appPrompt('请输入导出文件名', defaultTitle, '导出交表统计') : defaultTitle;
+    if (filenameTitle === false) {
         return;
     }
     const params = new URLSearchParams(buildQuery(startDate, endDate, userIds));
@@ -617,7 +617,7 @@ function viewRewardDetail(userId) {
     if (currentSubmissionSnapshotId && currentSubmissionPayload && currentSubmissionPayload.users) {
         const target = (currentSubmissionPayload.users || []).find(row => Number(row.user_id) === Number(userId));
         if (!target) {
-            alert('历史记录中未找到该用户的奖励表详情');
+            window.appFeedback('历史记录中未找到该用户的奖励表详情');
             return;
         }
         document.getElementById('rewardDetailTitle').textContent = `${target.name}（${target.number}）奖励表详情`;
@@ -666,7 +666,7 @@ function viewRewardDetail(userId) {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        alert('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间');
         return;
     }
     const params = new URLSearchParams({start_date: startDate, end_date: endDate});
@@ -674,7 +674,7 @@ function viewRewardDetail(userId) {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '加载奖励表详情失败');
+                window.appFeedback(data.message || '加载奖励表详情失败');
                 return;
             }
             document.getElementById('rewardDetailTitle').textContent = `${data.user.name}（${data.user.number}）奖励表详情`;
@@ -725,21 +725,21 @@ function viewRewardDetail(userId) {
             const modal = new bootstrap.Modal(document.getElementById('rewardDetailModal'));
             modal.show();
         })
-        .catch(() => alert('加载奖励表详情失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载奖励表详情失败，请稍后重试'));
 }
 
-function saveSubmissionSnapshot() {
+async function saveSubmissionSnapshot() {
     if (!currentSubmissionPayload || !currentSubmissionFilters) {
-        alert('请先查询交表数量统计');
+        window.appFeedback('请先查询交表数量统计');
         return;
     }
     if (!currentSubmissionPayload.reward_meta || !currentSubmissionPayload.reward_meta.has_full_weeks) {
-        alert('当前筛选范围内无完整教学周，无法保存奖励表历史');
+        window.appFeedback('当前筛选范围内无完整教学周，无法保存奖励表历史');
         return;
     }
     const defaultTitle = `${currentSubmissionFilters.start_date}至${currentSubmissionFilters.end_date}交表统计`;
-    const title = window.prompt('请输入历史记录名称', defaultTitle);
-    if (title === null) {
+    const title = window.appPrompt ? await window.appPrompt('请输入历史记录名称', defaultTitle, '保存历史记录') : defaultTitle;
+    if (title === false) {
         return;
     }
     fetch('/admin/api/review/submission-count/snapshots', {
@@ -750,12 +750,12 @@ function saveSubmissionSnapshot() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '保存失败');
+                window.appFeedback(data.message || '保存失败');
                 return;
             }
-            alert(data.message || '保存成功');
+            window.appFeedback(data.message || '保存成功');
         })
-        .catch(() => alert('保存失败，请稍后重试'));
+        .catch(() => window.appFeedback('保存失败，请稍后重试'));
 }
 
 function openSubmissionSnapshotModal() {
@@ -763,7 +763,7 @@ function openSubmissionSnapshotModal() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '加载历史失败');
+                window.appFeedback(data.message || '加载历史失败');
                 return;
             }
             const snapshots = data.snapshots || [];
@@ -807,7 +807,7 @@ function openSubmissionSnapshotModal() {
             }
             bootstrap.Modal.getOrCreateInstance(document.getElementById('snapshotModal')).show();
         })
-        .catch(() => alert('加载历史失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载历史失败，请稍后重试'));
 }
 
 function loadSubmissionSnapshot(snapshotId) {
@@ -815,7 +815,7 @@ function loadSubmissionSnapshot(snapshotId) {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '加载历史失败');
+                window.appFeedback(data.message || '加载历史失败');
                 return;
             }
             const snapshot = data.snapshot || {};
@@ -837,12 +837,12 @@ function loadSubmissionSnapshot(snapshotId) {
             renderStatsTable((snapshot.payload || {}).users || []);
             const rewardMeta = (snapshot.payload || {}).reward_meta || {};
             if (rewardMeta.has_full_weeks === false) {
-                alert('当前历史记录内无完整教学周。');
+                window.appFeedback('当前历史记录内无完整教学周。');
             }
             bootstrap.Modal.getOrCreateInstance(document.getElementById('snapshotModal')).hide();
             showWeekRangeNotice(rewardMeta, '历史记录教学周范围');
         })
-        .catch(() => alert('加载历史失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载历史失败，请稍后重试'));
 }
 
 function selectAllUsers(flag) {
@@ -855,13 +855,13 @@ function initPage() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '加载用户结构失败');
+                window.appFeedback(data.message || '加载用户结构失败');
                 return;
             }
             structureRawData = data;
             renderStructure();
         })
-        .catch(() => alert('加载用户结构失败'));
+        .catch(() => window.appFeedback('加载用户结构失败'));
 
     document.getElementById('btnLoadStats').addEventListener('click', loadStats);
     document.getElementById('btnExportStats').addEventListener('click', exportSubmissionStats);

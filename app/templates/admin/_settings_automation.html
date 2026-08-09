@@ -1,0 +1,162 @@
+<div class="settings-panel-body">
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <section class="activity-panel h-100">
+                <div class="activity-panel__header"><h2><i class="bi bi-gear" aria-hidden="true"></i> 自动审核基础设置</h2></div>
+                <div class="activity-panel__body">
+                    <div class="mb-3">
+                        <label class="form-label" for="semesterMonday">学期第一周星期一（YYYY-MM-DD）</label>
+                        <input type="text" class="form-control" id="semesterMonday" placeholder="2025-09-01" value="{{ status.semester_monday or '' }}">
+                        <div class="form-text">用于计算听课周次与日期有效性。</div>
+                    </div>
+                    <div class="mb-3">
+                        <span class="form-label d-block">共用参考文件状态</span>
+                        <ul class="list-group">
+                            <li class="list-group-item d-flex justify-content-between align-items-center file-status-item">
+                                课表文件
+                                {% if status.schedule_exists %}<span class="badge bg-success">已检测到</span>{% else %}<span class="badge bg-danger">未检测到</span>{% endif %}
+                                <span class="text-muted small file-path" id="schedulePath">{{ status.schedule_path }}</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center file-status-item">
+                                通讯录文件
+                                {% if status.contacts_exists %}<span class="badge bg-success">已检测到</span>{% else %}<span class="badge bg-danger">未检测到</span>{% endif %}
+                                <span class="text-muted small file-path" id="contactsPath">{{ status.contacts_path }}</span>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="fileSchedule">上传课表文件</label>
+                        <div id="dropSchedule" class="border border-secondary rounded p-3 text-center bg-white" role="button" tabindex="0">拖拽到此或点击选择</div>
+                        <input type="file" id="fileSchedule" accept=".xls,.xlsx" hidden>
+                        <div class="form-text">支持 .xls/.xlsx，上传后自动保存路径。</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="fileContacts">上传通讯录文件</label>
+                        <div id="dropContacts" class="border border-secondary rounded p-3 text-center bg-white" role="button" tabindex="0">拖拽到此或点击选择</div>
+                        <input type="file" id="fileContacts" accept=".xls,.xlsx" hidden>
+                    </div>
+                    <button class="btn btn-primary" id="saveSettings" type="button"><i class="bi bi-save" aria-hidden="true"></i> 保存设置</button>
+                </div>
+            </section>
+        </div>
+        <div class="col-lg-6">
+            <section class="activity-panel h-100">
+                <div class="activity-panel__header"><h2><i class="bi bi-play-circle" aria-hidden="true"></i> 自动审核（EXCEL版）</h2></div>
+                <div class="activity-panel__body">
+                    <div class="mb-3">
+                        <span class="form-label d-block">待审核 EXCEL 文件状态</span>
+                        <ul class="list-group">
+                            <li class="list-group-item d-flex justify-content-between align-items-center file-status-item">
+                                反馈文件
+                                {% if status.feedback_exists %}<span class="badge bg-success">已检测到</span>{% else %}<span class="badge bg-danger">未检测到</span>{% endif %}
+                                <span class="text-muted small file-path" id="feedbackPath">{{ status.feedback_path }}</span>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="fileFeedback">上传待审核 EXCEL 文件</label>
+                        <div id="dropFeedback" class="border border-secondary rounded p-3 text-center bg-white" role="button" tabindex="0">拖拽到此或点击选择</div>
+                        <input type="file" id="fileFeedback" accept=".xls,.xlsx" hidden>
+                        <div class="form-text">上传与系统约定结构一致的反馈表。</div>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="exportReport" checked>
+                        <label class="form-check-label" for="exportReport">导出审核报告（xlsx）</label>
+                    </div>
+                    <button class="btn btn-outline-success" id="runFeedback" type="button"><i class="bi bi-play-fill" aria-hidden="true"></i> 自动审核（EXCEL版）</button>
+                </div>
+            </section>
+        </div>
+    </div>
+    <section class="activity-panel mt-3">
+        <div class="activity-panel__header activity-panel__header--split">
+            <h2><i class="bi bi-list-check" aria-hidden="true"></i> EXCEL 审核结果</h2>
+            <a id="downloadLink" class="btn btn-sm btn-outline-secondary" hidden><i class="bi bi-download" aria-hidden="true"></i> 下载报告</a>
+        </div>
+        <div class="activity-panel__body">
+            <div id="summary" class="activity-empty">尚未运行自动审核。</div>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead><tr><th>表单 ID</th><th>听课人</th><th>教师</th><th>课程</th><th>是否通过</th><th>问题详情</th><th>修正建议</th></tr></thead>
+                    <tbody id="resultBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+</div>
+
+<script>
+(() => {
+    const feedback = (text, variant) => window.appFeedback ? window.appFeedback(text, variant) : console.warn(text);
+    async function saveSettings() {
+        const monday = document.getElementById('semesterMonday').value.trim();
+        const resp = await fetch('{{ url_for('admin.auto_review_settings') }}', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({semester_monday: monday})
+        });
+        const data = await resp.json();
+        feedback(data.success ? '设置已保存' : (data.message || '保存失败'), data.success ? 'success' : 'error');
+    }
+    async function runFeedback() {
+        const summary = document.getElementById('summary');
+        const link = document.getElementById('downloadLink');
+        summary.textContent = '自动审核运行中...';
+        link.hidden = true;
+        const resp = await fetch('{{ url_for('admin.auto_review_feedback_run') }}', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({export: document.getElementById('exportReport').checked})
+        });
+        const data = await resp.json();
+        if (!data.success) {
+            summary.textContent = data.message || '运行失败';
+            feedback(summary.textContent, 'error');
+            return;
+        }
+        const s = data.data.summary;
+        summary.textContent = `共 ${s.total} 条，通过 ${s.passed} 条，未通过 ${s.failed} 条`;
+        const tbody = document.getElementById('resultBody');
+        tbody.replaceChildren();
+        for (const result of data.data.results) {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${result.form_id ?? ''}</td><td>${result.listener ?? ''}</td><td>${result.teacher ?? ''}</td><td>${result.course ?? ''}</td><td>${result.passed ? '是' : '否'}</td><td>${(result.issues || []).join('<br>')}</td><td>${(result.fixes || []).join('<br>')}</td>`;
+            tbody.appendChild(row);
+        }
+        if (data.download_url) {
+            link.href = data.download_url;
+            link.hidden = false;
+        }
+    }
+    async function uploadFile(file, fileType) {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('file_type', fileType);
+        const resp = await fetch('{{ url_for('admin.auto_review_upload') }}', {method: 'POST', body: fd});
+        const data = await resp.json();
+        if (!data.success) {
+            feedback(data.message || '上传失败', 'error');
+            return;
+        }
+        feedback('上传成功', 'success');
+        const status = data.status || {};
+        [['schedulePath', 'schedule_path'], ['contactsPath', 'contacts_path'], ['feedbackPath', 'feedback_path']].forEach(([id, key]) => {
+            const node = document.getElementById(id);
+            if (node && key in status) node.textContent = status[key] || '';
+        });
+    }
+    function wireDrop(zoneId, inputId, type) {
+        const zone = document.getElementById(zoneId);
+        const input = document.getElementById(inputId);
+        if (!zone || !input) return;
+        zone.addEventListener('click', () => input.click());
+        zone.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); input.click(); } });
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((eventName) => zone.addEventListener(eventName, (event) => event.preventDefault()));
+        zone.addEventListener('drop', (event) => { const file = event.dataTransfer?.files?.[0]; if (file) uploadFile(file, type); });
+        input.addEventListener('change', (event) => { const file = event.target.files?.[0]; if (file) uploadFile(file, type); });
+    }
+    document.getElementById('saveSettings')?.addEventListener('click', saveSettings);
+    document.getElementById('runFeedback')?.addEventListener('click', runFeedback);
+    wireDrop('dropSchedule', 'fileSchedule', 'schedule');
+    wireDrop('dropContacts', 'fileContacts', 'contacts');
+    wireDrop('dropFeedback', 'fileFeedback', 'feedback');
+})();
+</script>

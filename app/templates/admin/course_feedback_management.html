@@ -2610,9 +2610,9 @@ function loadMyReservations() {
         });
 }
 
-function editMyReservation(reservationId, originalInfo) {
-    const nextInfo = prompt('请修改听课计划说明：', originalInfo || '');
-    if (nextInfo === null) return;
+async function editMyReservation(reservationId, originalInfo) {
+    const nextInfo = window.appPrompt ? await window.appPrompt('请修改听课计划说明：', originalInfo || '', '修改听课计划') : originalInfo || '';
+    if (nextInfo === false) return;
     const listeningInfo = nextInfo.trim();
     if (!listeningInfo) {
         showAlert('听课计划说明不能为空', 'warning');
@@ -2635,8 +2635,9 @@ function editMyReservation(reservationId, originalInfo) {
     .catch(() => showAlert('修改失败', 'error'));
 }
 
-function deleteMyReservation(reservationId) {
-    if (!confirm('确定删除该听课登记记录吗？此操作不可撤销。')) return;
+async function deleteMyReservation(reservationId) {
+    const confirmed = window.appConfirm ? await window.appConfirm('确定删除该听课登记记录吗？此操作不可撤销。') : true;
+    if (!confirmed) return;
     fetch(`/user/api/my_reservations/${reservationId}`, {
         method: 'DELETE'
     })
@@ -2687,7 +2688,7 @@ function showAlert(message, type) {
 }
 
 .table-active {
-    background-color: rgba(13, 110, 253, 0.1);
+    background-color: rgb(155 73 60 / .1);
 }
 
 .btn-group-sm > .btn, .btn-sm {
@@ -2704,17 +2705,17 @@ function showAlert(message, type) {
 }
 
 .form-check-input:checked {
-    background-color: #0d6efd;
-    border-color: #0d6efd;
+    background-color: var(--color-accent);
+    border-color: var(--color-accent);
 }
 
 .pagination .page-link {
-    color: #0d6efd;
+    color: var(--color-accent-strong);
 }
 
 .pagination .page-item.active .page-link {
-    background-color: #0d6efd;
-    border-color: #0d6efd;
+    background-color: var(--color-accent);
+    border-color: var(--color-accent);
 }
 
 /* 课程分组样式 */
@@ -2742,8 +2743,8 @@ function showAlert(message, type) {
 
 /* 折叠展开按钮样式 */
 .expand-toggle-btn {
-    border: 1px solid #0d6efd !important;
-    color: #0d6efd !important;
+    border: 1px solid var(--color-accent) !important;
+    color: var(--color-accent-strong) !important;
     background-color: transparent !important;
     transition: all 0.2s ease;
     font-size: 0.75rem;
@@ -2752,10 +2753,10 @@ function showAlert(message, type) {
 }
 
 .expand-toggle-btn:hover {
-    background-color: #0d6efd !important;
+    background-color: var(--color-accent) !important;
     color: white !important;
     transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(13, 110, 253, 0.2);
+    box-shadow: 0 2px 4px rgb(155 73 60 / .2);
 }
 
 .expand-toggle-btn:active {
@@ -2823,7 +2824,7 @@ th .btn-link {
 }
 
 th .btn-link:hover {
-    color: #0d6efd !important;
+    color: var(--color-accent-strong) !important;
 }
 
 .card-header {
@@ -2864,7 +2865,7 @@ th .btn-link:hover {
 }
 
 .group-item {
-    border-left: 3px solid #007bff;
+    border-left: 3px solid var(--color-accent);
     margin: 8px 15px;
     background-color: white;
     border-radius: 4px;
@@ -2900,13 +2901,13 @@ th .btn-link:hover {
 
 .tree-user-item:hover {
     background-color: #f5f5f5;
-    border-color: #007bff;
+    border-color: var(--color-accent);
 }
 
 .tree-user-item.selected {
-    background-color: #e3f2fd;
-    border-color: #2196f3;
-    color: #1976d2;
+    background-color: var(--color-accent-soft);
+    border-color: var(--color-accent);
+    color: var(--color-accent-strong);
 }
 
 .batch-select-btn {

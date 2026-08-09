@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}审表考评统计 - 管理员面板{% endblock %}
 
@@ -289,7 +289,7 @@ function loadStats() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        alert('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间');
         return;
     }
     const userIds = getSelectedUserIds();
@@ -298,25 +298,25 @@ function loadStats() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '查询失败');
+                window.appFeedback(data.message || '查询失败');
                 return;
             }
             renderStatsTable(data.users || []);
         })
-        .catch(() => alert('查询失败，请稍后重试'));
+        .catch(() => window.appFeedback('查询失败，请稍后重试'));
 }
 
-function exportAssessmentStats() {
+async function exportAssessmentStats() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        alert('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间');
         return;
     }
     const userIds = getSelectedUserIds();
     const defaultTitle = `${startDate}至${endDate}考评统计`;
-    const filenameTitle = window.prompt('请输入导出文件名', defaultTitle);
-    if (filenameTitle === null) {
+    const filenameTitle = window.appPrompt ? await window.appPrompt('请输入导出文件名', defaultTitle, '导出考评统计') : defaultTitle;
+    if (filenameTitle === false) {
         return;
     }
     const params = new URLSearchParams(buildQuery(startDate, endDate, userIds));
@@ -330,7 +330,7 @@ function viewDetail(userId) {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        alert('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间');
         return;
     }
     const params = new URLSearchParams({start_date: startDate, end_date: endDate});
@@ -338,7 +338,7 @@ function viewDetail(userId) {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '加载详情失败');
+                window.appFeedback(data.message || '加载详情失败');
                 return;
             }
             document.getElementById('detailTitle').textContent = `${data.user.name}（${data.user.number}）考评详情`;
@@ -355,7 +355,7 @@ function viewDetail(userId) {
             const modal = new bootstrap.Modal(document.getElementById('detailModal'));
             modal.show();
         })
-        .catch(() => alert('加载详情失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载详情失败，请稍后重试'));
 }
 
 function toggleAssessmentItems(rowId, chevronId) {
@@ -584,7 +584,7 @@ function showImportPreview(data) {
 function previewManualAssessments() {
     const fileInput = document.getElementById('importFile');
     if (!fileInput.files || fileInput.files.length === 0) {
-        alert('请先选择导入文件');
+        window.appFeedback('请先选择导入文件');
         return;
     }
 
@@ -601,12 +601,12 @@ function previewManualAssessments() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '预览失败');
+                window.appFeedback(data.message || '预览失败');
                 return;
             }
             showImportPreview(data);
         })
-        .catch(() => alert('预览失败，请稍后重试'))
+        .catch(() => window.appFeedback('预览失败，请稍后重试'))
         .finally(() => {
             importBtn.disabled = false;
         });
@@ -614,7 +614,7 @@ function previewManualAssessments() {
 
 function confirmManualAssessmentImport() {
     if (!pendingImportFile) {
-        alert('请先选择导入文件并完成预览');
+        window.appFeedback('请先选择导入文件并完成预览');
         return;
     }
 
@@ -630,7 +630,7 @@ function confirmManualAssessmentImport() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '导入失败');
+                window.appFeedback(data.message || '导入失败');
                 return;
             }
             const skippedDetails = data.skipped_details && data.skipped_details.length > 0
@@ -639,7 +639,7 @@ function confirmManualAssessmentImport() {
             const unchangedText = data.unchanged_form_count
                 ? `，未变化表单 ${data.unchanged_form_count} 张`
                 : '';
-            alert(`导入完成：成功写入 ${data.imported_count} 行，影响 ${data.imported_form_count || 0} 张表单${unchangedText}，跳过 ${data.skipped_count || 0} 行${skippedDetails}`);
+            window.appFeedback(`导入完成：成功写入 ${data.imported_count} 行，影响 ${data.imported_form_count || 0} 张表单${unchangedText}，跳过 ${data.skipped_count || 0} 行${skippedDetails}`);
             pendingImportFile = null;
             document.getElementById('importFile').value = '';
             if (previewModalInstance) {
@@ -647,7 +647,7 @@ function confirmManualAssessmentImport() {
             }
             loadStats();
         })
-        .catch(() => alert('导入失败，请稍后重试'))
+        .catch(() => window.appFeedback('导入失败，请稍后重试'))
         .finally(() => {
             confirmBtn.disabled = false;
         });
@@ -663,13 +663,13 @@ function initPage() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '加载用户结构失败');
+                window.appFeedback(data.message || '加载用户结构失败');
                 return;
             }
             structureRawData = data;
             renderStructure();
         })
-        .catch(() => alert('加载用户结构失败'));
+        .catch(() => window.appFeedback('加载用户结构失败'));
 
     document.getElementById('btnLoadStats').addEventListener('click', loadStats);
     document.getElementById('btnExportStats').addEventListener('click', exportAssessmentStats);

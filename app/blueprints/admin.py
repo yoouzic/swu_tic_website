@@ -125,10 +125,8 @@ def download_passwords(filename):
 @admin_bp.route('/auto_review')
 @role_required('超级管理员')
 def auto_review_page():
-    """自动审核页面入口"""
-    engine = AutoReviewEngine()
-    status = engine.files_status()
-    return render_template('admin/auto_review.html', status=status)
+    """自动审核旧入口，兼容书签并定位到设置中心。"""
+    return redirect(url_for('admin.system_management', tab='automation'))
 
 
 @admin_bp.route('/api/auto_review/settings', methods=['GET', 'POST'])
@@ -4596,8 +4594,18 @@ def export_progress(job_id):
 @admin_bp.route('/system_management')
 @role_required('超级管理员')
 def system_management():
-    """系统管理页面"""
-    return render_template('admin/system_management.html')
+    """统一系统设置中心。"""
+    active_tab = request.args.get('tab', 'teaching')
+    if active_tab not in {'teaching', 'assessment', 'automation', 'imports'}:
+        active_tab = 'teaching'
+    user = User.query.get(session['user_id'])
+    return render_template(
+        'admin/system_management.html',
+        active_tab=active_tab,
+        status=AutoReviewEngine().files_status(),
+        available_departments=list(_get_accessible_department_users(user.id).keys()),
+        is_super_admin=True,
+    )
 
 @admin_bp.route('/api/schedule/validate', methods=['POST'])
 @role_required('超级管理员')
@@ -9376,6 +9384,9 @@ def get_reference_data():
 @admin_bp.route('/assessment-exemption-settings')
 @role_required('管理员')
 def assessment_exemption_settings():
+    user = User.query.get(session['user_id'])
+    if user.role == '超级管理员':
+        return redirect(url_for('admin.system_management', tab='assessment'))
     if not _has_assessment_stats_access(session['user_id']):
         flash('权限不足', 'error')
         return redirect(url_for('main.index'))

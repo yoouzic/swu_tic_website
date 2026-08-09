@@ -312,7 +312,7 @@ function loadMonthlyStats() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        alert('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间');
         return;
     }
     const departments = getSelectedDepartments();
@@ -321,7 +321,7 @@ function loadMonthlyStats() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '查询失败');
+                window.appFeedback(data.message || '查询失败');
                 return;
             }
             currentMonthlyPayload = data;
@@ -329,28 +329,28 @@ function loadMonthlyStats() {
             currentMonthlySnapshotId = null;
             renderMonthlyResults(data);
         })
-        .catch(() => alert('查询失败，请稍后重试'));
+        .catch(() => window.appFeedback('查询失败，请稍后重试'));
 }
 
-function exportMonthlyStats() {
+async function exportMonthlyStats() {
     if (currentMonthlySnapshotId) {
         window.location.href = `/admin/api/review/department-monthly-assessment/snapshots/${currentMonthlySnapshotId}/export`;
         return;
     }
     if (currentMonthlyPayload && currentMonthlyPayload.meta && !currentMonthlyPayload.meta.has_full_months) {
-        alert('当前筛选范围内无完整教学月，无法导出月度考评');
+        window.appFeedback('当前筛选范围内无完整教学月，无法导出月度考评');
         return;
     }
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        alert('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间');
         return;
     }
     const departments = getSelectedDepartments();
     const defaultTitle = `${startDate}至${endDate}部门月度考评统计`;
-    const filenameTitle = window.prompt('请输入导出文件名', defaultTitle);
-    if (filenameTitle === null) {
+    const filenameTitle = window.appPrompt ? await window.appPrompt('请输入导出文件名', defaultTitle, '导出月度考评') : defaultTitle;
+    if (filenameTitle === false) {
         return;
     }
     const params = new URLSearchParams(buildMonthlyQuery(startDate, endDate, departments));
@@ -360,18 +360,18 @@ function exportMonthlyStats() {
     window.location.href = `/admin/api/review/department-monthly-assessment/export?${params.toString()}`;
 }
 
-function saveMonthlySnapshot() {
+async function saveMonthlySnapshot() {
     if (!currentMonthlyPayload || !currentMonthlyFilters) {
-        alert('请先查询月度考评结果');
+        window.appFeedback('请先查询月度考评结果');
         return;
     }
     if (!currentMonthlyPayload.meta || !currentMonthlyPayload.meta.has_full_months) {
-        alert('当前筛选范围内无完整教学月，无法保存历史');
+        window.appFeedback('当前筛选范围内无完整教学月，无法保存历史');
         return;
     }
     const defaultTitle = `${currentMonthlyFilters.start_date}至${currentMonthlyFilters.end_date}部门月度考评统计`;
-    const title = window.prompt('请输入历史记录名称', defaultTitle);
-    if (title === null) {
+    const title = window.appPrompt ? await window.appPrompt('请输入历史记录名称', defaultTitle, '保存历史记录') : defaultTitle;
+    if (title === false) {
         return;
     }
     fetch('/admin/api/review/department-monthly-assessment/snapshots', {
@@ -382,12 +382,12 @@ function saveMonthlySnapshot() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '保存失败');
+                window.appFeedback(data.message || '保存失败');
                 return;
             }
-            alert(data.message || '保存成功');
+            window.appFeedback(data.message || '保存成功');
         })
-        .catch(() => alert('保存失败，请稍后重试'));
+        .catch(() => window.appFeedback('保存失败，请稍后重试'));
 }
 
 function openSnapshotModal() {
@@ -395,7 +395,7 @@ function openSnapshotModal() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '加载历史失败');
+                window.appFeedback(data.message || '加载历史失败');
                 return;
             }
             const snapshots = data.snapshots || [];
@@ -439,7 +439,7 @@ function openSnapshotModal() {
             }
             bootstrap.Modal.getOrCreateInstance(document.getElementById('snapshotModal')).show();
         })
-        .catch(() => alert('加载历史失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载历史失败，请稍后重试'));
 }
 
 function loadMonthlySnapshot(snapshotId) {
@@ -447,7 +447,7 @@ function loadMonthlySnapshot(snapshotId) {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '加载历史失败');
+                window.appFeedback(data.message || '加载历史失败');
                 return;
             }
             const snapshot = data.snapshot || {};
@@ -461,7 +461,7 @@ function loadMonthlySnapshot(snapshotId) {
             renderMonthlyResults(snapshot.payload || {});
             bootstrap.Modal.getOrCreateInstance(document.getElementById('snapshotModal')).hide();
         })
-        .catch(() => alert('加载历史失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载历史失败，请稍后重试'));
 }
 
 function initPage() {
@@ -486,7 +486,7 @@ function openMonthSettings() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '加载失败');
+                window.appFeedback(data.message || '加载失败');
                 return;
             }
             monthDefData = (data.months || []).map(m => ({...m}));
@@ -494,7 +494,7 @@ function openMonthSettings() {
             renderMonthDefList();
             bootstrap.Modal.getOrCreateInstance(document.getElementById('monthSettingsModal')).show();
         })
-        .catch(() => alert('加载教学月设置失败'));
+        .catch(() => window.appFeedback('加载教学月设置失败'));
 }
 
 function renderMonthDefList() {
@@ -560,13 +560,13 @@ function saveMonthSettings() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                alert(data.message || '保存失败');
+                window.appFeedback(data.message || '保存失败');
                 return;
             }
-            alert(data.message || '保存成功');
+            window.appFeedback(data.message || '保存成功');
             bootstrap.Modal.getOrCreateInstance(document.getElementById('monthSettingsModal')).hide();
         })
-        .catch(() => alert('保存失败'))
+        .catch(() => window.appFeedback('保存失败'))
         .finally(() => {
             btn.disabled = false;
             btn.textContent = '保存';

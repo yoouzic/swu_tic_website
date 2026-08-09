@@ -272,7 +272,7 @@ const departmentChart = new Chart(ctx, {
         datasets: [{
             data: {{ department_stats.data | tojson }},
             backgroundColor: [
-                '#007bff',
+                '#9b493c',
                 '#28a745',
                 '#ffc107',
                 '#dc3545'
@@ -294,8 +294,9 @@ const departmentChart = new Chart(ctx, {
 {% endif %}
 
 // 备份数据库
-function backupDatabase() {
-    if (confirm('确定要备份数据库吗？')) {
+async function backupDatabase() {
+    const confirmed = window.appConfirm ? await window.appConfirm('确定要备份数据库吗？') : true;
+    if (confirmed) {
         fetch('/admin/backup', {
             method: 'POST',
             headers: {
@@ -305,14 +306,13 @@ function backupDatabase() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                alert('数据库备份成功！');
-                location.reload();
+                window.appFeedback('数据库备份成功！', 'success');
             } else {
-                alert('备份失败：' + data.message);
+                window.appFeedback('备份失败：' + data.message);
             }
         })
         .catch(error => {
-            alert('备份失败：' + error.message);
+            window.appFeedback('备份失败：' + error.message);
         });
     }
 }

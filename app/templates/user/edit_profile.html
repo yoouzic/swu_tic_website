@@ -207,44 +207,44 @@ document.getElementById('editProfileForm').addEventListener('submit', function(e
     // 检查必填字段
     if (isProfileFieldEditable('name') && !name) {
         e.preventDefault();
-        alert('请输入姓名');
+        window.appFeedback('请输入姓名');
         return;
     }
     
     if (isProfileFieldEditable('gender') && !gender) {
         e.preventDefault();
-        alert('请选择性别');
+        window.appFeedback('请选择性别');
         return;
     }
     
     if (isProfileFieldEditable('grade') && !grade) {
         e.preventDefault();
-        alert('请选择年级');
+        window.appFeedback('请选择年级');
         return;
     }
     
     if (isProfileFieldEditable('college') && !college) {
         e.preventDefault();
-        alert('请输入学院');
+        window.appFeedback('请输入学院');
         return;
     }
     
     if (isProfileFieldEditable('major') && !major) {
         e.preventDefault();
-        alert('请输入专业');
+        window.appFeedback('请输入专业');
         return;
     }
     
     // 手机号验证
     if (isProfileFieldEditable('phone') && !phone) {
         e.preventDefault();
-        alert('请输入手机号码');
+        window.appFeedback('请输入手机号码');
         return;
     }
     
     if (isProfileFieldEditable('phone') && !/^1[3-9]\d{9}$/.test(phone)) {
         e.preventDefault();
-        alert('请输入有效的11位手机号码');
+        window.appFeedback('请输入有效的11位手机号码');
         return;
     }
     
@@ -252,7 +252,7 @@ document.getElementById('editProfileForm').addEventListener('submit', function(e
     const qq = document.getElementById('qq').value.trim();
     if (isProfileFieldEditable('qq') && qq && !/^[1-9]\d{4,10}$/.test(qq)) {
         e.preventDefault();
-        alert('请输入有效的QQ号码（5-11位数字）');
+        window.appFeedback('请输入有效的QQ号码（5-11位数字）');
         return;
     }
 });

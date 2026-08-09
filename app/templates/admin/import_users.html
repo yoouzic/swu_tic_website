@@ -91,7 +91,7 @@
                     <a href="{{ url_for('admin.download_template') }}" class="btn btn-primary">
                         <i class="bi bi-file-earmark-excel"></i> 下载Excel模板
                     </a>
-                    <a href="{{ url_for('admin.view_sample') }}" class="btn btn-outline-info" target="_blank">
+                    <a href="{{ url_for('admin.view_sample') }}" class="btn btn-outline-info">
                         <i class="bi bi-eye"></i> 查看示例
                     </a>
                 </div>
@@ -187,7 +187,7 @@
 .step-number {
     width: 30px;
     height: 30px;
-    background: #007bff;
+    background: var(--color-accent);
     color: white;
     border-radius: 50%;
     display: flex;
@@ -212,7 +212,7 @@
 }
 
 .upload-area:hover {
-    border-color: #007bff;
+    border-color: var(--color-accent);
     background-color: #f8f9fa;
 }
 
@@ -248,7 +248,7 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     const file = fileInput.files[0];
     
     if (!file) {
-        alert('请选择文件');
+        window.appFeedback('请选择文件');
         return;
     }
     
@@ -256,7 +256,7 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     const allowedTypes = ['.xlsx', '.xls'];
     const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
     if (!allowedTypes.includes(fileExtension)) {
-        alert('请选择Excel文件（.xlsx或.xls格式）');
+        window.appFeedback('请选择Excel文件（.xlsx或.xls格式）');
         return;
     }
     
@@ -281,11 +281,11 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
             uploadedData = data;
             showPreview(data);
         } else {
-            alert('上传失败：' + data.message);
+            window.appFeedback('上传失败：' + data.message);
         }
     })
     .catch(error => {
-        alert('上传失败：' + error.message);
+        window.appFeedback('上传失败：' + error.message);
     })
     .finally(() => {
         uploadBtn.innerHTML = '<i class="bi bi-upload"></i> 上传并预览';
@@ -367,14 +367,15 @@ function showPreview(data) {
 }
 
 // 确认导入
-function confirmImport() {
+async function confirmImport() {
     if (!uploadedData) {
-        alert('没有可导入的数据');
+        window.appFeedback('没有可导入的数据');
         return;
     }
     
     if (uploadedData.error_rows > 0) {
-        if (!confirm('存在错误数据，确定要继续导入吗？只有有效数据会被导入。')) {
+        const confirmed = window.appConfirm ? await window.appConfirm('存在错误数据，确定要继续导入吗？只有有效数据会被导入。') : true;
+        if (!confirmed) {
             return;
         }
     }
@@ -398,11 +399,11 @@ function confirmImport() {
         if (data.success) {
             showResult(data);
         } else {
-            alert('导入失败：' + data.message);
+            window.appFeedback('导入失败：' + data.message);
         }
     })
     .catch(error => {
-        alert('导入失败：' + error.message);
+        window.appFeedback('导入失败：' + error.message);
     })
     .finally(() => {
         confirmBtn.innerHTML = '<i class="bi bi-check-circle"></i> 确认导入';

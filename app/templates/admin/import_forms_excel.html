@@ -150,7 +150,7 @@ function renderPreviewResult(data) {
 function getSelectedFile() {
     const fileInput = document.getElementById('importFile');
     if (!fileInput.files || fileInput.files.length === 0) {
-        alert('请先选择Excel文件');
+        window.appFeedback('请先选择Excel文件');
         return null;
     }
     return fileInput.files[0];

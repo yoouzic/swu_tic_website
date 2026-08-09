@@ -530,7 +530,7 @@ function selectRegistration(id, rawDataEncoded) {
         
     } catch (e) {
         console.error('Error selecting registration:', e);
-        alert('自动填充失败，请手动填写');
+        window.appFeedback('自动填充失败，请手动填写');
     }
 }
 
@@ -572,7 +572,7 @@ function updateClassPeriod() {
     
     if (startPeriod && endPeriod) {
         if (parseInt(startPeriod) > parseInt(endPeriod)) {
-            alert('开始节次不能大于结束节次！');
+            window.appFeedback('开始节次不能大于结束节次！');
             document.getElementById('end_period').value = '';
             return;
         }
@@ -817,7 +817,7 @@ document.getElementById('lectureForm').addEventListener('submit', function(e) {
     
     if (!isValid) {
         e.preventDefault();
-        alert('请填写所有必填项！');
+        window.appFeedback('请填写所有必填项！');
     }
 
     const tmValues = [];

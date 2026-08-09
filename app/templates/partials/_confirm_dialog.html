@@ -1,3 +1,19 @@
 <div class="modal fade" id="appConfirmDialog" tabindex="-1" aria-labelledby="appConfirmTitle" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="appConfirmTitle">确认操作</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="关闭"></button></div><div class="modal-body" id="appConfirmMessage"></div><div class="modal-footer"><button class="btn btn-secondary" type="button" data-bs-dismiss="modal">取消</button><button class="btn btn-danger" type="button" data-confirm-submit>确认</button></div></div></div>
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title fs-5" id="appConfirmTitle">确认操作</h2>
+                <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3" id="appConfirmMessage"></p>
+                <label class="form-label" for="appConfirmInput" id="appConfirmInputLabel" hidden>输入内容</label>
+                <input class="form-control" id="appConfirmInput" type="text" hidden>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" type="button" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-danger" type="button" data-confirm-submit>确认</button>
+            </div>
+        </div>
+    </div>
 </div>

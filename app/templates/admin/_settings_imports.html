@@ -1,0 +1,97 @@
+<div class="vstack gap-3">
+    <section class="activity-panel">
+        <div class="activity-panel__header"><h2>数据导入</h2><p>导入全校课表或进入通讯录工具，操作结果会在当前页面反馈。</p></div>
+        <div class="activity-panel__body"><div class="row g-3">
+            <div class="col-md-4"><button type="button" class="btn btn-outline-primary w-100 py-3" data-bs-toggle="modal" data-bs-target="#scheduleImportModal"><i class="bi bi-calendar-week fs-4 d-block mb-1" aria-hidden="true"></i>全校课表导入</button></div>
+            <div class="col-md-4"><a href="{{ url_for('admin.manage_departments') }}#contacts-import" class="btn btn-outline-secondary w-100 py-3"><i class="bi bi-person-plus fs-4 d-block mb-1" aria-hidden="true"></i>通讯录导入</a></div>
+            <div class="col-md-4"><span class="btn btn-outline-secondary w-100 py-3 disabled"><i class="bi bi-plus-circle fs-4 d-block mb-1" aria-hidden="true"></i>其他数据导入<span class="d-block small">待开发</span></span></div>
+        </div></div>
+    </section>
+    <section class="activity-panel">
+        <div class="activity-panel__header"><h2>数据导出</h2><p>进入对应业务页面继续筛选和导出，避免重复配置筛选条件。</p></div>
+        <div class="activity-panel__body"><div class="row g-3">
+            <div class="col-md-4"><a href="{{ url_for('admin.view_forms') }}" class="btn btn-outline-secondary w-100 py-3"><i class="bi bi-file-earmark-text fs-4 d-block mb-1" aria-hidden="true"></i>听课记录导出</a></div>
+            <div class="col-md-4"><span class="btn btn-outline-secondary w-100 py-3 disabled"><i class="bi bi-calendar-week fs-4 d-block mb-1" aria-hidden="true"></i>全校课表导出<span class="d-block small">待开发</span></span></div>
+            <div class="col-md-4"><a href="{{ url_for('admin.manage_departments') }}#contacts-export" class="btn btn-outline-secondary w-100 py-3"><i class="bi bi-person-lines-fill fs-4 d-block mb-1" aria-hidden="true"></i>通讯录导出</a></div>
+        </div></div>
+    </section>
+    <section class="activity-panel">
+        <div class="activity-panel__header"><h2>数据管理</h2><p>清空操作需要密码和二次确认，完成后会在此处保留结果。</p></div>
+        <div class="activity-panel__body"><button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#clearDataModal"><i class="bi bi-trash" aria-hidden="true"></i> 清空数据表</button></div>
+    </section>
+    <section class="activity-panel">
+        <div class="activity-panel__header"><h2>系统信息</h2></div>
+        <div class="activity-panel__body"><div class="table-responsive"><table class="table align-middle mb-0"><tbody><tr><th scope="row">系统版本</th><td>v1.6</td></tr><tr><th scope="row">数据库状态</th><td><span class="badge bg-success">正常</span></td></tr><tr><th scope="row">最后更新</th><td id="lastUpdateTime">-</td></tr><tr><th scope="row">教师数量</th><td id="teacherCount">-</td></tr><tr><th scope="row">场地数量</th><td id="venueCount">-</td></tr><tr><th scope="row">课程数量</th><td id="courseCount">-</td></tr></tbody></table></div></div>
+    </section>
+</div>
+
+<div class="modal fade" id="scheduleImportModal" tabindex="-1" aria-labelledby="scheduleImportTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header"><h2 class="modal-title fs-5" id="scheduleImportTitle">全校课表导入</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button></div>
+        <div class="modal-body">
+            <div class="upload-area" id="uploadArea" role="button" tabindex="0"><i class="bi bi-cloud-upload fs-1 text-muted d-block mb-2" aria-hidden="true"></i><h3 class="fs-6">拖拽文件到此处或点击选择文件</h3><p class="text-muted">支持 .xls 和 .xlsx 格式。</p><input type="file" id="fileInput" accept=".xls,.xlsx" hidden><button type="button" class="btn btn-outline-primary" id="chooseScheduleFile"><i class="bi bi-folder2-open" aria-hidden="true"></i> 选择文件</button></div>
+            <div class="progress-container mt-3" hidden><div class="progress"><div class="progress-bar" role="progressbar" style="width: 0%"></div></div><div class="text-center mt-2"><span id="progressText">准备中...</span></div></div>
+            <div class="result-container mt-3" hidden><div class="alert" id="resultAlert"><div id="resultContent"></div></div></div>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button><button type="button" class="btn btn-primary" id="importBtn" disabled>开始导入</button></div>
+    </div></div>
+</div>
+
+<div class="modal fade" id="clearDataModal" tabindex="-1" aria-labelledby="clearDataTitle" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h2 class="modal-title fs-5" id="clearDataTitle">数据清空</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button></div>
+        <div class="modal-body"><div class="alert alert-warning"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> 此操作将永久删除选定数据表中的所有数据，且无法恢复。</div><form id="clearDataForm"><div class="mb-3"><label for="tableSelect" class="form-label">选择要清空的数据表</label><select class="form-select" id="tableSelect" name="table_name" required><option value="">请选择数据表</option><option value="courses">课程表 (courses)</option><option value="teachers">教师表 (teachers)</option><option value="venues">场地表 (venues)</option><option value="lecture_forms">听课记录表 (lecture_forms)</option><option value="listening_bans">禁听记录表 (listening_bans)</option><option value="users">用户表 (users)</option><option value="departments">部门表 (departments)</option><option value="groups">群组表 (groups)</option></select></div><div class="mb-3"><label for="passwordInput" class="form-label">当前账号密码</label><input type="password" class="form-control" id="passwordInput" name="password" required></div><div class="form-check"><input class="form-check-input" type="checkbox" id="confirmCheck" required><label class="form-check-label text-danger" for="confirmCheck">我确认要清空选定的数据表，并理解此操作不可逆转。</label></div></form><div id="clearResult" hidden><div class="alert" id="clearResultAlert"><div id="clearResultContent"></div></div></div></div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button type="button" class="btn btn-danger" id="confirmClearBtn"><i class="bi bi-trash" aria-hidden="true"></i> 确认清空</button></div>
+    </div></div>
+</div>
+
+<script>
+(() => {
+    const feedback = (text, variant) => window.appFeedback ? window.appFeedback(text, variant) : console.warn(text);
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const importBtn = document.getElementById('importBtn');
+    const progressContainer = document.querySelector('.progress-container');
+    const resultContainer = document.querySelector('.result-container');
+    const progressBar = document.querySelector('.progress-bar');
+    const progressText = document.getElementById('progressText');
+    const resultAlert = document.getElementById('resultAlert');
+    const resultContent = document.getElementById('resultContent');
+    let selectedFile = null;
+    function showFilePicker() { fileInput.click(); }
+    function resetUpload() { selectedFile = null; fileInput.value = ''; importBtn.disabled = true; progressContainer.hidden = true; resultContainer.hidden = true; }
+    function handleFileSelect(file) { selectedFile = file; importBtn.disabled = false; uploadArea.querySelector('h3').textContent = `已选择文件：${file.name}`; }
+    ['click', 'keydown'].forEach((eventName) => uploadArea.addEventListener(eventName, (event) => { if (eventName === 'click' || event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showFilePicker(); } }));
+    document.getElementById('chooseScheduleFile').addEventListener('click', (event) => { event.stopPropagation(); showFilePicker(); });
+    fileInput.addEventListener('change', (event) => { if (event.target.files?.[0]) handleFileSelect(event.target.files[0]); });
+    uploadArea.addEventListener('dragover', (event) => { event.preventDefault(); uploadArea.classList.add('dragover'); });
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+    uploadArea.addEventListener('drop', (event) => { event.preventDefault(); uploadArea.classList.remove('dragover'); if (event.dataTransfer.files?.[0]) handleFileSelect(event.dataTransfer.files[0]); });
+    importBtn.addEventListener('click', () => {
+        if (!selectedFile) return;
+        progressContainer.hidden = false; resultContainer.hidden = true; importBtn.disabled = true; progressBar.style.width = '25%'; progressText.textContent = '正在验证文件格式...';
+        const formData = new FormData(); formData.append('file', selectedFile);
+        fetch('{{ url_for('admin.validate_schedule_format') }}', {method: 'POST', body: formData}).then((response) => response.json()).then((data) => {
+            if (!data.success) throw new Error(data.message || '文件格式验证失败');
+            progressBar.style.width = '50%'; progressText.textContent = '格式验证通过，正在导入数据...';
+            return fetch('{{ url_for('admin.import_schedule_data') }}', {method: 'POST', body: formData});
+        }).then((response) => response.json()).then((data) => {
+            resultContainer.hidden = false; progressBar.style.width = '100%'; progressText.textContent = data.success ? '导入完成' : '导入失败'; resultAlert.className = `alert alert-${data.success ? 'success' : 'danger'}`;
+            resultContent.innerHTML = data.success ? `<h3 class="fs-6">导入成功</h3><p>共处理 ${data.stats.total_rows} 行，新增教师 ${data.stats.teachers_added} 人，新增课程 ${data.stats.courses_added} 门。</p>` : `<h3 class="fs-6">导入失败</h3><p>${data.message || '请检查文件后重试。'}</p>`;
+            if (data.success) feedback('课表导入成功', 'success');
+        }).catch((error) => { resultContainer.hidden = false; progressBar.style.width = '100%'; progressText.textContent = '导入失败'; resultAlert.className = 'alert alert-danger'; resultContent.textContent = error.message; feedback(error.message, 'error'); }).finally(() => { importBtn.disabled = false; });
+    });
+    document.getElementById('confirmClearBtn').addEventListener('click', async (event) => {
+        const form = document.getElementById('clearDataForm');
+        if (!form.checkValidity()) { form.reportValidity(); return; }
+        const tableName = new FormData(form).get('table_name');
+        const confirmed = window.appConfirm ? await window.appConfirm(`您确定要清空 ${tableName} 表的所有数据吗？此操作不可逆转！`) : true;
+        if (!confirmed) return;
+        const button = event.currentTarget; button.disabled = true;
+        fetch('{{ url_for('admin.clear_table') }}', {method: 'POST', body: new FormData(form)}).then((response) => response.json()).then((data) => {
+            const result = document.getElementById('clearResult'); const alertNode = document.getElementById('clearResultAlert'); const content = document.getElementById('clearResultContent'); result.hidden = false; alertNode.className = `alert alert-${data.success ? 'success' : 'danger'}`; content.textContent = data.success ? `${data.message} 删除记录数：${data.deleted_count}` : (data.message || '清空失败'); if (data.success) { form.reset(); feedback('数据表已清空', 'success'); }
+        }).catch(() => feedback('清空失败，请稍后重试', 'error')).finally(() => { button.disabled = false; });
+    });
+    document.addEventListener('DOMContentLoaded', () => { document.getElementById('lastUpdateTime').textContent = new Date().toLocaleString('zh-CN', {hour12: false}); });
+})();
+</script>

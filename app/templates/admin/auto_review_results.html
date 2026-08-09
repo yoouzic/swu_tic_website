@@ -88,11 +88,11 @@
     }
 
     // 驳回表单
-    function rejectForm(id) {
-        const reason = prompt("请输入驳回原因：");
-        if (reason === null) return; // 用户取消
-        
-        if (confirm('确定要驳回此表单吗？')) {
+    async function rejectForm(id) {
+        const reason = window.appPrompt ? await window.appPrompt('请输入驳回原因：', '', '驳回表单') : '';
+        if (reason === false) return;
+        const confirmed = window.appConfirm ? await window.appConfirm('确定要驳回此表单吗？') : true;
+        if (confirmed) {
             fetch(`/admin/api/review/reject/${id}`, {
                 method: 'POST',
                 headers: {
@@ -105,15 +105,15 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert('表单已驳回');
+                    window.appFeedback('表单已驳回');
                     loadResults(); // 刷新列表
                 } else {
-                    alert('驳回失败: ' + (data.message || '未知错误'));
+                    window.appFeedback('驳回失败: ' + (data.message || '未知错误'));
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('驳回失败: 网络错误');
+                window.appFeedback('驳回失败: 网络错误');
             });
         }
     }
@@ -218,7 +218,7 @@
                                 <button onclick="rejectForm(${item.id})" class="btn btn-outline-danger" title="驳回">
                                     <i class="fas fa-times me-1"></i> 驳回
                                 </button>
-                                <a href="/admin/review/form/${item.id}" target="_blank" class="btn btn-outline-warning" title="人工复审">
+                                <a href="/admin/review/form/${item.id}" class="btn btn-outline-warning" title="人工复审">
                                     <i class="fas fa-user-edit me-1"></i> 人工审核
                                 </a>
                             </div>
