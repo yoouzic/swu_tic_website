@@ -2,6 +2,7 @@ from types import SimpleNamespace
 import unittest
 
 from app.ui.navigation import build_navigation
+from app.ui.workspace import WorkspaceSnapshot, build_workspace
 
 
 class WorkspaceNavigationTest(unittest.TestCase):
@@ -37,6 +38,27 @@ class WorkspaceNavigationTest(unittest.TestCase):
         labels = self.labels(groups)
         self.assertIn('系统设置', labels)
         self.assertIn('统计与导出', labels)
+
+
+class WorkspaceViewModelTest(unittest.TestCase):
+    def test_information_officer_gets_personal_primary_action(self):
+        user = SimpleNamespace(id=2, name='周雨', role='信息员')
+        model = build_workspace(user, WorkspaceSnapshot(total_forms=6, reservation_count=2, draft_saved=True))
+        self.assertEqual(model['primary_action']['endpoint'], 'user.submit_form')
+        self.assertEqual(model['metrics'][0]['value'], 6)
+        self.assertEqual(model['tasks'][0]['label'], '继续未完成的听课表')
+
+    def test_manager_gets_review_queue_action(self):
+        user = SimpleNamespace(id=3, name='林老师', role='管理员')
+        model = build_workspace(user, WorkspaceSnapshot(pending_forms=7, department_users=18, department_forms=38))
+        self.assertEqual(model['primary_action']['endpoint'], 'admin.review_forms')
+        self.assertEqual(model['metrics'][0]['value'], 7)
+
+    def test_super_admin_gets_global_system_task(self):
+        user = SimpleNamespace(id=4, name='林老师', role='超级管理员')
+        model = build_workspace(user, WorkspaceSnapshot(pending_forms=7, total_users=52, total_forms=118, failed_jobs=1))
+        self.assertEqual(model['tasks'][0]['endpoint'], 'admin.system_management')
+        self.assertIn('1', model['tasks'][0]['description'])
 
 
 if __name__ == '__main__':
