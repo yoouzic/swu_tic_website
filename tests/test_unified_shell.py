@@ -35,6 +35,17 @@ class UnifiedShellTest(unittest.TestCase):
         self.assertNotIn('#667eea', css)
         self.assertNotIn('linear-gradient', css)
 
+    def test_checked_form_controls_use_explicit_brick_mapping(self):
+        css = Path('app/static/css/style.css').read_text(encoding='utf-8')
+        checked_start = css.index('.form-check-input:checked')
+        checked_block = css[checked_start:checked_start + 520]
+        self.assertIn('background-color: var(--color-accent) !important', checked_block)
+        self.assertIn('border-color: var(--color-accent-strong) !important', checked_block)
+        self.assertIn('.form-check-input:focus', css)
+        self.assertIn('box-shadow: 0 0 0 .2rem rgb(155 73 60 / .2) !important', css)
+        self.assertIn('.form-check-input.is-invalid:checked', css)
+        self.assertIn('.form-check-input.is-valid:checked', css)
+
     def test_shell_script_never_rewrites_link_targets(self):
         script = Path('app/static/js/app-shell.js').read_text(encoding='utf-8')
         self.assertNotIn('target', script)
