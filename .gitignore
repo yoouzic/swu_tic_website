@@ -46,3 +46,6 @@ Thumbs.db
 
 readme/
 scripts/
+
+# Local design brainstorming artifacts
+.superpowers/
