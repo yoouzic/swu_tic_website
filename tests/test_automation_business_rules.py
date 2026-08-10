@@ -158,6 +158,36 @@ class ScheduleRuleTest(unittest.TestCase):
         self.assertEqual(finding.evidence['ambiguous'], True)
         self.assertFalse(any(item.severity == FindingSeverity.HIGH for item in findings))
 
+    def test_school_mismatch_evidence_identifies_candidate_entries_without_personal_data(self):
+        form = synthetic_form(teacher_college='synthetic-external-college', listener_college='synthetic-college')
+        matches = (
+            SimpleNamespace(
+                entry=SimpleNamespace(id=7),
+                confidence=0.8,
+                matched_fields=('course_title',),
+                mismatched_fields=('location',),
+            ),
+            SimpleNamespace(
+                entry=SimpleNamespace(id=''),
+                id='candidate-8',
+                confidence=0.7,
+                matched_fields=('teacher_name',),
+                mismatched_fields=('weekday',),
+            ),
+            SimpleNamespace(
+                entry=SimpleNamespace(id=None),
+                id='',
+                confidence=0.6,
+                matched_fields=('course_title',),
+                mismatched_fields=('teacher_college',),
+            ),
+        )
+
+        findings = evaluate_schedule_rules(form, None, school_matches=matches)
+
+        finding = next(item for item in findings if item.rule_key == 'school_schedule_mismatch')
+        self.assertEqual(finding.evidence['candidate_entry_ids'], [7, 'candidate-8'])
+
     def test_registry_dispatches_schedule_handler_through_fixed_map(self):
         schedule = SimpleNamespace(
             coverage=ScheduleCoverage.COMPLETE,
@@ -258,6 +288,20 @@ class HistoryRuleTest(unittest.TestCase):
         findings = evaluate_history_rules(other, (old, latest, other))
         reuse = next(item for item in findings if item.rule_key == 'witness_reused_across_weeks')
         self.assertEqual(reuse.evidence['distinct_form_count'], 2)
+
+    def test_latest_logical_versions_tie_break_numeric_ids_and_stabilize_text_ids(self):
+        timestamp = datetime(2026, 4, 20, 12, 0)
+        lower = synthetic_form(id=9, unique_id=1001, updated_at=timestamp)
+        higher = synthetic_form(id=10, unique_id=1001, updated_at=timestamp)
+
+        numeric_latest = latest_logical_forms((lower, higher))
+        self.assertEqual([row['id'] for row in numeric_latest], [10])
+
+        text_first = synthetic_form(id='FORM-B', unique_id=1002, updated_at=timestamp)
+        text_second = synthetic_form(id='FORM-A', unique_id=1002, updated_at=timestamp)
+        forward = latest_logical_forms((text_first, text_second))
+        reverse = latest_logical_forms((text_second, text_first))
+        self.assertEqual(forward[0]['id'], reverse[0]['id'])
 
     def test_similar_feedback_excludes_same_logical_version_and_respects_required_prefix(self):
         current = synthetic_form(id=1, unique_id=1001, teaching_week=1)

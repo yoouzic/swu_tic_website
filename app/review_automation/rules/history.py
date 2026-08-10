@@ -49,14 +49,24 @@ def _order_value(record: Any):
         return 0.0
 
 
+def _id_order_value(record: Any):
+    value = field_value(record, 'id', default='')
+    if isinstance(value, int) and not isinstance(value, bool):
+        return 0, value
+    text = str(value).strip()
+    if re.fullmatch(r'[+-]?\d+', text):
+        return 0, int(text)
+    return 1, text
+
+
 def latest_logical_forms(records: Iterable[Any]) -> tuple[Any, ...]:
     """Deduplicate exports and old versions before any cross-record count."""
     latest: dict[tuple[str, str], Any] = {}
     for record in records or ():
         key = logical_form_key(record)
         current = latest.get(key)
-        if current is None or (_order_value(record), str(field_value(record, 'id', default=''))) >= (
-            _order_value(current), str(field_value(current, 'id', default='')),
+        if current is None or (_order_value(record), _id_order_value(record)) >= (
+            _order_value(current), _id_order_value(current),
         ):
             latest[key] = record
     return tuple(sorted(

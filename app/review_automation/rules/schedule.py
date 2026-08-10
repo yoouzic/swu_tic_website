@@ -265,6 +265,14 @@ def evaluate_schedule_rules(
         if mismatched:
             confidences = [float(_candidate_value(item, 'confidence', 0.0)) for item in mismatched]
             ambiguous = len(mismatched) > 1 and len(set(confidences)) == 1
+            candidate_entry_ids = []
+            for candidate in mismatched:
+                entry = _candidate_value(candidate, 'entry')
+                candidate_id = _candidate_value(entry, 'id') if entry is not None else None
+                if candidate_id is None or not str(candidate_id).strip():
+                    candidate_id = _candidate_value(candidate, 'id')
+                if candidate_id is not None and str(candidate_id).strip():
+                    candidate_entry_ids.append(candidate_id)
             findings.append(_finding(
                 rule_key_override or 'school_schedule_mismatch',
                 FindingSeverity.REVIEW,
@@ -274,6 +282,7 @@ def evaluate_schedule_rules(
                 evidence_strength=EvidenceStrength.APPROXIMATE if ambiguous else EvidenceStrength.EXACT,
                 evidence={
                     'candidate_count': len(mismatched),
+                    'candidate_entry_ids': candidate_entry_ids,
                     'match_confidence': confidences,
                     'matched_fields': [list(_candidate_value(item, 'matched_fields', ())) for item in mismatched],
                     'mismatched_fields': [list(_candidate_value(item, 'mismatched_fields', ())) for item in mismatched],

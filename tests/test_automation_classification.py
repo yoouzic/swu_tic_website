@@ -153,6 +153,18 @@ class ClassificationTest(unittest.TestCase):
             llm_available=True,
         )
 
+    def test_three_week_witness_candidate_alone_remains_review_recommended(self):
+        self.assert_category(
+            ReviewCategory.REVIEW,
+            [finding(
+                'witness_reused_across_weeks',
+                severity=FindingSeverity.HIGH,
+                source=FindingSource.HISTORY,
+                objective=False,
+                strength=EvidenceStrength.EXACT,
+            )],
+        )
+
     def test_llm_high_with_objective_review_evidence_can_be_high_risk(self):
         self.assert_category(
             ReviewCategory.HIGH_RISK,

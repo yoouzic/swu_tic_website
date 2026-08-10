@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import date
@@ -154,11 +155,92 @@ def _validate_safe_regex(parameters: Any) -> dict[str, Any]:
     return matcher
 
 
+def _strict_object(parameters: Any, allowed: set[str]) -> dict[str, Any]:
+    values = _require_mapping(parameters)
+    unknown = [key for key in values if key not in allowed]
+    if unknown:
+        raise RuleValidationError(
+            'unknown_parameter',
+            f'unknown rule parameter(s): {", ".join(str(key) for key in unknown)}',
+        )
+    return values
+
+
+def _validate_empty_object(parameters: Any) -> dict[str, Any]:
+    return _strict_object(parameters, set())
+
+
+def _validate_witness_reuse(parameters: Any) -> dict[str, Any]:
+    values = _strict_object(
+        parameters,
+        {'minimum_distinct_weeks', 'high_risk_candidate_weeks', 'identity'},
+    )
+    minimum = values.get('minimum_distinct_weeks', 2)
+    candidate_threshold = values.get('high_risk_candidate_weeks', 3)
+    identity = values.get('identity', 'phone_primary')
+    if type(minimum) is not int or minimum < 2:
+        raise RuleValidationError(
+            'invalid_minimum_distinct_weeks',
+            'minimum_distinct_weeks must be an integer greater than or equal to 2',
+        )
+    if type(candidate_threshold) is not int or candidate_threshold < minimum:
+        raise RuleValidationError(
+            'invalid_high_risk_candidate_weeks',
+            'high_risk_candidate_weeks must be an integer at least minimum_distinct_weeks',
+        )
+    if identity != 'phone_primary':
+        raise RuleValidationError(
+            'invalid_witness_identity',
+            'identity must be phone_primary',
+        )
+    return {
+        'minimum_distinct_weeks': minimum,
+        'high_risk_candidate_weeks': candidate_threshold,
+        'identity': identity,
+    }
+
+
+def _validate_consecutive_teacher_weeks(parameters: Any) -> dict[str, Any]:
+    values = _strict_object(parameters, {'maximum_week_gap'})
+    maximum_gap = values.get('maximum_week_gap', 1)
+    if type(maximum_gap) is not int or maximum_gap != 1:
+        raise RuleValidationError(
+            'invalid_maximum_week_gap',
+            'maximum_week_gap must be exactly 1',
+        )
+    return {'maximum_week_gap': maximum_gap}
+
+
+def _validate_feedback_similarity(parameters: Any) -> dict[str, Any]:
+    values = _strict_object(parameters, {'similarity_threshold'})
+    threshold = values.get('similarity_threshold', 0.9)
+    if (
+        isinstance(threshold, bool)
+        or not isinstance(threshold, (int, float))
+        or not math.isfinite(float(threshold))
+        or not 0 <= threshold <= 1
+    ):
+        raise RuleValidationError(
+            'invalid_similarity_threshold',
+            'similarity_threshold must be a finite number from 0 to 1',
+        )
+    return {'similarity_threshold': threshold}
+
+
 _PARAMETER_VALIDATORS = {
     'required_prefix': _validate_required_prefix,
     'minimum_length': _validate_minimum_length,
     'confusion_patterns': _validate_patterns,
     'safe_regex': _validate_safe_regex,
+    'personal_schedule_conflict': _validate_empty_object,
+    'class_schedule_conflict': _validate_empty_object,
+    'same_college_teacher': _validate_empty_object,
+    'school_schedule_mismatch': _validate_empty_object,
+    'witness_reused_across_weeks': _validate_witness_reuse,
+    'witness_phone_name_conflict': _validate_empty_object,
+    'consecutive_teacher_weeks': _validate_consecutive_teacher_weeks,
+    'same_listener_same_slot': _validate_empty_object,
+    'feedback_similarity': _validate_feedback_similarity,
 }
 
 

@@ -27,7 +27,7 @@ def revision(
         'handler': handler,
         'enabled': enabled,
         'severity': severity,
-        'parameters': parameters or {},
+        'parameters': {} if parameters is None else parameters,
     }
 
 
@@ -68,6 +68,14 @@ class TextRuleTest(unittest.TestCase):
         self.assertEqual(findings[0].source, FindingSource.SYSTEM)
         self.assertEqual(findings[0].rule_key, 'future')
         self.assertEqual(findings[0].severity, FindingSeverity.UNKNOWN)
+
+    def test_system_finding_uses_evidence_strength_enum_contract(self):
+        finding = RuleEngine([
+            revision('future', 1, 'uploaded_python', parameters={}),
+        ]).evaluate({'course_feedback': '合成反馈'})[0]
+
+        self.assertIs(finding.evidence_strength, EvidenceStrength.WEAK)
+        self.assertEqual(finding.evidence_strength.value, 'weak')
 
     def test_required_prefix_is_checked_at_position_zero_and_repetition_is_not_fraud(self):
         engine = RuleEngine([
@@ -164,6 +172,45 @@ class TextRuleTest(unittest.TestCase):
                             parameters={'regex': pattern, 'message': '合成建议'},
                         )
                     )
+
+    def test_schedule_history_parameters_are_rejected_before_rule_execution(self):
+        invalid_revisions = [
+            ('witness', 'witness_reused_across_weeks', {'minimum_distinct_weeks': 'bad'}),
+            ('witness-small', 'witness_reused_across_weeks', {'minimum_distinct_weeks': 1}),
+            ('witness-order', 'witness_reused_across_weeks', {
+                'minimum_distinct_weeks': 3,
+                'high_risk_candidate_weeks': 2,
+            }),
+            ('witness-identity', 'witness_reused_across_weeks', {
+                'minimum_distinct_weeks': 2,
+                'high_risk_candidate_weeks': 3,
+                'identity': 'name_primary',
+            }),
+            ('consecutive', 'consecutive_teacher_weeks', {'maximum_week_gap': 2}),
+            ('similarity-type', 'feedback_similarity', {'similarity_threshold': '0.9'}),
+            ('similarity-range', 'feedback_similarity', {'similarity_threshold': 1.1}),
+        ]
+        for rule_key, handler, parameters in invalid_revisions:
+            with self.subTest(rule_key=rule_key):
+                with self.assertRaises(RuleValidationError):
+                    RuleEngine([revision(rule_key, 1, handler, parameters=parameters)])
+
+    def test_schedule_history_handlers_reject_non_objects_and_unknown_parameters_consistently(self):
+        handlers = (
+            'personal_schedule_conflict',
+            'class_schedule_conflict',
+            'same_college_teacher',
+            'school_schedule_mismatch',
+            'witness_phone_name_conflict',
+            'same_listener_same_slot',
+        )
+        for handler in handlers:
+            with self.subTest(handler=handler, case='non_object'):
+                with self.assertRaises(RuleValidationError):
+                    RuleEngine([revision(handler, 1, handler, parameters=[])])
+            with self.subTest(handler=handler, case='unknown_key'):
+                with self.assertRaises(RuleValidationError):
+                    RuleEngine([revision(handler, 1, handler, parameters={'unexpected': True})])
 
 
 if __name__ == '__main__':
