@@ -1,4 +1,5 @@
 import os
+import json
 import re
 import socket
 import sqlite3
@@ -214,6 +215,76 @@ class LocalDebugPortContractTest(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('LOCAL_DEBUG_PORT must be an integer between 1 and 65535', result.stderr)
+
+
+class LocalDebugIsolatedTestCase(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.runtime_root = Path(self.temp_dir.name, 'runtime')
+        self.storage_root = Path(self.temp_dir.name, 'storage')
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def run_action(self, action, *, env=None, input_text=None):
+        process_env = os.environ.copy()
+        process_env.update({
+            'LOCAL_DEBUG_RUNTIME_ROOT': str(self.runtime_root),
+            'LOCAL_DEBUG_STORAGE_ROOT': str(self.storage_root),
+        })
+        if env:
+            process_env.update(env)
+        return subprocess.run(
+            [
+                'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                '-File', str(ROOT / 'tools' / 'local_debug.ps1'),
+                '-Action', action,
+            ],
+            cwd=ROOT,
+            env=process_env,
+            input=input_text,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            capture_output=True,
+            check=False,
+        )
+
+
+class LocalDebugActionValidationTest(unittest.TestCase):
+    def test_unknown_action_is_one_line_failure_through_cmd_wrapper(self):
+        result = subprocess.run(
+            ['cmd.exe', '/d', '/c', '本地调试.cmd nonsense'],
+            cwd=ROOT,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            capture_output=True,
+            check=False,
+        )
+        combined = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(combined.count('[失败]'), 1, combined)
+        self.assertNotIn('CategoryInfo', combined)
+        self.assertNotIn('FullyQualifiedErrorId', combined)
+        self.assertNotIn('local_debug.ps1:', combined)
+
+
+class LocalDebugRootOverrideTest(LocalDebugIsolatedTestCase):
+    def test_start_uses_temporary_runtime_and_storage_roots_before_port_check(self):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(('127.0.0.1', 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        try:
+            result = self.run_action('start', env={'LOCAL_DEBUG_PORT': str(port)})
+            self.assertNotEqual(result.returncode, 0)
+            self.assertTrue(self.runtime_root.exists())
+            self.assertTrue(Path(self.storage_root, 'uploads').exists())
+            self.assertTrue(Path(self.storage_root, 'logs').exists())
+            self.assertFalse(Path(self.runtime_root, 'local-debug.pid').exists())
+        finally:
+            listener.close()
 
 
 class LocalDebugErrorOutputTest(unittest.TestCase):
