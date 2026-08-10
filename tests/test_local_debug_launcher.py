@@ -328,13 +328,16 @@ class LocalDebugIdentitySafetyTest(LocalDebugIsolatedTestCase):
 class LocalDebugIdentityProbeFailureTest(LocalDebugIsolatedTestCase):
     def test_identity_probe_failure_cleans_new_process_tree_and_port(self):
         fake_python = Path(self.temp_dir.name, 'fake-python.cmd')
+        marker = Path(self.temp_dir.name, 'parent.pid')
         real_python = str(Path(sys.executable))
         fake_python.write_bytes(
             (
                 '@echo off\r\n'
                 'if "%~1"=="-c" exit /b 0\r\n'
                 'if "%~1"=="tools/prepare_local_debug.py" exit /b 0\r\n'
-                f'"{real_python}" -c "import os,socket,time; s=socket.socket(); '
+                f'"{real_python}" -c "import os,socket,time; '
+                "open(os.environ['LOCAL_DEBUG_MARKER'],'w').write(str(os.getppid())); "
+                's=socket.socket(); '
                 "s.bind(('127.0.0.1',int(os.environ['FLASK_RUN_PORT']))); "
                 's.listen(1); time.sleep(2)"\r\n'
             ).encode('ascii')
@@ -348,6 +351,7 @@ class LocalDebugIdentityProbeFailureTest(LocalDebugIsolatedTestCase):
             'LOCAL_DEBUG_PYTHON': str(fake_python),
             'LOCAL_DEBUG_HEALTH_TIMEOUT_SECONDS': '1',
             'LOCAL_DEBUG_TEST_FORCE_IDENTITY_FAILURE': '1',
+            'LOCAL_DEBUG_MARKER': str(marker),
         }
         try:
             result = self.run_action('start', env=env)
@@ -356,6 +360,20 @@ class LocalDebugIdentityProbeFailureTest(LocalDebugIsolatedTestCase):
             self.assertIn('无法验证本地调试服务进程身份', combined)
             self.assertFalse((self.runtime_root / 'local-debug.pid').exists())
             self.assertFalse((self.runtime_root / 'local-debug-state.json').exists())
+            deadline = time.monotonic() + 5
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(0.1)
+            self.assertTrue(marker.exists(), combined)
+            parent_pid = int(marker.read_text(encoding='ascii'))
+            process_check = subprocess.run(
+                [
+                    'powershell.exe', '-NoProfile', '-Command',
+                    f'if (Get-Process -Id {parent_pid} -ErrorAction SilentlyContinue) {{ exit 1 }}',
+                ],
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(process_check.returncode, 0, combined)
             check = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
                 self.assertNotEqual(check.connect_ex(('127.0.0.1', port)), 0)
@@ -364,6 +382,70 @@ class LocalDebugIdentityProbeFailureTest(LocalDebugIsolatedTestCase):
         finally:
             self.run_action('stop', env=env)
             time.sleep(3)
+
+
+class LocalDebugCleanupFailureTest(LocalDebugIsolatedTestCase):
+    def test_cleanup_failure_retains_manageable_state_for_later_stop(self):
+        fake_python = Path(self.temp_dir.name, 'fake-python.cmd')
+        marker = Path(self.temp_dir.name, 'parent.pid')
+        real_python = str(Path(sys.executable))
+        fake_python.write_bytes(
+            (
+                '@echo off\r\n'
+                'if "%~1"=="-c" exit /b 0\r\n'
+                'if "%~1"=="tools/prepare_local_debug.py" exit /b 0\r\n'
+                f'"{real_python}" -c "import os,time; '
+                "open(os.environ['LOCAL_DEBUG_MARKER'],'w').write(str(os.getppid())); "
+                'time.sleep(30)"\r\n'
+            ).encode('ascii')
+        )
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.bind(('127.0.0.1', 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        env = {
+            'LOCAL_DEBUG_PORT': str(port),
+            'LOCAL_DEBUG_PYTHON': str(fake_python),
+            'LOCAL_DEBUG_TEST_FORCE_IDENTITY_FAILURE': '1',
+            'LOCAL_DEBUG_TEST_FORCE_CLEANUP_FAILURE': '1',
+            'LOCAL_DEBUG_MARKER': str(marker),
+        }
+        try:
+            result = self.run_action('start', env=env)
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(combined.count('[失败]'), 1, combined)
+            self.assertIn('无法清理', combined)
+            pid_path = self.runtime_root / 'local-debug.pid'
+            state_path = self.runtime_root / 'local-debug-state.json'
+            self.assertTrue(pid_path.exists(), combined)
+            self.assertTrue(state_path.exists(), combined)
+            deadline = time.monotonic() + 5
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(0.1)
+            self.assertTrue(marker.exists(), combined)
+            parent_pid = int(marker.read_text(encoding='ascii'))
+            state = json.loads(state_path.read_text(encoding='utf-8-sig'))
+            self.assertEqual(state['pid'], parent_pid)
+            process_check = subprocess.run(
+                [
+                    'powershell.exe', '-NoProfile', '-Command',
+                    f'if (-not (Get-Process -Id {parent_pid} -ErrorAction SilentlyContinue)) {{ exit 1 }}',
+                ],
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(process_check.returncode, 0, combined)
+        finally:
+            self.run_action('stop', env={'LOCAL_DEBUG_PORT': str(port)})
+            if marker.exists():
+                parent_pid = int(marker.read_text(encoding='ascii'))
+                subprocess.run(
+                    ['taskkill.exe', '/PID', str(parent_pid), '/T', '/F'],
+                    capture_output=True,
+                    check=False,
+                )
+            time.sleep(1)
 
 
 class LocalDebugStatePortTest(LocalDebugIsolatedTestCase):
