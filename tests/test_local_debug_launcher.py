@@ -287,6 +287,66 @@ class LocalDebugRootOverrideTest(LocalDebugIsolatedTestCase):
             listener.close()
 
 
+class LocalDebugIdentitySafetyTest(LocalDebugIsolatedTestCase):
+    def test_identity_mismatch_does_not_taskkill_external_process(self):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(('127.0.0.1', 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        sleeper = subprocess.Popen([
+            sys.executable, '-c', 'import time; time.sleep(60)',
+        ])
+        pid_path = self.runtime_root / 'local-debug.pid'
+        state_path = self.runtime_root / 'local-debug-state.json'
+        try:
+            self.runtime_root.mkdir(parents=True, exist_ok=True)
+            pid_path.write_text(str(sleeper.pid), encoding='ascii')
+            state_path.write_text(json.dumps({
+                'pid': sleeper.pid,
+                'processStartTime': '2000-01-01T00:00:00.0000000Z',
+                'commandLine': 'external-process-not-the-debug-server',
+                'port': port,
+                'url': f'http://127.0.0.1:{port}',
+            }), encoding='utf-8')
+            result = self.run_action('stop', env={'LOCAL_DEBUG_PORT': str(port)})
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(str(port), combined)
+            self.assertNotIn('[成功]', combined)
+            self.assertIsNone(sleeper.poll(), combined)
+            self.assertEqual(listener.getsockname()[1], port)
+            self.assertFalse(pid_path.exists())
+            self.assertFalse(state_path.exists())
+        finally:
+            listener.close()
+            if sleeper.poll() is None:
+                sleeper.terminate()
+                sleeper.wait(timeout=5)
+
+
+class LocalDebugStatePortTest(LocalDebugIsolatedTestCase):
+    def test_start_with_new_request_port_reports_recorded_state_url(self):
+        first = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        first.bind(('127.0.0.1', 0))
+        first_port = first.getsockname()[1]
+        first.close()
+        second = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        second.bind(('127.0.0.1', 0))
+        second_port = second.getsockname()[1]
+        second.close()
+        try:
+            started = self.run_action('start', env={'LOCAL_DEBUG_PORT': str(first_port)})
+            self.assertEqual(started.returncode, 0, started.stderr)
+            requested_again = self.run_action(
+                'start', env={'LOCAL_DEBUG_PORT': str(second_port)}
+            )
+            self.assertEqual(requested_again.returncode, 0, requested_again.stderr)
+            self.assertIn(f'http://127.0.0.1:{first_port}', requested_again.stdout)
+            self.assertNotIn(f'http://127.0.0.1:{second_port}', requested_again.stdout)
+        finally:
+            self.run_action('stop', env={'LOCAL_DEBUG_PORT': str(second_port)})
+
+
 class LocalDebugErrorOutputTest(unittest.TestCase):
     def test_foreign_port_error_is_concise_and_does_not_kill_listener(self):
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
