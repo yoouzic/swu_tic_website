@@ -18,7 +18,9 @@ from app.review_automation.llm.client import (
     TransientLLMError,
 )
 from app.review_automation.llm.schemas import DeepSeekReviewResponse
-from app.review_automation.models import ReviewAssessment
+from app.review_automation.models import ReviewAssessment, SchoolScheduleEntry
+from app.review_automation.schedules.repository import ScheduleSlot, SchoolScheduleMatch
+from app.review_automation.service import AssessmentService as AssessmentServiceForTest
 from tests.automation_test_utils import make_synthetic_form, temporary_automation_database
 
 
@@ -132,7 +134,7 @@ class AssessmentServiceTest(unittest.TestCase):
         ).assess_form(old.id)
 
         self.assertEqual(result.form_id, latest.id)
-        self.assertEqual(llm.calls[0]['course_feedback'], latest.course_feedback)
+        self.assertEqual(llm.calls[0]['form']['course_feedback'], latest.course_feedback)
         self.assert_protected_unchanged(snapshot, latest)
 
     def test_identical_fingerprint_reuses_assessment_without_extra_llm_call(self):
@@ -269,8 +271,8 @@ class AssessmentServiceTest(unittest.TestCase):
         summary = self.service(llm, runner=lambda form, context: ()).assess_form(self.form.id)
 
         assessment = db.session.get(ReviewAssessment, summary.assessment_id)
-        self.assertEqual(llm.calls[0]['contact_phone1'], '13900000001')
-        self.assertEqual(llm.calls[0]['course_feedback'], self.form.course_feedback)
+        self.assertEqual(llm.calls[0]['form']['contact_phone1'], '13900000001')
+        self.assertEqual(llm.calls[0]['form']['course_feedback'], self.form.course_feedback)
         self.assertEqual(assessment.suggested_comment, '合成建议草稿')
         self.assertEqual(assessment.validated_model_json, json.dumps({
             'compliance': 'compliant',
@@ -279,6 +281,158 @@ class AssessmentServiceTest(unittest.TestCase):
             'suggested_comment': '合成建议草稿',
         }, ensure_ascii=False, sort_keys=True, separators=(',', ':')))
         self.assertNotIn('reasoning_content', assessment.validated_model_json)
+        self.assert_protected_unchanged(snapshot)
+
+    def test_llm_receives_json_safe_full_form_and_bounded_review_context(self):
+        snapshot = self.protected_snapshot()
+        history_rows = [
+            make_synthetic_form(
+                unique_id=5000 + index,
+                listener_number=self.form.listener_number,
+                course_feedback=f'SYNTHETIC_RELATED_HISTORY_{index}',
+            )
+            for index in range(5)
+        ]
+        unrelated = make_synthetic_form(
+            unique_id=6000,
+            listener_number='SYN-UNRELATED-LISTENER',
+            course_feedback='SYNTHETIC_UNRELATED_HISTORY',
+        )
+        db.session.add_all([*history_rows, unrelated])
+        db.session.commit()
+
+        school_entry = SchoolScheduleEntry(
+            id=701,
+            dataset_id='SYN-SCHOOL-DATASET',
+            teacher_name='SYN-TEACHER',
+            teacher_college='SYN-TEACHER-COLLEGE',
+            course_title='SYN-COURSE',
+            teaching_class='SYN-CLASS-001',
+            major='SYN-MAJOR',
+            weeks_json='[1]',
+            weekday=1,
+            start_period=1,
+            end_period=2,
+            location='SYN-ROOM',
+        )
+        school_match = SchoolScheduleMatch(
+            entry=school_entry,
+            confidence=0.75,
+            matched_fields=('course_title', 'weekday'),
+            mismatched_fields=('teacher_college',),
+        )
+        schedule = SimpleNamespace(
+            coverage=ScheduleCoverage.COMPLETE,
+            admin_classes=('SYN-CLASS-001',),
+            slots=(
+                ScheduleSlot(
+                    course_title='SYN-PERSONAL-COURSE',
+                    weeks=frozenset({1}),
+                    weekday=1,
+                    start_period=1,
+                    end_period=2,
+                    evidence_strength=EvidenceStrength.EXACT,
+                ),
+                ScheduleSlot(
+                    course_title='SYN-CLASS-COURSE',
+                    weeks=frozenset({1}),
+                    weekday=1,
+                    start_period=3,
+                    end_period=4,
+                    evidence_strength=EvidenceStrength.APPROXIMATE,
+                ),
+            ),
+        )
+        deterministic = FindingDraft(
+            rule_key='synthetic_deterministic_rule',
+            source=FindingSource.RULE,
+            severity=FindingSeverity.REVIEW,
+            title='SYNTHETIC_RULE_TITLE',
+            message='SYNTHETIC_RULE_MESSAGE',
+            objective=True,
+            evidence_strength=EvidenceStrength.APPROXIMATE,
+            evidence={'marker': 'SYNTHETIC_RULE_EVIDENCE'},
+        )
+        context_seen = []
+
+        def runner(form, context):
+            context_seen.append(context)
+            return (deterministic,)
+
+        llm = FakeLLM()
+        service = AssessmentServiceForTest(
+            llm_client=llm,
+            llm_enabled=True,
+            deterministic_runner=runner,
+            schedule_loader=lambda form: schedule,
+            school_matches_loader=lambda form: (school_match,),
+            history_loader=lambda form: [*history_rows, unrelated],
+            schedule_dependencies={
+                'school': {'id': 'SYN-SCHOOL-DATASET', 'sha256': 'SYN-SCHOOL-SHA', 'version': 'v7'},
+                'personal': {'id': 'SYN-PERSONAL-DATASET', 'sha256': 'SYN-PERSONAL-SHA', 'version': 'v3'},
+            },
+            rule_revisions={
+                'synthetic_deterministic_rule': {
+                    'id': 17,
+                    'version': 4,
+                    'handler': 'synthetic_deterministic_rule',
+                    'enabled': True,
+                    'severity': 'review',
+                    'parameters': {'synthetic': True},
+                },
+            },
+            semester='SYN-2026-SPRING',
+            semester_monday='2026-04-13',
+            model_id='synthetic-model-v2',
+            prompt_version='synthetic-prompt-v2',
+        )
+
+        summary = service.assess_form(self.form.id)
+        payload = llm.calls[0]
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        assessment = db.session.get(ReviewAssessment, summary.assessment_id)
+
+        self.assertTrue(context_seen)
+        self.assertEqual(payload['form']['contact_phone1'], '13900000001')
+        self.assertEqual(payload['form']['course_feedback'], self.form.course_feedback)
+        self.assertEqual(payload['schedule_comparison']['coverage'], 'complete')
+        self.assertEqual(payload['schedule_comparison']['admin_classes'], ['SYN-CLASS-001'])
+        strengths = {
+            item['evidence_strength']
+            for item in payload['schedule_comparison']['slots']
+        }
+        self.assertEqual(strengths, {'exact', 'approximate'})
+        self.assertEqual(payload['schedule_comparison']['school_matches'][0]['entry_id'], 701)
+        self.assertNotIn('entry', payload['schedule_comparison']['school_matches'][0])
+        self.assertEqual(payload['rule_evidence'][0]['rule_key'], 'synthetic_deterministic_rule')
+        self.assertEqual(payload['rule_evidence'][0]['source'], 'rule')
+        self.assertEqual(payload['rule_evidence'][0]['evidence']['marker'], 'SYNTHETIC_RULE_EVIDENCE')
+        self.assertLessEqual(len(payload['history_summary']['items']), 3)
+        self.assertEqual(
+            {item['listener_number'] for item in payload['history_summary']['items']},
+            {self.form.listener_number},
+        )
+        self.assertNotIn('SYN-UNRELATED-LISTENER', encoded)
+        self.assertEqual(payload['dependency_context']['semester'], 'SYN-2026-SPRING')
+        self.assertEqual(payload['dependency_context']['datasets']['school']['version'], 'v7')
+        self.assertEqual(payload['dependency_context']['rules']['synthetic_deterministic_rule']['id'], 17)
+        self.assertEqual(payload['dependency_context']['model_id'], 'synthetic-model-v2')
+        self.assertEqual(payload['dependency_context']['prompt_version'], 'synthetic-prompt-v2')
+        from app.review_automation.llm.prompts import PROMPT_VERSION, build_review_messages
+        from app.app import app
+        prompt_user_content = build_review_messages(payload)[1]['content']
+        self.assertNotEqual(PROMPT_VERSION, '2026-08-10-v1')
+        self.assertNotEqual(app.config['DEEPSEEK_PROMPT_VERSION'], '2026-08-10-v1')
+        self.assertIn('完整表单', prompt_user_content)
+        self.assertIn('schedule_comparison', prompt_user_content)
+        self.assertNotIn('reasoning_content', encoded)
+        self.assertNotIn('raw_response', encoded)
+        self.assertNotIn('raw_payload', encoded)
+        validated_model = json.loads(assessment.validated_model_json)
+        self.assertEqual(
+            set(validated_model),
+            {'compliance', 'summary', 'findings', 'suggested_comment'},
+        )
         self.assert_protected_unchanged(snapshot)
 
 

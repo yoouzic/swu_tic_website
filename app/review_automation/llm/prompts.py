@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any, Mapping
 
 
-PROMPT_VERSION = '2026-08-10-v1'
+PROMPT_VERSION = '2026-08-10-v2-context'
 
 
 def _jsonable(value: Any) -> Any:
@@ -34,10 +34,10 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-def build_review_messages(form: Any) -> list[dict[str, str]]:
-    """Build a complete-form prompt without logging or retaining the payload."""
-    form_json = json.dumps(
-        _jsonable(form),
+def build_review_messages(review_context: Any) -> list[dict[str, str]]:
+    """Build a complete-form plus evidence-context prompt without retaining it."""
+    context_json = json.dumps(
+        _jsonable(review_context),
         ensure_ascii=False,
         sort_keys=True,
         separators=(',', ':'),
@@ -62,10 +62,12 @@ def build_review_messages(form: Any) -> list[dict[str, str]]:
         + json.dumps(example, ensure_ascii=False, separators=(',', ':'))
     )
     user = (
-        '请仅根据以下完整表单内容提出语义层面的合规性与真实性复核建议。'
+        '请仅根据以下完整表单和相关证据上下文提出语义层面的合规性与真实性复核建议。'
+        '输入包含完整表单 form、规范化课表对比 schedule_comparison、确定性规则证据 rule_evidence、'
+        '同一信息员历史摘要和冻结依赖；请优先考虑这些证据上下文。\n'
         '不要替代确定性规则，也不要作最终通过/驳回决定。仅返回 JSON。\n'
-        '完整表单 JSON：\n'
-        + form_json
+        '完整表单和证据上下文 JSON：\n'
+        + context_json
     )
     return [
         {'role': 'system', 'content': system},

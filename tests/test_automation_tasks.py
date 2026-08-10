@@ -27,7 +27,7 @@ class ScriptedLLM:
         self.calls = Counter()
 
     def review(self, payload):
-        form_id = payload['id']
+        form_id = payload['form']['id']
         self.calls[form_id] += 1
         if form_id in self.permanent_ids:
             raise PermanentLLMError('authentication_failed')

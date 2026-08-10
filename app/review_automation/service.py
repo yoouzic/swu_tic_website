@@ -27,6 +27,7 @@ from .llm.client import (
     PermanentLLMError,
     TransientLLMError,
 )
+from .llm.prompts import PROMPT_VERSION
 from .llm.schemas import DeepSeekReviewResponse
 from .models import ReviewAssessment, ReviewFinding, ReviewRuleRevision
 from .rules.registry import RuleContext, RuleRevisionView, execute_rules, field_value
@@ -97,7 +98,20 @@ def _revision_snapshot(revisions: Any) -> dict[str, Any]:
         key = field_value(revision, 'rule_key', default='')
         version = field_value(revision, 'version', default=0)
         if key:
-            result[str(key)] = int(version)
+            parameters = field_value(revision, 'parameters_json', default='{}')
+            if isinstance(parameters, str):
+                try:
+                    parameters = json.loads(parameters)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    parameters = {}
+            result[str(key)] = {
+                'id': field_value(revision, 'id', default=None),
+                'version': int(version),
+                'handler': field_value(revision, 'handler', default=''),
+                'enabled': bool(field_value(revision, 'enabled', default=True)),
+                'severity': field_value(revision, 'severity', default=FindingSeverity.REVIEW.value),
+                'parameters': dict(parameters or {}) if isinstance(parameters, Mapping) else {},
+            }
     return dict(sorted(result.items()))
 
 
@@ -138,6 +152,110 @@ def _as_finding(value: Any) -> FindingDraft:
         evidence_strength=EvidenceStrength(getattr(strength, 'value', strength)),
         evidence=_json_safe(dict(get('evidence', {}) or {})),
     )
+
+
+_LLM_HISTORY_LIMIT = 3
+
+
+def _slot_context(slot: Any) -> dict[str, Any]:
+    weeks = field_value(slot, 'weeks', default=()) or ()
+    try:
+        weeks = sorted(int(item) for item in weeks)
+    except (TypeError, ValueError):
+        weeks = []
+    return {
+        'course_title': _json_safe(field_value(slot, 'course_title', default='')),
+        'weeks': weeks,
+        'weekday': _json_safe(field_value(slot, 'weekday', default=None)),
+        'start_period': _json_safe(field_value(slot, 'start_period', default=None)),
+        'end_period': _json_safe(field_value(slot, 'end_period', default=None)),
+        'evidence_strength': _json_safe(field_value(slot, 'evidence_strength', default=EvidenceStrength.WEAK)),
+    }
+
+
+def _school_match_context(match: Any) -> dict[str, Any]:
+    entry = field_value(match, 'entry', default=None)
+    return {
+        'entry_id': _json_safe(field_value(entry, 'id', default=None)),
+        'course_title': _json_safe(field_value(entry, 'course_title', default='')),
+        'teacher_name': _json_safe(field_value(entry, 'teacher_name', default='')),
+        'teacher_college': _json_safe(field_value(entry, 'teacher_college', default='')),
+        'location': _json_safe(field_value(entry, 'location', default=None)),
+        'confidence': _json_safe(field_value(match, 'confidence', default=0.0)),
+        'matched_fields': list(field_value(match, 'matched_fields', default=()) or ()),
+        'mismatched_fields': list(field_value(match, 'mismatched_fields', default=()) or ()),
+    }
+
+
+def _finding_context(finding: Any) -> dict[str, Any]:
+    item = _as_finding(finding)
+    return {
+        'rule_key': item.rule_key,
+        'source': item.source.value,
+        'severity': item.severity.value,
+        'evidence_strength': item.evidence_strength.value,
+        'objective': bool(item.objective),
+        'evidence': _json_safe(item.evidence),
+    }
+
+
+def _history_item_context(item: Any) -> dict[str, Any]:
+    feedback = field_value(item, 'course_feedback', default='') or ''
+    return {
+        'id': _json_safe(field_value(item, 'id', default=None)),
+        'unique_id': _json_safe(field_value(item, 'unique_id', default=None)),
+        'listener_number': _json_safe(field_value(item, 'listener_number', default=None)),
+        'lecture_date': _json_safe(field_value(item, 'lecture_date', default=None)),
+        'class_period': _json_safe(field_value(item, 'class_period', default=None)),
+        'teacher_name': _json_safe(field_value(item, 'teacher_name', default=None)),
+        'course_title': _json_safe(field_value(item, 'course_title', default=None)),
+        'course_feedback_excerpt': str(feedback)[:160],
+    }
+
+
+def _review_context_payload(
+    *,
+    form: Any,
+    normalized: NormalizedForm,
+    schedule: Any,
+    school_matches: Any,
+    findings: Any,
+    history: Any,
+    schedule_dependencies: Any,
+    rule_snapshot: Any,
+    semester: str | None,
+    semester_monday: date | None,
+    model_id: str,
+    prompt_version: str,
+) -> dict[str, Any]:
+    listener_number = field_value(form, 'listener_number', default=None)
+    related_history = [
+        item for item in (history or ())
+        if field_value(item, 'listener_number', default=None) == listener_number
+    ]
+    coverage = field_value(schedule, 'coverage', default=ScheduleCoverage.NONE)
+    return {
+        'form': _json_safe(normalized.fields),
+        'schedule_comparison': {
+            'coverage': _json_safe(coverage),
+            'admin_classes': list(field_value(schedule, 'admin_classes', default=()) or ()),
+            'slots': [_slot_context(item) for item in (field_value(schedule, 'slots', default=()) or ())],
+            'school_matches': [_school_match_context(item) for item in (school_matches or ())],
+        },
+        'rule_evidence': [_finding_context(item) for item in (findings or ())],
+        'history_summary': {
+            'related_count': len(related_history),
+            'items': [_history_item_context(item) for item in related_history[:_LLM_HISTORY_LIMIT]],
+        },
+        'dependency_context': {
+            'semester': semester,
+            'semester_monday': _json_safe(semester_monday),
+            'datasets': _json_safe(schedule_dependencies or {}),
+            'rules': _json_safe(rule_snapshot or {}),
+            'model_id': model_id,
+            'prompt_version': prompt_version,
+        },
+    }
 
 
 def _model_dump(result: Any) -> dict[str, Any]:
@@ -218,7 +336,7 @@ class AssessmentService:
         else:
             self.semester_monday = None
         self.model_id = model_id or getattr(llm_client, 'model', 'deepseek-v4-flash')
-        self.prompt_version = prompt_version or getattr(llm_client, 'prompt_version', '2026-08-10-v1')
+        self.prompt_version = prompt_version or getattr(llm_client, 'prompt_version', PROMPT_VERSION)
 
     def normalize_form(self, form: Any) -> NormalizedForm:
         payload = _form_payload(form)
@@ -263,13 +381,14 @@ class AssessmentService:
             if cached is not None:
                 return self._summary(cached, cache_hit=True)
 
-        history = self._load_history(form)
+        history = tuple(self._load_history(form) or ())
+        school_matches = tuple(self._load_school_matches(form))
         profile = self._load_listener_profile(form)
         context = RuleContext(
             form=form,
             schedule=schedule,
-            history=tuple(history),
-            school_matches=tuple(self._load_school_matches(form)),
+            history=history,
+            school_matches=school_matches,
             semester=self.semester,
             semester_monday=self.semester_monday,
             listener_college=field_value(profile, 'college', default=None),
@@ -286,8 +405,22 @@ class AssessmentService:
             error_code = 'llm_unavailable'
             deterministic = tuple(deterministic) + (_unavailable_finding(),)
         else:
+            review_payload = _review_context_payload(
+                form=form,
+                normalized=normalized,
+                schedule=schedule,
+                school_matches=school_matches,
+                findings=deterministic,
+                history=history,
+                schedule_dependencies=schedule_dependencies,
+                rule_snapshot=rule_snapshot,
+                semester=self.semester,
+                semester_monday=self.semester_monday,
+                model_id=self.model_id,
+                prompt_version=self.prompt_version,
+            )
             try:
-                model_result = _model_dump(self.llm_client.review(normalized.fields))
+                model_result = _model_dump(self.llm_client.review(review_payload))
                 suggested_comment = str(model_result.get('suggested_comment', ''))
                 deterministic = tuple(deterministic) + self._llm_findings(model_result)
             except (TransientLLMError, PermanentLLMError, InvalidLLMResponse) as exc:
