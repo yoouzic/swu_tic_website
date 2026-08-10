@@ -172,6 +172,17 @@ class LocalDebugPowerShellContractTest(unittest.TestCase):
         self.assertIn('[Console]::Error.WriteLine', self.source)
         self.assertNotIn('Write-Error $_.Exception.Message', self.source)
 
+    def test_browser_open_helper_honors_test_no_browser_guard(self):
+        helper = self.source.split('function Open-DebugUrl', 1)[1].split(
+            'function Get-DebugStatus', 1
+        )[0]
+        force_failure = "if ($env:LOCAL_DEBUG_TEST_FORCE_BROWSER_FAILURE -eq '1')"
+        no_browser = "if ($env:LOCAL_DEBUG_NO_BROWSER -eq '1')"
+        self.assertIn(force_failure, helper)
+        self.assertIn(no_browser, helper)
+        self.assertLess(helper.index(force_failure), helper.index(no_browser))
+        self.assertLess(helper.index(no_browser), helper.index('Start-Process'))
+
     def test_manager_keeps_utf8_bom_for_windows_powershell(self):
         raw = (ROOT / 'tools' / 'local_debug.ps1').read_bytes()
         self.assertTrue(raw.startswith(b'\xef\xbb\xbf'))
@@ -233,6 +244,7 @@ class LocalDebugIsolatedTestCase(unittest.TestCase):
         process_env.update({
             'LOCAL_DEBUG_RUNTIME_ROOT': str(self.runtime_root),
             'LOCAL_DEBUG_STORAGE_ROOT': str(self.storage_root),
+            'LOCAL_DEBUG_NO_BROWSER': '1',
         })
         if env:
             process_env.update(env)

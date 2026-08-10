@@ -326,6 +326,9 @@ function Open-DebugUrl([string]$OpenUrl) {
     if ($env:LOCAL_DEBUG_TEST_FORCE_BROWSER_FAILURE -eq '1') {
         throw 'browser open test failure'
     }
+    if ($env:LOCAL_DEBUG_NO_BROWSER -eq '1') {
+        return
+    }
     Start-Process -FilePath $OpenUrl -ErrorAction Stop
 }
 
