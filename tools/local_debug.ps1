@@ -190,7 +190,14 @@ function Get-RecordedServiceRecord {
     $recordedUrl = $null
     $recordedPortValid = $false
     $recordedUrlValid = $false
+    $statePid = $null
+    $statePidValid = $false
     if ($state) {
+        $candidatePid = 0
+        if ([int]::TryParse([string]$state.pid, [ref]$candidatePid) -and $candidatePid -gt 0) {
+            $statePid = $candidatePid
+            $statePidValid = $true
+        }
         $candidatePort = 0
         if (
             [int]::TryParse([string]$state.port, [ref]$candidatePort) -and
@@ -213,13 +220,15 @@ function Get-RecordedServiceRecord {
         $pidFromFile -and
         $recordedPortValid -and
         $recordedUrlValid -and
-        [int]$state.pid -eq $pidFromFile
+        $statePidValid -and
+        $statePid -eq $pidFromFile
     ) {
         $identityMatches = Test-RecordedIdentity $state $identity
     }
     [pscustomobject]@{
         HasRecord = $pidFileExists -or $stateFileExists
         State = $state
+        StatePid = $statePid
         Pid = $pidFromFile
         RecordedPort = $recordedPort
         RecordedUrl = $recordedUrl

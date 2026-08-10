@@ -337,14 +337,35 @@ class LocalDebugStatePortTest(LocalDebugIsolatedTestCase):
         try:
             started = self.run_action('start', env={'LOCAL_DEBUG_PORT': str(first_port)})
             self.assertEqual(started.returncode, 0, started.stderr)
+            state = json.loads(
+                (self.runtime_root / 'local-debug-state.json').read_text(encoding='utf-8-sig')
+            )
+            self.assertEqual(state['port'], first_port)
+            self.assertEqual(state['url'], f'http://127.0.0.1:{first_port}')
+            self.assertTrue(state['processStartTime'])
+            command_line = state['commandLine'].replace('/', '\\').lower()
+            self.assertIn('tools\\local_debug_server.py', command_line)
             requested_again = self.run_action(
                 'start', env={'LOCAL_DEBUG_PORT': str(second_port)}
             )
             self.assertEqual(requested_again.returncode, 0, requested_again.stderr)
             self.assertIn(f'http://127.0.0.1:{first_port}', requested_again.stdout)
             self.assertNotIn(f'http://127.0.0.1:{second_port}', requested_again.stdout)
+            status = self.run_action('status', env={'LOCAL_DEBUG_PORT': str(second_port)})
+            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertIn(f'访问地址: http://127.0.0.1:{first_port}', status.stdout)
+            self.assertIn(f'本次请求地址: http://127.0.0.1:{second_port}', status.stdout)
         finally:
-            self.run_action('stop', env={'LOCAL_DEBUG_PORT': str(second_port)})
+            stopped = self.run_action('stop', env={'LOCAL_DEBUG_PORT': str(second_port)})
+            self.assertEqual(stopped.returncode, 0, stopped.stderr)
+            self.assertFalse((self.runtime_root / 'local-debug.pid').exists())
+            self.assertFalse((self.runtime_root / 'local-debug-state.json').exists())
+            for check_port in (first_port, second_port):
+                check = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                try:
+                    self.assertNotEqual(check.connect_ex(('127.0.0.1', check_port)), 0)
+                finally:
+                    check.close()
 
 
 class LocalDebugStartupCleanupTest(LocalDebugIsolatedTestCase):
