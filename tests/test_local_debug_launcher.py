@@ -1,4 +1,5 @@
 import os
+import re
 import socket
 import sqlite3
 import subprocess
@@ -151,7 +152,9 @@ class LocalDebugPowerShellContractTest(unittest.TestCase):
 
     def test_manager_refuses_foreign_port_occupants(self):
         self.assertIn('Test-TcpPort', self.source)
-        self.assertIn('occupied by another process', self.source)
+        self.assertIn('Get-NetTCPConnection', self.source)
+        self.assertIn('未终止该进程', self.source)
+        self.assertIn('未终止任何进程', self.source)
 
     def test_manager_owns_compact_menu_and_uses_5087_by_default(self):
         self.assertIn("'menu'", self.source)
@@ -165,6 +168,20 @@ class LocalDebugPowerShellContractTest(unittest.TestCase):
         self.assertIn('-WindowStyle Hidden', self.source)
         self.assertIn('[Console]::Error.WriteLine', self.source)
         self.assertNotIn('Write-Error $_.Exception.Message', self.source)
+
+    def test_manager_keeps_utf8_bom_for_windows_powershell(self):
+        raw = (ROOT / 'tools' / 'local_debug.ps1').read_bytes()
+        self.assertTrue(raw.startswith(b'\xef\xbb\xbf'))
+
+    def test_lifecycle_helpers_do_not_return_boolean_values(self):
+        start_body = self.source.split('function Start-LocalDebug', 1)[1].split(
+            'function Stop-LocalDebug', 1
+        )[0]
+        stop_body = self.source.split('function Stop-LocalDebug', 1)[1].split(
+            'function Show-Menu', 1
+        )[0]
+        for body in (start_body, stop_body):
+            self.assertIsNone(re.search(r'return\s+\$(?:true|false)\b', body))
 
 
 class LocalDebugPortContractTest(unittest.TestCase):
@@ -229,6 +246,82 @@ class LocalDebugErrorOutputTest(unittest.TestCase):
             self.assertNotIn('FullyQualifiedErrorId', combined)
             self.assertNotIn('Write-Error', combined)
             self.assertEqual(listener.getsockname()[1], port)
+        finally:
+            listener.close()
+
+
+class LocalDebugRuntimeOutputTest(unittest.TestCase):
+    def run_action(self, action, *, env=None, input_text=None):
+        process_env = os.environ.copy()
+        if env:
+            process_env.update(env)
+        return subprocess.run(
+            [
+                'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                '-File', str(ROOT / 'tools' / 'local_debug.ps1'),
+                '-Action', action,
+            ],
+            cwd=ROOT,
+            env=process_env,
+            input=input_text,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            capture_output=True,
+            check=False,
+        )
+
+    def test_status_output_is_utf8_chinese_without_mojibake(self):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(('127.0.0.1', 0))
+        port = listener.getsockname()[1]
+        listener.close()
+        result = self.run_action('status', env={'LOCAL_DEBUG_PORT': str(port)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('访问地址: http://127.0.0.1:', result.stdout)
+        self.assertNotIn('\ufffd', result.stdout)
+        self.assertNotIn('锛', result.stdout)
+
+    def test_stop_output_does_not_leak_false_when_no_service_is_recorded(self):
+        pid_path = ROOT / 'data' / 'instance' / 'debug' / 'local-debug.pid'
+        self.assertFalse(pid_path.exists(), 'test requires no recorded local debug service')
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(('127.0.0.1', 0))
+        port = listener.getsockname()[1]
+        listener.close()
+        result = self.run_action('stop', env={'LOCAL_DEBUG_PORT': str(port)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('\nFalse\n', '\n' + result.stdout + '\n')
+        self.assertEqual(result.stdout.count('[提示]'), 1)
+
+    def test_start_output_hides_prepare_details_and_keeps_one_success_line(self):
+        pid_path = ROOT / 'data' / 'instance' / 'debug' / 'local-debug.pid'
+        self.assertFalse(pid_path.exists(), 'test requires no recorded local debug service')
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(('127.0.0.1', 0))
+        port = listener.getsockname()[1]
+        listener.close()
+        env = {'LOCAL_DEBUG_PORT': str(port)}
+        try:
+            result = self.run_action('start', env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.count('[成功]'), 1)
+            self.assertNotIn('student_id=', result.stdout)
+            self.assertNotIn('local debug database ready:', result.stdout)
+        finally:
+            self.run_action('stop', env=env)
+
+    def test_menu_marks_foreign_non_http_listener_as_abnormal(self):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(('127.0.0.1', 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        try:
+            result = self.run_action(
+                'menu', env={'LOCAL_DEBUG_PORT': str(port)}, input_text='0\n'
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('状态：状态异常', result.stdout)
         finally:
             listener.close()
 

@@ -1,6 +1,6 @@
 ﻿param(
-    [ValidateSet('start', 'stop', 'restart', 'status', 'open')]
-    [string]$Action = 'status'
+    [ValidateSet('menu', 'start', 'stop', 'restart', 'status', 'open')]
+    [string]$Action = 'menu'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,8 +11,10 @@ $PidPath = Join-Path $RuntimeRoot 'local-debug.pid'
 $StatePath = Join-Path $RuntimeRoot 'local-debug-state.json'
 $DatabasePath = Join-Path $RuntimeRoot 'lecture_forms-debug.db'
 $LogPath = Join-Path $StorageRoot 'logs\local-debug.log'
-$DefaultPort = 5000
+$DefaultPort = 5087
 $SharedPassword = '1234564'
+$Port = $null
+$Url = $null
 
 function Resolve-DebugPort {
     $configured = $env:LOCAL_DEBUG_PORT
@@ -27,9 +29,6 @@ function Resolve-DebugPort {
     }
     return $parsed
 }
-
-$Port = Resolve-DebugPort
-$Url = "http://127.0.0.1:$Port"
 
 function Resolve-PythonCommand {
     $candidates = @()
@@ -71,7 +70,7 @@ function Set-DebugEnvironment {
 }
 
 function Invoke-PythonCommand($Python, [string[]]$Arguments) {
-    & $Python.Exe @($Python.Prefix) @Arguments
+    $output = & $Python.Exe @($Python.Prefix) @Arguments 2>&1
     if ($LASTEXITCODE -ne 0) { throw "Python command failed with exit code $LASTEXITCODE" }
 }
 
@@ -95,7 +94,11 @@ function Test-TcpPort {
     try {
         $task = $client.ConnectAsync('127.0.0.1', $Port)
         return $task.Wait(300) -and $client.Connected
-    } catch { return $false } finally { $client.Dispose() }
+    } catch {
+        return $false
+    } finally {
+        $client.Dispose()
+    }
 }
 
 function Test-Http {
@@ -112,28 +115,77 @@ function Remove-StaleState {
     Remove-Item -LiteralPath $PidPath, $StatePath -Force -ErrorAction SilentlyContinue
 }
 
-function Show-Status {
+function Get-PortOccupancyMessage {
+    $connection = $null
+    try {
+        $connection = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+    } catch {
+        $connection = $null
+    }
+    if ($connection) {
+        $owner = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
+        if ($owner) {
+            return "端口 $Port 已被 $($owner.ProcessName)（PID $($owner.Id)）占用；未终止该进程。"
+        }
+    }
+    return "端口 $Port 已被其他程序占用；未终止任何进程。"
+}
+
+function Write-MenuResult([string]$Kind, [string]$Message) {
+    $color = switch ($Kind) {
+        '成功' { 'Green' }
+        '失败' { 'Red' }
+        default { 'Yellow' }
+    }
+    Write-Host "[$Kind] $Message" -ForegroundColor $color
+}
+
+function Get-DebugStatus {
     $recordedPid = Read-RecordedPid
-    $processUp = $recordedPid -and (Test-RecordedProcess $recordedPid)
+    $processUp = [bool]($recordedPid -and (Test-RecordedProcess $recordedPid))
+    if (-not $processUp -and $recordedPid) {
+        Remove-StaleState
+        $recordedPid = $null
+    }
+    $portUp = Test-TcpPort
     $httpUp = Test-Http
-    Write-Host ('PID: ' + $(if ($recordedPid) { $recordedPid } else { '-' }))
-    Write-Host ('进程状态: ' + $(if ($processUp) { '运行中' } else { '未运行' }))
-    Write-Host ('端口状态: ' + $(if (Test-TcpPort) { '已占用' } else { '空闲' }))
-    Write-Host ('网页状态: ' + $(if ($httpUp) { '可访问' } else { '不可访问' }))
-    Write-Host ('访问地址: ' + $Url)
-    if (-not $processUp -and $recordedPid) { Remove-StaleState }
-    return $processUp -and $httpUp
+    $label = if ($processUp -and $httpUp) {
+        '运行中'
+    } elseif (-not $processUp -and -not $portUp -and -not $httpUp) {
+        '未运行'
+    } else {
+        '状态异常'
+    }
+    [pscustomobject]@{
+        Pid = $recordedPid
+        ProcessUp = $processUp
+        PortUp = $portUp
+        HttpUp = $httpUp
+        Label = $label
+        Url = $Url
+    }
+}
+
+function Show-Status {
+    $status = Get-DebugStatus
+    Write-Host ('PID: ' + $(if ($status.Pid) { $status.Pid } else { '-' }))
+    Write-Host ('进程状态: ' + $(if ($status.ProcessUp) { '运行中' } else { '未运行' }))
+    Write-Host ('端口状态: ' + $(if ($status.PortUp) { '已占用' } else { '空闲' }))
+    Write-Host ('网页状态: ' + $(if ($status.HttpUp) { '可访问' } else { '不可访问' }))
+    Write-Host ('访问地址: ' + $status.Url)
+    return $status.ProcessUp -and $status.HttpUp
 }
 
 function Start-LocalDebug {
     Set-DebugEnvironment
     $recordedPid = Read-RecordedPid
     if ($recordedPid -and (Test-RecordedProcess $recordedPid)) {
-        Write-Host "本地调试服务已经运行，PID=$recordedPid"
+        Write-MenuResult '提示' "服务已经运行：$Url"
         return
     }
     if ($recordedPid) { Remove-StaleState }
-    if (Test-TcpPort) { throw "Port $Port is occupied by another process; no process was terminated." }
+    if (Test-TcpPort) { throw (Get-PortOccupancyMessage) }
 
     $python = Resolve-PythonCommand
     Invoke-PythonCommand $python @('tools/prepare_local_debug.py', '--password', $SharedPassword)
@@ -141,8 +193,13 @@ function Start-LocalDebug {
     $prefixText = ($python.Prefix | ForEach-Object { $_ }) -join ' '
     $pythonText = '"' + $python.Exe + '"'
     if ($prefixText) { $pythonText += ' ' + $prefixText }
-    $serverCommand = "title 西大听课工作台 - 本地调试日志 && cd /d `"$RepoRoot`" && $pythonText -u tools/local_debug_server.py"
-    $process = Start-Process -FilePath 'cmd.exe' -ArgumentList '/k', $serverCommand -WorkingDirectory $RepoRoot -PassThru
+    $serverCommand = "cd /d `"$RepoRoot`" && $pythonText -u tools/local_debug_server.py"
+    $process = Start-Process `
+        -FilePath 'cmd.exe' `
+        -ArgumentList '/c', $serverCommand `
+        -WorkingDirectory $RepoRoot `
+        -WindowStyle Hidden `
+        -PassThru
     Set-Content -LiteralPath $PidPath -Value $process.Id -Encoding ascii
     [pscustomobject]@{
         pid = $process.Id
@@ -155,8 +212,7 @@ function Start-LocalDebug {
 
     for ($attempt = 0; $attempt -lt 60; $attempt++) {
         if (Test-Http) {
-            Write-Host "服务已启动：$Url"
-            Write-Host '测试账号：super / manager / user001，密码均为 1234564'
+            Write-MenuResult '成功' "服务已启动：$Url"
             Start-Process $Url
             return
         }
@@ -165,37 +221,86 @@ function Start-LocalDebug {
     throw "Flask did not become reachable within 30 seconds. Check $LogPath"
 }
 
-function Stop-LocalDebug {
+function Stop-LocalDebug([switch]$Quiet) {
     $recordedPid = Read-RecordedPid
     if (-not $recordedPid) {
-        Write-Host '没有记录到由启动器创建的服务。'
         Remove-StaleState
+        if (-not $Quiet) { Write-MenuResult '提示' '服务尚未启动。' }
         return
     }
-    if (Test-RecordedProcess $recordedPid) {
-        & taskkill.exe /PID $recordedPid /T /F | Out-Host
-        if ($LASTEXITCODE -ne 0) { throw "Unable to stop recorded process tree PID=$recordedPid" }
+
+    $processUp = Test-RecordedProcess $recordedPid
+    if ($processUp) {
+        $taskKillOutput = & taskkill.exe /PID $recordedPid /T /F 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "无法关闭启动器记录的进程树 PID=$recordedPid" }
     }
     Remove-StaleState
-    for ($attempt = 0; $attempt -lt 20 -and (Test-TcpPort); $attempt++) {
-        Start-Sleep -Milliseconds 250
+    if ($processUp) {
+        for ($attempt = 0; $attempt -lt 20 -and (Test-TcpPort); $attempt++) {
+            Start-Sleep -Milliseconds 250
+        }
+        if (Test-TcpPort) { throw "记录进程已停止，但端口 $Port 仍被占用；未终止其他进程。" }
     }
-    if (Test-TcpPort) { throw "Recorded process stopped but port $Port is still occupied." }
-    Write-Host '本地调试服务已关闭；调试数据库和日志已保留。'
+    if (-not $Quiet) { Write-MenuResult '成功' '本地调试服务已关闭；调试数据库和日志已保留。' }
 }
 
+function Show-Menu {
+    while ($true) {
+        Clear-Host
+        $status = Get-DebugStatus
+        Write-Host 'SWU TIC 本地调试'
+        Write-Host "状态：$($status.Label)"
+        Write-Host "地址：$Url"
+        Write-Host ''
+        Write-Host '1  启动'
+        Write-Host '2  关闭'
+        Write-Host '3  重启'
+        Write-Host '4  打开网页'
+        Write-Host '0  退出'
+        Write-Host ''
+        $choice = Read-Host '请选择'
+        if ($choice -eq '0') { return }
+        try {
+            switch ($choice) {
+                '1' { Start-LocalDebug; break }
+                '2' { Stop-LocalDebug; break }
+                '3' { Stop-LocalDebug -Quiet; Start-LocalDebug; break }
+                '4' {
+                    if (-not (Test-Http)) { throw '服务尚未启动。' }
+                    Start-Process $Url
+                    Write-MenuResult '成功' "已打开：$Url"
+                    break
+                }
+                default { Write-MenuResult '提示' '请输入 0-4。' }
+            }
+        } catch {
+            Write-MenuResult '失败' $_.Exception.Message
+        }
+        [void](Read-Host '按回车返回')
+    }
+}
+
+$locationPushed = $false
 try {
     Push-Location $RepoRoot
+    $locationPushed = $true
+    $Port = Resolve-DebugPort
+    $Url = "http://127.0.0.1:$Port"
     switch ($Action) {
+        'menu' { Show-Menu }
         'start' { Start-LocalDebug }
         'stop' { Stop-LocalDebug }
-        'restart' { Stop-LocalDebug; Start-LocalDebug }
+        'restart' { Stop-LocalDebug -Quiet; Start-LocalDebug }
         'status' { [void](Show-Status) }
-        'open' { Start-Process $Url; Write-Host "已打开：$Url" }
+        'open' {
+            if (-not (Test-Http)) { throw '服务尚未启动。' }
+            Start-Process $Url
+            Write-MenuResult '成功' "已打开：$Url"
+        }
     }
 } catch {
-    Write-Error $_.Exception.Message
+    [Console]::Error.WriteLine("[失败] $($_.Exception.Message)")
     exit 1
 } finally {
-    Pop-Location
+    if ($locationPushed) { Pop-Location }
 }
