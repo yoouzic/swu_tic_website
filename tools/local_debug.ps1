@@ -142,6 +142,7 @@ function Test-ServerCommandLine([string]$CommandLine) {
 
 function Get-CurrentProcessIdentity([int]$ProcessId) {
     if ($ProcessId -le 0) { return $null }
+    if ($env:LOCAL_DEBUG_TEST_FORCE_IDENTITY_FAILURE -eq '1') { return $null }
     try {
         $process = Get-Process -Id $ProcessId -ErrorAction Stop
         $cimProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop
@@ -249,6 +250,33 @@ function Test-TcpPort([int]$CheckPort) {
     } finally {
         $client.Dispose()
     }
+}
+
+function Stop-NewProcessSafely($Process) {
+    if (-not $Process) { return $false }
+    try {
+        $processId = [int]$Process.Id
+        $processStartTime = $Process.StartTime.ToUniversalTime()
+        if ($Process.HasExited) { return $true }
+        $currentProcess = Get-Process -Id $processId -ErrorAction Stop
+        $currentStartTime = $currentProcess.StartTime.ToUniversalTime()
+        if ([Math]::Abs(($currentStartTime - $processStartTime).TotalSeconds) -gt 2) {
+            return $false
+        }
+        if ($Process.HasExited) { return $true }
+        $killOutput = & taskkill.exe /PID $processId /T /F 2>&1
+        return $LASTEXITCODE -eq 0
+    } catch {
+        return $false
+    }
+}
+
+function Wait-TcpPortFree([int]$CheckPort) {
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        if (-not (Test-TcpPort $CheckPort)) { return $true }
+        Start-Sleep -Milliseconds 250
+    }
+    return -not (Test-TcpPort $CheckPort)
 }
 
 function Test-Http([string]$CheckUrl) {
@@ -397,13 +425,20 @@ function Start-LocalDebug {
         throw "Flask did not become reachable within $HealthTimeoutSeconds seconds. Check $LogPath"
     } catch {
         $launchFailure = $_.Exception
+        $cleanupSucceeded = $false
         if ($launchState -and $process -and $identity) {
             $currentIdentity = Get-CurrentProcessIdentity $process.Id
             if (Test-RecordedIdentity $launchState $currentIdentity) {
-                $cleanupOutput = & taskkill.exe /PID $process.Id /T /F 2>&1
+                $cleanupSucceeded = Stop-NewProcessSafely $process
             }
+        } elseif ($process) {
+            $cleanupSucceeded = Stop-NewProcessSafely $process
         }
+        $portReleased = Wait-TcpPortFree $Port
         Remove-StaleState
+        if (-not $portReleased) {
+            throw "$($launchFailure.Message)；端口 $Port 仍被占用，未终止其他进程。"
+        }
         throw $launchFailure
     }
 }
