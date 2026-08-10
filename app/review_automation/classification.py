@@ -60,6 +60,10 @@ def _llm_high(llm_result: Any) -> bool:
     })
 
 
+def _llm_compliance(llm_result: Any) -> str:
+    return str(_value(llm_result, 'compliance', '')).lower() if llm_result else ''
+
+
 def _system_finding(rule_key: str, message: str, *, code: str) -> FindingDraft:
     return FindingDraft(
         rule_key=rule_key,
@@ -96,7 +100,12 @@ def aggregate_classification(
             '课表覆盖不完整，自动审核保留该缺口并继续运行其他规则。',
             code='schedule_data_missing',
         ))
-    if not llm_available and 'llm_unavailable' not in existing_keys:
+    has_llm_system_finding = any(
+        item.source == FindingSource.SYSTEM
+        and item.rule_key in {'llm_error', 'llm_unavailable'}
+        for item in result_findings
+    )
+    if not llm_available and not has_llm_system_finding and 'llm_unavailable' not in existing_keys:
         result_findings.append(_system_finding(
             'llm_unavailable',
             '语义模型当前不可用，分类仅依据确定性证据。',
@@ -134,13 +143,21 @@ def aggregate_classification(
         item.severity in {FindingSeverity.REVIEW, FindingSeverity.HIGH}
         for item in deterministic
     )
+    llm_review_finding = any(
+        item.source == FindingSource.LLM
+        and item.severity in {FindingSeverity.REVIEW, FindingSeverity.HIGH}
+        for item in result_findings
+    )
     llm_high = _llm_high(llm_result)
+    llm_compliance = _llm_compliance(llm_result)
+    llm_needs_review = llm_compliance == 'needs_review'
+    llm_unknown = llm_compliance == 'unknown'
 
     if strong_objective or (llm_high and objective_review):
         category = ReviewCategory.HIGH_RISK
-    elif review_finding or llm_high:
+    elif review_finding or llm_review_finding or llm_high or llm_needs_review:
         category = ReviewCategory.REVIEW
-    elif critical_parse_failure or not llm_available or coverage_value != ScheduleCoverage.COMPLETE:
+    elif critical_parse_failure or not llm_available or coverage_value != ScheduleCoverage.COMPLETE or llm_unknown:
         category = ReviewCategory.UNKNOWN
     else:
         category = ReviewCategory.CLEAR
@@ -151,6 +168,10 @@ def aggregate_classification(
             rationale.append(item.rule_key)
     if llm_high:
         rationale.append('llm_high_risk_suggestion')
+    if llm_needs_review:
+        rationale.append('llm_needs_review')
+    if llm_unknown:
+        rationale.append('llm_unknown')
     if not llm_available:
         rationale.append('llm_unavailable')
     if coverage_value != ScheduleCoverage.COMPLETE:

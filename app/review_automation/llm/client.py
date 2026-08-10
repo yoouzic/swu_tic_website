@@ -15,6 +15,8 @@ from .schemas import DeepSeekReviewResponse
 
 
 logger = logging.getLogger(__name__)
+_ALLOWED_REASONING_EFFORTS = {'high', 'max'}
+_MAX_OUTPUT_TOKENS = 8192
 
 
 class SafeLLMError(Exception):
@@ -61,12 +63,19 @@ def _provider_error(error: BaseException) -> tuple[type[SafeLLMError], str]:
 
 
 def _content(response: Any) -> str:
+    missing_content = False
     try:
         choices = response.choices
-        message = choices[0].message
+        choice = choices[0]
+        message = choice.message
         value = message.content
-    except (AttributeError, IndexError, KeyError, TypeError) as exc:
-        raise InvalidLLMResponse('missing_content') from exc
+        finish_reason = getattr(choice, 'finish_reason', None)
+    except (AttributeError, IndexError, KeyError, TypeError):
+        missing_content = True
+    if missing_content:
+        raise InvalidLLMResponse('missing_content')
+    if finish_reason == 'length':
+        raise InvalidLLMResponse('truncated_output')
     if not isinstance(value, str) or not value.strip():
         raise InvalidLLMResponse('empty_content')
     return value.strip()
@@ -93,11 +102,19 @@ class DeepSeekReviewClient:
         timeout: float = 60,
         reasoning_effort: str = 'high',
         max_retries: int = 3,
+        max_tokens: int = 2048,
         openai_client: Any = None,
     ):
+        if reasoning_effort not in _ALLOWED_REASONING_EFFORTS:
+            raise ValueError('reasoning_effort must be high or max')
+        if isinstance(max_tokens, bool) or not isinstance(max_tokens, int):
+            raise ValueError('max_tokens must be an integer')
+        if not 1 <= max_tokens <= _MAX_OUTPUT_TOKENS:
+            raise ValueError('max_tokens is outside the allowed bound')
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.max_retries = max(0, int(max_retries))
+        self.max_tokens = max_tokens
         self.prompt_version = PROMPT_VERSION
         self._client = openai_client or OpenAI(
             api_key=api_key,
@@ -113,44 +130,48 @@ class DeepSeekReviewClient:
             'response_format': {'type': 'json_object'},
             'reasoning_effort': self.reasoning_effort,
             'extra_body': {'thinking': {'type': 'enabled'}},
+            'max_tokens': self.max_tokens,
         }
         for attempt in range(self.max_retries + 1):
+            provider_failure = None
             try:
                 response = self._client.chat.completions.create(**request)
-                return self._parse_response(_content(response))
-            except (InvalidLLMResponse, PermanentLLMError):
-                raise
-            except ValidationError as exc:
-                logger.warning('deepseek_review_failed code=schema_validation')
-                raise InvalidLLMResponse('schema_validation') from exc
-            except (json.JSONDecodeError, TypeError, ValueError) as exc:
-                logger.warning('deepseek_review_failed code=invalid_json')
-                raise InvalidLLMResponse('invalid_json') from exc
             except Exception as exc:
-                error_type, code = _provider_error(exc)
+                provider_failure = _provider_error(exc)
+            if provider_failure is not None:
+                error_type, code = provider_failure
                 if error_type is PermanentLLMError:
                     logger.warning('deepseek_review_failed code=%s', code)
-                    raise error_type(code) from exc
+                    raise error_type(code)
                 if attempt >= self.max_retries:
                     final_code = code if self.max_retries == 0 else 'retry_exhausted'
                     logger.warning('deepseek_review_failed code=%s', final_code)
-                    raise TransientLLMError(final_code) from exc
+                    raise TransientLLMError(final_code)
                 logger.warning('deepseek_review_retry code=%s attempt=%s', code, attempt + 1)
+                continue
+            return self._parse_response(_content(response))
         raise TransientLLMError('retry_exhausted')
 
     @staticmethod
     def _parse_response(content: str) -> DeepSeekReviewResponse:
         cleaned = _remove_json_fence(content)
+        invalid_json = False
         try:
             payload = json.loads(cleaned)
-        except json.JSONDecodeError as exc:
-            raise InvalidLLMResponse('invalid_json') from exc
+        except json.JSONDecodeError:
+            invalid_json = True
+        if invalid_json:
+            raise InvalidLLMResponse('invalid_json')
         if not isinstance(payload, dict):
             raise InvalidLLMResponse('schema_validation')
+        validation_error = False
         try:
-            return DeepSeekReviewResponse.model_validate(payload)
-        except ValidationError as exc:
-            raise InvalidLLMResponse('schema_validation') from exc
+            result = DeepSeekReviewResponse.model_validate(payload)
+        except ValidationError:
+            validation_error = True
+        if validation_error:
+            raise InvalidLLMResponse('schema_validation')
+        return result
 
 
 __all__ = [

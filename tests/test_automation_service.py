@@ -85,12 +85,20 @@ class AssessmentServiceTest(unittest.TestCase):
     def assert_protected_unchanged(self, snapshot, form=None):
         self.assertEqual(snapshot, self.protected_snapshot(form))
 
-    def service(self, llm, *, runner=None, schedule_dependencies=None, rule_revisions=None):
+    def service(
+        self,
+        llm,
+        *,
+        runner=None,
+        schedule_dependencies=None,
+        rule_revisions=None,
+        llm_enabled=True,
+    ):
         from app.review_automation.service import AssessmentService
 
         return AssessmentService(
             llm_client=llm,
-            llm_enabled=True,
+            llm_enabled=llm_enabled,
             deterministic_runner=runner,
             schedule_loader=complete_schedule,
             schedule_dependencies=schedule_dependencies or {'school': {'id': 'SYN-SCHOOL', 'version': 'v1'}},
@@ -210,7 +218,49 @@ class AssessmentServiceTest(unittest.TestCase):
                 finding_rules = {finding.rule_key for finding in assessment.findings}
                 self.assertIn(FindingSource.SYSTEM.value, finding_sources)
                 self.assertIn('synthetic_deterministic_rule', finding_rules)
+                system_rules = [
+                    item.rule_key
+                    for item in assessment.findings
+                    if item.source == FindingSource.SYSTEM.value
+                ]
+                self.assertEqual(system_rules.count('llm_error'), 1)
+                self.assertNotIn('llm_unavailable', system_rules)
                 self.assertNotEqual(summary.category, ReviewCategory.CLEAR.value)
+        self.assert_protected_unchanged(snapshot)
+
+    def test_disabled_llm_is_unknown_with_one_unavailable_finding(self):
+        snapshot = self.protected_snapshot()
+        summary = self.service(
+            None,
+            runner=lambda form, context: (),
+            llm_enabled=False,
+        ).assess_form(self.form.id)
+
+        assessment = db.session.get(ReviewAssessment, summary.assessment_id)
+        system_findings = [
+            item for item in assessment.findings
+            if item.source == FindingSource.SYSTEM.value
+        ]
+        self.assertEqual(summary.category, ReviewCategory.UNKNOWN.value)
+        self.assertEqual(summary.error_code, 'llm_unavailable')
+        self.assertEqual([item.rule_key for item in system_findings], ['llm_unavailable'])
+        self.assert_protected_unchanged(snapshot)
+
+    def test_missing_llm_client_is_unknown_with_one_unavailable_finding(self):
+        snapshot = self.protected_snapshot()
+        summary = self.service(
+            None,
+            runner=lambda form, context: (),
+        ).assess_form(self.form.id)
+
+        assessment = db.session.get(ReviewAssessment, summary.assessment_id)
+        system_findings = [
+            item for item in assessment.findings
+            if item.source == FindingSource.SYSTEM.value
+        ]
+        self.assertEqual(summary.category, ReviewCategory.UNKNOWN.value)
+        self.assertEqual(summary.error_code, 'llm_unavailable')
+        self.assertEqual([item.rule_key for item in system_findings], ['llm_unavailable'])
         self.assert_protected_unchanged(snapshot)
 
     def test_full_form_reaches_llm_but_suggestion_stays_separate_from_review_comment(self):

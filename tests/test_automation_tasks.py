@@ -39,6 +39,25 @@ class ScriptedLLM:
         )
 
 
+class TimeoutThenSuccessLLM:
+    model = 'deepseek-v4-flash'
+    prompt_version = 'synthetic-prompt-v1'
+
+    def __init__(self):
+        self.calls = 0
+
+    def review(self, payload):
+        self.calls += 1
+        if self.calls == 1:
+            raise TransientLLMError('timeout')
+        return DeepSeekReviewResponse(
+            compliance='compliant',
+            summary='synthetic recovered summary',
+            findings=[],
+            suggested_comment='synthetic recovered suggestion',
+        )
+
+
 def review_finding(form, context):
     return (
         FindingDraft(
@@ -254,6 +273,32 @@ class AutomationTasksTest(unittest.TestCase):
         self.assertEqual(ReviewAssessment.query.count(), 1)
         self.assert_protected_unchanged(snapshot)
 
+    def test_real_service_transient_summary_is_force_refreshed_once(self):
+        snapshot = self.protected_snapshot()
+        flaky_llm = TimeoutThenSuccessLLM()
+        service = AssessmentService(
+            llm_client=flaky_llm,
+            llm_enabled=True,
+            deterministic_runner=lambda form, context: (),
+            schedule_loader=self.factory._schedule,
+            schedule_dependencies={'school': {'id': 'SYN-SCHOOL', 'version': 'v1'}},
+            rule_revisions={'synthetic_rule': 1},
+        )
+        self.review_tasks.SERVICE_FACTORY = lambda: service
+
+        batch = self.review_tasks.enqueue_review_batch([self.form_ids[0]])
+        payload = json.loads(batch.snapshot_json)
+        assessments = ReviewAssessment.query.filter_by(form_id=self.form_ids[0]).all()
+        failed = next(item for item in assessments if item.error_code == 'timeout')
+        succeeded = next(item for item in assessments if item.error_code is None)
+
+        self.assertEqual(flaky_llm.calls, 2)
+        self.assertEqual(batch.status, 'completed')
+        self.assertEqual(batch.failed_count, 0)
+        self.assertEqual(payload['results'][0]['assessment_id'], succeeded.id)
+        self.assertNotEqual(payload['results'][0]['assessment_id'], failed.id)
+        self.assert_protected_unchanged(snapshot)
+
     def test_replayed_form_task_replaces_progress_record_idempotently(self):
         snapshot = self.protected_snapshot()
         batch = self.review_tasks.create_review_batch([self.form_ids[0]], enqueue=False)
@@ -299,6 +344,25 @@ class AutomationTasksTest(unittest.TestCase):
             'timeout',
         )
         self.assert_protected_unchanged(snapshot)
+
+    def test_root_task_result_is_json_safe(self):
+        batch = self.review_tasks.create_review_batch([self.form_ids[0]], enqueue=False)
+
+        result = self.review_tasks.run_review_batch_task.run(batch.id)
+
+        encoded = json.dumps(result, ensure_ascii=False, sort_keys=True)
+        self.assertIsInstance(result, dict)
+        self.assertIn('status', json.loads(encoded))
+
+    def test_cancelled_root_task_result_is_json_safe(self):
+        batch = self.review_tasks.create_review_batch([self.form_ids[0]], enqueue=False)
+        self.review_tasks.cancel_review_batch(batch.id)
+
+        result = self.review_tasks.run_review_batch_task.run(batch.id)
+
+        encoded = json.dumps(result, ensure_ascii=False, sort_keys=True)
+        self.assertIsInstance(result, dict)
+        self.assertEqual(json.loads(encoded)['status'], 'cancelled')
 
     def test_task_signatures_contain_ids_and_booleans_only(self):
         batch_signature = self.review_tasks.run_review_batch_task.s('SYN-BATCH-ID')

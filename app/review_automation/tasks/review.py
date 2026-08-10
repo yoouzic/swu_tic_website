@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime
+from inspect import signature
 from typing import Any, Mapping
 
 from app.app import app as flask_app
-from app.models import db
+from app.models import User, db
 
 from .. import get_celery_app
 from ..contracts import BatchStatus, ReviewCategory
@@ -17,8 +18,15 @@ from ..llm.client import (
     TransientLLMError,
 )
 from ..llm.client import DeepSeekReviewClient
-from ..models import ReviewAssessment, ReviewBatch
+from ..llm.prompts import PROMPT_VERSION
+from ..models import ReviewAssessment, ReviewBatch, ReviewRuleRevision
 from ..service import AssessmentService
+from ..schedules.importer import CLASS_MAPPING_KIND, PERSONAL_KIND, SCHOOL_KIND
+from ..schedules.repository import (
+    find_school_candidates_for_dataset,
+    get_active_dataset,
+    get_listener_schedule_for_datasets,
+)
 
 
 celery_app = get_celery_app(flask_app)
@@ -29,27 +37,112 @@ TRANSIENT_ERROR_CODES = {
     'server_error',
     'connection_error',
     'retry_exhausted',
-    'client_unavailable',
 }
 
 
-def build_default_service():
+def _dataset_snapshot(semester):
+    result = {}
+    for kind in (SCHOOL_KIND, CLASS_MAPPING_KIND, PERSONAL_KIND):
+        dataset = get_active_dataset(kind, semester) if semester else None
+        if dataset is None:
+            result[kind] = None
+            continue
+        stamp = dataset.updated_at or dataset.created_at
+        result[kind] = {
+            'id': dataset.id,
+            'sha256': dataset.sha256,
+            'version': stamp.isoformat() if hasattr(stamp, 'isoformat') else str(stamp),
+        }
+    return result
+
+
+def _rule_snapshot():
+    latest = {}
+    rows = ReviewRuleRevision.query.order_by(
+        ReviewRuleRevision.rule_key.asc(),
+        ReviewRuleRevision.version.desc(),
+        ReviewRuleRevision.id.desc(),
+    ).all()
+    for row in rows:
+        if row.rule_key in latest:
+            continue
+        try:
+            parameters = json.loads(row.parameters_json or '{}')
+        except (TypeError, ValueError, json.JSONDecodeError):
+            parameters = {}
+        if not isinstance(parameters, dict):
+            parameters = {}
+        latest[row.rule_key] = {
+            'id': int(row.id),
+            'version': int(row.version),
+            'handler': row.handler,
+            'enabled': bool(row.enabled),
+            'severity': row.severity,
+            'parameters': parameters,
+        }
+    return latest
+
+
+def _profile_for_form(form):
+    listener_number = getattr(form, 'listener_number', None)
+    if not listener_number:
+        return None
+    profile = User.query.filter_by(number=str(listener_number)).first()
+    if profile is None:
+        profile = User.query.filter_by(student_id=str(listener_number)).first()
+    return profile
+
+
+def build_default_service(config=None):
     """Build a worker-local service without constructing a client for missing keys."""
+    config = dict(config or {})
+    dataset_refs = config.get('schedule_datasets') or {}
+    semester = config.get('semester')
+    semester_monday = config.get('semester_monday')
     api_key = flask_app.config.get('DEEPSEEK_API_KEY', '')
     client = None
     if api_key:
         client = DeepSeekReviewClient(
             api_key=api_key,
             base_url=flask_app.config.get('DEEPSEEK_BASE_URL', 'https://api.deepseek.com'),
-            model=flask_app.config.get('DEEPSEEK_MODEL', 'deepseek-v4-flash'),
+            model=config.get('model_id') or flask_app.config.get('DEEPSEEK_MODEL', 'deepseek-v4-flash'),
             timeout=flask_app.config.get('DEEPSEEK_TIMEOUT_SECONDS', 60),
             reasoning_effort=flask_app.config.get('DEEPSEEK_REASONING_EFFORT', 'high'),
             max_retries=flask_app.config.get('DEEPSEEK_MAX_RETRIES', 3),
         )
+    configured_enabled = config.get('llm_enabled')
+    llm_enabled = bool(client) if configured_enabled is None else bool(configured_enabled)
+
+    def schedule_loader(form):
+        profile = _profile_for_form(form)
+        student_id = profile.student_id if profile is not None else None
+        return get_listener_schedule_for_datasets(
+            getattr(form, 'listener_number', None),
+            student_id,
+            semester,
+            dataset_refs,
+        )
+
+    def school_matches_loader(form):
+        school_ref = dataset_refs.get(SCHOOL_KIND) or {}
+        dataset_id = school_ref.get('id') if isinstance(school_ref, Mapping) else school_ref
+        if not dataset_id:
+            return ()
+        return find_school_candidates_for_dataset(form, dataset_id, semester)
+
+    frozen_rules = config.get('rule_revisions') if 'rule_revisions' in config else None
     return AssessmentService(
         llm_client=client,
-        llm_enabled=bool(client),
-        prompt_version=flask_app.config.get('DEEPSEEK_PROMPT_VERSION'),
+        llm_enabled=llm_enabled,
+        schedule_loader=schedule_loader,
+        school_matches_loader=school_matches_loader,
+        listener_profile_loader=_profile_for_form,
+        schedule_dependencies=dataset_refs,
+        rule_revisions=frozen_rules,
+        semester=semester,
+        semester_monday=semester_monday,
+        model_id=config.get('model_id') or flask_app.config.get('DEEPSEEK_MODEL', 'deepseek-v4-flash'),
+        prompt_version=config.get('prompt_version') or flask_app.config.get('DEEPSEEK_PROMPT_VERSION') or PROMPT_VERSION,
     )
 
 
@@ -57,12 +150,29 @@ SERVICE_FACTORY = build_default_service
 
 
 def _load_snapshot(batch: ReviewBatch) -> dict[str, Any]:
-    source = batch.snapshot_json or batch.config_snapshot_json or '{}'
+    source = batch.snapshot_json or '{}'
     try:
         value = json.loads(source)
     except (TypeError, ValueError, json.JSONDecodeError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _load_config(batch: ReviewBatch) -> dict[str, Any]:
+    try:
+        value = json.loads(batch.config_snapshot_json or '{}')
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _service_from_config(config):
+    factory = SERVICE_FACTORY
+    try:
+        signature(factory).bind(config)
+    except (TypeError, ValueError):
+        return factory()
+    return factory(config)
 
 
 def _save_snapshot(batch: ReviewBatch, value: Mapping[str, Any]):
@@ -161,10 +271,10 @@ def _assess_one(batch_id: str, form_id: int, force_refresh: bool = False):
             'cache_hit': False,
         }
 
-    config = _load_snapshot(batch)
+    config = _load_config(batch)
     llm_enabled = bool(config.get('llm_enabled', True))
     try:
-        service = SERVICE_FACTORY()
+        service = _service_from_config(config)
     except Exception:
         result = {
             'assessment_id': None,
@@ -182,6 +292,14 @@ def _assess_one(batch_id: str, form_id: int, force_refresh: bool = False):
                 force_refresh=bool(force_refresh),
                 llm_enabled=llm_enabled,
             )
+            summary_error = _summary_value(summary, 'error_code')
+            if summary_error in TRANSIENT_ERROR_CODES:
+                if attempt < TASK_TRANSIENT_RETRIES:
+                    force_refresh = True
+                    continue
+                result = _fallback(service, batch_id, form_id, force_refresh, summary_error)
+                _record_progress(batch, result, form_id)
+                return result
             result = _result_payload(summary)
             _record_progress(batch, result, form_id)
             return result
@@ -256,7 +374,18 @@ def _aggregate_batch(batch_id: str, *, cancelled: bool = False):
     batch.finished_at = datetime.now()
     _save_snapshot(batch, snapshot)
     db.session.commit()
-    return batch
+    return {
+        'batch_id': str(batch.id),
+        'status': batch.status,
+        'target_form_count': int(batch.target_form_count or 0),
+        'processed_count': int(processed_count),
+        'clear_count': int(batch.clear_count or 0),
+        'review_count': int(batch.review_count or 0),
+        'high_risk_count': int(batch.high_risk_count or 0),
+        'unknown_count': int(batch.unknown_count or 0),
+        'failed_count': int(batch.failed_count or 0),
+        'cache_count': int(batch.cache_count or 0),
+    }
 
 
 @celery_app.task(name='review_automation.assess_form')
@@ -277,7 +406,7 @@ def run_review_batch_task(batch_id: str):
         db.session.commit()
         return _aggregate_batch(batch.id, cancelled=True)
 
-    config = _load_snapshot(batch)
+    config = _load_config(batch)
     form_ids = [int(value) for value in config.get('form_ids', [])]
     force_refresh = bool(config.get('force_refresh', False))
     batch.status = BatchStatus.RUNNING.value
@@ -299,9 +428,28 @@ def create_review_batch(
     requester_id: int | None = None,
     force_refresh: bool = False,
     llm_enabled: bool = True,
+    semester: str | None = None,
+    semester_monday: date | str | None = None,
     enqueue: bool = True,
 ):
     ids = sorted({int(value) for value in form_ids})
+    if isinstance(semester_monday, date):
+        semester_monday_value = semester_monday.isoformat()
+    elif semester_monday is None:
+        semester_monday_value = None
+    else:
+        semester_monday_value = str(semester_monday)
+    config = {
+        'form_ids': ids,
+        'force_refresh': bool(force_refresh),
+        'llm_enabled': bool(llm_enabled),
+        'semester': str(semester) if semester is not None else None,
+        'semester_monday': semester_monday_value,
+        'schedule_datasets': _dataset_snapshot(semester),
+        'rule_revisions': _rule_snapshot(),
+        'model_id': flask_app.config.get('DEEPSEEK_MODEL', 'deepseek-v4-flash'),
+        'prompt_version': flask_app.config.get('DEEPSEEK_PROMPT_VERSION') or PROMPT_VERSION,
+    }
     snapshot = {
         'form_ids': ids,
         'force_refresh': bool(force_refresh),
@@ -315,7 +463,7 @@ def create_review_batch(
         status=BatchStatus.QUEUED.value,
         target_form_count=len(ids),
         config_snapshot_json=json.dumps(
-            snapshot,
+            config,
             ensure_ascii=False,
             sort_keys=True,
             separators=(',', ':'),

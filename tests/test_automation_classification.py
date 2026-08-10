@@ -153,6 +153,38 @@ class ClassificationTest(unittest.TestCase):
             llm_available=True,
         )
 
+    def test_model_needs_review_without_findings_is_review_recommended(self):
+        self.assert_category(
+            ReviewCategory.REVIEW,
+            coverage=ScheduleCoverage.COMPLETE,
+            llm_result={'compliance': 'needs_review'},
+            llm_available=True,
+        )
+
+    def test_model_unknown_without_stronger_evidence_is_unknown(self):
+        self.assert_category(
+            ReviewCategory.UNKNOWN,
+            coverage=ScheduleCoverage.COMPLETE,
+            llm_result={'compliance': 'unknown'},
+            llm_available=True,
+        )
+
+    def test_llm_review_finding_is_not_discarded(self):
+        self.assert_category(
+            ReviewCategory.REVIEW,
+            [finding('llm_semantic_review', source=FindingSource.LLM)],
+            coverage=ScheduleCoverage.COMPLETE,
+            llm_available=True,
+        )
+
+    def test_model_high_alone_is_only_review_recommended(self):
+        self.assert_category(
+            ReviewCategory.REVIEW,
+            coverage=ScheduleCoverage.COMPLETE,
+            llm_result={'compliance': 'high_risk'},
+            llm_available=True,
+        )
+
     def test_three_week_witness_candidate_alone_remains_review_recommended(self):
         self.assert_category(
             ReviewCategory.REVIEW,

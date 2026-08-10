@@ -163,6 +163,19 @@ def _error_finding(code: str) -> FindingDraft:
     )
 
 
+def _unavailable_finding() -> FindingDraft:
+    return FindingDraft(
+        rule_key='llm_unavailable',
+        source=FindingSource.SYSTEM,
+        severity=FindingSeverity.UNKNOWN,
+        title='LLM unavailable',
+        message='Semantic model checks are unavailable; deterministic evidence is retained.',
+        objective=False,
+        evidence_strength=EvidenceStrength.WEAK,
+        evidence={'code': 'llm_unavailable'},
+    )
+
+
 class AssessmentService:
     """Run deterministic evidence and optional LLM review without human-state writes."""
 
@@ -174,8 +187,12 @@ class AssessmentService:
         deterministic_runner: Callable[..., Any] | None = None,
         schedule_loader: Callable[[Any], Any] | None = None,
         history_loader: Callable[[Any], Any] | None = None,
+        school_matches_loader: Callable[[Any], Any] | None = None,
+        listener_profile_loader: Callable[[Any], Any] | None = None,
         schedule_dependencies: Any = None,
         rule_revisions: Any = None,
+        semester: str | None = None,
+        semester_monday: date | datetime | None = None,
         model_id: str | None = None,
         prompt_version: str | None = None,
     ):
@@ -184,8 +201,22 @@ class AssessmentService:
         self.deterministic_runner = deterministic_runner
         self.schedule_loader = schedule_loader
         self.history_loader = history_loader
+        self.school_matches_loader = school_matches_loader
+        self.listener_profile_loader = listener_profile_loader
         self.schedule_dependencies = schedule_dependencies if schedule_dependencies is not None else {}
         self.rule_revisions = rule_revisions
+        self.semester = str(semester) if semester is not None else None
+        if isinstance(semester_monday, datetime):
+            self.semester_monday = semester_monday.date()
+        elif isinstance(semester_monday, date):
+            self.semester_monday = semester_monday
+        elif isinstance(semester_monday, str):
+            try:
+                self.semester_monday = date.fromisoformat(semester_monday)
+            except ValueError:
+                self.semester_monday = None
+        else:
+            self.semester_monday = None
         self.model_id = model_id or getattr(llm_client, 'model', 'deepseek-v4-flash')
         self.prompt_version = prompt_version or getattr(llm_client, 'prompt_version', '2026-08-10-v1')
 
@@ -233,10 +264,15 @@ class AssessmentService:
                 return self._summary(cached, cache_hit=True)
 
         history = self._load_history(form)
+        profile = self._load_listener_profile(form)
         context = RuleContext(
             form=form,
             schedule=schedule,
             history=tuple(history),
+            school_matches=tuple(self._load_school_matches(form)),
+            semester=self.semester,
+            semester_monday=self.semester_monday,
+            listener_college=field_value(profile, 'college', default=None),
             options={'normalized_form': normalized.fields},
         )
         deterministic = self._run_deterministic(form, context)
@@ -245,11 +281,12 @@ class AssessmentService:
         model_result = None
         suggested_comment = ''
         error_code = None
-        llm_available = True
-        if enabled:
+        llm_available = bool(enabled and self.llm_client is not None)
+        if not enabled or self.llm_client is None:
+            error_code = 'llm_unavailable'
+            deterministic = tuple(deterministic) + (_unavailable_finding(),)
+        else:
             try:
-                if self.llm_client is None:
-                    raise TransientLLMError('client_unavailable')
                 model_result = _model_dump(self.llm_client.review(normalized.fields))
                 suggested_comment = str(model_result.get('suggested_comment', ''))
                 deterministic = tuple(deterministic) + self._llm_findings(model_result)
@@ -332,6 +369,16 @@ class AssessmentService:
         if listener_number is None:
             return (form,)
         return LectureForm.query.filter_by(listener_number=listener_number).all()
+
+    def _load_school_matches(self, form):
+        if self.school_matches_loader is None:
+            return ()
+        return self.school_matches_loader(form) or ()
+
+    def _load_listener_profile(self, form):
+        if self.listener_profile_loader is None:
+            return None
+        return self.listener_profile_loader(form)
 
     def _load_schedule_dependencies(self, form, schedule):
         if callable(self.schedule_dependencies):

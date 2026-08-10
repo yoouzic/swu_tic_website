@@ -240,5 +240,90 @@ class DeepSeekReviewClientTest(unittest.TestCase):
         self.assertNotIn('SYNTHETIC_PHONE_0001', rendered)
 
 
+class _BoundaryResponse:
+    def __init__(self, content, finish_reason=None):
+        self.choices = [
+            SimpleNamespace(
+                message=SimpleNamespace(content=content),
+                finish_reason=finish_reason,
+            )
+        ]
+
+
+class _BoundaryClient:
+    def __init__(self, response=None, error=None):
+        self.response = response
+        self.error = error
+        self.requests = []
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+    def create(self, **kwargs):
+        self.requests.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        return self.response
+
+
+class DeepSeekReviewBoundaryTests(unittest.TestCase):
+    def _valid_json(self):
+        return json.dumps(
+            {
+                'compliance': 'compliant',
+                'summary': 'ok',
+                'findings': [],
+                'suggested_comment': '',
+            }
+        )
+
+    def test_request_has_bounded_default_max_tokens(self):
+        fake = _BoundaryClient(response=_BoundaryResponse(self._valid_json()))
+        client = DeepSeekReviewClient(api_key='INVENTED_KEY', openai_client=fake)
+
+        client.review({'feedback': 'INVENTED_FORM_MARKER'})
+
+        self.assertEqual(fake.requests[0]['max_tokens'], 2048)
+
+    def test_length_finish_reason_rejects_even_valid_json(self):
+        fake = _BoundaryClient(
+            response=_BoundaryResponse(self._valid_json(), finish_reason='length')
+        )
+        client = DeepSeekReviewClient(api_key='INVENTED_KEY', openai_client=fake)
+
+        with self.assertRaises(InvalidLLMResponse) as raised:
+            client.review({'feedback': 'INVENTED_FORM_MARKER'})
+
+        self.assertEqual(raised.exception.code, 'truncated_output')
+
+    def test_reasoning_effort_only_accepts_official_values(self):
+        with self.assertRaises(ValueError):
+            DeepSeekReviewClient(
+                api_key='INVENTED_KEY',
+                reasoning_effort='medium',
+                openai_client=_BoundaryClient(response=_BoundaryResponse(self._valid_json())),
+            )
+
+    def test_provider_exception_chain_is_sanitized(self):
+        marker = 'INVENTED_API_KEY_AND_FULL_FORM_MARKER'
+
+        class ProviderFailure(Exception):
+            status_code = 500
+
+        fake = _BoundaryClient(error=ProviderFailure(marker))
+        client = DeepSeekReviewClient(api_key='INVENTED_KEY', openai_client=fake)
+
+        with self.assertRaises(TransientLLMError) as raised:
+            client.review({'feedback': marker})
+
+        error = raised.exception
+        chain = []
+        current = error
+        while current is not None:
+            chain.append(str(current))
+            current = current.__cause__ or current.__context__
+        self.assertNotIn(marker, str(error))
+        self.assertNotIn(marker, repr(error))
+        self.assertNotIn(marker, ' '.join(chain))
+
+
 if __name__ == '__main__':
     unittest.main()
