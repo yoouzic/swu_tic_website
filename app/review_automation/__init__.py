@@ -17,13 +17,7 @@ def _import_models_if_available():
 
 
 def _register_cli_if_available(flask_app):
-    try:
-        cli_module = importlib.import_module(_CLI_MODULE)
-    except ModuleNotFoundError as exc:
-        if exc.name != _CLI_MODULE:
-            raise
-        return
-
+    cli_module = importlib.import_module(_CLI_MODULE)
     register_cli = getattr(cli_module, 'register_cli', None)
     if register_cli is not None:
         register_cli(flask_app)

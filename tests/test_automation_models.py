@@ -1,9 +1,11 @@
+import json
 import unittest
 from datetime import datetime
 
 from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
+from app.app import app
 from app.models import db
 from app.review_automation.contracts import (
     EvidenceStrength,
@@ -12,10 +14,67 @@ from app.review_automation.contracts import (
     ReviewCategory,
 )
 from app.review_automation.models import ReviewAssessment
+from app.review_automation.models import ReviewRuleRevision
 from tests.automation_test_utils import make_synthetic_form, temporary_automation_database
 
 
+SEED_RULE_KEYS = {
+    'feedback_required_prefix',
+    'feedback_min_length',
+    'common_word_confusion',
+    'personal_schedule_conflict',
+    'class_schedule_conflict',
+    'same_college_teacher',
+    'witness_reused_across_weeks',
+    'witness_phone_name_conflict',
+    'consecutive_teacher_weeks',
+    'same_listener_same_slot',
+    'school_schedule_mismatch',
+    'feedback_similarity',
+}
+
+
 class AutomationModelTest(unittest.TestCase):
+    def test_init_schema_command_is_idempotent_and_seeds_revision_one(self):
+        with temporary_automation_database():
+            runner = app.test_cli_runner()
+            first = runner.invoke(args=['auto-review', 'init-schema'])
+            second = runner.invoke(args=['auto-review', 'init-schema'])
+
+            self.assertEqual(first.exit_code, 0, first.output)
+            self.assertEqual(second.exit_code, 0, second.output)
+
+            rows = ReviewRuleRevision.query.order_by(ReviewRuleRevision.rule_key).all()
+            self.assertEqual({row.rule_key for row in rows}, SEED_RULE_KEYS)
+            self.assertEqual(len(rows), len(SEED_RULE_KEYS))
+            self.assertTrue(all(row.version == 1 for row in rows))
+            self.assertTrue(all(isinstance(json.loads(row.parameters_json), dict) for row in rows))
+
+            values = {
+                row.rule_key: json.loads(row.parameters_json)
+                for row in rows
+            }
+            self.assertEqual(
+                values['feedback_required_prefix'],
+                {'required_prefix': '该老师'},
+            )
+            self.assertEqual(
+                values['feedback_min_length'],
+                {'minimum_characters': 50},
+            )
+            self.assertEqual(
+                values['witness_reused_across_weeks'],
+                {
+                    'minimum_distinct_weeks': 2,
+                    'high_risk_candidate_weeks': 3,
+                    'identity': 'phone_primary',
+                },
+            )
+            self.assertEqual(
+                values['consecutive_teacher_weeks'],
+                {'maximum_week_gap': 1},
+            )
+
     def test_contract_enum_values_are_stable(self):
         self.assertEqual(ReviewCategory.CLEAR.value, '无明显风险')
         self.assertEqual(ReviewCategory.REVIEW.value, '建议复核')
