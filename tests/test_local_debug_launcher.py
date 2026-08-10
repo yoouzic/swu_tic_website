@@ -124,5 +124,34 @@ class LocalDebugServerContractTest(unittest.TestCase):
         self.assertNotIn('data/instance/lecture_forms.db', source.replace('\\', '/'))
 
 
+class LocalDebugPowerShellContractTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        source_path = ROOT / 'tools' / 'local_debug.ps1'
+        cls.source = source_path.read_text(encoding='utf-8') if source_path.exists() else ''
+
+    def test_manager_exposes_required_actions_and_loopback_url(self):
+        for action in ('start', 'stop', 'restart', 'status', 'open'):
+            self.assertIn(f"'{action}'", self.source)
+        self.assertIn('http://127.0.0.1:5000', self.source)
+
+    def test_manager_uses_isolated_paths_and_clears_database_url(self):
+        self.assertIn("data\\instance\\debug", self.source)
+        self.assertIn('lecture_forms-debug.db', self.source)
+        self.assertIn("$env:DATABASE_URL = ''", self.source)
+        self.assertIn("$env:LOCAL_DEBUG_MODE = '1'", self.source)
+
+    def test_manager_records_pid_and_never_kills_python_by_name(self):
+        self.assertIn('local-debug.pid', self.source)
+        self.assertIn('/T', self.source)
+        self.assertIn('/PID', self.source)
+        self.assertNotIn('/im python', self.source.lower())
+        self.assertNotIn('Stop-Process -Name', self.source)
+
+    def test_manager_refuses_foreign_port_occupants(self):
+        self.assertIn('Test-TcpPort', self.source)
+        self.assertIn('occupied by another process', self.source)
+
+
 if __name__ == '__main__':
     unittest.main()
