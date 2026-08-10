@@ -153,5 +153,26 @@ class LocalDebugPowerShellContractTest(unittest.TestCase):
         self.assertIn('occupied by another process', self.source)
 
 
+class LocalDebugCmdContractTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        source_path = ROOT / '本地调试.cmd'
+        cls.source = source_path.read_text(encoding='utf-8') if source_path.exists() else ''
+
+    def test_menu_contains_all_requested_choices(self):
+        for label in ('[1] 启动服务', '[2] 关闭服务', '[3] 重启服务',
+                      '[4] 查看运行状态', '[5] 打开本地网页', '[0] 退出'):
+            self.assertIn(label, self.source)
+
+    def test_menu_dispatches_all_noninteractive_actions(self):
+        self.assertIn('tools\\local_debug.ps1', self.source)
+        for action in ('start', 'stop', 'restart', 'status', 'open'):
+            self.assertIn(f'-Action {action}', self.source)
+
+    def test_menu_uses_its_own_directory_and_utf8(self):
+        self.assertIn('%~dp0', self.source)
+        self.assertIn('chcp 65001', self.source.lower())
+
+
 if __name__ == '__main__':
     unittest.main()
