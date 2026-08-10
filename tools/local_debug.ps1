@@ -18,8 +18,10 @@ $PidPath = Join-Path $RuntimeRoot 'local-debug.pid'
 $StatePath = Join-Path $RuntimeRoot 'local-debug-state.json'
 $DatabasePath = Join-Path $RuntimeRoot 'lecture_forms-debug.db'
 $LogPath = Join-Path $StorageRoot 'logs\local-debug.log'
+$ConsoleLogPath = Join-Path $StorageRoot 'logs\local-debug-console.log'
 $DefaultPort = 5087
 $SharedPassword = '1234564'
+$HealthTimeoutSeconds = 30
 $Port = $null
 $Url = $null
 
@@ -37,8 +39,29 @@ function Resolve-DebugPort {
     return $parsed
 }
 
+function Resolve-HealthTimeout {
+    $configured = $env:LOCAL_DEBUG_HEALTH_TIMEOUT_SECONDS
+    if ([string]::IsNullOrWhiteSpace($configured)) { return 30 }
+    $parsed = 0
+    if (
+        -not [int]::TryParse($configured.Trim(), [ref]$parsed) -or
+        $parsed -lt 1 -or
+        $parsed -gt 300
+    ) {
+        throw 'LOCAL_DEBUG_HEALTH_TIMEOUT_SECONDS must be an integer between 1 and 300'
+    }
+    return $parsed
+}
+
 function Resolve-PythonCommand {
     $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:LOCAL_DEBUG_PYTHON)) {
+        $override = [IO.Path]::GetFullPath($env:LOCAL_DEBUG_PYTHON)
+        if (-not (Test-Path -LiteralPath $override)) {
+            throw "LOCAL_DEBUG_PYTHON was not found: $override"
+        }
+        $candidates += [pscustomobject]@{ Exe = $override; Prefix = @() }
+    }
     $localVenv = Join-Path $RepoRoot '.venv\Scripts\python.exe'
     $siblingVenv = Join-Path (Split-Path $RepoRoot -Parent) 'SWU_TIC-main\.venv\Scripts\python.exe'
     if (Test-Path -LiteralPath $localVenv) {
@@ -323,42 +346,57 @@ function Start-LocalDebug {
     $prefixText = ($python.Prefix | ForEach-Object { $_ }) -join ' '
     $pythonText = '"' + $python.Exe + '"'
     if ($prefixText) { $pythonText += ' ' + $prefixText }
-    $serverCommand = "cd /d `"$RepoRoot`" && $pythonText -u `"$ServerScriptPath`""
-    $process = Start-Process `
-        -FilePath 'cmd.exe' `
-        -ArgumentList '/c', $serverCommand `
-        -WorkingDirectory $RepoRoot `
-        -WindowStyle Hidden `
-        -PassThru
+    $serverCommand = "cd /d `"$RepoRoot`" && $pythonText -u `"$ServerScriptPath`" >> `"$ConsoleLogPath`" 2>&1"
+    $process = $null
     $identity = $null
-    for ($attempt = 0; $attempt -lt 10 -and -not $identity; $attempt++) {
-        $identity = Get-CurrentProcessIdentity $process.Id
-        if (-not $identity) { Start-Sleep -Milliseconds 100 }
-    }
-    if (-not $identity -or -not (Test-ServerCommandLine $identity.CommandLine)) {
-        throw "无法验证本地调试服务进程身份 PID=$($process.Id)"
-    }
-    Set-Content -LiteralPath $PidPath -Value $process.Id -Encoding ascii
-    [pscustomobject]@{
-        pid = $process.Id
-        startedAt = (Get-Date).ToString('o')
-        processStartTime = $identity.ProcessStartTimeText
-        commandLine = $identity.CommandLine
-        port = $Port
-        url = $Url
-        python = $python.Exe
-        database = $DatabasePath
-    } | ConvertTo-Json | Set-Content -LiteralPath $StatePath -Encoding utf8
-
-    for ($attempt = 0; $attempt -lt 60; $attempt++) {
-        if (Test-Http $Url) {
-            Write-MenuResult '成功' "服务已启动：$Url"
-            Start-Process $Url
-            return
+    $launchState = $null
+    try {
+        $process = Start-Process `
+            -FilePath 'cmd.exe' `
+            -ArgumentList '/c', $serverCommand `
+            -WorkingDirectory $RepoRoot `
+            -WindowStyle Hidden `
+            -PassThru
+        for ($attempt = 0; $attempt -lt 10 -and -not $identity; $attempt++) {
+            $identity = Get-CurrentProcessIdentity $process.Id
+            if (-not $identity) { Start-Sleep -Milliseconds 100 }
         }
-        Start-Sleep -Milliseconds 500
+        if (-not $identity -or -not (Test-ServerCommandLine $identity.CommandLine)) {
+            throw "无法验证本地调试服务进程身份 PID=$($process.Id)"
+        }
+        $launchState = [pscustomobject]@{
+            pid = $process.Id
+            startedAt = (Get-Date).ToString('o')
+            processStartTime = $identity.ProcessStartTimeText
+            commandLine = $identity.CommandLine
+            port = $Port
+            url = $Url
+            python = $python.Exe
+            database = $DatabasePath
+        }
+        Set-Content -LiteralPath $PidPath -Value $process.Id -Encoding ascii
+        $launchState | ConvertTo-Json | Set-Content -LiteralPath $StatePath -Encoding utf8
+
+        for ($attempt = 0; $attempt -lt ($HealthTimeoutSeconds * 2); $attempt++) {
+            if (Test-Http $Url) {
+                Write-MenuResult '成功' "服务已启动：$Url"
+                Start-Process $Url
+                return
+            }
+            Start-Sleep -Milliseconds 500
+        }
+        throw "Flask did not become reachable within $HealthTimeoutSeconds seconds. Check $LogPath"
+    } catch {
+        $launchFailure = $_.Exception
+        if ($launchState -and $process -and $identity) {
+            $currentIdentity = Get-CurrentProcessIdentity $process.Id
+            if (Test-RecordedIdentity $launchState $currentIdentity) {
+                $cleanupOutput = & taskkill.exe /PID $process.Id /T /F 2>&1
+            }
+        }
+        Remove-StaleState
+        throw $launchFailure
     }
-    throw "Flask did not become reachable within 30 seconds. Check $LogPath"
 }
 
 function Stop-LocalDebug([switch]$Quiet) {
@@ -384,8 +422,12 @@ function Stop-LocalDebug([switch]$Quiet) {
         }
         if (-not $Quiet) { Write-MenuResult '提示' '服务尚未启动。' }
         return
-    } elseif (Test-TcpPort $targetPort) {
-        throw (Get-PortOccupancyMessage $targetPort)
+    } else {
+        if (Test-TcpPort $targetPort) {
+            throw (Get-PortOccupancyMessage $targetPort)
+        }
+        if (-not $Quiet) { Write-MenuResult '提示' '服务尚未启动。' }
+        return
     }
     Remove-StaleState
     if ($record.IdentityMatches) {
@@ -443,6 +485,7 @@ try {
         throw "未知操作：$Action"
     }
     $Port = Resolve-DebugPort
+    $HealthTimeoutSeconds = Resolve-HealthTimeout
     $Url = "http://127.0.0.1:$Port"
     switch ($Action) {
         'menu' { Show-Menu }
