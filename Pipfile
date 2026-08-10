@@ -16,6 +16,10 @@ numpy = "==1.26.4"
 pandas = "==2.2.2"
 openpyxl = "==3.1.2"
 xlrd = "*"
+celery = "==5.5.3"
+redis = "==6.4.0"
+openai = ">=1.109.0,<3"
+pydantic = ">=2.11.0,<3"
 
 [dev-packages]
 xlrd = "*"

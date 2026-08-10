@@ -40,6 +40,41 @@ MAX_CONTENT_LENGTH_MB = env_int('MAX_CONTENT_LENGTH_MB', 16, minimum=1)
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH_MB * 1024 * 1024  # 可通过环境变量调整上传大小
 app.config['DEBUG'] = env_bool('FLASK_DEBUG', False)
 
+# Automated review runtime. The API key remains private application config
+# and is intentionally excluded from AUTOMATION_PUBLIC_CONFIG.
+app.config['CELERY_BROKER_URL'] = env_value(
+    'CELERY_BROKER_URL', 'redis://127.0.0.1:6379/0'
+)
+app.config['CELERY_RESULT_BACKEND'] = env_value(
+    'CELERY_RESULT_BACKEND', 'redis://127.0.0.1:6379/1'
+)
+app.config['CELERY_TASK_ALWAYS_EAGER'] = env_bool('CELERY_TASK_ALWAYS_EAGER', False)
+app.config['AUTOMATION_UPLOAD_DIR'] = env_path(
+    'AUTOMATION_UPLOAD_DIR', os.path.join('data', 'storage', 'uploads', 'automation')
+)
+app.config['DEEPSEEK_API_KEY'] = env_value('DEEPSEEK_API_KEY', '')
+app.config['DEEPSEEK_BASE_URL'] = env_value(
+    'DEEPSEEK_BASE_URL', 'https://api.deepseek.com'
+)
+app.config['DEEPSEEK_MODEL'] = env_value('DEEPSEEK_MODEL', 'deepseek-v4-flash')
+app.config['DEEPSEEK_THINKING_ENABLED'] = env_bool('DEEPSEEK_THINKING_ENABLED', True)
+app.config['DEEPSEEK_REASONING_EFFORT'] = env_value('DEEPSEEK_REASONING_EFFORT', 'high')
+app.config['DEEPSEEK_TIMEOUT_SECONDS'] = env_int('DEEPSEEK_TIMEOUT_SECONDS', 60, minimum=1)
+app.config['DEEPSEEK_MAX_RETRIES'] = env_int('DEEPSEEK_MAX_RETRIES', 3, minimum=0)
+app.config['DEEPSEEK_PROMPT_VERSION'] = env_value(
+    'DEEPSEEK_PROMPT_VERSION', '2026-08-10-v1'
+)
+app.config['DEEPSEEK_MAX_CONCURRENCY'] = env_int('DEEPSEEK_MAX_CONCURRENCY', 4, minimum=1)
+app.config['AUTOMATION_PUBLIC_CONFIG'] = {
+    'DEEPSEEK_BASE_URL': app.config['DEEPSEEK_BASE_URL'],
+    'DEEPSEEK_MODEL': app.config['DEEPSEEK_MODEL'],
+    'DEEPSEEK_THINKING_ENABLED': app.config['DEEPSEEK_THINKING_ENABLED'],
+    'DEEPSEEK_REASONING_EFFORT': app.config['DEEPSEEK_REASONING_EFFORT'],
+    'DEEPSEEK_TIMEOUT_SECONDS': app.config['DEEPSEEK_TIMEOUT_SECONDS'],
+    'DEEPSEEK_MAX_RETRIES': app.config['DEEPSEEK_MAX_RETRIES'],
+    'DEEPSEEK_PROMPT_VERSION': app.config['DEEPSEEK_PROMPT_VERSION'],
+}
+
 # 导入数据库模型（统一使用绝对包导入）
 from app.models import db, User, Department, Group, LectureForm, Permission, RolePermission
 from app.utils.user_status import is_user_active
@@ -73,6 +108,10 @@ app.register_blueprint(auth_bp, url_prefix='/auth')
 app.register_blueprint(user_bp, url_prefix='/user')
 app.register_blueprint(admin_bp, url_prefix='/admin')
 app.register_blueprint(main_bp)
+
+from app.review_automation import init_review_automation
+
+celery_app = init_review_automation(app)
 
 # 定义匿名用户类，用于未登录状态
 class AnonymousUser:

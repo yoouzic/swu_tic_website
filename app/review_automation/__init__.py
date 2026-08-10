@@ -1,0 +1,68 @@
+"""Bootstrap the automated review runtime without changing human review state."""
+
+import importlib
+from pathlib import Path
+
+from .celery_app import create_celery
+
+
+_CELERY_EXTENSION_KEY = 'review_automation_celery'
+_MODELS_MODULE = 'app.review_automation.models'
+_CLI_MODULE = 'app.review_automation.cli'
+
+
+def _import_models_if_available():
+    """Load automation models when the package is fully initialized.
+
+    Task 1 bootstraps the package before Task 2 adds the model module. Keeping
+    this import tolerant during that transition lets each plan task stay
+    independently testable; once models.py exists it is imported normally.
+    """
+    try:
+        return importlib.import_module(_MODELS_MODULE)
+    except ModuleNotFoundError as exc:
+        if exc.name != _MODELS_MODULE:
+            raise
+        return None
+
+
+def _register_cli_if_available(flask_app):
+    try:
+        cli_module = importlib.import_module(_CLI_MODULE)
+    except ModuleNotFoundError as exc:
+        if exc.name != _CLI_MODULE:
+            raise
+        return
+
+    register_cli = getattr(cli_module, 'register_cli', None)
+    if register_cli is not None:
+        register_cli(flask_app)
+
+
+def init_review_automation(flask_app):
+    """Register routes, optional models/CLI, storage, and the Flask Celery app."""
+    existing = flask_app.extensions.get(_CELERY_EXTENSION_KEY)
+    if existing is not None:
+        return existing
+
+    _import_models_if_available()
+
+    from .routes import review_automation_bp
+
+    if review_automation_bp.name not in flask_app.blueprints:
+        flask_app.register_blueprint(review_automation_bp)
+
+    Path(flask_app.config['AUTOMATION_UPLOAD_DIR']).mkdir(parents=True, exist_ok=True)
+    _register_cli_if_available(flask_app)
+
+    celery = create_celery(flask_app)
+    flask_app.extensions[_CELERY_EXTENSION_KEY] = celery
+    return celery
+
+
+def get_celery_app(flask_app):
+    """Return the registered Celery app, initializing the package if needed."""
+    return flask_app.extensions.get(_CELERY_EXTENSION_KEY) or init_review_automation(flask_app)
+
+
+__all__ = ['get_celery_app', 'init_review_automation']
