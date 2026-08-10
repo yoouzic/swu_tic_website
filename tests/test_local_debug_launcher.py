@@ -107,5 +107,22 @@ class LocalDebugDataTest(unittest.TestCase):
         self.assertIn('default business database', result.stderr)
 
 
+class LocalDebugServerContractTest(unittest.TestCase):
+    def test_server_requires_debug_guard_and_uses_loopback(self):
+        source_path = ROOT / 'tools' / 'local_debug_server.py'
+        self.assertTrue(source_path.exists(), 'local debug server wrapper is missing')
+        source = source_path.read_text(encoding='utf-8')
+        self.assertIn("LOCAL_DEBUG_MODE') != '1'", source)
+        self.assertIn("host='127.0.0.1'", source)
+        self.assertIn('use_reloader=False', source)
+        self.assertIn('LOCAL_DEBUG_LOG_PATH', source)
+
+    def test_server_does_not_reference_default_database(self):
+        source_path = ROOT / 'tools' / 'local_debug_server.py'
+        self.assertTrue(source_path.exists(), 'local debug server wrapper is missing')
+        source = source_path.read_text(encoding='utf-8')
+        self.assertNotIn('data/instance/lecture_forms.db', source.replace('\\', '/'))
+
+
 if __name__ == '__main__':
     unittest.main()
