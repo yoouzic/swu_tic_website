@@ -16,7 +16,9 @@ from app.review_automation.models import (
     ScheduleImportIssue,
     SchoolScheduleEntry,
 )
+from app.review_automation.schedules.aliases import PERSONAL_SCHEDULE_ALIASES
 from app.review_automation.schedules.importer import preview_dataset
+from app.review_automation.schedules.normalization import resolve_columns
 from app.review_automation.schedules.repository import (
     activate_dataset,
     find_school_candidates,
@@ -118,8 +120,31 @@ class ScheduleImporterTest(unittest.TestCase):
                 actor_id=101,
             )
             self.assertEqual(personal.row_count, 2)
-            self.assertEqual(personal.error_count, 0)
+            self.assertEqual(personal.error_count, 1)
             self.assertEqual(PersonalScheduleSlot.query.filter_by(dataset_id=personal.id).count(), 2)
+
+    def test_personal_schedule_aliases_require_academic_semester_column(self):
+        resolved = resolve_columns(
+            ['信息员编号', '学号', '课程名称', '学年学期', '教学周', '星期几', '第几节'],
+            PERSONAL_SCHEDULE_ALIASES,
+            {'listener_number', 'course_title', 'semester', 'weeks', 'weekday', 'periods'},
+        )
+        self.assertEqual(resolved['semester'], '学年学期')
+
+    def test_personal_schedule_rejects_row_from_other_semester(self):
+        with temporary_import_database():
+            personal = preview_dataset(
+                kind='personal',
+                semester=SEMESTER,
+                stream=fixture_stream('personal_schedule.xlsx'),
+                filename='personal.xlsx',
+                actor_id=101,
+            )
+            issue = ScheduleImportIssue.query.filter_by(dataset_id=personal.id).one()
+            self.assertEqual(issue.code, 'semester_mismatch')
+            self.assertEqual(issue.row_number, 6)
+            self.assertEqual(personal.row_count, 2)
+            self.assertEqual(personal.error_count, 1)
 
     def test_activation_retires_previous_active_dataset_atomically_and_audits(self):
         with temporary_import_database():
@@ -178,6 +203,35 @@ class ScheduleImporterTest(unittest.TestCase):
             self.assertEqual(schedule.slots[0].course_title, '合成课程甲')
             self.assertEqual(schedule.slots[0].evidence_strength, EvidenceStrength.EXACT)
 
+    def test_listener_schedule_without_active_school_is_not_basic(self):
+        with temporary_import_database():
+            mapping = preview_dataset(
+                'class_mapping', SEMESTER, fixture_stream('listener_class_mapping.xlsx'),
+                'mapping.xlsx', 101,
+            )
+            activate_dataset(mapping.id, actor_id=101)
+
+            schedule = get_listener_schedule('SYN-L-001', None, SEMESTER)
+            self.assertEqual(schedule.coverage, ScheduleCoverage.NONE)
+            self.assertEqual(schedule.slots, ())
+
+    def test_active_school_and_mapping_can_be_basic_with_zero_class_slots(self):
+        with temporary_import_database():
+            school = preview_dataset(
+                'school', SEMESTER, fixture_stream('school_schedule_current.xlsx'),
+                'school.xlsx', 101,
+            )
+            mapping = preview_dataset(
+                'class_mapping', SEMESTER, fixture_stream('listener_class_mapping.xlsx'),
+                'mapping.xlsx', 101,
+            )
+            activate_dataset(school.id, actor_id=101)
+            activate_dataset(mapping.id, actor_id=101)
+
+            schedule = get_listener_schedule(None, 'SYN-STU-0002', SEMESTER)
+            self.assertEqual(schedule.coverage, ScheduleCoverage.BASIC)
+            self.assertEqual(schedule.slots, ())
+
     def test_school_candidates_match_synthetic_form_fields(self):
         with temporary_import_database():
             school = preview_dataset(
@@ -197,6 +251,65 @@ class ScheduleImporterTest(unittest.TestCase):
             self.assertEqual(len(matches), 1)
             self.assertEqual(matches[0].entry.course_title, '合成课程甲')
             self.assertGreater(matches[0].confidence, 0)
+
+    def test_school_candidates_use_course_anchor_and_report_teacher_mismatch(self):
+        with temporary_import_database():
+            school = preview_dataset(
+                'school', SEMESTER, fixture_stream('school_schedule_historical.xlsx'),
+                'school.xlsx', 101,
+            )
+            activate_dataset(school.id, actor_id=101)
+            form = make_synthetic_form(
+                course_title='合成课程甲',
+                teacher_name='合成错误教师',
+                teacher_college='合成信息学院',
+                class_period='1-2',
+                lecture_location='合成教室A',
+            )
+
+            matches = find_school_candidates(form, SEMESTER)
+            self.assertEqual(len(matches), 1)
+            self.assertEqual(matches[0].entry.course_title, '合成课程甲')
+            self.assertIn('teacher_name', matches[0].mismatched_fields)
+            self.assertNotIn('course_title', matches[0].mismatched_fields)
+
+    def test_school_candidates_use_teacher_anchor_and_report_course_mismatch(self):
+        with temporary_import_database():
+            school = preview_dataset(
+                'school', SEMESTER, fixture_stream('school_schedule_historical.xlsx'),
+                'school.xlsx', 101,
+            )
+            activate_dataset(school.id, actor_id=101)
+            form = make_synthetic_form(
+                course_title='合成错误课程',
+                teacher_name='合成教师甲',
+                teacher_college='合成信息学院',
+                class_period='1-2',
+                lecture_location='合成教室A',
+            )
+
+            matches = find_school_candidates(form, SEMESTER)
+            self.assertEqual(len(matches), 1)
+            self.assertEqual(matches[0].entry.teacher_name, '合成教师甲')
+            self.assertIn('course_title', matches[0].mismatched_fields)
+            self.assertNotIn('teacher_name', matches[0].mismatched_fields)
+
+    def test_school_candidates_return_no_noise_when_both_anchors_mismatch(self):
+        with temporary_import_database():
+            school = preview_dataset(
+                'school', SEMESTER, fixture_stream('school_schedule_historical.xlsx'),
+                'school.xlsx', 101,
+            )
+            activate_dataset(school.id, actor_id=101)
+            form = make_synthetic_form(
+                course_title='合成错误课程',
+                teacher_name='合成错误教师',
+                teacher_college='合成信息学院',
+                class_period='1-2',
+                lecture_location='合成教室A',
+            )
+
+            self.assertEqual(find_school_candidates(form, SEMESTER), [])
 
 
 if __name__ == '__main__':

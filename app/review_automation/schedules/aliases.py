@@ -44,6 +44,7 @@ PERSONAL_SCHEDULE_ALIASES = {
     'listener_number': LISTENER_CLASS_MAPPING_ALIASES['listener_number'],
     'student_id': LISTENER_CLASS_MAPPING_ALIASES['student_id'],
     'course_title': _COMMON_SCHOOL_ALIASES['course_title'],
+    'semester': ('学年学期', '学年/学期', '学期', '学年学期名称'),
     'weeks': _COMMON_SCHOOL_ALIASES['weeks'],
     'weekday': _COMMON_SCHOOL_ALIASES['weekday'],
     'periods': _COMMON_SCHOOL_ALIASES['periods'],

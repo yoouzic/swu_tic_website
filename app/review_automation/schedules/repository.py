@@ -173,11 +173,10 @@ def get_listener_schedule(listener_number, student_id, semester) -> ListenerSche
         ]
 
     slot_map: dict[tuple, ScheduleSlot] = {}
-    admin_classes = set()
+    admin_classes = {mapping.admin_class for mapping in mappings}
     if school_dataset:
+        entries = SchoolScheduleEntry.query.filter_by(dataset_id=school_dataset.id).all()
         for mapping in mappings:
-            admin_classes.add(mapping.admin_class)
-            entries = SchoolScheduleEntry.query.filter_by(dataset_id=school_dataset.id).all()
             for entry in entries:
                 if _entry_matches_class(entry, mapping.admin_class):
                     slot = _class_slot(entry)
@@ -196,7 +195,7 @@ def get_listener_schedule(listener_number, student_id, semester) -> ListenerSche
 
     if personal_count:
         coverage = ScheduleCoverage.COMPLETE
-    elif mappings:
+    elif mappings and school_dataset:
         coverage = ScheduleCoverage.BASIC
     else:
         coverage = ScheduleCoverage.NONE
@@ -248,9 +247,9 @@ def find_school_candidates(form, semester):
 
     matches = []
     for entry in SchoolScheduleEntry.query.filter_by(dataset_id=dataset.id).all():
-        if normalized_course and entry.course_title != normalized_course:
-            continue
-        if normalized_teacher and entry.teacher_name != normalized_teacher:
+        course_anchor = bool(normalized_course and entry.course_title == normalized_course)
+        teacher_anchor = bool(normalized_teacher and entry.teacher_name == normalized_teacher)
+        if not (course_anchor or teacher_anchor):
             continue
         matched = []
         mismatched = []

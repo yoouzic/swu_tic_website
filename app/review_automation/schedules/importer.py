@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
 import uuid
 from pathlib import Path
 from typing import Iterable, Mapping
@@ -74,7 +75,7 @@ _SCHOOL_REQUIRED = {
     'weeks', 'weekday', 'periods', 'location',
 }
 _CLASS_REQUIRED = {'admin_class'}
-_PERSONAL_REQUIRED = {'course_title', 'weeks', 'weekday', 'periods'}
+_PERSONAL_REQUIRED = {'course_title', 'semester', 'weeks', 'weekday', 'periods'}
 _IDENTITY_FIELDS = ('listener_number', 'student_id')
 
 
@@ -275,7 +276,21 @@ def _mapping_values(row, positions):
     }
 
 
-def _personal_values(row, positions):
+def _semester_text(value):
+    if _blank(value):
+        raise NormalizationError(
+            'semester', 'missing_semester', value=value, message='academic semester is required',
+        )
+    return ' '.join(unicodedata.normalize('NFKC', str(value)).split())
+
+
+def _personal_values(row, positions, expected_semester):
+    source_semester = _semester_text(_cell(row, positions, 'semester'))
+    if source_semester != _semester_text(expected_semester):
+        raise NormalizationError(
+            'semester', 'semester_mismatch', value=source_semester,
+            message='row semester does not match dataset semester',
+        )
     listener_number = _optional_identifier(_cell(row, positions, 'listener_number'))
     student_id = _optional_identifier(_cell(row, positions, 'student_id'))
     if not listener_number and not student_id:
@@ -295,7 +310,14 @@ def _personal_values(row, positions):
     }
 
 
-def _import_rows(dataset: ScheduleDataset, kind: str, rows, header_row: int, positions):
+def _import_rows(
+    dataset: ScheduleDataset,
+    kind: str,
+    rows,
+    header_row: int,
+    positions,
+    expected_semester=None,
+):
     seen = set()
     valid_rows = 0
     duplicate_rows = 0
@@ -331,7 +353,7 @@ def _import_rows(dataset: ScheduleDataset, kind: str, rows, header_row: int, pos
                     **values,
                 ))
             else:
-                values = _personal_values(row, positions)
+                values = _personal_values(row, positions, expected_semester)
                 key = _dedupe_key(values)
                 if key in seen:
                     duplicate_rows += 1
@@ -389,7 +411,7 @@ def preview_dataset(kind, semester, stream, filename, actor_id):
         )
         sheet_name, header_row, positions, rows = _find_sheet_and_header(workbook, kind)
         valid_rows, source_rows, duplicate_rows = _import_rows(
-            dataset, kind, rows, header_row, positions,
+            dataset, kind, rows, header_row, positions, expected_semester=dataset.semester,
         )
         summary.update({
             'sheet_name': sheet_name,

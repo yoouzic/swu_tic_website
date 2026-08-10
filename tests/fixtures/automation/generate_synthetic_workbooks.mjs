@@ -130,14 +130,15 @@ function buildClassMapping() {
 function buildPersonalSchedule() {
   const workbook = Workbook.create();
   const sheet = workbook.worksheets.add("合成个人课表");
-  const headers = ["信息员编号", "学号", "课程名称", "教学周", "星期几", "第几节"];
-  const exact = ["SYN-L-001", null, "合成课程甲", "1-16周(双)", "星期一", "1-2节"];
+  const headers = ["信息员编号", "学号", "课程名称", "学年学期", "教学周", "星期几", "第几节"];
+  const exact = ["SYN-L-001", null, "合成课程甲", "2026-synthetic-spring", "1-16周(双)", "星期一", "1-2节"];
   writeRows(sheet, 1, [
     ["合成个人课表夹具"],
     headers,
     exact,
     exact,
-    [null, "SYN-STU-0002", "合成课程乙", "3-12周", "周三", "5-6节"],
+    [null, "SYN-STU-0002", "合成课程乙", "2026-synthetic-spring", "3-12周", "周三", "5-6节"],
+    ["SYN-L-001", null, "合成错学期课程", "2026-other-spring", "2周", "星期一", "1-2节"],
   ]);
   const notes = workbook.worksheets.add("无关页");
   writeRows(notes, 1, [["个人课表合成说明"]]);
