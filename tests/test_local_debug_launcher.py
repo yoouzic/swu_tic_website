@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
+from urllib.request import urlopen
 from pathlib import Path
 
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -505,6 +506,34 @@ class LocalDebugHealthIdentityTest(LocalDebugIsolatedTestCase):
                 )
             self.run_action('stop', env={'LOCAL_DEBUG_PORT': str(port)})
             time.sleep(1)
+
+
+class LocalDebugBrowserOpenTest(LocalDebugIsolatedTestCase):
+    def test_browser_open_failure_keeps_healthy_service_running(self):
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.bind(('127.0.0.1', 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        env = {
+            'LOCAL_DEBUG_PORT': str(port),
+            'LOCAL_DEBUG_TEST_FORCE_BROWSER_FAILURE': '1',
+        }
+        try:
+            result = self.run_action('start', env=env)
+            combined = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, combined)
+            self.assertEqual(combined.count('[提示]'), 1, combined)
+            self.assertNotIn('[成功]', combined)
+            self.assertIn('手动访问', combined)
+            self.assertTrue((self.runtime_root / 'local-debug.pid').exists())
+            self.assertTrue((self.runtime_root / 'local-debug-state.json').exists())
+            with urlopen(f'http://127.0.0.1:{port}', timeout=5) as response:
+                self.assertEqual(response.status, 200)
+        finally:
+            stopped = self.run_action('stop', env={'LOCAL_DEBUG_PORT': str(port)})
+            self.assertEqual(stopped.returncode, 0, stopped.stderr)
+            self.assertFalse((self.runtime_root / 'local-debug.pid').exists())
+            self.assertFalse((self.runtime_root / 'local-debug-state.json').exists())
 
 
 class LocalDebugStatePortTest(LocalDebugIsolatedTestCase):
