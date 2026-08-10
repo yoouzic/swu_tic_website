@@ -448,6 +448,65 @@ class LocalDebugCleanupFailureTest(LocalDebugIsolatedTestCase):
             time.sleep(1)
 
 
+class LocalDebugHealthIdentityTest(LocalDebugIsolatedTestCase):
+    def test_health_success_requires_new_process_identity(self):
+        fake_python = Path(self.temp_dir.name, 'fake-python.cmd')
+        marker = Path(self.temp_dir.name, 'external.pid')
+        real_python = str(Path(sys.executable))
+        fake_python.write_bytes(
+            (
+                '@echo off\r\n'
+                'if "%~1"=="-c" exit /b 0\r\n'
+                'if "%~1"=="tools/prepare_local_debug.py" exit /b 0\r\n'
+                f'start "" /b "{real_python}" -c "import os,time,http.server; '
+                'time.sleep(2); '
+                "open(os.environ['LOCAL_DEBUG_MARKER'],'w').write(str(os.getpid())); "
+                "server=http.server.ThreadingHTTPServer(('127.0.0.1',int(os.environ['FLASK_RUN_PORT'])),http.server.SimpleHTTPRequestHandler); "
+                'server.serve_forever()"\r\n'
+                'timeout /t 1 /nobreak >nul\r\n'
+            ).encode('ascii')
+        )
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.bind(('127.0.0.1', 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        env = {
+            'LOCAL_DEBUG_PORT': str(port),
+            'LOCAL_DEBUG_PYTHON': str(fake_python),
+            'LOCAL_DEBUG_HEALTH_TIMEOUT_SECONDS': '6',
+            'LOCAL_DEBUG_MARKER': str(marker),
+        }
+        try:
+            result = self.run_action('start', env=env)
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, combined)
+            self.assertNotIn('[成功]', combined)
+            deadline = time.monotonic() + 8
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(0.1)
+            self.assertTrue(marker.exists(), combined)
+            external_pid = int(marker.read_text(encoding='ascii'))
+            process_check = subprocess.run(
+                [
+                    'powershell.exe', '-NoProfile', '-Command',
+                    f'if (-not (Get-Process -Id {external_pid} -ErrorAction SilentlyContinue)) {{ exit 1 }}',
+                ],
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(process_check.returncode, 0, combined)
+        finally:
+            if marker.exists():
+                external_pid = int(marker.read_text(encoding='ascii'))
+                subprocess.run(
+                    ['taskkill.exe', '/PID', str(external_pid), '/T', '/F'],
+                    capture_output=True,
+                    check=False,
+                )
+            self.run_action('stop', env={'LOCAL_DEBUG_PORT': str(port)})
+            time.sleep(1)
+
+
 class LocalDebugStatePortTest(LocalDebugIsolatedTestCase):
     def test_start_with_new_request_port_reports_recorded_state_url(self):
         first = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
