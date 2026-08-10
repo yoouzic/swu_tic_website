@@ -2,7 +2,6 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from ..models import User, Department, Group, LectureForm, Permission, RolePermission, Teacher, Venue, Course, ListeningBan, CourseRegistration, db, SystemSetting, ScoreRecord, ScoreItem, StatisticsSnapshot, PersonnelMovementRecord, AssessmentOverride
 from sqlalchemy import func
 from datetime import datetime, timedelta
-import threading
 from ..utils.auto_review import AutoReviewEngine, SETTING_KEY_SEMESTER_MONDAY, SETTING_KEY_SCHEDULE_PATH, SETTING_KEY_CONTACTS_PATH, SETTING_KEY_FEEDBACK_PATH
 from .auth import login_required, role_required
 from ..utils.review_permissions import (
@@ -2419,149 +2418,47 @@ def get_review_permission():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
-# ==================== 批量自动审核（新版） ====================
-
-def run_auto_review_task(form_ids, reviewer_id, app_context, force_all=False, target_status=None):
-    """后台运行自动审核任务"""
-    with app_context:
-        try:
-            SystemSetting.set('auto_review_task_status', 'running')
-            engine = AutoReviewEngine()
-            result = engine.batch_review_db_forms(
-                form_ids,
-                reviewer_id,
-                force_all=force_all,
-                target_status=target_status
-            )
-            
-            # 保存结果到 SystemSetting (JSON)
-            SystemSetting.set('auto_review_task_result', json.dumps(result, ensure_ascii=False))
-            SystemSetting.set('auto_review_task_status', 'completed')
-            SystemSetting.set('auto_review_task_time', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-            
-        except Exception as e:
-            current_app.logger.error(f"Auto review task failed: {e}")
-            SystemSetting.set('auto_review_task_status', 'failed')
-            SystemSetting.set('auto_review_task_error', str(e))
-
 @admin_bp.route('/api/review/batch_auto_check', methods=['POST'])
 @login_required
 def batch_auto_check():
-    """触发批量自动审核"""
+    """Legacy adapter for the additive evidence-only batch API."""
     permission = get_user_review_permission(session['user_id'])
     if permission != '审表_中心':
         return jsonify({'success': False, 'message': '您无权限执行一键自动审核'}), 403
+    from ..review_automation.routes import create_batch_response
 
-    target_status = get_next_status_after_review(session['user_id'])
-    if not target_status:
-        return jsonify({'success': False, 'message': '无法确定审核目标状态'}), 400
-
-    # 检查当前状态
-    status = SystemSetting.get('auto_review_task_status')
-    if status == 'running':
-        return jsonify({'success': False, 'message': '自动审核任务正在运行中，请稍候'}), 409
-        
-    data = request.get_json() or {}
-    form_ids = data.get('form_ids', [])
-    force_all = bool(data.get('force_all', False))
-    
-    if not form_ids:
-        return jsonify({'success': False, 'message': '请选择需要审核的表单'}), 400
-        
-    # 启动后台线程
-    app_context = current_app.app_context() # 需要传递上下文给线程
-    
-    thread = threading.Thread(
-        target=run_auto_review_task,
-        args=(form_ids, session['user_id'], app_context, force_all, target_status)
+    return create_batch_response(
+        legacy_force_ignored=True,
+        actor_id=session['user_id'],
     )
-    thread.start()
-    
-    return jsonify({'success': True, 'message': '自动审核任务已启动，请留意仪表盘通知'})
 
 @admin_bp.route('/api/review/batch_auto_check/preview', methods=['POST'])
 @login_required
 def batch_auto_check_preview():
-    """批量自动审核预览：返回将被处理和被忽略的表单统计"""
+    """Legacy adapter for the evidence-only batch preview."""
     permission = get_user_review_permission(session['user_id'])
     if permission != '审表_中心':
         return jsonify({'success': False, 'message': '您无权限查看自动审核预览'}), 403
+    from ..review_automation.routes import preview_batch_response
 
-    target_status = get_next_status_after_review(session['user_id'])
-    if not target_status:
-        return jsonify({'success': False, 'message': '无法确定审核目标状态'}), 400
-
-    data = request.get_json() or {}
-    form_ids = data.get('form_ids', [])
-    force_all = bool(data.get('force_all', False))
-    
-    if not form_ids:
-        return jsonify({'success': False, 'message': '请选择需要审核的表单'}), 400
-        
-    try:
-        forms = LectureForm.query.filter(LectureForm.id.in_(form_ids)).all()
-        
-        will_process = 0
-        will_ignore = 0
-        ignored_reasons = []
-        processable_statuses = ['待审核', '部门已审核']
-        if target_status == '中心已审核':
-            processable_statuses.append('中心已审核')
-        
-        for form in forms:
-            if form.status in processable_statuses and (force_all or is_auto_review_allowed(form.audit_tag)):
-                will_process += 1
-            else:
-                will_ignore += 1
-                reason = []
-                if form.status not in processable_statuses:
-                    reason.append(f'状态为{form.status}')
-                if not force_all and not is_auto_review_allowed(form.audit_tag):
-                    reason.append(f'标签为{form.audit_tag}')
-                # 记录前5个忽略原因用于展示（避免数据过多）
-                if len(ignored_reasons) < 5:
-                    ignored_reasons.append(f"表单ID {form.id}: {', '.join(reason)}")
-        
-        return jsonify({
-            'success': True,
-            'stats': {
-                'total': len(forms),
-                'will_process': will_process,
-                'will_ignore': will_ignore,
-                'force_all': force_all,
-                'ignored_reasons': ignored_reasons
-            }
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+    return preview_batch_response(
+        legacy_force_ignored=True,
+        actor_id=session['user_id'],
+    )
 
 @admin_bp.route('/api/review/auto_check/status', methods=['GET'])
 @login_required
 def get_auto_check_status():
-    """获取自动审核任务状态"""
+    """Legacy status adapter backed by the newest evidence-only batch."""
     permission = get_user_review_permission(session['user_id'])
     if permission != '审表_中心':
         return jsonify({'success': False, 'message': '您无权限查看自动审核任务状态'}), 403
+    from ..review_automation.routes import status_batch_response
 
-    status = SystemSetting.get('auto_review_task_status', 'idle')
-    result_json = SystemSetting.get('auto_review_task_result')
-    time_str = SystemSetting.get('auto_review_task_time')
-    error = SystemSetting.get('auto_review_task_error')
-    
-    result = None
-    if result_json:
-        try:
-            result = json.loads(result_json)
-        except:
-            pass
-            
-    return jsonify({
-        'success': True, 
-        'status': status, 
-        'result': result,
-        'time': time_str,
-        'error': error
-    })
+    return status_batch_response(
+        request.args.get('batch_id'),
+        actor_id=session['user_id'],
+    )
 
 @admin_bp.route('/auto_review/results')
 @login_required
@@ -2802,6 +2699,14 @@ def get_forms_for_review():
             key=lambda x: max((form.updated_at or form.created_at) for form in x[1]),
             reverse=True
         )
+        from ..review_automation.routes import latest_assessment_summaries
+        automation_summaries = latest_assessment_summaries([
+            max(
+                form_group,
+                key=lambda item: (item.updated_at or item.created_at, item.id),
+            ).id
+            for _, form_group in sorted_groups
+        ])
         
         for unique_id, form_group in sorted_groups:
             sorted_form_group = sorted(form_group, key=lambda f: (f.updated_at or f.created_at), reverse=True)
@@ -2844,7 +2749,8 @@ def get_forms_for_review():
                     'reviewer_id': form.reviewer_id,
                     'reviewer_display': reviewer_display,
                     'audit_tag': form.audit_tag or '',
-                    'audit_tag_info': _serialize_audit_tag(form.audit_tag)
+                    'audit_tag_info': _serialize_audit_tag(form.audit_tag),
+                    'automation': automation_summaries.get(form.id) if form.id == latest_form.id else None,
                 })
             
             result.append(group_data)
@@ -2914,6 +2820,11 @@ def get_form_for_review(form_id):
             'audit_tag': form.audit_tag or '',
             'audit_tag_info': _serialize_audit_tag(form.audit_tag)
         }
+        from ..review_automation.routes import latest_assessment_summaries
+        latest_form = form.get_latest_version()
+        automation = latest_assessment_summaries([latest_form.id]).get(latest_form.id)
+        form_data['automation'] = automation
+        form_data['automation_evidence_url'] = automation.get('evidence_url') if automation else None
         
         score_record = ScoreRecord.query.filter_by(form_id=form.id).first()
         score_data = []
@@ -2928,6 +2839,8 @@ def get_form_for_review(form_id):
         return jsonify({
             'success': True,
             'form': form_data,
+            'automation': automation,
+            'automation_evidence_url': form_data['automation_evidence_url'],
             'permission': permission,
             'score_data': score_data
         })

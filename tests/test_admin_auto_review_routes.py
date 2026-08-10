@@ -11,6 +11,9 @@ class AdminAutoReviewRouteTest(unittest.TestCase):
             'admin.auto_review_upload': '/admin/api/auto_review/upload',
             'admin.auto_review_feedback_run': '/admin/api/auto_review/feedback_run',
             'admin.auto_review_download': '/admin/auto_review/download',
+            'admin.batch_auto_check': '/admin/api/review/batch_auto_check',
+            'admin.batch_auto_check_preview': '/admin/api/review/batch_auto_check/preview',
+            'admin.get_auto_check_status': '/admin/api/review/auto_check/status',
         }
         rules_by_endpoint = {
             rule.endpoint: rule.rule
