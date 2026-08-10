@@ -13,6 +13,7 @@ function Resolve-DebugRoot([string]$Override, [string]$Fallback) {
 
 $RuntimeRoot = Resolve-DebugRoot $env:LOCAL_DEBUG_RUNTIME_ROOT (Join-Path $RepoRoot 'data\instance\debug')
 $StorageRoot = Resolve-DebugRoot $env:LOCAL_DEBUG_STORAGE_ROOT (Join-Path $RepoRoot 'data\storage\debug')
+$ServerScriptPath = [IO.Path]::GetFullPath((Join-Path $RepoRoot 'tools\local_debug_server.py'))
 $PidPath = Join-Path $RuntimeRoot 'local-debug.pid'
 $StatePath = Join-Path $RuntimeRoot 'local-debug-state.json'
 $DatabasePath = Join-Path $RuntimeRoot 'lecture_forms-debug.db'
@@ -82,23 +83,134 @@ function Invoke-PythonCommand($Python, [string[]]$Arguments) {
 
 function Read-RecordedPid {
     if (-not (Test-Path -LiteralPath $PidPath)) { return $null }
-    $raw = (Get-Content -LiteralPath $PidPath -Raw).Trim()
-    $parsed = 0
-    if (-not [int]::TryParse($raw, [ref]$parsed)) {
-        Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
+    try {
+        $raw = (Get-Content -LiteralPath $PidPath -Raw -ErrorAction Stop).Trim()
+        $parsed = 0
+        if ([int]::TryParse($raw, [ref]$parsed) -and $parsed -gt 0) {
+            return $parsed
+        }
+    } catch {
         return $null
     }
-    return $parsed
+    return $null
 }
 
-function Test-RecordedProcess([int]$ProcessId) {
-    return $null -ne (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)
+function Read-RecordedState {
+    if (-not (Test-Path -LiteralPath $StatePath)) { return $null }
+    try {
+        $raw = Get-Content -LiteralPath $StatePath -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+        return ($raw | ConvertFrom-Json -ErrorAction Stop)
+    } catch {
+        return $null
+    }
 }
 
-function Test-TcpPort {
+function Normalize-CommandLine([string]$CommandLine) {
+    if ([string]::IsNullOrWhiteSpace($CommandLine)) { return '' }
+    return (($CommandLine -replace '/', '\') -replace '\s+', ' ').Trim().ToLowerInvariant()
+}
+
+function Test-ServerCommandLine([string]$CommandLine) {
+    $normalized = Normalize-CommandLine $CommandLine
+    $serverPath = Normalize-CommandLine $ServerScriptPath
+    return -not [string]::IsNullOrWhiteSpace($normalized) -and $normalized.Contains($serverPath)
+}
+
+function Get-CurrentProcessIdentity([int]$ProcessId) {
+    if ($ProcessId -le 0) { return $null }
+    try {
+        $process = Get-Process -Id $ProcessId -ErrorAction Stop
+        $cimProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop
+        if (-not $cimProcess -or [string]::IsNullOrWhiteSpace([string]$cimProcess.CommandLine)) {
+            return $null
+        }
+        $startTimeUtc = $process.StartTime.ToUniversalTime()
+        return [pscustomobject]@{
+            Pid = [int]$process.Id
+            ProcessStartTime = $startTimeUtc
+            ProcessStartTimeText = $startTimeUtc.ToString('o', [Globalization.CultureInfo]::InvariantCulture)
+            CommandLine = [string]$cimProcess.CommandLine
+        }
+    } catch {
+        return $null
+    }
+}
+
+function Test-RecordedIdentity($State, $Identity) {
+    if (-not $State -or -not $Identity) { return $false }
+    if ([int]$State.pid -ne $Identity.Pid) { return $false }
+    if (-not (Test-ServerCommandLine $State.commandLine)) { return $false }
+    if (-not (Test-ServerCommandLine $Identity.CommandLine)) { return $false }
+    if ((Normalize-CommandLine $State.commandLine) -ne (Normalize-CommandLine $Identity.CommandLine)) {
+        return $false
+    }
+    try {
+        $recordedStart = [DateTime]::Parse(
+            [string]$State.processStartTime,
+            [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::RoundtripKind
+        ).ToUniversalTime()
+        $difference = [Math]::Abs(($recordedStart - $Identity.ProcessStartTime).TotalSeconds)
+        return $difference -le 2
+    } catch {
+        return $false
+    }
+}
+
+function Get-RecordedServiceRecord {
+    $pidFileExists = Test-Path -LiteralPath $PidPath
+    $stateFileExists = Test-Path -LiteralPath $StatePath
+    $state = Read-RecordedState
+    $pidFromFile = Read-RecordedPid
+    $recordedPort = $null
+    $recordedUrl = $null
+    $recordedPortValid = $false
+    $recordedUrlValid = $false
+    if ($state) {
+        $candidatePort = 0
+        if (
+            [int]::TryParse([string]$state.port, [ref]$candidatePort) -and
+            $candidatePort -ge 1 -and
+            $candidatePort -le 65535
+        ) {
+            $recordedPort = $candidatePort
+            $recordedPortValid = $true
+            $recordedUrl = [string]$state.url
+            $recordedUrlValid = $recordedUrl -eq "http://127.0.0.1:$recordedPort"
+        }
+    }
+    $identity = $null
+    if ($pidFromFile) {
+        $identity = Get-CurrentProcessIdentity $pidFromFile
+    }
+    $identityMatches = $false
+    if (
+        $state -and
+        $pidFromFile -and
+        $recordedPortValid -and
+        $recordedUrlValid -and
+        [int]$state.pid -eq $pidFromFile
+    ) {
+        $identityMatches = Test-RecordedIdentity $state $identity
+    }
+    [pscustomobject]@{
+        HasRecord = $pidFileExists -or $stateFileExists
+        State = $state
+        Pid = $pidFromFile
+        RecordedPort = $recordedPort
+        RecordedUrl = $recordedUrl
+        Identity = $identity
+        IdentityMatches = $identityMatches
+        TargetPort = if ($recordedPortValid) { $recordedPort } else { $Port }
+        TargetUrl = if ($recordedUrlValid) { $recordedUrl } else { $Url }
+    }
+}
+
+function Test-TcpPort([int]$CheckPort) {
     $client = [System.Net.Sockets.TcpClient]::new()
     try {
-        $task = $client.ConnectAsync('127.0.0.1', $Port)
+        $task = $client.ConnectAsync('127.0.0.1', $CheckPort)
         return $task.Wait(300) -and $client.Connected
     } catch {
         return $false
@@ -107,9 +219,9 @@ function Test-TcpPort {
     }
 }
 
-function Test-Http {
+function Test-Http([string]$CheckUrl) {
     try {
-        $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 2 -MaximumRedirection 0 -ErrorAction Stop
+        $response = Invoke-WebRequest -UseBasicParsing -Uri $CheckUrl -TimeoutSec 2 -MaximumRedirection 0 -ErrorAction Stop
         return $response.StatusCode -ge 200 -and $response.StatusCode -lt 400
     } catch {
         if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -lt 400) { return $true }
@@ -121,10 +233,10 @@ function Remove-StaleState {
     Remove-Item -LiteralPath $PidPath, $StatePath -Force -ErrorAction SilentlyContinue
 }
 
-function Get-PortOccupancyMessage {
+function Get-PortOccupancyMessage([int]$CheckPort) {
     $connection = $null
     try {
-        $connection = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        $connection = Get-NetTCPConnection -LocalPort $CheckPort -State Listen -ErrorAction SilentlyContinue |
             Select-Object -First 1
     } catch {
         $connection = $null
@@ -132,10 +244,10 @@ function Get-PortOccupancyMessage {
     if ($connection) {
         $owner = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
         if ($owner) {
-            return "端口 $Port 已被 $($owner.ProcessName)（PID $($owner.Id)）占用；未终止该进程。"
+            return "端口 $CheckPort 已被 $($owner.ProcessName)（PID $($owner.Id)）占用；未终止该进程。"
         }
     }
-    return "端口 $Port 已被其他程序占用；未终止任何进程。"
+    return "端口 $CheckPort 已被其他程序占用；未终止任何进程。"
 }
 
 function Write-MenuResult([string]$Kind, [string]$Message) {
@@ -148,14 +260,13 @@ function Write-MenuResult([string]$Kind, [string]$Message) {
 }
 
 function Get-DebugStatus {
-    $recordedPid = Read-RecordedPid
-    $processUp = [bool]($recordedPid -and (Test-RecordedProcess $recordedPid))
-    if (-not $processUp -and $recordedPid) {
+    $record = Get-RecordedServiceRecord
+    $processUp = $record.IdentityMatches
+    $portUp = Test-TcpPort $record.TargetPort
+    $httpUp = Test-Http $record.TargetUrl
+    if ($record.HasRecord -and -not $processUp) {
         Remove-StaleState
-        $recordedPid = $null
     }
-    $portUp = Test-TcpPort
-    $httpUp = Test-Http
     $label = if ($processUp -and $httpUp) {
         '运行中'
     } elseif (-not $processUp -and -not $portUp -and -not $httpUp) {
@@ -164,12 +275,13 @@ function Get-DebugStatus {
         '状态异常'
     }
     [pscustomobject]@{
-        Pid = $recordedPid
+        Pid = $record.Pid
         ProcessUp = $processUp
         PortUp = $portUp
         HttpUp = $httpUp
         Label = $label
-        Url = $Url
+        Url = $record.TargetUrl
+        RequestedUrl = $Url
     }
 }
 
@@ -180,18 +292,30 @@ function Show-Status {
     Write-Host ('端口状态: ' + $(if ($status.PortUp) { '已占用' } else { '空闲' }))
     Write-Host ('网页状态: ' + $(if ($status.HttpUp) { '可访问' } else { '不可访问' }))
     Write-Host ('访问地址: ' + $status.Url)
+    if ($status.Url -ne $status.RequestedUrl) {
+        Write-Host ('本次请求地址: ' + $status.RequestedUrl)
+    }
     return $status.ProcessUp -and $status.HttpUp
 }
 
 function Start-LocalDebug {
     Set-DebugEnvironment
-    $recordedPid = Read-RecordedPid
-    if ($recordedPid -and (Test-RecordedProcess $recordedPid)) {
-        Write-MenuResult '提示' "服务已经运行：$Url"
-        return
+    $record = Get-RecordedServiceRecord
+    if ($record.IdentityMatches) {
+        if (Test-Http $record.TargetUrl) {
+            Write-MenuResult '提示' "服务已经运行：$($record.TargetUrl)"
+            return
+        }
+        throw "记录的调试服务进程仍存在，但网页不可访问：$($record.TargetUrl)"
     }
-    if ($recordedPid) { Remove-StaleState }
-    if (Test-TcpPort) { throw (Get-PortOccupancyMessage) }
+    if ($record.HasRecord) {
+        $stalePort = $record.RecordedPort
+        Remove-StaleState
+        if ($stalePort -and (Test-TcpPort $stalePort)) {
+            throw (Get-PortOccupancyMessage $stalePort)
+        }
+    }
+    if (Test-TcpPort $Port) { throw (Get-PortOccupancyMessage $Port) }
 
     $python = Resolve-PythonCommand
     Invoke-PythonCommand $python @('tools/prepare_local_debug.py', '--password', $SharedPassword)
@@ -199,17 +323,27 @@ function Start-LocalDebug {
     $prefixText = ($python.Prefix | ForEach-Object { $_ }) -join ' '
     $pythonText = '"' + $python.Exe + '"'
     if ($prefixText) { $pythonText += ' ' + $prefixText }
-    $serverCommand = "cd /d `"$RepoRoot`" && $pythonText -u tools/local_debug_server.py"
+    $serverCommand = "cd /d `"$RepoRoot`" && $pythonText -u `"$ServerScriptPath`""
     $process = Start-Process `
         -FilePath 'cmd.exe' `
         -ArgumentList '/c', $serverCommand `
         -WorkingDirectory $RepoRoot `
         -WindowStyle Hidden `
         -PassThru
+    $identity = $null
+    for ($attempt = 0; $attempt -lt 10 -and -not $identity; $attempt++) {
+        $identity = Get-CurrentProcessIdentity $process.Id
+        if (-not $identity) { Start-Sleep -Milliseconds 100 }
+    }
+    if (-not $identity -or -not (Test-ServerCommandLine $identity.CommandLine)) {
+        throw "无法验证本地调试服务进程身份 PID=$($process.Id)"
+    }
     Set-Content -LiteralPath $PidPath -Value $process.Id -Encoding ascii
     [pscustomobject]@{
         pid = $process.Id
         startedAt = (Get-Date).ToString('o')
+        processStartTime = $identity.ProcessStartTimeText
+        commandLine = $identity.CommandLine
         port = $Port
         url = $Url
         python = $python.Exe
@@ -217,7 +351,7 @@ function Start-LocalDebug {
     } | ConvertTo-Json | Set-Content -LiteralPath $StatePath -Encoding utf8
 
     for ($attempt = 0; $attempt -lt 60; $attempt++) {
-        if (Test-Http) {
+        if (Test-Http $Url) {
             Write-MenuResult '成功' "服务已启动：$Url"
             Start-Process $Url
             return
@@ -228,24 +362,37 @@ function Start-LocalDebug {
 }
 
 function Stop-LocalDebug([switch]$Quiet) {
-    $recordedPid = Read-RecordedPid
-    if (-not $recordedPid) {
+    $record = Get-RecordedServiceRecord
+    $targetPort = $record.RecordedPort
+    if (-not $targetPort) { $targetPort = $Port }
+    if ($record.IdentityMatches) {
+        $latestIdentity = Get-CurrentProcessIdentity $record.Pid
+        if (-not (Test-RecordedIdentity $record.State $latestIdentity)) {
+            Remove-StaleState
+            if (Test-TcpPort $targetPort) {
+                throw (Get-PortOccupancyMessage $targetPort)
+            }
+            if (-not $Quiet) { Write-MenuResult '提示' '服务尚未启动。' }
+            return
+        }
+        $taskKillOutput = & taskkill.exe /PID $record.Pid /T /F 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "无法关闭启动器记录的进程树 PID=$($record.Pid)" }
+    } elseif ($record.HasRecord) {
         Remove-StaleState
+        if (Test-TcpPort $targetPort) {
+            throw (Get-PortOccupancyMessage $targetPort)
+        }
         if (-not $Quiet) { Write-MenuResult '提示' '服务尚未启动。' }
         return
-    }
-
-    $processUp = Test-RecordedProcess $recordedPid
-    if ($processUp) {
-        $taskKillOutput = & taskkill.exe /PID $recordedPid /T /F 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "无法关闭启动器记录的进程树 PID=$recordedPid" }
+    } elseif (Test-TcpPort $targetPort) {
+        throw (Get-PortOccupancyMessage $targetPort)
     }
     Remove-StaleState
-    if ($processUp) {
-        for ($attempt = 0; $attempt -lt 20 -and (Test-TcpPort); $attempt++) {
+    if ($record.IdentityMatches) {
+        for ($attempt = 0; $attempt -lt 20 -and (Test-TcpPort $targetPort); $attempt++) {
             Start-Sleep -Milliseconds 250
         }
-        if (Test-TcpPort) { throw "记录进程已停止，但端口 $Port 仍被占用；未终止其他进程。" }
+        if (Test-TcpPort $targetPort) { throw "记录进程已停止，但端口 $targetPort 仍被占用；未终止其他进程。" }
     }
     if (-not $Quiet) { Write-MenuResult '成功' '本地调试服务已关闭；调试数据库和日志已保留。' }
 }
@@ -256,7 +403,7 @@ function Show-Menu {
         $status = Get-DebugStatus
         Write-Host 'SWU TIC 本地调试'
         Write-Host "状态：$($status.Label)"
-        Write-Host "地址：$Url"
+        Write-Host "地址：$($status.Url)"
         Write-Host ''
         Write-Host '1  启动'
         Write-Host '2  关闭'
@@ -272,9 +419,10 @@ function Show-Menu {
                 '2' { Stop-LocalDebug; break }
                 '3' { Stop-LocalDebug -Quiet; Start-LocalDebug; break }
                 '4' {
-                    if (-not (Test-Http)) { throw '服务尚未启动。' }
-                    Start-Process $Url
-                    Write-MenuResult '成功' "已打开：$Url"
+                    $currentStatus = Get-DebugStatus
+                    if (-not (Test-Http $currentStatus.Url)) { throw '服务尚未启动。' }
+                    Start-Process $currentStatus.Url
+                    Write-MenuResult '成功' "已打开：$($currentStatus.Url)"
                     break
                 }
                 default { Write-MenuResult '提示' '请输入 0-4。' }
@@ -303,9 +451,10 @@ try {
         'restart' { Stop-LocalDebug -Quiet; Start-LocalDebug }
         'status' { [void](Show-Status) }
         'open' {
-            if (-not (Test-Http)) { throw '服务尚未启动。' }
-            Start-Process $Url
-            Write-MenuResult '成功' "已打开：$Url"
+            $status = Get-DebugStatus
+            if (-not (Test-Http $status.Url)) { throw '服务尚未启动。' }
+            Start-Process $status.Url
+            Write-MenuResult '成功' "已打开：$($status.Url)"
         }
     }
 } catch {
