@@ -424,13 +424,13 @@ class LocalDebugCleanupFailureTest(LocalDebugIsolatedTestCase):
             while not marker.exists() and time.monotonic() < deadline:
                 time.sleep(0.1)
             self.assertTrue(marker.exists(), combined)
-            parent_pid = int(marker.read_text(encoding='ascii'))
             state = json.loads(state_path.read_text(encoding='utf-8-sig'))
-            self.assertEqual(state['pid'], parent_pid)
+            recorded_pid = int(pid_path.read_text(encoding='ascii').strip())
+            self.assertEqual(state['pid'], recorded_pid)
             process_check = subprocess.run(
                 [
                     'powershell.exe', '-NoProfile', '-Command',
-                    f'if (-not (Get-Process -Id {parent_pid} -ErrorAction SilentlyContinue)) {{ exit 1 }}',
+                    f'if (-not (Get-Process -Id {recorded_pid} -ErrorAction SilentlyContinue)) {{ exit 1 }}',
                 ],
                 capture_output=True,
                 check=False,

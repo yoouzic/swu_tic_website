@@ -166,9 +166,6 @@ function Test-RecordedIdentity($State, $Identity) {
     if ([int]$State.pid -ne $Identity.Pid) { return $false }
     if (-not (Test-ServerCommandLine $State.commandLine)) { return $false }
     if (-not (Test-ServerCommandLine $Identity.CommandLine)) { return $false }
-    if ((Normalize-CommandLine $State.commandLine) -ne (Normalize-CommandLine $Identity.CommandLine)) {
-        return $false
-    }
     try {
         $recordedStart = [DateTime]::Parse(
             [string]$State.processStartTime,
@@ -254,6 +251,7 @@ function Test-TcpPort([int]$CheckPort) {
 
 function Stop-NewProcessSafely($Process) {
     if (-not $Process) { return $false }
+    if ($env:LOCAL_DEBUG_TEST_FORCE_CLEANUP_FAILURE -eq '1') { return $false }
     try {
         $processId = [int]$Process.Id
         $processStartTime = $Process.StartTime.ToUniversalTime()
@@ -265,7 +263,12 @@ function Stop-NewProcessSafely($Process) {
         }
         if ($Process.HasExited) { return $true }
         $killOutput = & taskkill.exe /PID $processId /T /F 2>&1
-        return $LASTEXITCODE -eq 0
+        if ($LASTEXITCODE -ne 0) { return $false }
+        for ($attempt = 0; $attempt -lt 20; $attempt++) {
+            if ($Process.HasExited) { return $true }
+            Start-Sleep -Milliseconds 250
+        }
+        return $Process.HasExited
     } catch {
         return $false
     }
@@ -394,6 +397,29 @@ function Start-LocalDebug {
             -WorkingDirectory $RepoRoot `
             -WindowStyle Hidden `
             -PassThru
+        $processStartTimeText = $null
+        try {
+            $processStartTimeText = $process.StartTime.ToUniversalTime().ToString(
+                'o',
+                [Globalization.CultureInfo]::InvariantCulture
+            )
+        } catch {
+            $processStartTimeText = $null
+        }
+        $cmdPath = Join-Path $env:SystemRoot 'System32\cmd.exe'
+        $expectedCommandLine = '"' + $cmdPath + '" /c ' + $serverCommand
+        $launchState = [pscustomobject]@{
+            pid = $process.Id
+            startedAt = (Get-Date).ToString('o')
+            processStartTime = $processStartTimeText
+            commandLine = $expectedCommandLine
+            port = $Port
+            url = $Url
+            python = $python.Exe
+            database = $DatabasePath
+        }
+        Set-Content -LiteralPath $PidPath -Value $process.Id -Encoding ascii
+        $launchState | ConvertTo-Json | Set-Content -LiteralPath $StatePath -Encoding utf8
         for ($attempt = 0; $attempt -lt 10 -and -not $identity; $attempt++) {
             $identity = Get-CurrentProcessIdentity $process.Id
             if (-not $identity) { Start-Sleep -Milliseconds 100 }
@@ -401,17 +427,8 @@ function Start-LocalDebug {
         if (-not $identity -or -not (Test-ServerCommandLine $identity.CommandLine)) {
             throw "无法验证本地调试服务进程身份 PID=$($process.Id)"
         }
-        $launchState = [pscustomobject]@{
-            pid = $process.Id
-            startedAt = (Get-Date).ToString('o')
-            processStartTime = $identity.ProcessStartTimeText
-            commandLine = $identity.CommandLine
-            port = $Port
-            url = $Url
-            python = $python.Exe
-            database = $DatabasePath
-        }
-        Set-Content -LiteralPath $PidPath -Value $process.Id -Encoding ascii
+        $launchState.processStartTime = $identity.ProcessStartTimeText
+        $launchState.commandLine = $identity.CommandLine
         $launchState | ConvertTo-Json | Set-Content -LiteralPath $StatePath -Encoding utf8
 
         for ($attempt = 0; $attempt -lt ($HealthTimeoutSeconds * 2); $attempt++) {
@@ -427,6 +444,9 @@ function Start-LocalDebug {
         $launchFailure = $_.Exception
         $cleanupSucceeded = $false
         if ($process) { $cleanupSucceeded = Stop-NewProcessSafely $process }
+        if (-not $cleanupSucceeded) {
+            throw "本次启动的进程无法清理，状态已保留：$StatePath"
+        }
         $portReleased = Wait-TcpPortFree $Port
         Remove-StaleState
         if (-not $portReleased) {
