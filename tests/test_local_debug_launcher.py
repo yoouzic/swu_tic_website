@@ -1,4 +1,5 @@
 import os
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -152,6 +153,19 @@ class LocalDebugPowerShellContractTest(unittest.TestCase):
         self.assertIn('Test-TcpPort', self.source)
         self.assertIn('occupied by another process', self.source)
 
+    def test_manager_owns_compact_menu_and_uses_5087_by_default(self):
+        self.assertIn("'menu'", self.source)
+        self.assertIn('$DefaultPort = 5087', self.source)
+        for label in ('SWU TIC 本地调试', '1  启动', '2  关闭', '3  重启',
+                      '4  打开网页', '0  退出', '请选择'):
+            self.assertIn(label, self.source)
+        self.assertNotIn('$DefaultPort = 5000', self.source)
+
+    def test_manager_hides_server_console_and_avoids_write_error_stack_dump(self):
+        self.assertIn('-WindowStyle Hidden', self.source)
+        self.assertIn('[Console]::Error.WriteLine', self.source)
+        self.assertNotIn('Write-Error $_.Exception.Message', self.source)
+
 
 class LocalDebugPortContractTest(unittest.TestCase):
     @classmethod
@@ -159,7 +173,7 @@ class LocalDebugPortContractTest(unittest.TestCase):
         cls.source = (ROOT / 'tools' / 'local_debug.ps1').read_text(encoding='utf-8-sig')
 
     def test_manager_has_explicit_validated_port_override_and_shared_port_state(self):
-        self.assertIn('$DefaultPort = 5000', self.source)
+        self.assertIn('$DefaultPort = 5087', self.source)
         self.assertIn('$env:LOCAL_DEBUG_PORT', self.source)
         self.assertIn('[int]::TryParse', self.source)
         self.assertIn('1 and 65535', self.source)
@@ -185,25 +199,59 @@ class LocalDebugPortContractTest(unittest.TestCase):
         self.assertIn('LOCAL_DEBUG_PORT must be an integer between 1 and 65535', result.stderr)
 
 
+class LocalDebugErrorOutputTest(unittest.TestCase):
+    def test_foreign_port_error_is_concise_and_does_not_kill_listener(self):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(('127.0.0.1', 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        try:
+            env = os.environ.copy()
+            env['LOCAL_DEBUG_PORT'] = str(port)
+            result = subprocess.run(
+                [
+                    'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                    '-File', str(ROOT / 'tools' / 'local_debug.ps1'),
+                    '-Action', 'start',
+                ],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                capture_output=True,
+                check=False,
+            )
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(str(port), combined)
+            self.assertNotIn('CategoryInfo', combined)
+            self.assertNotIn('FullyQualifiedErrorId', combined)
+            self.assertNotIn('Write-Error', combined)
+            self.assertEqual(listener.getsockname()[1], port)
+        finally:
+            listener.close()
+
+
 class LocalDebugCmdContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        source_path = ROOT / '本地调试.cmd'
-        cls.source = source_path.read_text(encoding='utf-8') if source_path.exists() else ''
+        cls.path = ROOT / '本地调试.cmd'
+        cls.raw = cls.path.read_bytes() if cls.path.exists() else b''
+        cls.source = cls.raw.decode('ascii', errors='replace') if cls.raw else ''
 
-    def test_menu_contains_all_requested_choices(self):
-        for label in ('[1] 启动服务', '[2] 关闭服务', '[3] 重启服务',
-                      '[4] 查看运行状态', '[5] 打开本地网页', '[0] 退出'):
-            self.assertIn(label, self.source)
+    def test_wrapper_is_bom_free_ascii_crlf_and_starts_with_echo_off(self):
+        self.assertTrue(self.raw.startswith(b'@echo off\r\n'))
+        self.assertFalse(self.raw.startswith(b'\xef\xbb\xbf'))
+        self.assertNotIn(b'\n', self.raw.replace(b'\r\n', b''))
+        self.assertTrue(all(byte < 128 for byte in self.raw))
 
-    def test_menu_dispatches_all_noninteractive_actions(self):
+    def test_wrapper_delegates_menu_and_noninteractive_actions(self):
         self.assertIn('tools\\local_debug.ps1', self.source)
-        for action in ('start', 'stop', 'restart', 'status', 'open'):
-            self.assertIn(f'-Action {action}', self.source)
-
-    def test_menu_uses_its_own_directory_and_utf8(self):
-        self.assertIn('%~dp0', self.source)
-        self.assertIn('chcp 65001', self.source.lower())
+        self.assertIn('-Action menu', self.source)
+        self.assertIn('-Action "%~1"', self.source)
+        self.assertNotIn('set /p', self.source.lower())
+        self.assertNotIn('echo [1]', self.source.lower())
 
 
 if __name__ == '__main__':
