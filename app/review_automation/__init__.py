@@ -12,18 +12,8 @@ _CLI_MODULE = 'app.review_automation.cli'
 
 
 def _import_models_if_available():
-    """Load automation models when the package is fully initialized.
-
-    Task 1 bootstraps the package before Task 2 adds the model module. Keeping
-    this import tolerant during that transition lets each plan task stay
-    independently testable; once models.py exists it is imported normally.
-    """
-    try:
-        return importlib.import_module(_MODELS_MODULE)
-    except ModuleNotFoundError as exc:
-        if exc.name != _MODELS_MODULE:
-            raise
-        return None
+    """Load automation models before any database initialization can run."""
+    return importlib.import_module(_MODELS_MODULE)
 
 
 def _register_cli_if_available(flask_app):
