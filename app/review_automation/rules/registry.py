@@ -9,6 +9,7 @@ from datetime import date
 from typing import Any, Iterable, Mapping
 
 from app.review_automation.contracts import (
+    EvidenceStrength,
     FindingDraft,
     FindingSeverity,
     FindingSource,
@@ -216,7 +217,7 @@ def _system_finding(revision: RuleRevisionView, code: str, message: str) -> Find
         title='自动规则不可用',
         message=message,
         objective=False,
-        evidence_strength='weak',
+        evidence_strength=EvidenceStrength.WEAK,
         evidence={'code': code, 'handler': revision.handler, 'version': revision.version},
     )
 
@@ -266,12 +267,44 @@ from .text import (  # noqa: E402  (fixed handler map is built after contracts a
 )
 
 
+class _FixedModuleHandler:
+    """Lazy adapter for a handler implemented in an approved rules module."""
+
+    def __init__(self, module_name: str):
+        self.module_name = module_name
+
+    def evaluate(self, context: RuleContext, revision: RuleRevisionView):
+        if self.module_name == 'schedule':
+            from .schedule import evaluate_rule_revision
+        else:
+            from .history import evaluate_rule_revision
+        return evaluate_rule_revision(context, revision)
+
+
 HANDLERS = {
     'required_prefix': RequiredPrefixRule,
     'minimum_length': MinimumLengthRule,
     'confusion_patterns': ConfusionPatternRule,
     'safe_regex': SafeRegexRule,
 }
+
+# This is deliberately a literal closed-world registry: no administrator input
+# can add an import path, callable, Python source, or eval/exec expression.
+for _handler_name in {
+    'personal_schedule_conflict',
+    'class_schedule_conflict',
+    'same_college_teacher',
+    'school_schedule_mismatch',
+}:
+    HANDLERS[_handler_name] = _FixedModuleHandler('schedule')
+for _handler_name in {
+    'witness_reused_across_weeks',
+    'witness_phone_name_conflict',
+    'consecutive_teacher_weeks',
+    'same_listener_same_slot',
+    'feedback_similarity',
+}:
+    HANDLERS[_handler_name] = _FixedModuleHandler('history')
 
 
 def execute_rules(revisions: Iterable[Any], form: Any = None, *, context: RuleContext | None = None):
