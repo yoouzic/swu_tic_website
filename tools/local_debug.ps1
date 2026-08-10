@@ -426,14 +426,7 @@ function Start-LocalDebug {
     } catch {
         $launchFailure = $_.Exception
         $cleanupSucceeded = $false
-        if ($launchState -and $process -and $identity) {
-            $currentIdentity = Get-CurrentProcessIdentity $process.Id
-            if (Test-RecordedIdentity $launchState $currentIdentity) {
-                $cleanupSucceeded = Stop-NewProcessSafely $process
-            }
-        } elseif ($process) {
-            $cleanupSucceeded = Stop-NewProcessSafely $process
-        }
+        if ($process) { $cleanupSucceeded = Stop-NewProcessSafely $process }
         $portReleased = Wait-TcpPortFree $Port
         Remove-StaleState
         if (-not $portReleased) {
