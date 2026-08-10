@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -322,6 +323,47 @@ class LocalDebugIdentitySafetyTest(LocalDebugIsolatedTestCase):
             if sleeper.poll() is None:
                 sleeper.terminate()
                 sleeper.wait(timeout=5)
+
+
+class LocalDebugIdentityProbeFailureTest(LocalDebugIsolatedTestCase):
+    def test_identity_probe_failure_cleans_new_process_tree_and_port(self):
+        fake_python = Path(self.temp_dir.name, 'fake-python.cmd')
+        real_python = str(Path(sys.executable))
+        fake_python.write_bytes(
+            (
+                '@echo off\r\n'
+                'if "%~1"=="-c" exit /b 0\r\n'
+                'if "%~1"=="tools/prepare_local_debug.py" exit /b 0\r\n'
+                f'"{real_python}" -c "import os,socket,time; s=socket.socket(); '
+                "s.bind(('127.0.0.1',int(os.environ['FLASK_RUN_PORT']))); "
+                's.listen(1); time.sleep(2)"\r\n'
+            ).encode('ascii')
+        )
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.bind(('127.0.0.1', 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        env = {
+            'LOCAL_DEBUG_PORT': str(port),
+            'LOCAL_DEBUG_PYTHON': str(fake_python),
+            'LOCAL_DEBUG_HEALTH_TIMEOUT_SECONDS': '1',
+            'LOCAL_DEBUG_TEST_FORCE_IDENTITY_FAILURE': '1',
+        }
+        try:
+            result = self.run_action('start', env=env)
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('无法验证本地调试服务进程身份', combined)
+            self.assertFalse((self.runtime_root / 'local-debug.pid').exists())
+            self.assertFalse((self.runtime_root / 'local-debug-state.json').exists())
+            check = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                self.assertNotEqual(check.connect_ex(('127.0.0.1', port)), 0)
+            finally:
+                check.close()
+        finally:
+            self.run_action('stop', env=env)
+            time.sleep(3)
 
 
 class LocalDebugStatePortTest(LocalDebugIsolatedTestCase):
