@@ -433,6 +433,10 @@ function Start-LocalDebug {
 
         for ($attempt = 0; $attempt -lt ($HealthTimeoutSeconds * 2); $attempt++) {
             if (Test-Http $Url) {
+                $healthIdentity = Get-CurrentProcessIdentity $process.Id
+                if (-not (Test-RecordedIdentity $launchState $healthIdentity)) {
+                    throw '健康检查已响应，但新启动进程身份校验失败。'
+                }
                 Write-MenuResult '成功' "服务已启动：$Url"
                 Start-Process $Url
                 return
