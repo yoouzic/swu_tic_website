@@ -1,12 +1,18 @@
 ﻿param(
-    [ValidateSet('menu', 'start', 'stop', 'restart', 'status', 'open')]
     [string]$Action = 'menu'
 )
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$RuntimeRoot = Join-Path $RepoRoot 'data\instance\debug'
-$StorageRoot = Join-Path $RepoRoot 'data\storage\debug'
+function Resolve-DebugRoot([string]$Override, [string]$Fallback) {
+    if ([string]::IsNullOrWhiteSpace($Override)) {
+        return [IO.Path]::GetFullPath($Fallback)
+    }
+    return [IO.Path]::GetFullPath($Override)
+}
+
+$RuntimeRoot = Resolve-DebugRoot $env:LOCAL_DEBUG_RUNTIME_ROOT (Join-Path $RepoRoot 'data\instance\debug')
+$StorageRoot = Resolve-DebugRoot $env:LOCAL_DEBUG_STORAGE_ROOT (Join-Path $RepoRoot 'data\storage\debug')
 $PidPath = Join-Path $RuntimeRoot 'local-debug.pid'
 $StatePath = Join-Path $RuntimeRoot 'local-debug-state.json'
 $DatabasePath = Join-Path $RuntimeRoot 'lecture_forms-debug.db'
@@ -284,6 +290,10 @@ $locationPushed = $false
 try {
     Push-Location $RepoRoot
     $locationPushed = $true
+    $validActions = @('menu', 'start', 'stop', 'restart', 'status', 'open')
+    if ($validActions -notcontains $Action) {
+        throw "未知操作：$Action"
+    }
     $Port = Resolve-DebugPort
     $Url = "http://127.0.0.1:$Port"
     switch ($Action) {
