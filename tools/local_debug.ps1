@@ -322,6 +322,13 @@ function Write-MenuResult([string]$Kind, [string]$Message) {
     Write-Host "[$Kind] $Message" -ForegroundColor $color
 }
 
+function Open-DebugUrl([string]$OpenUrl) {
+    if ($env:LOCAL_DEBUG_TEST_FORCE_BROWSER_FAILURE -eq '1') {
+        throw 'browser open test failure'
+    }
+    Start-Process -FilePath $OpenUrl -ErrorAction Stop
+}
+
 function Get-DebugStatus {
     $record = Get-RecordedServiceRecord
     $processUp = $record.IdentityMatches
@@ -437,8 +444,12 @@ function Start-LocalDebug {
                 if (-not (Test-RecordedIdentity $launchState $healthIdentity)) {
                     throw '健康检查已响应，但新启动进程身份校验失败。'
                 }
-                Write-MenuResult '成功' "服务已启动：$Url"
-                Start-Process $Url
+                try {
+                    Open-DebugUrl $Url
+                    Write-MenuResult '成功' "服务已启动：$Url"
+                } catch {
+                    Write-MenuResult '提示' "服务已启动，但浏览器未能自动打开；请手动访问：$Url"
+                }
                 return
             }
             Start-Sleep -Milliseconds 500
@@ -524,8 +535,12 @@ function Show-Menu {
                 '4' {
                     $currentStatus = Get-DebugStatus
                     if (-not (Test-Http $currentStatus.Url)) { throw '服务尚未启动。' }
-                    Start-Process $currentStatus.Url
-                    Write-MenuResult '成功' "已打开：$($currentStatus.Url)"
+                    try {
+                        Open-DebugUrl $currentStatus.Url
+                        Write-MenuResult '成功' "已打开：$($currentStatus.Url)"
+                    } catch {
+                        Write-MenuResult '提示' "浏览器未能自动打开；请手动访问：$($currentStatus.Url)"
+                    }
                     break
                 }
                 default { Write-MenuResult '提示' '请输入 0-4。' }
@@ -557,8 +572,12 @@ try {
         'open' {
             $status = Get-DebugStatus
             if (-not (Test-Http $status.Url)) { throw '服务尚未启动。' }
-            Start-Process $status.Url
-            Write-MenuResult '成功' "已打开：$($status.Url)"
+            try {
+                Open-DebugUrl $status.Url
+                Write-MenuResult '成功' "已打开：$($status.Url)"
+            } catch {
+                Write-MenuResult '提示' "浏览器未能自动打开；请手动访问：$($status.Url)"
+            }
         }
     }
 } catch {
