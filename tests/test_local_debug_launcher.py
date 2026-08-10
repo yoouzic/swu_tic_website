@@ -347,29 +347,48 @@ class LocalDebugStatePortTest(LocalDebugIsolatedTestCase):
             self.run_action('stop', env={'LOCAL_DEBUG_PORT': str(second_port)})
 
 
-class LocalDebugErrorOutputTest(unittest.TestCase):
+class LocalDebugStartupCleanupTest(LocalDebugIsolatedTestCase):
+    def test_health_timeout_cleans_new_process_and_state(self):
+        fake_python = Path(self.temp_dir.name, 'fake-python.cmd')
+        fake_python.write_bytes(
+            b'@echo off\r\n'
+            b'if "%~1"=="-c" exit /b 0\r\n'
+            b'if "%~1"=="tools/prepare_local_debug.py" exit /b 0\r\n'
+            b'timeout /t 3 /nobreak >nul\r\n'
+        )
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.bind(('127.0.0.1', 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        env = {
+            'LOCAL_DEBUG_PORT': str(port),
+            'LOCAL_DEBUG_PYTHON': str(fake_python),
+            'LOCAL_DEBUG_HEALTH_TIMEOUT_SECONDS': '1',
+        }
+        try:
+            result = self.run_action('start', env=env)
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('within 1 seconds', combined)
+            self.assertFalse(Path(self.runtime_root, 'local-debug.pid').exists())
+            self.assertFalse(Path(self.runtime_root, 'local-debug-state.json').exists())
+            check = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                self.assertNotEqual(check.connect_ex(('127.0.0.1', port)), 0)
+            finally:
+                check.close()
+        finally:
+            self.run_action('stop', env=env)
+
+
+class LocalDebugErrorOutputTest(LocalDebugIsolatedTestCase):
     def test_foreign_port_error_is_concise_and_does_not_kill_listener(self):
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.bind(('127.0.0.1', 0))
         listener.listen(1)
         port = listener.getsockname()[1]
         try:
-            env = os.environ.copy()
-            env['LOCAL_DEBUG_PORT'] = str(port)
-            result = subprocess.run(
-                [
-                    'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-                    '-File', str(ROOT / 'tools' / 'local_debug.ps1'),
-                    '-Action', 'start',
-                ],
-                cwd=ROOT,
-                env=env,
-                text=True,
-                encoding='utf-8',
-                errors='replace',
-                capture_output=True,
-                check=False,
-            )
+            result = self.run_action('start', env={'LOCAL_DEBUG_PORT': str(port)})
             combined = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(str(port), combined)
@@ -381,26 +400,7 @@ class LocalDebugErrorOutputTest(unittest.TestCase):
             listener.close()
 
 
-class LocalDebugRuntimeOutputTest(unittest.TestCase):
-    def run_action(self, action, *, env=None, input_text=None):
-        process_env = os.environ.copy()
-        if env:
-            process_env.update(env)
-        return subprocess.run(
-            [
-                'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-                '-File', str(ROOT / 'tools' / 'local_debug.ps1'),
-                '-Action', action,
-            ],
-            cwd=ROOT,
-            env=process_env,
-            input=input_text,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
-            capture_output=True,
-            check=False,
-        )
+class LocalDebugRuntimeOutputTest(LocalDebugIsolatedTestCase):
 
     def test_status_output_is_utf8_chinese_without_mojibake(self):
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -414,7 +414,7 @@ class LocalDebugRuntimeOutputTest(unittest.TestCase):
         self.assertNotIn('锛', result.stdout)
 
     def test_stop_output_does_not_leak_false_when_no_service_is_recorded(self):
-        pid_path = ROOT / 'data' / 'instance' / 'debug' / 'local-debug.pid'
+        pid_path = self.runtime_root / 'local-debug.pid'
         self.assertFalse(pid_path.exists(), 'test requires no recorded local debug service')
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.bind(('127.0.0.1', 0))
@@ -426,7 +426,7 @@ class LocalDebugRuntimeOutputTest(unittest.TestCase):
         self.assertEqual(result.stdout.count('[提示]'), 1)
 
     def test_start_output_hides_prepare_details_and_keeps_one_success_line(self):
-        pid_path = ROOT / 'data' / 'instance' / 'debug' / 'local-debug.pid'
+        pid_path = self.runtime_root / 'local-debug.pid'
         self.assertFalse(pid_path.exists(), 'test requires no recorded local debug service')
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.bind(('127.0.0.1', 0))
