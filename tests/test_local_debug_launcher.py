@@ -133,7 +133,7 @@ class LocalDebugPowerShellContractTest(unittest.TestCase):
     def test_manager_exposes_required_actions_and_loopback_url(self):
         for action in ('start', 'stop', 'restart', 'status', 'open'):
             self.assertIn(f"'{action}'", self.source)
-        self.assertIn('http://127.0.0.1:5000', self.source)
+        self.assertIn('http://127.0.0.1:', self.source)
 
     def test_manager_uses_isolated_paths_and_clears_database_url(self):
         self.assertIn("data\\instance\\debug", self.source)
@@ -151,6 +151,38 @@ class LocalDebugPowerShellContractTest(unittest.TestCase):
     def test_manager_refuses_foreign_port_occupants(self):
         self.assertIn('Test-TcpPort', self.source)
         self.assertIn('occupied by another process', self.source)
+
+
+class LocalDebugPortContractTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = (ROOT / 'tools' / 'local_debug.ps1').read_text(encoding='utf-8-sig')
+
+    def test_manager_has_explicit_validated_port_override_and_shared_port_state(self):
+        self.assertIn('$DefaultPort = 5000', self.source)
+        self.assertIn('$env:LOCAL_DEBUG_PORT', self.source)
+        self.assertIn('[int]::TryParse', self.source)
+        self.assertIn('1 and 65535', self.source)
+        self.assertIn("$env:FLASK_RUN_PORT = [string]$Port", self.source)
+        self.assertIn('http://127.0.0.1:$Port', self.source)
+
+    def test_manager_rejects_invalid_port_without_starting(self):
+        env = os.environ.copy()
+        env['LOCAL_DEBUG_PORT'] = 'not-a-port'
+        result = subprocess.run(
+            [
+                'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                '-File', str(ROOT / 'tools' / 'local_debug.ps1'), '-Action', 'status',
+            ],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            encoding='utf-8',
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('LOCAL_DEBUG_PORT must be an integer between 1 and 65535', result.stderr)
 
 
 class LocalDebugCmdContractTest(unittest.TestCase):

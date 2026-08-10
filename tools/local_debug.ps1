@@ -11,9 +11,25 @@ $PidPath = Join-Path $RuntimeRoot 'local-debug.pid'
 $StatePath = Join-Path $RuntimeRoot 'local-debug-state.json'
 $DatabasePath = Join-Path $RuntimeRoot 'lecture_forms-debug.db'
 $LogPath = Join-Path $StorageRoot 'logs\local-debug.log'
-$Url = 'http://127.0.0.1:5000'
-$Port = 5000
+$DefaultPort = 5000
 $SharedPassword = '1234564'
+
+function Resolve-DebugPort {
+    $configured = $env:LOCAL_DEBUG_PORT
+    if ([string]::IsNullOrWhiteSpace($configured)) { return $DefaultPort }
+    $parsed = 0
+    if (
+        -not [int]::TryParse($configured.Trim(), [ref]$parsed) -or
+        $parsed -lt 1 -or
+        $parsed -gt 65535
+    ) {
+        throw 'LOCAL_DEBUG_PORT must be an integer between 1 and 65535'
+    }
+    return $parsed
+}
+
+$Port = Resolve-DebugPort
+$Url = "http://127.0.0.1:$Port"
 
 function Resolve-PythonCommand {
     $candidates = @()
@@ -117,7 +133,7 @@ function Start-LocalDebug {
         return
     }
     if ($recordedPid) { Remove-StaleState }
-    if (Test-TcpPort) { throw 'Port 5000 is occupied by another process; no process was terminated.' }
+    if (Test-TcpPort) { throw "Port $Port is occupied by another process; no process was terminated." }
 
     $python = Resolve-PythonCommand
     Invoke-PythonCommand $python @('tools/prepare_local_debug.py', '--password', $SharedPassword)
@@ -131,6 +147,7 @@ function Start-LocalDebug {
     [pscustomobject]@{
         pid = $process.Id
         startedAt = (Get-Date).ToString('o')
+        port = $Port
         url = $Url
         python = $python.Exe
         database = $DatabasePath
@@ -163,7 +180,7 @@ function Stop-LocalDebug {
     for ($attempt = 0; $attempt -lt 20 -and (Test-TcpPort); $attempt++) {
         Start-Sleep -Milliseconds 250
     }
-    if (Test-TcpPort) { throw 'Recorded process stopped but port 5000 is still occupied.' }
+    if (Test-TcpPort) { throw "Recorded process stopped but port $Port is still occupied." }
     Write-Host '本地调试服务已关闭；调试数据库和日志已保留。'
 }
 
