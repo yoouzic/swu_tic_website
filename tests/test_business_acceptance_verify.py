@@ -1,3 +1,4 @@
+import json
 import unittest
 from tempfile import TemporaryDirectory
 
@@ -128,7 +129,7 @@ class BusinessAcceptanceVerifyTest(unittest.TestCase):
         ):
             self.assertIn(section, payload)
 
-    def test_post_automation_gate_blocks_when_fake_phase_artifacts_are_missing(self):
+    def test_post_automation_gate_blocks_when_real_phase_artifacts_are_missing(self):
         with TemporaryDirectory(prefix='verify-post-automation-') as tmp:
             manifest = prepare_acceptance(tmp)
             _phase, results = _verification_for_manifest(manifest, 'post-automation')
@@ -136,8 +137,36 @@ class BusinessAcceptanceVerifyTest(unittest.TestCase):
             result.check for result in results
             if result.blocked
         }
-        self.assertTrue({'STAGED_MANIFEST', 'FAKE_MAIN_ARTIFACT', 'FAKE_CACHE_ARTIFACT', 'FAKE_RETRY_ARTIFACT'} <= missing_checks)
+        self.assertTrue({
+            'REAL_STAGED_ARTIFACT',
+            'REAL_MAIN_ARTIFACT',
+            'REAL_CACHE_ARTIFACT',
+            'REAL_RETRY_ARTIFACT',
+        } <= missing_checks)
         self.assertIn('BLOCKED', {result.conclusion for result in results})
+
+    def test_post_automation_does_not_substitute_fake_artifacts_for_real_evidence(self):
+        with TemporaryDirectory(prefix='verify-real-evidence-') as tmp:
+            manifest = prepare_acceptance(tmp)
+            for name in (
+                'fake-batches-staged.json',
+                'fake-batches-main.json',
+                'fake-batches-cache.json',
+                'fake-batches-retry.json',
+            ):
+                path = manifest.config.output_path(f'results/{name}')
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps({'phase': name}), encoding='utf-8')
+            _phase, results = _verification_for_manifest(manifest, 'post-automation')
+
+        by_check = {result.check: result for result in results}
+        for check in (
+            'REAL_STAGED_ARTIFACT',
+            'REAL_MAIN_ARTIFACT',
+            'REAL_RETRY_ARTIFACT',
+            'REAL_CACHE_ARTIFACT',
+        ):
+            self.assertTrue(by_check[check].blocked)
 
 
 if __name__ == '__main__':

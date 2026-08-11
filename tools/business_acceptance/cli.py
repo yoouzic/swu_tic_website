@@ -502,7 +502,7 @@ def _verification_for_manifest(manifest, phase: str) -> tuple[str, list[Verifica
         ))
     else:
         results.append(verify_http_budget(
-            int(state.get('http_attempts', 0) or 0),
+            int(state.get('budget_http_attempts', state.get('http_attempts', 0)) or 0),
             manifest.config.http_attempt_ceiling,
         ))
 
@@ -552,38 +552,181 @@ def _verification_for_manifest(manifest, phase: str) -> tuple[str, list[Verifica
                 details={'levels': expected_levels},
             ))
 
-    staged = require_fake(
-        'results/fake-batches-staged.json',
-        'STAGED_MANIFEST',
-        'staged fake-batch',
-    )
+    if phase == 'pre-external':
+        staged = require_fake(
+            'results/fake-batches-staged.json',
+            'STAGED_MANIFEST',
+            'staged fake-batch',
+        )
+        main_batch = require_fake(
+            'results/fake-batches-main.json',
+            'FAKE_MAIN_ARTIFACT',
+            'main fake-batch',
+        )
+        cache_batch = require_fake(
+            'results/fake-batches-cache.json',
+            'FAKE_CACHE_ARTIFACT',
+            'cache fake-batch',
+        )
+    else:
+        staged = _append_artifact_check(
+            results,
+            manifest,
+            'results/real-batches-staged.json',
+            check='REAL_STAGED_ARTIFACT',
+            label='staged real-batch',
+        )
+        main_batch = _append_artifact_check(
+            results,
+            manifest,
+            'results/real-batches-main.json',
+            check='REAL_MAIN_ARTIFACT',
+            label='main real-batch',
+        )
+        retry_batch = _append_artifact_check(
+            results,
+            manifest,
+            'results/real-batches-retry.json',
+            check='REAL_RETRY_ARTIFACT',
+            label='retry real-batch',
+        )
+        cache_batch = _append_artifact_check(
+            results,
+            manifest,
+            'results/real-batches-cache.json',
+            check='REAL_CACHE_ARTIFACT',
+            label='cache real-batch',
+        )
     check_staged(staged)
-
-    # The fake gate is deliberately closed over all three persisted fake
-    # artifacts.  A staged-only result is not enough to authorize any later
-    # external or real-data phase.
-    main_batch = require_fake(
-        'results/fake-batches-main.json',
-        'FAKE_MAIN_ARTIFACT',
-        'main fake-batch',
-    )
-    cache_batch = require_fake(
-        'results/fake-batches-cache.json',
-        'FAKE_CACHE_ARTIFACT',
-        'cache fake-batch',
-    )
     if main_batch is not None:
-        results.append(verify_batch_closure({
-            'target': manifest.logical_form_count,
-            'processed': int(main_batch.get('processed', 0) or 0),
-            'failed': int(main_batch.get('failed', 0) or 0),
-            'cancelled': int(main_batch.get('cancelled', 0) or 0),
-        }))
+        if phase == 'pre-external':
+            results.append(verify_batch_closure({
+                'target': manifest.logical_form_count,
+                'processed': int(main_batch.get('processed', 0) or 0),
+                'failed': int(main_batch.get('failed', 0) or 0),
+                'cancelled': int(main_batch.get('cancelled', 0) or 0),
+            }))
+        else:
+            target = int(main_batch.get('target', 0) or 0)
+            terminal = int(main_batch.get('processed', 0) or 0)
+            failed = int(main_batch.get('failed', 0) or 0)
+            cancelled = int(main_batch.get('cancelled', 0) or 0)
+            if target != manifest.logical_form_count or terminal != target:
+                results.append(VerificationResult(
+                    check='BATCH_COUNT_CLOSURE',
+                    code='BATCH_COUNT_MISMATCH',
+                    passed=False,
+                    message='real main batch does not close over its target terminal count',
+                    details={'target': target, 'terminal_count': terminal, 'failed': failed, 'cancelled': cancelled},
+                ))
+            else:
+                results.append(VerificationResult(
+                    check='BATCH_COUNT_CLOSURE',
+                    code='PASS',
+                    passed=True,
+                    details={'target': target, 'terminal_count': terminal, 'failed': failed, 'cancelled': cancelled},
+                ))
+            modes = main_batch.get('cumulative_mode_counts')
+            expected_modes = dict(manifest.batch_counts)
+            if isinstance(modes, Mapping) and {
+                str(key): int(value or 0) for key, value in modes.items()
+            } == expected_modes:
+                results.append(VerificationResult(
+                    check='REAL_MAIN_MODES',
+                    code='PASS',
+                    passed=True,
+                    details={'expected': expected_modes, 'actual': modes},
+                ))
+            else:
+                results.append(VerificationResult(
+                    check='REAL_MAIN_MODES',
+                    code='REAL_MODE_COUNT_MISMATCH',
+                    passed=False,
+                    message='real main mode counts do not match the acceptance matrix',
+                    details={'expected': expected_modes, 'actual': modes},
+                ))
+            logical_llm = int(main_batch.get('logical_llm_reviews', 0) or 0)
+            results.append(VerificationResult(
+                check='REAL_MAIN_LLM_COUNT',
+                code='PASS' if logical_llm == 1000 else 'REAL_LLM_COUNT_MISMATCH',
+                passed=logical_llm == 1000,
+                message='' if logical_llm == 1000 else 'real logical LLM review count is not 1000',
+                details={'expected': 1000, 'actual': logical_llm},
+            ))
+            status = str(main_batch.get('status', '')).lower()
+            results.append(VerificationResult(
+                check='REAL_MAIN_STATUS',
+                code='PASS' if status == 'completed' else 'REAL_BATCH_COMPLETED_WITH_ERRORS',
+                passed=status == 'completed',
+                message='' if status == 'completed' else 'real main batch contains terminal failures or is incomplete',
+                details={'status': status, 'failed': failed},
+            ))
     if cache_batch is not None:
         results.append(verify_cache_reuse(
             int(cache_batch.get('cache_hits', 0) or 0),
             int(cache_batch.get('http_attempt_delta', 0) or 0),
         ))
+
+    if phase != 'pre-external':
+        if isinstance(staged, dict):
+            stages = staged.get('stages')
+            if not isinstance(stages, list) or len(stages) != len(manifest.config.staged_concurrency):
+                results.append(_blocked_result(
+                    'REAL_STAGED_MATRIX',
+                    'EVIDENCE_MISSING',
+                    'real staged artifact lacks all concurrency-stage records',
+                ))
+            else:
+                stage_failures = []
+                for stage in stages:
+                    if not isinstance(stage, Mapping):
+                        stage_failures.append({'reason': 'malformed_stage'})
+                        continue
+                    if int(stage.get('target', 0) or 0) != 20 or int(stage.get('terminal_count', 0) or 0) != 20:
+                        stage_failures.append({
+                            'stage_index': stage.get('stage_index'),
+                            'target': stage.get('target'),
+                            'terminal_count': stage.get('terminal_count'),
+                        })
+                    if int(stage.get('failed', 0) or 0) or int(stage.get('cancelled', 0) or 0):
+                        stage_failures.append({
+                            'stage_index': stage.get('stage_index'),
+                            'failed': stage.get('failed'),
+                            'cancelled': stage.get('cancelled'),
+                        })
+                if stage_failures:
+                    results.append(VerificationResult(
+                        check='REAL_STAGED_FAILURES',
+                        code='REAL_STAGED_FAILURES',
+                        passed=False,
+                        message='real staged concurrency contains terminal failures or incomplete stages',
+                        details={'stages': stage_failures},
+                    ))
+                else:
+                    results.append(VerificationResult(
+                        check='REAL_STAGED_FAILURES',
+                        code='PASS',
+                        passed=True,
+                        details={'stages': len(stages)},
+                    ))
+        if isinstance(retry_batch, dict):
+            retry_status = str(retry_batch.get('status', '')).lower()
+            results.append(VerificationResult(
+                check='REAL_RETRY_STATUS',
+                code='PASS' if retry_status == 'completed' else 'REAL_RETRY_INCOMPLETE',
+                passed=retry_status == 'completed',
+                message='' if retry_status == 'completed' else 'real retry artifact is incomplete',
+                details={'status': retry_status, 'retried': retry_batch.get('retried')},
+            ))
+        if isinstance(cache_batch, dict):
+            cache_status = str(cache_batch.get('status', '')).lower()
+            results.append(VerificationResult(
+                check='REAL_CACHE_STATUS',
+                code='PASS' if cache_status == 'completed' else 'REAL_CACHE_INCOMPLETE',
+                passed=cache_status == 'completed',
+                message='' if cache_status == 'completed' else 'real cache artifact is incomplete',
+                details={'status': cache_status},
+            ))
 
     if phase == 'pre-external':
         real_attempts = None if state_missing is not None else int(state.get('real_http_attempts', 0) or 0)
@@ -610,16 +753,82 @@ def _verification_for_manifest(manifest, phase: str) -> tuple[str, list[Verifica
             ))
         return phase.upper().replace('-', '_'), results
 
-    # Post-automation and final gates both require the explicit retry artifact;
-    # this prevents a main-batch success from hiding an unverified retry phase.
-    require_fake(
-        'results/fake-batches-retry.json',
-        'FAKE_RETRY_ARTIFACT',
-        'retry fake-batch',
-    )
-
     if phase == 'post-automation':
         return phase.upper().replace('-', '_'), results
+
+    checkpoint = _artifact_json(
+        manifest.config.output_path('results/human-flow-run-state.json')
+    )
+    if checkpoint is None:
+        results.append(_blocked_result(
+            'HUMAN_FLOW_CHECKPOINT',
+            'EVIDENCE_MISSING',
+            'human-flow checkpoint is missing or invalid',
+        ))
+    else:
+        first_progress = checkpoint.get('first_stage')
+        final_progress = checkpoint.get('final')
+        first_done = (
+            isinstance(first_progress, dict)
+            and len(first_progress.get('completed_unique_ids', [])) == manifest.logical_form_count
+        )
+        final_done = (
+            isinstance(final_progress, dict)
+            and len(final_progress.get('completed_unique_ids', [])) == manifest.logical_form_count
+        )
+        checkpoint_passed = checkpoint.get('status') == 'completed' and first_done and final_done
+        results.append(VerificationResult(
+            check='HUMAN_FLOW_CHECKPOINT',
+            code='PASS' if checkpoint_passed else 'HUMAN_FLOW_CHECKPOINT_INCOMPLETE',
+            passed=checkpoint_passed,
+            message='' if checkpoint_passed else 'human-flow checkpoint does not close both phases',
+            details={'status': checkpoint.get('status'), 'first_done': first_done, 'final_done': final_done},
+        ))
+
+    screenshot_names = tuple(
+        f'{index:02d}-{name}.png'
+        for index, name in enumerate((
+            'officer-dept1-submit',
+            'officer-dept2-draft',
+            'officer-dept3-multiple-forms',
+            'officer-dept4-cross-week',
+            'schedule-coverage',
+            'rules-only-result',
+            'deepseek-only-result',
+            'combined-result',
+            'group-admin-queue',
+            'group-admin-action',
+            'department-admin-queue',
+            'department-admin-action',
+            'center-final-review',
+            'superadmin-global-review',
+            'superadmin-rejection',
+            'officer-rejection-reason',
+            'officer-resubmit',
+            'version-history',
+            '1500-form-statistics',
+            'batch-completion-summary',
+            'filter-export-count',
+        ), start=1)
+    )
+    missing_screenshots = [
+        name for name in screenshot_names
+        if not manifest.config.output_path(f'screenshots/{name}').exists()
+    ]
+    if missing_screenshots:
+        results.append(_blocked_result(
+            'SCREENSHOT_EVIDENCE',
+            'EVIDENCE_MISSING',
+            'required browser evidence screenshots are missing',
+            missing=missing_screenshots,
+        ))
+    else:
+        results.append(VerificationResult(
+            check='SCREENSHOT_EVIDENCE',
+            code='PASS',
+            passed=True,
+            details={'count': len(screenshot_names)},
+        ))
 
     human_flow = require_fake(
         'results/human-flow.json',
@@ -852,9 +1061,12 @@ def _report_payload(manifest, verification: list[VerificationResult]) -> dict[st
     runtime = manifest.config.runtime_root
     state = _load_runtime_json(manifest.config.output_path('run-state.json'))
     human_flow = _load_runtime_json(manifest.config.output_path('results/human-flow.json'))
-    staged = _load_runtime_json(manifest.config.output_path('results/fake-batches-staged.json'))
-    main_batch = _load_runtime_json(manifest.config.output_path('results/fake-batches-main.json'))
-    cache_batch = _load_runtime_json(manifest.config.output_path('results/fake-batches-cache.json'))
+    real_staged = _load_runtime_json(manifest.config.output_path('results/real-batches-staged.json'))
+    real_main = _load_runtime_json(manifest.config.output_path('results/real-batches-main.json'))
+    real_cache = _load_runtime_json(manifest.config.output_path('results/real-batches-cache.json'))
+    staged = real_staged or _load_runtime_json(manifest.config.output_path('results/fake-batches-staged.json'))
+    main_batch = real_main or _load_runtime_json(manifest.config.output_path('results/fake-batches-main.json'))
+    cache_batch = real_cache or _load_runtime_json(manifest.config.output_path('results/fake-batches-cache.json'))
     # Keep only numerical/structural fields from runtime evidence.  In
     # particular, do not copy model prompts, responses, credentials or user
     # identifiers into the report payload.
@@ -882,8 +1094,10 @@ def _report_payload(manifest, verification: list[VerificationResult]) -> dict[st
         'environment': {
             'runtime_root': str(runtime) if runtime else None,
             'real_http_attempts': int(state.get('real_http_attempts', 0) or 0),
+            'uncertain_http_attempts': int(state.get('uncertain_http_attempts', 0) or 0),
+            'budget_http_attempts': int(state.get('budget_http_attempts', state.get('http_attempts', 0)) or 0),
             'request_ceiling': manifest.config.http_attempt_ceiling,
-            'redis': 'not recorded in Task 8 verifier',
+            'redis': 'dedicated loopback acceptance runtime',
         },
         'dataset': {
             'officers': manifest.officer_count,
@@ -894,16 +1108,28 @@ def _report_payload(manifest, verification: list[VerificationResult]) -> dict[st
             'staged': {
                 'forms': int(staged.get('forms', staged.get('processed', 0)) or 0),
                 'concurrency': staged.get('concurrency', []),
+                'http_attempts': int(staged.get('http_attempts', 0) or 0),
+                'source': 'real' if real_staged else 'fake',
             },
             'main': {
+                'target': int(main_batch.get('target', 0) or 0),
                 'processed': int(main_batch.get('processed', 0) or 0),
-                'rules_only': int(main_batch.get('rules_only', 0) or 0),
-                'llm_only': int(main_batch.get('llm_only', 0) or 0),
-                'combined': int(main_batch.get('combined', 0) or 0),
+                'failed': int(main_batch.get('failed', 0) or 0),
+                'status': main_batch.get('status'),
+                'rules_only': int((main_batch.get('cumulative_mode_counts') or {}).get('rules_only', main_batch.get('rules_only', 0)) or 0),
+                'llm_only': int((main_batch.get('cumulative_mode_counts') or {}).get('llm_only', main_batch.get('llm_only', 0)) or 0),
+                'combined': int((main_batch.get('cumulative_mode_counts') or {}).get('combined', main_batch.get('combined', 0)) or 0),
+                'http_attempts': int(main_batch.get('http_attempts', 0) or 0),
+                'uncertain_http_attempts': int(main_batch.get('uncertain_http_attempts', 0) or 0),
+                'budget_http_attempts': int(main_batch.get('budget_http_attempts', 0) or 0),
+                'source': 'real' if real_main else 'fake',
             },
             'cache': {
+                'sample_size': int(cache_batch.get('sample_size', 0) or 0),
                 'cache_hits': int(cache_batch.get('cache_hits', 0) or 0),
                 'http_attempt_delta': int(cache_batch.get('http_attempt_delta', 0) or 0),
+                'status': cache_batch.get('status'),
+                'source': 'real' if real_cache else 'fake',
             },
         },
         'concurrency': {
@@ -913,6 +1139,8 @@ def _report_payload(manifest, verification: list[VerificationResult]) -> dict[st
         'deepseek_summary': {
             'logical_llm_reviews': int(state.get('logical_llm_reviews', 0) or 0),
             'http_attempts': int(state.get('http_attempts', 0) or 0),
+            'uncertain_http_attempts': int(state.get('uncertain_http_attempts', 0) or 0),
+            'budget_http_attempts': int(state.get('budget_http_attempts', state.get('http_attempts', 0)) or 0),
             'external_summary_artifact_present': manifest.config.output_path('results/deepseek-summary.json').exists(),
         },
         'administrator_scopes': administrator_scopes,
@@ -936,11 +1164,36 @@ def _report_payload(manifest, verification: list[VerificationResult]) -> dict[st
         },
         'performance': {
             'http_attempts': int(state.get('http_attempts', 0) or 0),
+            'uncertain_http_attempts': int(state.get('uncertain_http_attempts', 0) or 0),
+            'budget_http_attempts': int(state.get('budget_http_attempts', state.get('http_attempts', 0)) or 0),
             'safe_concurrency': state.get('safe_concurrency'),
         },
         'export': {
             'path': str(export_path),
             'present': export_path.exists(),
+        },
+        'browser_evidence': {
+            'directory': str(manifest.config.output_path('screenshots')),
+            'required_count': 21,
+            'present_count': sum(
+                manifest.config.output_path(f'screenshots/{name}').exists()
+                for name in (
+                    f'{index:02d}-{name}.png'
+                    for index, name in enumerate((
+                        'officer-dept1-submit', 'officer-dept2-draft',
+                        'officer-dept3-multiple-forms', 'officer-dept4-cross-week',
+                        'schedule-coverage', 'rules-only-result',
+                        'deepseek-only-result', 'combined-result',
+                        'group-admin-queue', 'group-admin-action',
+                        'department-admin-queue', 'department-admin-action',
+                        'center-final-review', 'superadmin-global-review',
+                        'superadmin-rejection', 'officer-rejection-reason',
+                        'officer-resubmit', 'version-history',
+                        '1500-form-statistics', 'batch-completion-summary',
+                        'filter-export-count',
+                    ), start=1)
+                )
+            ),
         },
         'statistics': {
             'path': str(statistics_path),

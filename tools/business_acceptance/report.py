@@ -58,6 +58,7 @@ def render_report(payload: Mapping[str, Any]) -> str:
         'concurrency': 'Concurrency Stages',
         'deepseek_summary': 'DeepSeek Summary',
         'administrator_scopes': 'Administrator Scopes',
+        'browser_evidence': 'Browser Evidence',
         'resubmission_version_chains': 'Resubmission and Version Chains',
         'performance': 'Performance',
         'export': 'Export',
