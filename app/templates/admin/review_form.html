@@ -45,7 +45,7 @@
                     </div>
                 </div>
                 
-                <div class="card-body" id="mainContent" style="display: none;">
+                <div class="card-body" id="reviewFormContent" style="display: none;">
                     <form id="reviewForm">
                         <input type="hidden" id="formId" name="form_id">
                         <div id="reviewDraftStatus" class="alert alert-secondary py-2 small" style="display: none;"></div>
@@ -760,7 +760,7 @@ function loadFormData() {
                 document.getElementById('statusBadge').className = `badge ${getStatusClass(data.form.status)}`;
                 // 移除显式的 style.color，由 getStatusClass 控制
                 document.getElementById('loadingAlert').style.display = 'none';
-                document.getElementById('mainContent').style.display = 'block';
+                document.getElementById('reviewFormContent').style.display = 'block';
                 
                 // 监听表单变化
                 setupFormChangeDetection();
@@ -1125,7 +1125,7 @@ function startReviewDraftAutosave() {
     if (reviewDraftInterval) return;
     reviewDraftInterval = window.setInterval(() => {
         const form = document.getElementById('reviewForm');
-        if (form && document.getElementById('mainContent').style.display !== 'none') {
+        if (form && document.getElementById('reviewFormContent').style.display !== 'none') {
             saveReviewFormDraft();
         }
     }, 30000);

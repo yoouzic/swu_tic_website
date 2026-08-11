@@ -23,6 +23,12 @@ class ReviewQueueTemplateTest(unittest.TestCase):
         self.assertIn('data-review-return', template)
         self.assertIn('id="draftSaveStatus"', template)
 
+    def test_full_review_does_not_shadow_shell_main_id(self):
+        template = Path('app/templates/admin/review_form.html').read_text(encoding='utf-8')
+        self.assertNotIn('id="mainContent"', template)
+        self.assertIn('id="reviewFormContent"', template)
+        self.assertIn("getElementById('reviewFormContent')", template)
+
     def test_reject_action_uses_the_clicked_button_context(self):
         template = Path('app/templates/admin/review_form.html').read_text(encoding='utf-8')
         self.assertIn('event.currentTarget', template)
