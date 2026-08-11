@@ -83,6 +83,7 @@ def aggregate_classification(
     coverage: ScheduleCoverage | str = ScheduleCoverage.COMPLETE,
     llm_result: Any = None,
     llm_available: bool = True,
+    llm_required: bool = True,
     critical_parse_failure: bool = False,
 ) -> ClassificationResult:
     """Apply precedence without database access or final human-review decisions."""
@@ -105,7 +106,7 @@ def aggregate_classification(
         and item.rule_key in {'llm_error', 'llm_unavailable'}
         for item in result_findings
     )
-    if not llm_available and not has_llm_system_finding and 'llm_unavailable' not in existing_keys:
+    if llm_required and not llm_available and not has_llm_system_finding and 'llm_unavailable' not in existing_keys:
         result_findings.append(_system_finding(
             'llm_unavailable',
             '语义模型当前不可用，分类仅依据确定性证据。',
@@ -157,7 +158,7 @@ def aggregate_classification(
         category = ReviewCategory.HIGH_RISK
     elif review_finding or llm_review_finding or llm_high or llm_needs_review:
         category = ReviewCategory.REVIEW
-    elif critical_parse_failure or not llm_available or coverage_value != ScheduleCoverage.COMPLETE or llm_unknown:
+    elif critical_parse_failure or (llm_required and not llm_available) or coverage_value != ScheduleCoverage.COMPLETE or llm_unknown:
         category = ReviewCategory.UNKNOWN
     else:
         category = ReviewCategory.CLEAR
@@ -172,7 +173,7 @@ def aggregate_classification(
         rationale.append('llm_needs_review')
     if llm_unknown:
         rationale.append('llm_unknown')
-    if not llm_available:
+    if llm_required and not llm_available:
         rationale.append('llm_unavailable')
     if coverage_value != ScheduleCoverage.COMPLETE:
         rationale.append('schedule_data_missing')

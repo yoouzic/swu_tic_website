@@ -82,6 +82,7 @@ def build_assessment_fingerprint(
     force_nonce: str | None = None,
     dependencies: Any = None,
     model_id: str | None = None,
+    review_mode: str | Enum = 'combined',
 ) -> str:
     """Hash form content and every versioned dependency that affects review."""
     if form_version is None:
@@ -91,6 +92,7 @@ def build_assessment_fingerprint(
         schedule_dependencies = dependencies if dependencies is not None else {}
     if model_name is None:
         model_name = model_id
+    mode_value = getattr(review_mode, 'value', review_mode)
     payload = {
         'form': _form_payload(form),
         'form_version': _canonical(form_version),
@@ -98,6 +100,7 @@ def build_assessment_fingerprint(
         'rule_revisions': _canonical(rule_revisions or {}),
         'prompt_version': prompt_version or '',
         'model_name': model_name or '',
+        'review_mode': str(mode_value),
     }
     if force_nonce is not None:
         payload['force_nonce'] = str(force_nonce)

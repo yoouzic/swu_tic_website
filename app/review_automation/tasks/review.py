@@ -11,7 +11,7 @@ from app.app import app as flask_app
 from app.models import User, db
 
 from .. import get_celery_app
-from ..contracts import BatchStatus, ReviewCategory
+from ..contracts import BatchStatus, ReviewCategory, ReviewMode
 from ..llm.client import (
     InvalidLLMResponse,
     PermanentLLMError,
@@ -166,6 +166,13 @@ def _load_config(batch: ReviewBatch) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _review_mode_from_config(config: Mapping[str, Any]) -> ReviewMode:
+    raw = config.get('review_mode')
+    if raw is None:
+        return ReviewMode.COMBINED if bool(config.get('llm_enabled', True)) else ReviewMode.RULES_ONLY
+    return ReviewMode(str(raw))
+
+
 def _service_from_config(config):
     factory = SERVICE_FACTORY
     try:
@@ -244,6 +251,7 @@ def _fallback(service: Any, batch_id: str, form_id: int, force_refresh: bool, co
             batch_id=batch_id,
             force_refresh=True,
             llm_enabled=False,
+            review_mode=ReviewMode.RULES_ONLY,
         )
         _mark_assessment_error(_summary_value(summary, 'assessment_id'), code)
         return _result_payload(summary, error_code=code)
@@ -273,6 +281,7 @@ def _assess_one(batch_id: str, form_id: int, force_refresh: bool = False):
 
     config = _load_config(batch)
     llm_enabled = bool(config.get('llm_enabled', True))
+    review_mode = _review_mode_from_config(config)
     try:
         service = _service_from_config(config)
     except Exception:
@@ -291,6 +300,7 @@ def _assess_one(batch_id: str, form_id: int, force_refresh: bool = False):
                 batch_id=batch_id,
                 force_refresh=bool(force_refresh),
                 llm_enabled=llm_enabled,
+                review_mode=review_mode,
             )
             summary_error = _summary_value(summary, 'error_code')
             if summary_error in TRANSIENT_ERROR_CODES:
@@ -428,11 +438,18 @@ def create_review_batch(
     requester_id: int | None = None,
     force_refresh: bool = False,
     llm_enabled: bool = True,
+    review_mode: str | ReviewMode | None = None,
     semester: str | None = None,
     semester_monday: date | str | None = None,
     enqueue: bool = True,
 ):
     ids = sorted({int(value) for value in form_ids})
+    mode = (
+        ReviewMode.COMBINED if review_mode is None and llm_enabled
+        else ReviewMode.RULES_ONLY if review_mode is None
+        else ReviewMode(review_mode)
+    )
+    mode_llm_enabled = mode != ReviewMode.RULES_ONLY
     if isinstance(semester_monday, date):
         semester_monday_value = semester_monday.isoformat()
     elif semester_monday is None:
@@ -442,7 +459,8 @@ def create_review_batch(
     config = {
         'form_ids': ids,
         'force_refresh': bool(force_refresh),
-        'llm_enabled': bool(llm_enabled),
+        'llm_enabled': bool(mode_llm_enabled),
+        'review_mode': mode.value,
         'semester': str(semester) if semester is not None else None,
         'semester_monday': semester_monday_value,
         'schedule_datasets': _dataset_snapshot(semester),
@@ -453,7 +471,8 @@ def create_review_batch(
     snapshot = {
         'form_ids': ids,
         'force_refresh': bool(force_refresh),
-        'llm_enabled': bool(llm_enabled),
+        'llm_enabled': bool(mode_llm_enabled),
+        'review_mode': mode.value,
         'results': [],
         'assessment_ids': [],
         'processed_count': 0,

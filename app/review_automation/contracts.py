@@ -12,6 +12,12 @@ class ReviewCategory(str, Enum):
     UNKNOWN = '系统无法判断'
 
 
+class ReviewMode(str, Enum):
+    RULES_ONLY = 'rules_only'
+    LLM_ONLY = 'llm_only'
+    COMBINED = 'combined'
+
+
 class FindingSeverity(str, Enum):
     INFO = 'info'
     REVIEW = 'review'
@@ -96,5 +102,6 @@ __all__ = [
     'FindingSource',
     'NormalizedForm',
     'ReviewCategory',
+    'ReviewMode',
     'ScheduleCoverage',
 ]

@@ -12,7 +12,7 @@ from sqlalchemy import func
 from app.models import LectureForm, User, db
 from app.utils.user_status import active_user_filter
 
-from .contracts import BatchStatus, DatasetStatus, ReviewCategory, ScheduleCoverage
+from .contracts import BatchStatus, DatasetStatus, ReviewCategory, ReviewMode, ScheduleCoverage
 from .models import (
     AutomationAuditLog,
     ListenerClassMapping,
@@ -453,21 +453,39 @@ def _transfer_acknowledged(data):
     )
 
 
+def _review_mode(data):
+    raw = data.get('review_mode')
+    if raw is None:
+        return ReviewMode.COMBINED if bool(data.get('llm_enabled', False)) else ReviewMode.RULES_ONLY
+    try:
+        return ReviewMode(str(raw))
+    except (TypeError, ValueError):
+        return None
+
+
 def _llm_options(data):
-    enabled = bool(data.get('llm_enabled', False))
+    mode = _review_mode(data)
+    if mode is None:
+        return None, jsonify({
+            'success': False,
+            'code': 'invalid_review_mode',
+            'message': '自动审核模式无效',
+        }), 400
+    enabled = mode in {ReviewMode.LLM_ONLY, ReviewMode.COMBINED}
     if enabled and not _transfer_acknowledged(data):
         return None, jsonify({
             'success': False,
             'code': 'external_transfer_ack_required',
             'message': '启用 DeepSeek 前必须确认完整表单和相关证据会发送到外部模型服务',
         }), 400
-    return enabled, None, None
+    return mode, None, None
 
 
 def _batch_preview_payload(data, actor_id):
-    llm_enabled, error, status = _llm_options(data)
+    review_mode, error, status = _llm_options(data)
     if error is not None:
         return None, error, status
+    llm_enabled = review_mode in {ReviewMode.LLM_ONLY, ReviewMode.COMBINED}
     requested, forms, ignored = _latest_accessible_forms(data.get('form_ids', []), actor_id)
     summaries = latest_assessment_summaries([form.id for form in forms])
     coverage = _coverage_counts(summaries, [form.id for form in forms])
@@ -482,9 +500,14 @@ def _batch_preview_payload(data, actor_id):
         'missing': coverage[ScheduleCoverage.NONE.value],
         'coverage': dict(coverage),
         'llm_enabled': llm_enabled,
+        'review_mode': review_mode.value,
         'external_transfer_required': llm_enabled,
     }
-    return {'stats': stats, 'form_ids': [form.id for form in forms]}, None, None
+    return {
+        'stats': stats,
+        'form_ids': [form.id for form in forms],
+        'review_mode': review_mode.value,
+    }, None, None
 
 
 @review_automation_bp.post('/admin/api/automation/batches/preview')
@@ -513,6 +536,7 @@ def create_batch_response(*, legacy_force_ignored=False, actor_id=None):
             requester_id=actor_id,
             force_refresh=bool(data.get('force_refresh', False)),
             llm_enabled=bool(payload['stats']['llm_enabled']),
+            review_mode=payload['review_mode'],
             semester=data.get('semester'),
             semester_monday=data.get('semester_monday'),
         )
@@ -525,6 +549,7 @@ def create_batch_response(*, legacy_force_ignored=False, actor_id=None):
         'target_form_count': batch.target_form_count,
         'form_ids': payload['form_ids'],
         'llm_enabled': bool(payload['stats']['llm_enabled']),
+        'review_mode': payload['review_mode'],
         'legacy_force_ignored': bool(legacy_force_ignored),
     }), 201
 
@@ -537,6 +562,14 @@ def create_batch():
 
 def _batch_payload(batch):
     snapshot = _safe_json(batch.snapshot_json, {})
+    config = _safe_json(batch.config_snapshot_json, {})
+    review_mode = config.get('review_mode')
+    if review_mode is None:
+        review_mode = (
+            ReviewMode.COMBINED.value
+            if bool(config.get('llm_enabled', True))
+            else ReviewMode.RULES_ONLY.value
+        )
     return {
         'batch_id': batch.id,
         'status': batch.status,
@@ -548,6 +581,7 @@ def _batch_payload(batch):
         'unknown_count': batch.unknown_count,
         'failed_count': batch.failed_count,
         'cache_count': batch.cache_count,
+        'review_mode': review_mode,
         'cancel_requested': bool(batch.cancel_requested),
         'results': snapshot.get('results', []),
         'created_at': batch.created_at.isoformat() if batch.created_at else None,

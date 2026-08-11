@@ -19,6 +19,7 @@ from .contracts import (
     FindingSeverity,
     FindingSource,
     NormalizedForm,
+    ReviewMode,
     ScheduleCoverage,
 )
 from .fingerprints import build_assessment_fingerprint
@@ -359,7 +360,11 @@ class AssessmentService:
         batch_id: str | None = None,
         force_refresh: bool = False,
         llm_enabled: bool | None = None,
+        review_mode: str | ReviewMode = ReviewMode.COMBINED,
     ) -> AssessmentSummary:
+        mode = ReviewMode(review_mode)
+        run_rules = mode in {ReviewMode.RULES_ONLY, ReviewMode.COMBINED}
+        run_llm = mode in {ReviewMode.LLM_ONLY, ReviewMode.COMBINED}
         form = self._load_latest_form(form_id)
         normalized = self.normalize_form(form)
         schedule = self._load_schedule(form)
@@ -375,6 +380,7 @@ class AssessmentService:
             prompt_version=self.prompt_version,
             model_name=self.model_id,
             force_nonce=force_nonce,
+            review_mode=mode,
         )
         if not force_refresh:
             cached = ReviewAssessment.query.filter_by(fingerprint=fingerprint).first()
@@ -394,14 +400,16 @@ class AssessmentService:
             listener_college=field_value(profile, 'college', default=None),
             options={'normalized_form': normalized.fields},
         )
-        deterministic = self._run_deterministic(form, context)
+        deterministic = self._run_deterministic(form, context) if run_rules else ()
         coverage = self._coverage(schedule)
-        enabled = self.llm_enabled if llm_enabled is None else bool(llm_enabled)
+        enabled = run_llm and (self.llm_enabled if llm_enabled is None else bool(llm_enabled))
         model_result = None
         suggested_comment = ''
         error_code = None
-        llm_available = bool(enabled and self.llm_client is not None)
-        if not enabled or self.llm_client is None:
+        llm_available = not run_llm or bool(enabled and self.llm_client is not None)
+        if not run_llm:
+            pass
+        elif not enabled or self.llm_client is None:
             error_code = 'llm_unavailable'
             deterministic = tuple(deterministic) + (_unavailable_finding(),)
         else:
@@ -437,6 +445,7 @@ class AssessmentService:
             coverage=coverage,
             llm_result=model_result,
             llm_available=llm_available,
+            llm_required=run_llm,
         )
         dependency_ids, dependency_versions = self._dependency_snapshot(schedule_dependencies, rule_snapshot)
         assessment = ReviewAssessment(
