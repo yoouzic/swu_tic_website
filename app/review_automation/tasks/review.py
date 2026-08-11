@@ -588,8 +588,15 @@ def run_review_batch_task(batch_id: str):
     items = ReviewBatchItem.query.filter_by(batch_id=str(batch.id)).order_by(
         ReviewBatchItem.ordinal.asc(),
     ).all()
-    form_ids = [item.form_id for item in items]
-    if not form_ids:
+    # A stale root task may be resumed after its worker process disappears.
+    # Re-run only work that was not durably terminal; completed/failed items
+    # already have persisted outcomes and must not trigger another assessment.
+    form_ids = [
+        item.form_id
+        for item in items
+        if item.status in {'queued', 'running'}
+    ]
+    if not items:
         form_ids = [int(value) for value in config.get('form_ids', [])]
     force_refresh = bool(config.get('force_refresh', False))
     batch.status = BatchStatus.RUNNING.value

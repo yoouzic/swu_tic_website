@@ -361,6 +361,31 @@ class AutomationTasksTest(unittest.TestCase):
         self.assertIsInstance(result, dict)
         self.assertIn('status', json.loads(encoded))
 
+    def test_root_task_recovery_skips_terminal_items(self):
+        batch = self.review_tasks.create_review_batch(
+            self.form_ids[:2],
+            force_refresh=True,
+            enqueue=False,
+        )
+        self.review_tasks.assess_form_task.run(batch.id, self.form_ids[0], False)
+        calls_before_recovery = self.factory.llm.calls[self.form_ids[0]]
+
+        result = self.review_tasks.run_review_batch_task.run(batch.id)
+
+        self.assertEqual(result['status'], 'completed')
+        self.assertEqual(self.factory.llm.calls[self.form_ids[0]], calls_before_recovery)
+        self.assertEqual(self.factory.llm.calls[self.form_ids[1]], 1)
+        terminal_item = ReviewBatchItem.query.filter_by(
+            batch_id=batch.id,
+            form_id=self.form_ids[0],
+        ).one()
+        recovered_item = ReviewBatchItem.query.filter_by(
+            batch_id=batch.id,
+            form_id=self.form_ids[1],
+        ).one()
+        self.assertEqual(terminal_item.status, 'completed')
+        self.assertEqual(recovered_item.status, 'completed')
+
     def test_cancelled_root_task_result_is_json_safe(self):
         batch = self.review_tasks.create_review_batch([self.form_ids[0]], enqueue=False)
         self.review_tasks.cancel_review_batch(batch.id)
