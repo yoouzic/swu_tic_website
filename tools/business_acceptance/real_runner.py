@@ -382,7 +382,7 @@ def _stale_recovery_plan(items: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
         status = str(item.get('status', '')).strip().lower()
         if status == 'completed':
             completed.append(form_id)
-        elif status in {'queued', 'running'}:
+        elif status in {'queued', 'running', 'cancelled'}:
             recovery.append(form_id)
             if status == 'running':
                 uncertain.append(form_id)

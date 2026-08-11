@@ -157,13 +157,15 @@ class RealBatchPlanningTest(unittest.TestCase):
                 {'form_id': 12, 'status': 'queued'},
                 {'form_id': 13, 'status': 'running'},
                 {'form_id': 14, 'status': 'running'},
+                {'form_id': 15, 'status': 'cancelled'},
             ]
         )
 
         self.assertEqual(plan['completed_form_ids'], (11,))
-        self.assertEqual(plan['recovery_form_ids'], (12, 13, 14))
+        self.assertEqual(plan['recovery_form_ids'], (12, 13, 14, 15))
         self.assertEqual(plan['uncertain_form_ids'], (13, 14))
         self.assertEqual(plan['uncertain_http_attempts'], 2)
+        self.assertEqual(plan['unrecoverable_form_ids'], ())
 
     def test_recovered_summary_keeps_completed_items_and_counts_uncertainty(self):
         original = {
