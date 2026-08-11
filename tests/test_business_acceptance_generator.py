@@ -40,7 +40,15 @@ class BusinessAcceptanceGeneratorTest(unittest.TestCase):
         for user in two_forms:
             weeks = [form.teaching_week for form in manifest.forms if form.officer_id == user.officer_id]
             self.assertEqual(len(weeks), 2)
-            self.assertNotEqual(weeks[0], weeks[1])
+            user_forms = [form for form in manifest.forms if form.officer_id == user.officer_id]
+            has_same_time_oracle = any(
+                'same_time_conflict' in form.oracle_markers
+                for form in user_forms
+            )
+            if has_same_time_oracle:
+                self.assertEqual(weeks[0], weeks[1])
+            else:
+                self.assertNotEqual(weeks[0], weeks[1])
 
         by_mode = {
             mode: {form.synthetic_key for form in manifest.forms if form.review_mode == mode}
@@ -52,6 +60,7 @@ class BusinessAcceptanceGeneratorTest(unittest.TestCase):
         self.assertFalse(by_mode['rules_only'] & by_mode['combined'])
         self.assertFalse(by_mode['llm_only'] & by_mode['combined'])
         self.assertTrue(all(form.oracle_markers for form in manifest.forms if not form.normal_control))
+        self.assertTrue(all(not form.oracle_markers for form in manifest.forms if form.normal_control))
 
     def test_manifest_is_reproducible_and_contains_no_real_identity_patterns(self):
         with TemporaryDirectory() as tmp:
@@ -98,7 +107,6 @@ class BusinessAcceptanceGeneratorTest(unittest.TestCase):
                     and form.student_grade_class == entry.teaching_class
                 )]
                 self.assertTrue(matches)
-
 
 if __name__ == '__main__':
     unittest.main()
