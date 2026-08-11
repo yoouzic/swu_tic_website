@@ -24,7 +24,12 @@ from .batches import (
     choose_safe_concurrency,
     plan_real_batches,
 )
-from .real_batches import RealBatchTimeout, run_created_batch
+from .real_batches import (
+    RealBatchTimeout,
+    run_created_batch,
+    summarize_batch,
+    wait_for_batch,
+)
 
 
 TRANSIENT_ERROR_CODES = frozenset({
@@ -250,6 +255,9 @@ def _aggregate_records(records: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     cancelled = sum(int(item.get('cancelled', 0) or 0) for item in values)
     cache_hits = sum(int(item.get('cache_hits', 0) or 0) for item in values)
     http_attempts = sum(int(item.get('http_attempts', 0) or 0) for item in values)
+    uncertain_http_attempts = sum(
+        int(item.get('uncertain_http_attempts', 0) or 0) for item in values
+    )
     if any(item.get('status') == 'failed' for item in values):
         status = 'failed'
     elif failed or cancelled or any(item.get('status') == 'completed_with_errors' for item in values):
@@ -267,7 +275,16 @@ def _aggregate_records(records: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
         'cancelled': cancelled,
         'cache_hits': cache_hits,
         'http_attempts': http_attempts,
-        'batch_ids': [str(item.get('batch_id')) for item in values if item.get('batch_id')],
+        'uncertain_http_attempts': uncertain_http_attempts,
+        'budget_http_attempts': http_attempts + uncertain_http_attempts,
+        'batch_ids': [
+            str(batch_id)
+            for item in values
+            for batch_id in (
+                item.get('batch_ids')
+                or ((item.get('batch_id'),) if item.get('batch_id') else ())
+            )
+        ],
         'p50_duration_ms': max((int(item.get('p50_duration_ms', 0) or 0) for item in values), default=0),
         'p95_duration_ms': max((int(item.get('p95_duration_ms', 0) or 0) for item in values), default=0),
         'max_duration_ms': max((int(item.get('max_duration_ms', 0) or 0) for item in values), default=0),
@@ -347,19 +364,169 @@ def _merge_stage_record(
     return merged
 
 
+def _stale_recovery_plan(items: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    """Plan a recovery without reprocessing any item already completed."""
+
+    completed: list[int] = []
+    recovery: list[int] = []
+    uncertain: list[int] = []
+    unrecoverable: list[int] = []
+    seen: set[int] = set()
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        form_id = int(item['form_id'])
+        if form_id in seen:
+            raise RealAcceptanceError('stale recovery artifact contains duplicate form IDs')
+        seen.add(form_id)
+        status = str(item.get('status', '')).strip().lower()
+        if status == 'completed':
+            completed.append(form_id)
+        elif status in {'queued', 'running'}:
+            recovery.append(form_id)
+            if status == 'running':
+                uncertain.append(form_id)
+        else:
+            unrecoverable.append(form_id)
+    return {
+        'completed_form_ids': tuple(completed),
+        'recovery_form_ids': tuple(recovery),
+        'uncertain_form_ids': tuple(uncertain),
+        'uncertain_http_attempts': len(uncertain),
+        'unrecoverable_form_ids': tuple(unrecoverable),
+    }
+
+
+def _merge_recovered_summary(
+    original: Mapping[str, Any],
+    recovery: Mapping[str, Any],
+    recovery_plan: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Close an interrupted logical batch without repeating completed items."""
+
+    merged = dict(recovery)
+    successful_ids: list[int] = []
+    for source in (original, recovery):
+        for value in source.get('successful_form_ids', ()):
+            form_id = int(value)
+            if form_id not in successful_ids:
+                successful_ids.append(form_id)
+    failed_items = [
+        dict(item)
+        for source in (original, recovery)
+        for item in source.get('failed_items', ())
+        if isinstance(item, Mapping)
+    ]
+    cancelled = int(original.get('cancelled', 0) or 0) + int(
+        recovery.get('cancelled', 0) or 0
+    )
+    failed = len(failed_items)
+    target = int(original.get('target', recovery.get('target', 0)) or 0)
+    terminal_count = min(target, len(successful_ids) + failed + cancelled)
+    if failed or cancelled or terminal_count < target:
+        status = 'completed_with_errors'
+    else:
+        status = 'completed'
+    batch_ids: list[str] = []
+    for source in (original, recovery):
+        values = source.get('batch_ids', ())
+        if not values and source.get('batch_id'):
+            values = (source.get('batch_id'),)
+        for value in values:
+            batch_id = str(value)
+            if batch_id not in batch_ids:
+                batch_ids.append(batch_id)
+    category_counts: dict[str, int] = {}
+    for source in (original, recovery):
+        for category, count in dict(source.get('category_counts', {})).items():
+            category_counts[str(category)] = category_counts.get(str(category), 0) + int(count or 0)
+    known_http_attempts = sum(
+        int(source.get('http_attempts', 0) or 0)
+        for source in (original, recovery)
+    )
+    uncertain_http_attempts = int(
+        recovery_plan.get('uncertain_http_attempts', 0) or 0
+    )
+    merged.update({
+        'batch_id': str(recovery.get('batch_id') or original.get('batch_id')),
+        'batch_ids': batch_ids,
+        'recovered_from_batch_id': str(original.get('batch_id')),
+        'recovery_form_count': len(tuple(recovery_plan.get('recovery_form_ids', ()))) or int(
+            recovery.get('target', 0) or 0
+        ),
+        'uncertain_form_count': len(tuple(recovery_plan.get('uncertain_form_ids', ()))),
+        'target': target,
+        'processed': len(successful_ids),
+        'terminal_count': terminal_count,
+        'failed': failed,
+        'cancelled': cancelled,
+        'status': status,
+        'successful_form_ids': successful_ids,
+        'failed_items': failed_items,
+        'category_counts': category_counts,
+        'http_attempts': known_http_attempts,
+        'uncertain_http_attempts': uncertain_http_attempts,
+        'budget_http_attempts': known_http_attempts + uncertain_http_attempts,
+        'classified': sum(
+            int(source.get('classified', 0) or 0)
+            for source in (original, recovery)
+        ),
+        'cache_hits': sum(
+            int(source.get('cache_hits', 0) or 0)
+            for source in (original, recovery)
+        ),
+        'duration_samples': sum(
+            int(source.get('duration_samples', 0) or 0)
+            for source in (original, recovery)
+        ),
+        'p50_duration_ms': max(
+            int(source.get('p50_duration_ms', 0) or 0)
+            for source in (original, recovery)
+        ),
+        'p95_duration_ms': max(
+            int(source.get('p95_duration_ms', 0) or 0)
+            for source in (original, recovery)
+        ),
+        'max_duration_ms': max(
+            int(source.get('max_duration_ms', 0) or 0)
+            for source in (original, recovery)
+        ),
+    })
+    return merged
+
+
 def _state_after_records(manifest, records, *, phase: str, safe_concurrency: int | None = None):
     state = _load_real_state(manifest)
     primary = [item for item in records if item.get('phase') in {'staged', 'main'}]
     state.update({
         'phase': phase,
-        'real_http_attempts': sum(int(item.get('http_attempts', 0) or 0) for item in records),
+        'real_http_attempts': sum(
+            int(item.get('http_attempts', 0) or 0)
+            + int(item.get('uncertain_http_attempts', 0) or 0)
+            for item in records
+        ),
         'http_attempts': sum(int(item.get('http_attempts', 0) or 0) for item in records),
+        'uncertain_http_attempts': sum(
+            int(item.get('uncertain_http_attempts', 0) or 0) for item in records
+        ),
+        'budget_http_attempts': sum(
+            int(item.get('http_attempts', 0) or 0)
+            + int(item.get('uncertain_http_attempts', 0) or 0)
+            for item in records
+        ),
         'logical_llm_reviews': sum(
             int(item.get('target', 0) or 0)
             for item in primary
             if item.get('mode') in {'llm_only', 'combined'}
         ),
-        'real_batch_ids': [str(item.get('batch_id')) for item in records if item.get('batch_id')],
+        'real_batch_ids': [
+            str(batch_id)
+            for item in records
+            for batch_id in (
+                item.get('batch_ids')
+                or ((item.get('batch_id'),) if item.get('batch_id') else ())
+            )
+        ],
     })
     if safe_concurrency is not None:
         state['safe_concurrency'] = int(safe_concurrency)
@@ -383,6 +550,14 @@ def _write_batch_statistics(manifest, records) -> None:
         'all_real_records': [dict(item) for item in records],
         'failed': sum(int(item.get('failed', 0) or 0) for item in primary),
         'http_attempts': sum(int(item.get('http_attempts', 0) or 0) for item in records),
+        'uncertain_http_attempts': sum(
+            int(item.get('uncertain_http_attempts', 0) or 0) for item in records
+        ),
+        'budget_http_attempts': sum(
+            int(item.get('http_attempts', 0) or 0)
+            + int(item.get('uncertain_http_attempts', 0) or 0)
+            for item in records
+        ),
     }
     _write_json_atomic(_runtime_path(manifest, 'results/batches.json'), payload)
 
@@ -398,7 +573,14 @@ def _write_deepseek_summary(
     """Persist bounded classification/evidence counters for final verification."""
 
     primary = [item for item in records if item.get('phase') in {'staged', 'main'}]
-    batch_ids = [str(item.get('batch_id')) for item in primary if item.get('batch_id')]
+    batch_ids = [
+        str(batch_id)
+        for item in primary
+        for batch_id in (
+            item.get('batch_ids')
+            or ((item.get('batch_id'),) if item.get('batch_id') else ())
+        )
+    ]
     item_rows = []
     if batch_ids:
         from app.review_automation.models import ReviewBatchItem as ReviewBatchItemModel
@@ -432,6 +614,14 @@ def _write_deepseek_summary(
             for item in primary if item.get('mode') in {'llm_only', 'combined'}
         ),
         'http_attempts': sum(int(item.get('http_attempts', 0) or 0) for item in records),
+        'uncertain_http_attempts': sum(
+            int(item.get('uncertain_http_attempts', 0) or 0) for item in records
+        ),
+        'budget_http_attempts': sum(
+            int(item.get('http_attempts', 0) or 0)
+            + int(item.get('uncertain_http_attempts', 0) or 0)
+            for item in records
+        ),
         'classification_rows': classification_rows,
         'combined_sources': {
             'sources': ['rule', 'deepseek'],
@@ -446,6 +636,8 @@ def _write_deepseek_summary(
                 'processed': item.get('processed'),
                 'failed': item.get('failed'),
                 'http_attempts': item.get('http_attempts'),
+                'uncertain_http_attempts': item.get('uncertain_http_attempts', 0),
+                'budget_http_attempts': item.get('budget_http_attempts', item.get('http_attempts', 0)),
             }
             for item in records
         ],
@@ -454,9 +646,41 @@ def _write_deepseek_summary(
 
 
 def _production_batch_callbacks(manifest, app, db, ReviewBatch, ReviewBatchItem):
-    from app.review_automation.tasks.review import create_review_batch
+    from app.review_automation.tasks.review import cancel_review_batch, create_review_batch
 
     refresh = _refresh_factory(db, ReviewBatch, ReviewBatchItem)
+
+    def find_existing(form_ids: tuple[int, ...], selected_mode: str):
+        expected_ids = tuple(sorted(int(value) for value in form_ids))
+        candidates = ReviewBatch.query.order_by(ReviewBatch.created_at.desc()).all()
+        for candidate in candidates:
+            try:
+                config = json.loads(candidate.config_snapshot_json or '{}')
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if not isinstance(config, Mapping):
+                continue
+            candidate_ids = tuple(sorted(int(value) for value in config.get('form_ids', ())))
+            if candidate_ids == expected_ids and str(config.get('review_mode')) == str(selected_mode):
+                return candidate
+        return None
+
+    def create_batch(
+        ids: tuple[int, ...],
+        selected_mode: str,
+        *,
+        force_refresh: bool,
+    ):
+        return create_review_batch(
+            ids,
+            requester_id=None,
+            force_refresh=force_refresh,
+            review_mode=selected_mode,
+            transient_retries=0,
+            semester=manifest.config.semester,
+            semester_monday=manifest.config.semester_monday,
+            enqueue=True,
+        )
 
     def run_batch(
         form_ids: tuple[int, ...],
@@ -466,22 +690,61 @@ def _production_batch_callbacks(manifest, app, db, ReviewBatch, ReviewBatchItem)
         timeout_seconds: float,
         poll_seconds: float,
     ):
-        def create(ids: tuple[int, ...], selected_mode: str):
-            return create_review_batch(
-                ids,
-                requester_id=None,
-                force_refresh=force_refresh,
-                review_mode=selected_mode,
-                transient_retries=0,
-                semester=manifest.config.semester,
-                semester_monday=manifest.config.semester_monday,
-                enqueue=True,
+        ids = tuple(int(value) for value in form_ids)
+        existing = None if force_refresh else find_existing(ids, mode)
+        if existing is not None:
+            existing_items = ReviewBatchItem.query.filter_by(batch_id=str(existing.id)).all()
+            original = summarize_batch(existing, existing_items)
+            original['batch_id'] = str(existing.id)
+            if str(existing.status) in {
+                'completed',
+                'completed_with_errors',
+                'failed',
+                'cancelled',
+            }:
+                original['mode'] = str(mode)
+                return original
+            recovery_plan = _stale_recovery_plan(
+                {
+                    'form_id': int(item.form_id),
+                    'status': str(item.status),
+                }
+                for item in existing_items
             )
+            if recovery_plan['unrecoverable_form_ids']:
+                raise RealAcceptanceError(
+                    'existing real batch has unrecoverable item statuses'
+                )
+            recovery_ids = tuple(recovery_plan['recovery_form_ids'])
+            if not recovery_ids:
+                original['mode'] = str(mode)
+                return original
+            cancel_review_batch(str(existing.id))
+            db.session.expire_all()
+            recovery = run_created_batch(
+                recovery_ids,
+                mode,
+                create=lambda recovery_form_ids, selected_mode: create_batch(
+                    recovery_form_ids,
+                    selected_mode,
+                    force_refresh=True,
+                ),
+                refresh=refresh,
+                timeout_seconds=timeout_seconds,
+                poll_seconds=poll_seconds,
+            )
+            merged = _merge_recovered_summary(original, recovery, recovery_plan)
+            merged['mode'] = str(mode)
+            return merged
 
         return run_created_batch(
-            form_ids,
+            ids,
             mode,
-            create=create,
+            create=lambda create_ids, selected_mode: create_batch(
+                create_ids,
+                selected_mode,
+                force_refresh=force_refresh,
+            ),
             refresh=refresh,
             timeout_seconds=timeout_seconds,
             poll_seconds=poll_seconds,
@@ -804,6 +1067,14 @@ def _run_main(
             item.get('status') != 'completed' for item in all_records
         ) else 'completed',
         'http_attempts': sum(int(item.get('http_attempts', 0) or 0) for item in all_records),
+        'uncertain_http_attempts': sum(
+            int(item.get('uncertain_http_attempts', 0) or 0) for item in all_records
+        ),
+        'budget_http_attempts': sum(
+            int(item.get('http_attempts', 0) or 0)
+            + int(item.get('uncertain_http_attempts', 0) or 0)
+            for item in all_records
+        ),
         'logical_llm_reviews': sum(cumulative[mode] for mode in ('llm_only', 'combined')),
         'batch_ids': aggregate['batch_ids'],
     }
@@ -837,7 +1108,11 @@ def _run_retry(
             key = item.get('form_key')
             if isinstance(key, str) and key not in failed_by_mode[mode]:
                 failed_by_mode[mode].append(key)
-    current_attempts = sum(int(item.get('http_attempts', 0) or 0) for item in records)
+    current_attempts = sum(
+        int(item.get('http_attempts', 0) or 0)
+        + int(item.get('uncertain_http_attempts', 0) or 0)
+        for item in records
+    )
     remaining = int(manifest.config.http_attempt_ceiling) - current_attempts
     retry_count = sum(len(values) for values in failed_by_mode.values())
     if retry_count > remaining:
@@ -918,13 +1193,18 @@ def _run_cache(
             poll_seconds=poll_seconds,
         ))
     aggregate = _aggregate_records(cache_records)
-    if aggregate['cache_hits'] != sample_size or aggregate['http_attempts'] != 0:
+    if (
+        aggregate['cache_hits'] != sample_size
+        or aggregate['http_attempts'] != 0
+        or aggregate['uncertain_http_attempts'] != 0
+    ):
         raise RealAcceptanceError('real cache reuse did not produce 50 hits with zero new HTTP attempts')
     payload = {
         'phase': 'cache',
         'sample_size': sample_size,
         'cache_hits': aggregate['cache_hits'],
         'http_attempt_delta': aggregate['http_attempts'],
+        'uncertain_http_attempts': aggregate['uncertain_http_attempts'],
         'records': cache_records,
         'status': aggregate['status'],
     }

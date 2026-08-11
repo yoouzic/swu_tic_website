@@ -1090,7 +1090,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     f"llm_only={result.get('cumulative_mode_counts', {}).get('llm_only', 0)} "
                     f"combined={result.get('cumulative_mode_counts', {}).get('combined', 0)} "
                     f"logical_llm={result.get('logical_llm_reviews', 0)} "
-                    f"http_attempts={result.get('http_attempts', 0)}"
+                    f"http_attempts={result.get('http_attempts', 0)} "
+                    f"uncertain_http_attempts={result.get('uncertain_http_attempts', 0)} "
+                    f"budget_http_attempts={result.get('budget_http_attempts', result.get('http_attempts', 0))}"
                 )
             elif args.phase == 'cache':
                 print(

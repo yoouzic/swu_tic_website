@@ -4,7 +4,11 @@ from types import SimpleNamespace
 from tools.business_acceptance.batches import plan_real_batches
 from tools.business_acceptance.cli import _real_phase_conclusion
 from tools.business_acceptance.real_batches import wait_for_batch
-from tools.business_acceptance.real_runner import _merge_stage_record
+from tools.business_acceptance.real_runner import (
+    _merge_recovered_summary,
+    _merge_stage_record,
+    _stale_recovery_plan,
+)
 
 
 class RealBatchPlanningTest(unittest.TestCase):
@@ -145,6 +149,69 @@ class RealBatchPlanningTest(unittest.TestCase):
         self.assertEqual(set(merged['successful_form_keys']), {'AC-0001', 'AC-0002', 'AC-0003'})
         self.assertEqual(merged['failed_items'], [])
         self.assertEqual(set(merged['batch_ids']), {'first-batch', 'recovery-batch'})
+
+    def test_stale_running_recovery_excludes_completed_and_marks_uncertain_items(self):
+        plan = _stale_recovery_plan(
+            [
+                {'form_id': 11, 'status': 'completed'},
+                {'form_id': 12, 'status': 'queued'},
+                {'form_id': 13, 'status': 'running'},
+                {'form_id': 14, 'status': 'running'},
+            ]
+        )
+
+        self.assertEqual(plan['completed_form_ids'], (11,))
+        self.assertEqual(plan['recovery_form_ids'], (12, 13, 14))
+        self.assertEqual(plan['uncertain_form_ids'], (13, 14))
+        self.assertEqual(plan['uncertain_http_attempts'], 2)
+
+    def test_recovered_summary_keeps_completed_items_and_counts_uncertainty(self):
+        original = {
+            'batch_id': 'original-batch',
+            'status': 'running',
+            'target': 4,
+            'processed': 2,
+            'terminal_count': 2,
+            'failed': 0,
+            'cancelled': 0,
+            'http_attempts': 2,
+            'successful_form_ids': [101, 102],
+            'failed_items': [],
+            'category_counts': {'clear': 2},
+        }
+        recovery = {
+            'batch_id': 'recovery-batch',
+            'status': 'completed',
+            'target': 2,
+            'processed': 2,
+            'terminal_count': 2,
+            'failed': 0,
+            'cancelled': 0,
+            'http_attempts': 2,
+            'successful_form_ids': [103, 104],
+            'failed_items': [],
+            'category_counts': {'review': 2},
+        }
+
+        merged = _merge_recovered_summary(
+            original,
+            recovery,
+            {
+                'uncertain_form_ids': (103,),
+                'uncertain_http_attempts': 1,
+            },
+        )
+
+        self.assertEqual(merged['target'], 4)
+        self.assertEqual(merged['processed'], 4)
+        self.assertEqual(merged['terminal_count'], 4)
+        self.assertEqual(merged['status'], 'completed')
+        self.assertEqual(merged['http_attempts'], 4)
+        self.assertEqual(merged['uncertain_http_attempts'], 1)
+        self.assertEqual(merged['budget_http_attempts'], 5)
+        self.assertEqual(merged['successful_form_ids'], [101, 102, 103, 104])
+        self.assertEqual(merged['category_counts'], {'clear': 2, 'review': 2})
+        self.assertEqual(merged['batch_ids'], ['original-batch', 'recovery-batch'])
 
 
 if __name__ == '__main__':
