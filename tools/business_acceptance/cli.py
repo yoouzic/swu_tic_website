@@ -2,12 +2,25 @@ from __future__ import annotations
 
 import argparse
 import json
+from itertools import chain
 import os
 from pathlib import Path
 import secrets
 from typing import Sequence
 
 from .config import AcceptanceConfig, DEFAULT_RUNTIME_RELATIVE
+from .batches import (
+    AdapterResult,
+    AssessmentCache,
+    BatchForm,
+    RunState,
+    StageObservation,
+    build_stages,
+    choose_safe_concurrency,
+    close_batch,
+    partition_mode_form_ids,
+    run_batch,
+)
 from .corpus import (
     CorpusResult,
     extract_evaluation_corpus,
@@ -43,6 +56,159 @@ def _existing_password(manifest_path: Path) -> str | None:
 def _write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+
+
+def _write_json_atomic(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f'.{path.name}.tmp')
+    try:
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + '\n',
+            encoding='utf-8',
+            newline='\n',
+        )
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+class _FakeAcceptanceAdapter:
+    def assess(self, form, *, mode):
+        return AdapterResult(
+            classification='clear',
+            http_attempts=0 if mode == 'rules_only' else 1,
+        )
+
+
+def _run_fake_batch_phase(manifest: AcceptanceManifest, phase: str, sample_size: int = 50) -> dict[str, object]:
+    """Exercise the budget/cache contracts without network or application state."""
+
+    runtime = manifest.config.runtime_root
+    if runtime is None:
+        raise ValueError('manifest runtime_root is required')
+    state_path = manifest.config.output_path('run-state.json')
+    cache_path = manifest.config.output_path('results/fake-batch-cache.json')
+    state = RunState.load(state_path) if state_path.exists() else RunState(
+        http_attempt_ceiling=manifest.config.http_attempt_ceiling,
+    )
+    if state.http_attempt_ceiling != manifest.config.http_attempt_ceiling:
+        raise ValueError('run-state request ceiling does not match manifest')
+    if cache_path.exists():
+        cache = AssessmentCache.from_dict(json.loads(cache_path.read_text(encoding='utf-8')))
+    else:
+        cache = AssessmentCache()
+    adapter = _FakeAcceptanceAdapter()
+    forms_by_mode = {
+        mode: [
+            BatchForm(form.synthetic_key, str(form.ordinal))
+            for form in manifest.forms if form.review_mode == mode
+        ]
+        for mode in ('rules_only', 'llm_only', 'combined')
+    }
+    partition_mode_form_ids(
+        [form.synthetic_key for form in manifest.forms],
+        per_mode=manifest.config.per_mode,
+    )
+
+    if phase == 'staged':
+        staged_forms = forms_by_mode['llm_only'][:]
+        staged_forms.extend(forms_by_mode['combined'])
+        stages = build_stages(
+            [form.form_id for form in staged_forms[:manifest.config.staged_size_each * 3]],
+            levels=manifest.config.staged_concurrency,
+            size_each=manifest.config.staged_size_each,
+        )
+        observations = []
+        stage_items = []
+        for index, stage in enumerate(stages, start=1):
+            selected = [form for form in staged_forms if form.form_id in set(stage.form_ids)]
+            summaries = []
+            for mode in ('llm_only', 'combined'):
+                mode_forms = [form for form in selected if next(
+                    item.review_mode for item in manifest.forms if item.synthetic_key == form.form_id
+                ) == mode]
+                if mode_forms:
+                    summaries.append(run_batch(mode_forms, adapter, state, cache, mode=mode))
+            stage_summary = close_batch(
+                chain.from_iterable(summary.items for summary in summaries),
+                target=len(selected),
+            )
+            stage_items.extend(stage_summary.items)
+            observations.append(StageObservation(
+                concurrency=stage.concurrency,
+                target=len(selected),
+                processed=stage_summary.processed,
+                rate_limited_ratio=0.0,
+                failed_ratio=stage_summary.failed / len(selected) if selected else 0.0,
+                progress_updated=True,
+            ))
+            state.batch_ids[f'stage-{index}'] = f'fake-stage-{index}'
+        state.safe_concurrency = choose_safe_concurrency(
+            observations,
+            fallback=manifest.config.staged_concurrency[0],
+        )
+        state.phase = 'staged'
+        summary = close_batch(stage_items, target=60)
+        result = {
+            'phase': phase,
+            'forms': summary.processed,
+            'processed': summary.processed,
+            'http_attempts': state.http_attempts,
+            'concurrency': [stage.concurrency for stage in stages],
+        }
+    elif phase == 'main':
+        summaries = [
+            run_batch(forms_by_mode[mode], adapter, state, cache, mode=mode)
+            for mode in ('rules_only', 'llm_only', 'combined')
+        ]
+        summary = close_batch(
+            chain.from_iterable(item.items for item in summaries),
+            target=len(manifest.forms),
+        )
+        state.batch_ids.update({mode: f'fake-{mode}' for mode in ('rules_only', 'llm_only', 'combined')})
+        state.phase = 'main'
+        result = {
+            'phase': phase,
+            'rules_only': len(forms_by_mode['rules_only']),
+            'llm_only': len(forms_by_mode['llm_only']),
+            'combined': len(forms_by_mode['combined']),
+            'logical_llm_reviews': state.logical_llm_reviews,
+            'http_attempts': state.http_attempts,
+            'processed': summary.processed,
+        }
+    elif phase == 'cache':
+        if not isinstance(sample_size, int) or sample_size < 1:
+            raise ValueError('sample_size must be positive')
+        sample = (forms_by_mode['llm_only'] + forms_by_mode['combined'])[:sample_size]
+        before = state.http_attempts
+        summary = close_batch(
+            chain.from_iterable(
+                run_batch(
+                    [form], adapter, state, cache,
+                    mode='llm_only' if form in forms_by_mode['llm_only'] else 'combined',
+                ).items
+                for form in sample
+            ),
+            target=len(sample),
+        )
+        state.phase = 'cache'
+        result = {
+            'phase': phase,
+            'cache_hits': summary.cache_hits,
+            'http_attempt_delta': state.http_attempts - before,
+            'processed': summary.processed,
+        }
+    elif phase == 'retry':
+        state.phase = 'retry'
+        result = {'phase': phase, 'retried': 0, 'http_attempts': state.http_attempts}
+    else:
+        raise ValueError(f'unsupported fake batch phase: {phase}')
+
+    state.save(state_path)
+    _write_json_atomic(cache_path, cache.to_dict())
+    _write_json_atomic(manifest.config.output_path(f'results/fake-batches-{phase}.json'), result)
+    return result
 
 
 def _write_oracle(path: Path, manifest: AcceptanceManifest) -> None:
@@ -147,6 +313,11 @@ def _build_parser() -> argparse.ArgumentParser:
     prepare.add_argument('--school-schedule', type=Path)
     seed = subparsers.add_parser('seed', help='seed the isolated synthetic acceptance database')
     seed.add_argument('--manifest', type=Path, default=DEFAULT_RUNTIME_RELATIVE / 'manifest.json')
+    batches = subparsers.add_parser('run-batches', help='run a fake-client acceptance batch phase')
+    batches.add_argument('--phase', choices=('staged', 'main', 'retry', 'cache'), required=True)
+    batches.add_argument('--manifest', type=Path, default=DEFAULT_RUNTIME_RELATIVE / 'manifest.json')
+    batches.add_argument('--sample-size', type=int, default=50)
+    batches.add_argument('--fake-client', action='store_true')
     return parser
 
 
@@ -210,6 +381,49 @@ def main(argv: Sequence[str] | None = None) -> int:
             f'physical_rows={result.physical_form_rows} '
             f'active_datasets={result.active_datasets}'
         )
+        return 0
+    if args.command == 'run-batches':
+        if not args.fake_client:
+            print(
+                'RUN_BATCHES=BLOCKED reason=fake-client-required-before-external-gate',
+                file=__import__('sys').stderr,
+            )
+            return 2
+        try:
+            manifest, _run_password = load_manifest_file(args.manifest)
+            result = _run_fake_batch_phase(manifest, args.phase, args.sample_size)
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(f'RUN_BATCHES=BLOCKED reason={exc}', file=__import__('sys').stderr)
+            return 2
+        if args.phase == 'staged':
+            print(
+                'FAKE_STAGED=PASS '
+                f'forms={result["forms"]} '
+                f'concurrency={",".join(str(value) for value in result["concurrency"])} '
+                f'processed={result["processed"]} '
+                f'http_attempts={result["http_attempts"]}'
+            )
+        elif args.phase == 'main':
+            print(
+                'FAKE_MAIN=PASS '
+                f'rules_only={result["rules_only"]} '
+                f'llm_only={result["llm_only"]} '
+                f'combined={result["combined"]} '
+                f'logical_llm={result["logical_llm_reviews"]} '
+                f'http_attempts={result["http_attempts"]}'
+            )
+        elif args.phase == 'cache':
+            print(
+                'FAKE_CACHE=PASS '
+                f'cache_hits={result["cache_hits"]} '
+                f'http_attempt_delta={result["http_attempt_delta"]}'
+            )
+        else:
+            print(
+                'FAKE_RETRY=PASS '
+                f'retried={result["retried"]} '
+                f'http_attempts={result["http_attempts"]}'
+            )
         return 0
     return 2
 
