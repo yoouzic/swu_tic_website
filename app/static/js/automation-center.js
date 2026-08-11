@@ -8,6 +8,13 @@
     const previewModal = panel.querySelector('#automationPreviewModal');
     const previewBody = panel.querySelector('#automationPreviewBody');
     const previewActivate = panel.querySelector('#automationPreviewActivate');
+    const batchForm = panel.querySelector('[data-automation-batch-form]');
+    const batchPreviewButton = panel.querySelector('[data-automation-batch-preview]');
+    const batchStartButton = panel.querySelector('[data-automation-batch-start]');
+    const batchTransferWrap = panel.querySelector('#automationExternalTransferAckWrap');
+    const batchTransferCheckbox = panel.querySelector('#automationExternalTransferAck');
+    const batchProgress = panel.querySelector('#automationBatchProgress');
+    const batchProgressSummary = panel.querySelector('#automationBatchPreviewSummary');
     const pendingDatasets = new Map();
     const templateColumns = {
         school: ['semester', 'teacher_name', 'teacher_college', 'course_title', 'teaching_class', 'major', 'weeks', 'weekday', 'start_period', 'end_period', 'location'],
@@ -21,6 +28,8 @@
     };
     let activePreviewKind = null;
     let initialized = false;
+    let pendingBatchPayload = null;
+    let batchPollTimer = null;
 
     const text = (value, fallback = '—') => {
         if (value === null || value === undefined || value === '') return fallback;
@@ -48,6 +57,135 @@
             throw new Error(message);
         }
         return payload;
+    };
+
+    const selectedReviewMode = (form) => form?.querySelector('[name="review_mode"]:checked')?.value
+        || form?.querySelector('[name="review_mode"]')?.value
+        || 'rules_only';
+
+    const usesDeepSeekMode = (reviewMode) => reviewMode === 'llm_only' || reviewMode === 'combined';
+
+    const updateBatchTransferGate = () => {
+        const reviewMode = selectedReviewMode(batchForm);
+        const usesDeepSeek = usesDeepSeekMode(reviewMode);
+        if (batchTransferWrap) batchTransferWrap.hidden = !usesDeepSeek;
+        if (!usesDeepSeek && batchTransferCheckbox) batchTransferCheckbox.checked = false;
+    };
+
+    const selectedFormIds = (form) => (form?.querySelector('[name="form_ids"]')?.value || '')
+        .split(/[\s,，]+/)
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0);
+
+    const buildBatchPayload = (form) => {
+        const reviewMode = form.querySelector('[name="review_mode"]:checked')?.value
+            || form.querySelector('[name="review_mode"]')?.value
+            || 'rules_only';
+        const usesDeepSeek = reviewMode === 'llm_only' || reviewMode === 'combined';
+        const transferCheckbox = form.querySelector('#automationExternalTransferAck');
+        return {
+            form_ids: selectedFormIds(form),
+            review_mode: reviewMode,
+            llm_enabled: usesDeepSeek,
+            external_transfer_acknowledged: usesDeepSeek && transferCheckbox?.checked === true,
+        };
+    };
+
+    const renderBatchProgress = (payload) => {
+        const batch = payload?.batch || payload || {};
+        if (batchProgress) batchProgress.hidden = false;
+        const target = Number(batch.target_form_count || 0);
+        const processed = Number(batch.processed_count || 0);
+        const percentage = target > 0 ? Math.min(100, Math.round((processed / target) * 100)) : 0;
+        panel.querySelectorAll('[data-batch-progress]').forEach((node) => {
+            const key = node.dataset.batchProgress;
+            node.textContent = text(batch[key], '0');
+        });
+        const bar = panel.querySelector('[data-automation-batch-progress-bar]');
+        if (bar) {
+            bar.setAttribute('aria-valuenow', String(percentage));
+            const fill = bar.querySelector('.progress-bar');
+            if (fill) fill.style.width = `${percentage}%`;
+        }
+        if (batchProgressSummary) {
+            batchProgressSummary.textContent = `批次状态：${text(batch.status)}；已处理 ${processed}/${target}`;
+        }
+    };
+
+    const pollAutomationBatch = async (batchId) => {
+        if (!batchId) return;
+        const terminalStatuses = new Set(['completed', 'completed_with_errors', 'failed', 'cancelled']);
+        const poll = async () => {
+            try {
+                const payload = await jsonRequest(`/admin/api/automation/batches/${encodeURIComponent(batchId)}`);
+                const batch = payload.batch || payload;
+                renderBatchProgress(batch);
+                if (terminalStatuses.has(batch.status)) {
+                    if (batchPollTimer) window.clearInterval(batchPollTimer);
+                    batchPollTimer = null;
+                    setFeedback(`自动审核批次已结束：${text(batch.status)}`, batch.status === 'completed' ? 'success' : 'warning');
+                    return true;
+                }
+            } catch (error) {
+                if (batchPollTimer) window.clearInterval(batchPollTimer);
+                batchPollTimer = null;
+                setFeedback(error.message, 'danger');
+                return true;
+            }
+            return false;
+        };
+        const finished = await poll();
+        if (!finished && !batchPollTimer) batchPollTimer = window.setInterval(poll, 2000);
+    };
+
+    const previewBatch = async () => {
+        if (!batchForm) return;
+        updateBatchTransferGate();
+        const payload = buildBatchPayload(batchForm);
+        if (payload.llm_enabled && payload.external_transfer_acknowledged !== true) {
+            setFeedback('启用 DeepSeek 前必须确认外传完整表单和证据。', 'warning');
+            return;
+        }
+        try {
+            const result = await jsonRequest('/admin/api/automation/batches/preview', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const stats = result.stats || {};
+            pendingBatchPayload = payload;
+            if (batchProgressSummary) {
+                batchProgressSummary.textContent = `预览完成：${text(stats.processable, '0')} 张表单；可复用缓存 ${text(stats.cache_reusable, '0')} 张。`;
+            }
+            if (batchStartButton) batchStartButton.hidden = false;
+            setFeedback('批次预览已完成，请确认后启动。', 'success');
+        } catch (error) {
+            pendingBatchPayload = null;
+            if (batchStartButton) batchStartButton.hidden = true;
+            setFeedback(error.message, 'danger');
+        }
+    };
+
+    const startBatch = async () => {
+        if (!batchForm) return;
+        const payload = pendingBatchPayload || buildBatchPayload(batchForm);
+        if (payload.llm_enabled && payload.external_transfer_acknowledged !== true) {
+            setFeedback('启用 DeepSeek 前必须确认外传完整表单和证据。', 'warning');
+            return;
+        }
+        try {
+            const result = await jsonRequest('/admin/api/automation/batches', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            pendingBatchPayload = null;
+            if (batchStartButton) batchStartButton.hidden = true;
+            setFeedback('自动审核批次已启动，进度会在当前页面更新。', 'info');
+            await pollAutomationBatch(result.batch_id);
+        } catch (error) {
+            setFeedback(error.message, 'danger');
+        }
     };
 
     const setServiceState = (name, value, variant = 'secondary') => {
@@ -376,6 +514,12 @@
             activateDataset(activePreviewKind, datasetId);
         });
         panel.querySelector('#automationRuleRevisionForm')?.addEventListener('submit', submitRuleRevision);
+        panel.querySelectorAll('[name="review_mode"]').forEach((control) => {
+            control.addEventListener('change', updateBatchTransferGate);
+        });
+        batchPreviewButton?.addEventListener('click', previewBatch);
+        batchStartButton?.addEventListener('click', startBatch);
+        updateBatchTransferGate();
         loadSettingsData().catch((error) => setFeedback(error.message, 'danger'));
     };
 

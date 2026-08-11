@@ -53,6 +53,36 @@ class AutomationSettingsTemplateTest(unittest.TestCase):
         self.assertIn('configured', script)
         self.assertIn('missing', template + script)
 
+    def test_automation_batch_settings_expose_three_review_modes_and_live_progress(self):
+        template = SETTINGS_TEMPLATE.read_text(encoding='utf-8')
+        script = AUTOMATION_SCRIPT.read_text(encoding='utf-8')
+        controls = re.findall(
+            r'<input[^>]*name="review_mode"[^>]*value="(rules_only|llm_only|combined)"[^>]*>',
+            template,
+        )
+        self.assertEqual(controls, ['rules_only', 'llm_only', 'combined'])
+        self.assertEqual(len(re.findall(r'name="review_mode"[^>]*checked', template)), 1)
+        for label in ('仅运行规则', '仅运行 DeepSeek', '规则与 DeepSeek 联合运行'):
+            with self.subTest(label=label):
+                self.assertIn(label, template)
+        for fragment in (
+            'review_mode',
+            'usesDeepSeek',
+            'external_transfer_acknowledged',
+            'processed_count',
+            'target_form_count',
+            'clear_count',
+            'review_count',
+            'high_risk_count',
+            'unknown_count',
+            'failed_count',
+            'cache_count',
+            'http_attempts',
+            'aria-live',
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, template + script)
+
     def test_system_management_loads_automation_script_after_settings_script(self):
         template = SYSTEM_TEMPLATE.read_text(encoding='utf-8')
         settings_index = template.index('js/settings-center.js')
