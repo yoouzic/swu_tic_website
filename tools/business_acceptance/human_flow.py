@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from flask import Flask
@@ -41,6 +44,90 @@ FORM_FIELDS = (
 
 class HumanFlowError(RuntimeError):
     """Raised when an existing business route does not complete an action."""
+
+
+def _empty_human_flow_checkpoint() -> dict[str, Any]:
+    return {
+        'version': 1,
+        'status': 'not_started',
+        'phase': 'first_stage',
+        'first_stage': {
+            'completed_unique_ids': [],
+            'items': {},
+        },
+        'final': {
+            'completed_unique_ids': [],
+            'items': {},
+        },
+        'last_completed_unique_id': None,
+    }
+
+
+def load_human_flow_checkpoint(path: str | os.PathLike[str] | None) -> dict[str, Any]:
+    """Load resumable route progress; invalid state blocks instead of resetting."""
+
+    state = _empty_human_flow_checkpoint()
+    if path is None:
+        return state
+    checkpoint = Path(path)
+    if not checkpoint.exists():
+        return state
+    try:
+        loaded = json.loads(checkpoint.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as exc:
+        raise HumanFlowError('human-flow checkpoint is unreadable') from exc
+    if not isinstance(loaded, Mapping) or loaded.get('version') != 1:
+        raise HumanFlowError('human-flow checkpoint version is unsupported')
+    for key, value in loaded.items():
+        state[key] = value
+    for phase in ('first_stage', 'final'):
+        if not isinstance(state.get(phase), Mapping):
+            raise HumanFlowError(f'human-flow checkpoint {phase} state is invalid')
+        state[phase] = dict(state[phase])
+        completed = state[phase].get('completed_unique_ids', [])
+        items = state[phase].get('items', {})
+        if not isinstance(completed, list) or not isinstance(items, Mapping):
+            raise HumanFlowError(f'human-flow checkpoint {phase} progress is invalid')
+        state[phase]['completed_unique_ids'] = [str(value) for value in completed]
+        state[phase]['items'] = dict(items)
+    return state
+
+
+def _assert_checkpoint_safe(value: Any):
+    forbidden = {'prompt', 'response', 'review_comment', 'password', 'api_key'}
+    if isinstance(value, Mapping):
+        if forbidden.intersection(value):
+            raise HumanFlowError('human-flow checkpoint contains forbidden payload fields')
+        for child in value.values():
+            _assert_checkpoint_safe(child)
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        for child in value:
+            _assert_checkpoint_safe(child)
+
+
+def save_human_flow_checkpoint(path: str | os.PathLike[str] | None, state: Mapping[str, Any]):
+    """Atomically persist route progress without prompts, responses, or human comments."""
+
+    if path is None:
+        return
+    if not isinstance(state, Mapping) or state.get('version') != 1:
+        raise HumanFlowError('human-flow checkpoint state is invalid')
+    _assert_checkpoint_safe(state)
+    checkpoint = Path(path)
+    checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    temporary = checkpoint.with_name(f'.{checkpoint.name}.{os.getpid()}.tmp')
+    try:
+        temporary.write_text(
+            json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(',', ':')),
+            encoding='utf-8',
+        )
+        os.replace(temporary, checkpoint)
+    except OSError as exc:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise HumanFlowError('human-flow checkpoint cannot be persisted') from exc
 
 
 FIRST_STAGE_CATEGORIES = (
@@ -403,6 +490,67 @@ def _repair_payload(rejected: FormSnapshot) -> dict[str, Any]:
     return payload
 
 
+def _checkpoint_key(unique_id: int | str) -> str:
+    return str(unique_id)
+
+
+def _checkpoint_phase(state: Mapping[str, Any], phase: str) -> dict[str, Any]:
+    value = state.get(phase)
+    if not isinstance(value, Mapping):
+        raise HumanFlowError(f'human-flow checkpoint {phase} state is invalid')
+    result = dict(value)
+    result['completed_unique_ids'] = [
+        str(item) for item in result.get('completed_unique_ids', [])
+    ]
+    result['items'] = dict(result.get('items', {}))
+    return result
+
+
+def _latest_successful_assessment(form_id: int):
+    assessments = ReviewAssessment.query.filter_by(form_id=int(form_id)).order_by(
+        ReviewAssessment.created_at.desc(),
+        ReviewAssessment.id.desc(),
+    ).all()
+    return next((item for item in assessments if item.error_code is None), None)
+
+
+def _save_flow_progress(
+    checkpoint_path: str | os.PathLike[str] | None,
+    state: dict[str, Any],
+    *,
+    phase: str,
+    unique_id: int | str | None = None,
+):
+    state['status'] = 'running'
+    state['phase'] = phase
+    if unique_id is not None:
+        state['last_completed_unique_id'] = _checkpoint_key(unique_id)
+    save_human_flow_checkpoint(checkpoint_path, state)
+
+
+def _mark_flow_item(
+    checkpoint_path: str | os.PathLike[str] | None,
+    state: dict[str, Any],
+    *,
+    phase: str,
+    unique_id: int | str,
+    item: Mapping[str, Any],
+):
+    progress = _checkpoint_phase(state, phase)
+    key = _checkpoint_key(unique_id)
+    completed = progress['completed_unique_ids']
+    if key not in completed:
+        completed.append(key)
+    progress['items'][key] = dict(item)
+    state[phase] = progress
+    _save_flow_progress(
+        checkpoint_path,
+        state,
+        phase=phase,
+        unique_id=unique_id,
+    )
+
+
 def run_route_backed_human_flow(
     app: Flask,
     manifest: Any,
@@ -413,6 +561,7 @@ def run_route_backed_human_flow(
     group_forms_per_department: int = 75,
     final_rejection_every: int = 25,
     final_repair_every: int = 2,
+    checkpoint_path: str | os.PathLike[str] | None = None,
 ) -> dict[str, Any]:
     """Execute the synthetic human-review chain through the existing routes."""
 
@@ -422,6 +571,13 @@ def run_route_backed_human_flow(
         raise ValueError('final_rejection_every must be positive')
     if not isinstance(final_repair_every, int) or final_repair_every < 1:
         raise ValueError('final_repair_every must be positive')
+
+    state = load_human_flow_checkpoint(checkpoint_path)
+    if state.get('status') == 'completed':
+        result = state.get('result')
+        if not isinstance(result, Mapping):
+            raise HumanFlowError('completed human-flow checkpoint has no result')
+        return dict(result)
 
     with app.app_context():
         accounts = dict(admin_users or _default_admin_users())
@@ -439,7 +595,10 @@ def run_route_backed_human_flow(
         }
         for spec in manifest.forms:
             form = _seeded_form_for_spec(spec)
-            if form.status != '\u5f85\u5ba1\u6838':
+            if (
+                form.status != '\u5f85\u5ba1\u6838'
+                and checkpoint_path is None
+            ):
                 raise HumanFlowError('human flow requires seeded forms to start at pending')
             assessment = ReviewAssessment.query.filter_by(form_id=form.id).order_by(
                 ReviewAssessment.created_at.desc(),
@@ -548,6 +707,16 @@ def run_route_backed_human_flow(
             'visible_count': len(super_visible),
             'passed': super_visible == expected_ids,
         })
+        saved_scope = state.get('administrator_scopes')
+        if isinstance(saved_scope, Mapping):
+            scope_evidence = {
+                str(role): list(entries)
+                for role, entries in saved_scope.items()
+                if isinstance(entries, Sequence) and not isinstance(entries, (str, bytes))
+            }
+        else:
+            state['administrator_scopes'] = scope_evidence
+            _save_flow_progress(checkpoint_path, state, phase='first_stage')
 
         officer_actors: dict[str, BusinessActor] = {}
 
@@ -560,6 +729,31 @@ def run_route_backed_human_flow(
                 officer_actors[number] = actor
             return actor
 
+        def complete_first_stage_repair(action, row, actor, latest):
+            officer_actor = officer_actor_for(row['officer_id'])
+            if latest.status == '\u5df2\u9a73\u56de':
+                resubmitted = officer_actor.resubmit(latest.id, _repair_payload(latest))
+            elif latest.status == '\u5f85\u5ba1\u6838' and latest.id != action.form_id:
+                resubmitted = latest
+            else:
+                raise HumanFlowError('first-stage repair resumed from an unexpected status')
+            before_automation = _manual_snapshot_tuple(resubmitted)
+            if _latest_successful_assessment(resubmitted.id) is None:
+                reassess(resubmitted.id, row['review_mode'])
+            after_automation = _latest_snapshot(app, resubmitted.unique_id)
+            if _manual_snapshot_tuple(after_automation) != before_automation:
+                raise HumanFlowError('automation changed a protected human field')
+            repaired_approval = actor.approve(
+                resubmitted.id,
+                f'{action.role}\xe8\xbf\x94\xe4\xbf\xae\xe5\xa4\x8d\xe6\xa0\xb8\xe9\x80\x9a\xe8\xbf\x87',
+            )
+            _assert_manual_action(
+                repaired_approval,
+                actor,
+                f'{action.role}\xe8\xbf\x94\xe4\xbf\xae\xe5\xa4\x8d\xe6\xa0\xb8\xe9\x80\x9a\xe8\xbf\x87',
+            )
+            return resubmitted
+
         first_stage = {
             'planned': len(actions),
             'approved': 0,
@@ -571,24 +765,116 @@ def run_route_backed_human_flow(
                 'department': {'approve': 0, 'reject': 0},
             },
         }
+        for planned_action in actions:
+            first_stage['roles'][planned_action.role][planned_action.action] += 1
+        completed_first = set(_checkpoint_phase(state, 'first_stage')['completed_unique_ids'])
+        action_by_key = {
+            _checkpoint_key(item.unique_id): item
+            for item in actions
+        }
+        for key in completed_first:
+            completed_action = action_by_key.get(key)
+            if completed_action is None:
+                continue
+            first_stage['approved'] += 1
+            if completed_action.action == 'reject':
+                first_stage['rejected'] += 1
+                first_stage['resubmitted'] += 1
+                first_stage['reassessed'] += 1
         row_by_id = {row['form_id']: row for row in form_rows}
         for action in actions:
+            action_key = _checkpoint_key(action.unique_id)
+            if action_key in completed_first:
+                continue
             row = row_by_id[action.form_id]
             actor = (
                 group_actors[action.department]
                 if action.role == 'group'
                 else department_actors[action.department]
             )
-            first_stage['roles'][action.role][action.action] += 1
             if action.action == 'approve':
+                latest = _latest_snapshot(app, action.unique_id)
+                if latest.status == '\u90e8\u95e8\u5df2\u5ba1\u6838':
+                    first_stage['approved'] += 1
+                    _mark_flow_item(
+                        checkpoint_path,
+                        state,
+                        phase='first_stage',
+                        unique_id=action.unique_id,
+                        item={
+                            'role': action.role,
+                            'action': action.action,
+                            'category': action.category,
+                            'status': 'completed',
+                        },
+                    )
+                    completed_first.add(action_key)
+                    continue
+                if latest.status != '\u5f85\u5ba1\u6838':
+                    raise HumanFlowError('first-stage approval resumed from an unexpected status')
                 approved = actor.approve(
-                    action.form_id,
+                    latest.id,
                     f'{action.role}管理员验收通过',
                 )
                 _assert_manual_action(approved, actor, f'{action.role}管理员验收通过')
                 first_stage['approved'] += 1
+                _mark_flow_item(
+                    checkpoint_path,
+                    state,
+                    phase='first_stage',
+                    unique_id=action.unique_id,
+                    item={
+                        'role': action.role,
+                        'action': action.action,
+                        'category': action.category,
+                        'status': 'completed',
+                    },
+                )
+                completed_first.add(action_key)
                 continue
 
+            latest = _latest_snapshot(app, action.unique_id)
+            if latest.status in {'\u90e8\u95e8\u5df2\u5ba1\u6838', '\u4e2d\u5fc3\u5df2\u5ba1\u6838'}:
+                first_stage['approved'] += 1
+                first_stage['rejected'] += 1
+                first_stage['resubmitted'] += 1
+                first_stage['reassessed'] += 1
+                _mark_flow_item(
+                    checkpoint_path,
+                    state,
+                    phase='first_stage',
+                    unique_id=action.unique_id,
+                    item={
+                        'role': action.role,
+                        'action': action.action,
+                        'category': action.category,
+                        'status': 'completed',
+                    },
+                )
+                completed_first.add(action_key)
+                continue
+            if latest.status == '\u5df2\u9a73\u56de' or (
+                latest.status == '\u5f85\u5ba1\u6838' and latest.id != action.form_id
+            ):
+                complete_first_stage_repair(action, row, actor, latest)
+                first_stage['rejected'] += 1
+                first_stage['resubmitted'] += 1
+                first_stage['reassessed'] += 1
+                first_stage['approved'] += 1
+                _mark_flow_item(
+                    checkpoint_path,
+                    state,
+                    phase='first_stage',
+                    unique_id=action.unique_id,
+                    item={
+                        'role': action.role,
+                        'action': action.action,
+                        'category': action.category,
+                        'status': 'completed',
+                    },
+                )
+                completed_first.add(action_key)
+                continue
             rejected = actor.reject(
                 action.form_id,
                 f'{action.role}管理员验收驳回，请修改后重交',
@@ -603,7 +889,8 @@ def run_route_backed_human_flow(
             first_stage['rejected'] += 1
             first_stage['resubmitted'] += 1
             before_automation = _manual_snapshot_tuple(resubmitted)
-            reassess(resubmitted.id, row['review_mode'])
+            if _latest_successful_assessment(resubmitted.id) is None:
+                reassess(resubmitted.id, row['review_mode'])
             after_automation = _latest_snapshot(app, resubmitted.unique_id)
             if _manual_snapshot_tuple(after_automation) != before_automation:
                 raise HumanFlowError('automation changed a protected human field')
@@ -618,6 +905,19 @@ def run_route_backed_human_flow(
                 f'{action.role}管理员返修复核通过',
             )
             first_stage['approved'] += 1
+            _mark_flow_item(
+                checkpoint_path,
+                state,
+                phase='first_stage',
+                unique_id=action.unique_id,
+                item={
+                    'role': action.role,
+                    'action': action.action,
+                    'category': action.category,
+                    'status': 'completed',
+                },
+            )
+            completed_first.add(action_key)
 
         final = {
             'center_actions': 0,
@@ -630,23 +930,134 @@ def run_route_backed_human_flow(
             'rejected_unique_ids': [],
             'repaired_unique_ids': [],
         }
+        sorted_rows = sorted(form_rows, key=lambda item: item['ordinal'])
+        completed_final_phase = _checkpoint_phase(state, 'final')
+        completed_final = set(completed_final_phase['completed_unique_ids'])
+        for position, planned_row in enumerate(sorted_rows, start=1):
+            final_role = 'center' if position % 2 else 'super'
+            final[f'{final_role}_actions'] += 1
+        for key in completed_final:
+            completed_item = completed_final_phase['items'].get(key, {})
+            if not isinstance(completed_item, Mapping):
+                continue
+            outcome = completed_item.get('outcome')
+            if outcome == 'approved':
+                final['approved'] += 1
+            elif outcome == 'left_rejected':
+                final['rejected'] += 1
+                final['left_rejected'] += 1
+                final['rejected_unique_ids'].append(completed_item.get('unique_id', key))
+            elif outcome == 'repaired':
+                final['rejected'] += 1
+                final['repaired'] += 1
+                final['reassessed'] += 1
+                final['approved'] += 1
+                final['rejected_unique_ids'].append(completed_item.get('unique_id', key))
+                final['repaired_unique_ids'].append(completed_item.get('unique_id', key))
         final_rejection_ordinal = 0
         rejection_return_evidence = {
             'checked': first_stage['rejected'],
             'response_form_ids': 0,
             'latest_lookup_by_unique_id': first_stage['rejected'],
         }
-        for position, row in enumerate(sorted(form_rows, key=lambda item: item['ordinal']), start=1):
+        for position, row in enumerate(sorted_rows, start=1):
+            action_key = _checkpoint_key(row['unique_id'])
+            if action_key in completed_final:
+                if position % final_rejection_every == 0:
+                    final_rejection_ordinal += 1
+                    rejection_return_evidence['checked'] += 1
+                    rejection_return_evidence['latest_lookup_by_unique_id'] += 1
+                continue
             latest = _latest_snapshot(app, row['unique_id'])
-            if latest.status != '\u90e8\u95e8\u5df2\u5ba1\u6838':
-                raise HumanFlowError('final review received a form before department review')
             final_actor = center_actor if position % 2 else super_actor
             final_role = 'center' if position % 2 else 'super'
-            final[f'{final_role}_actions'] += 1
+            is_rejection = position % final_rejection_every == 0
+            if latest.status == '\u4e2d\u5fc3\u5df2\u5ba1\u6838':
+                final['approved'] += 1
+                _mark_flow_item(
+                    checkpoint_path,
+                    state,
+                    phase='final',
+                    unique_id=row['unique_id'],
+                    item={'unique_id': row['unique_id'], 'outcome': 'approved'},
+                )
+                completed_final.add(action_key)
+                continue
+            if latest.status == '\u5df2\u9a73\u56de' and is_rejection:
+                final_rejection_ordinal += 1
+                rejection_return_evidence['checked'] += 1
+                rejection_return_evidence['latest_lookup_by_unique_id'] += 1
+                if final_rejection_ordinal % final_repair_every:
+                    final['rejected'] += 1
+                    final['left_rejected'] += 1
+                    final['rejected_unique_ids'].append(row['unique_id'])
+                    _mark_flow_item(
+                        checkpoint_path,
+                        state,
+                        phase='final',
+                        unique_id=row['unique_id'],
+                        item={
+                            'unique_id': row['unique_id'],
+                            'outcome': 'left_rejected',
+                        },
+                    )
+                    completed_final.add(action_key)
+                    continue
+                officer_actor = officer_actor_for(row['officer_id'])
+                resubmitted = officer_actor.resubmit(latest.id, _repair_payload(latest))
+                before_automation = _manual_snapshot_tuple(resubmitted)
+                if _latest_successful_assessment(resubmitted.id) is None:
+                    reassess(resubmitted.id, row['review_mode'])
+                after_automation = _latest_snapshot(app, resubmitted.unique_id)
+                if _manual_snapshot_tuple(after_automation) != before_automation:
+                    raise HumanFlowError('automation changed a protected human field')
+                final_result = department_actors[row['department']].approve(
+                    resubmitted.id,
+                    '部门管理员返修后重新审核通过',
+                )
+                _assert_manual_action(
+                    final_result,
+                    department_actors[row['department']],
+                    '部门管理员返修后重新审核通过',
+                )
+                final_result = final_actor.approve(
+                    final_result.id,
+                    f'{final_role}管理员返修后最终通过',
+                )
+                _assert_manual_action(
+                    final_result,
+                    final_actor,
+                    f'{final_role}管理员返修后最终通过',
+                )
+                final['rejected'] += 1
+                final['repaired'] += 1
+                final['reassessed'] += 1
+                final['approved'] += 1
+                final['rejected_unique_ids'].append(row['unique_id'])
+                final['repaired_unique_ids'].append(row['unique_id'])
+                _mark_flow_item(
+                    checkpoint_path,
+                    state,
+                    phase='final',
+                    unique_id=row['unique_id'],
+                    item={'unique_id': row['unique_id'], 'outcome': 'repaired'},
+                )
+                completed_final.add(action_key)
+                continue
+            if latest.status != '\u90e8\u95e8\u5df2\u5ba1\u6838':
+                raise HumanFlowError('final review received a form before department review')
             if position % final_rejection_every:
                 approved = final_actor.approve(latest.id, f'{final_role}管理员最终验收通过')
                 _assert_manual_action(approved, final_actor, f'{final_role}管理员最终验收通过')
                 final['approved'] += 1
+                _mark_flow_item(
+                    checkpoint_path,
+                    state,
+                    phase='final',
+                    unique_id=row['unique_id'],
+                    item={'unique_id': row['unique_id'], 'outcome': 'approved'},
+                )
+                completed_final.add(action_key)
                 continue
 
             rejected = final_actor.reject(latest.id, f'{final_role}管理员最终驳回，请返修')
@@ -663,7 +1074,8 @@ def run_route_backed_human_flow(
                     _repair_payload(rejected),
                 )
                 before_automation = _manual_snapshot_tuple(resubmitted)
-                reassess(resubmitted.id, row['review_mode'])
+                if _latest_successful_assessment(resubmitted.id) is None:
+                    reassess(resubmitted.id, row['review_mode'])
                 after_automation = _latest_snapshot(app, resubmitted.unique_id)
                 if _manual_snapshot_tuple(after_automation) != before_automation:
                     raise HumanFlowError('automation changed a protected human field')
@@ -690,11 +1102,27 @@ def run_route_backed_human_flow(
                 final['repaired'] += 1
                 final['repaired_unique_ids'].append(rejected.unique_id)
                 final['approved'] += 1
+                _mark_flow_item(
+                    checkpoint_path,
+                    state,
+                    phase='final',
+                    unique_id=row['unique_id'],
+                    item={'unique_id': row['unique_id'], 'outcome': 'repaired'},
+                )
+                completed_final.add(action_key)
             else:
                 final['left_rejected'] += 1
+                _mark_flow_item(
+                    checkpoint_path,
+                    state,
+                    phase='final',
+                    unique_id=row['unique_id'],
+                    item={'unique_id': row['unique_id'], 'outcome': 'left_rejected'},
+                )
+                completed_final.add(action_key)
 
         chain_lengths = [len(version_ids(row['unique_id'])) for row in form_rows]
-        return {
+        result = {
             'status': 'PASS',
             'logins': {
                 'group': len(group_actors),
@@ -717,6 +1145,11 @@ def run_route_backed_human_flow(
                 'max_versions': max(chain_lengths) if chain_lengths else 0,
             },
         }
+        state['status'] = 'completed'
+        state['phase'] = 'complete'
+        state['result'] = result
+        save_human_flow_checkpoint(checkpoint_path, state)
+        return result
 
 
 __all__ = [
@@ -730,6 +1163,8 @@ __all__ = [
     'first_stage_action',
     'form_data_for_resubmission',
     'form_data_from_detail',
+    'load_human_flow_checkpoint',
+    'save_human_flow_checkpoint',
     'version_ids',
     'run_route_backed_human_flow',
 ]

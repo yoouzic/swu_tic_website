@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,6 +19,8 @@ from tools.business_acceptance.human_flow import (
     first_stage_action,
     form_data_for_resubmission,
     run_route_backed_human_flow,
+    load_human_flow_checkpoint,
+    save_human_flow_checkpoint,
     version_ids,
 )
 from tools.business_acceptance.cli import _build_parser
@@ -378,6 +381,108 @@ class BusinessAcceptanceHumanFlowTest(unittest.TestCase):
             result['first_stage']['rejected'] + result['final']['repaired'],
         )
 
+    def test_route_runner_resumes_from_checkpoint_without_repeating_successful_reassessments(self):
+        categories = (
+            '\u65e0\u660e\u663e\u98ce\u9669',
+            '\u5efa\u8bae\u590d\u6838',
+            '\u9ad8\u98ce\u9669\u7591\u4f3c\u5047\u8868',
+            '\u7cfb\u7edf\u65e0\u6cd5\u5224\u65ad',
+        )
+        for index, form in enumerate(self.forms):
+            existing = ReviewAssessment.query.filter_by(form_id=form.id).first()
+            if existing is not None:
+                existing.classification = categories[index % len(categories)]
+            else:
+                db.session.add(ReviewAssessment(
+                    form_id=form.id,
+                    form_version='acceptance-v1',
+                    classification=categories[index % len(categories)],
+                    coverage='none',
+                    fingerprint=f'{index + 100:064d}',
+                    suggested_comment=f'\u81ea\u52a8\u5efa\u8bae-{index}',
+                ))
+        db.session.commit()
+        officers_by_number = {user.number: user for user in self.officers}
+        specs = []
+        for ordinal, form in enumerate(self.forms, start=1):
+            officer = officers_by_number[form.listener_number]
+            specs.append(SimpleNamespace(
+                officer_id=officer.number,
+                department=officer.department,
+                group=officer.group,
+                ordinal=ordinal,
+                course_title=form.course_title,
+                lecture_date=form.lecture_date,
+                review_mode='rules_only',
+            ))
+        manifest = SimpleNamespace(forms=tuple(specs))
+        checkpoint = Path(self.temp_dir.name) / 'human-flow-run-state.json'
+        failed_once = False
+        successful_reassessments = []
+        resubmit_calls = Counter()
+        original_resubmit = BusinessActor.resubmit
+
+        def counted_resubmit(actor, rejected_form_id, payload):
+            resubmit_calls[int(rejected_form_id)] += 1
+            return original_resubmit(actor, rejected_form_id, payload)
+
+        BusinessActor.resubmit = counted_resubmit
+        try:
+            def interrupting_reassess(form_id, mode):
+                nonlocal failed_once
+                if not failed_once:
+                    failed_once = True
+                    raise RuntimeError('simulated process interruption')
+                successful_reassessments.append(int(form_id))
+
+            with self.assertRaises(RuntimeError):
+                run_route_backed_human_flow(
+                    app,
+                    manifest,
+                    self.password,
+                    admin_users={
+                        'group': self.group_admins,
+                        'department': self.department_admins,
+                        'center': [self.center_admin],
+                        'super': [self.super_admin],
+                    },
+                    reassess=interrupting_reassess,
+                    group_forms_per_department=4,
+                    final_rejection_every=4,
+                    final_repair_every=2,
+                    checkpoint_path=checkpoint,
+                )
+
+            result = run_route_backed_human_flow(
+                app,
+                manifest,
+                self.password,
+                admin_users={
+                    'group': self.group_admins,
+                    'department': self.department_admins,
+                    'center': [self.center_admin],
+                    'super': [self.super_admin],
+                },
+                reassess=interrupting_reassess,
+                group_forms_per_department=4,
+                final_rejection_every=4,
+                final_repair_every=2,
+                checkpoint_path=checkpoint,
+            )
+        finally:
+            BusinessActor.resubmit = original_resubmit
+
+        self.assertEqual(result['status'], 'PASS')
+        self.assertEqual(result['version_chains']['logical_forms'], len(self.forms))
+        self.assertTrue(successful_reassessments)
+        self.assertTrue(all(count == 1 for count in resubmit_calls.values()))
+        state = load_human_flow_checkpoint(checkpoint)
+        self.assertEqual(state['status'], 'completed')
+        self.assertEqual(
+            len(state['first_stage']['completed_unique_ids']),
+            len(self.forms),
+        )
+
     def test_cli_exposes_route_backed_human_flow_command(self):
         args = _build_parser().parse_args([
             'run-human-flow',
@@ -386,6 +491,21 @@ class BusinessAcceptanceHumanFlowTest(unittest.TestCase):
         ])
         self.assertEqual(args.command, 'run-human-flow')
         self.assertEqual(str(args.manifest), 'acceptance\\manifest.json')
+
+    def test_human_flow_checkpoint_round_trips_without_raw_business_payloads(self):
+        path = Path(self.temp_dir.name) / 'human-flow-run-state.json'
+        state = load_human_flow_checkpoint(path)
+        self.assertEqual(state['version'], 1)
+        self.assertEqual(state['status'], 'not_started')
+        state['first_stage']['completed_unique_ids'].append('U-1')
+        state['last_completed_unique_id'] = 'U-1'
+        save_human_flow_checkpoint(path, state)
+
+        loaded = load_human_flow_checkpoint(path)
+        self.assertEqual(loaded['first_stage']['completed_unique_ids'], ['U-1'])
+        self.assertEqual(loaded['last_completed_unique_id'], 'U-1')
+        self.assertNotIn('review_comment', loaded)
+        self.assertNotIn('response', loaded)
 
     def test_production_status_gate_matches_the_four_stage_business_flow(self):
         for admin in (*self.group_admins, *self.department_admins):

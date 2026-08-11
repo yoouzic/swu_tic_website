@@ -1168,6 +1168,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     manifest,
                     run_password,
                     reassess=_build_route_reassessment(manifest, super_admin.id),
+                    checkpoint_path=manifest.config.output_path(
+                        'results/human-flow-run-state.json',
+                    ),
                 )
             _write_json_atomic(manifest.config.output_path('results/human-flow.json'), result)
         except (OSError, ValueError, RuntimeError) as exc:
