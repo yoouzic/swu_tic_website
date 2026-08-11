@@ -1146,6 +1146,32 @@ def _run_retry(
     return payload
 
 
+def _select_cache_keys(
+    successful_by_mode: Mapping[str, Iterable[str]],
+    key_to_id: Mapping[str, int],
+    *,
+    error_form_ids: set[int],
+    sample_size: int,
+) -> dict[str, tuple[str, ...]]:
+    """Select only successful forms whose persisted assessments have no error."""
+
+    if not isinstance(sample_size, int) or sample_size <= 0 or sample_size % 2:
+        raise RealAcceptanceError('cache sample size must be a positive even number')
+    each = sample_size // 2
+    selected: dict[str, tuple[str, ...]] = {}
+    for mode in ('llm_only', 'combined'):
+        eligible = tuple(
+            key for key in successful_by_mode.get(mode, ())
+            if int(key_to_id[key]) not in error_form_ids
+        )
+        selected[mode] = eligible[:each]
+    if sum(len(values) for values in selected.values()) != sample_size:
+        raise RealAcceptanceError(
+            'fewer than the requested successful unchanged forms have error-free assessments'
+        )
+    return selected
+
+
 def _run_cache(
     manifest,
     *,
@@ -1154,13 +1180,22 @@ def _run_cache(
     mode_by_key,
     run_batch,
     records,
+    error_form_ids: set[int],
     sample_size: int,
     timeout_seconds: float,
     poll_seconds: float,
 ):
     path = _runtime_path(manifest, 'results/real-batches-cache.json')
     existing = _read_json(path, None)
-    if isinstance(existing, Mapping) and existing.get('phase') == 'cache':
+    if (
+        isinstance(existing, Mapping)
+        and existing.get('phase') == 'cache'
+        and existing.get('status') == 'completed'
+        and int(existing.get('sample_size', 0) or 0) == sample_size
+        and int(existing.get('cache_hits', 0) or 0) == sample_size
+        and int(existing.get('http_attempt_delta', -1)) == 0
+        and int(existing.get('uncertain_http_attempts', -1)) == 0
+    ):
         return dict(existing)
     if not isinstance(sample_size, int) or sample_size != 50:
         raise RealAcceptanceError('real cache phase requires exactly 50 unchanged forms')
@@ -1174,12 +1209,12 @@ def _run_cache(
         for key in record.get('successful_form_keys', ()):
             if isinstance(key, str) and key not in successful_by_mode[mode]:
                 successful_by_mode[mode].append(key)
-    selected = {
-        'llm_only': tuple(successful_by_mode['llm_only'][:25]),
-        'combined': tuple(successful_by_mode['combined'][:25]),
-    }
-    if sum(len(values) for values in selected.values()) != sample_size:
-        raise RealAcceptanceError('fewer than 50 successful unchanged LLM forms are available for cache reuse')
+    selected = _select_cache_keys(
+        successful_by_mode,
+        key_to_id,
+        error_form_ids=error_form_ids,
+        sample_size=sample_size,
+    )
     cache_records = []
     for mode in ('llm_only', 'combined'):
         cache_records.append(_decorate_and_run(
@@ -1239,7 +1274,7 @@ def run_real_phase(
     from app.app import app
     from app.models import LectureForm, db
     from app.review_automation import get_celery_app
-    from app.review_automation.models import ReviewBatch, ReviewBatchItem
+    from app.review_automation.models import ReviewAssessment, ReviewBatch, ReviewBatchItem
 
     with app.app_context():
         celery = get_celery_app(app)
@@ -1340,6 +1375,12 @@ def run_real_phase(
             mode_by_key=mode_by_key,
             run_batch=run_batch,
             records=records,
+            error_form_ids={
+                int(assessment.form_id)
+                for assessment in ReviewAssessment.query.filter(
+                    ReviewAssessment.error_code.isnot(None),
+                ).all()
+            },
             sample_size=sample_size,
             timeout_seconds=timeout_seconds,
             poll_seconds=poll_seconds,

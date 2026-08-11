@@ -386,7 +386,19 @@ class AssessmentService:
         if not force_refresh:
             cached = ReviewAssessment.query.filter_by(fingerprint=fingerprint).first()
             if cached is not None:
-                return self._summary(cached, cache_hit=True)
+                if cached.error_code is None:
+                    return self._summary(cached, cache_hit=True)
+                force_nonce = str(uuid.uuid4())
+                fingerprint = build_assessment_fingerprint(
+                    form=normalized.fields,
+                    form_version=normalized.form_version,
+                    schedule_dependencies=schedule_dependencies,
+                    rule_revisions=rule_snapshot,
+                    prompt_version=self.prompt_version,
+                    model_name=self.model_id,
+                    force_nonce=force_nonce,
+                    review_mode=mode,
+                )
 
         history = tuple(self._load_history(form) or ())
         school_matches = tuple(self._load_school_matches(form))

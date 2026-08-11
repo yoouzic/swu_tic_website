@@ -7,6 +7,7 @@ from tools.business_acceptance.real_batches import wait_for_batch
 from tools.business_acceptance.real_runner import (
     _merge_recovered_summary,
     _merge_stage_record,
+    _select_cache_keys,
     _stale_recovery_plan,
 )
 
@@ -214,6 +215,29 @@ class RealBatchPlanningTest(unittest.TestCase):
         self.assertEqual(merged['successful_form_ids'], [101, 102, 103, 104])
         self.assertEqual(merged['category_counts'], {'clear': 2, 'review': 2})
         self.assertEqual(merged['batch_ids'], ['original-batch', 'recovery-batch'])
+
+    def test_cache_selection_excludes_forms_with_error_assessments(self):
+        selected = _select_cache_keys(
+            {
+                'llm_only': ['L-1', 'L-2', 'L-3'],
+                'combined': ['C-1', 'C-2', 'C-3'],
+            },
+            {
+                'L-1': 1,
+                'L-2': 2,
+                'L-3': 3,
+                'C-1': 11,
+                'C-2': 12,
+                'C-3': 13,
+            },
+            error_form_ids={1, 11},
+            sample_size=4,
+        )
+
+        self.assertEqual(selected, {
+            'llm_only': ('L-2', 'L-3'),
+            'combined': ('C-2', 'C-3'),
+        })
 
 
 if __name__ == '__main__':

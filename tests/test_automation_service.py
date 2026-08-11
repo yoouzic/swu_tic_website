@@ -151,6 +151,22 @@ class AssessmentServiceTest(unittest.TestCase):
         self.assertEqual(len(llm.calls), 1)
         self.assert_protected_unchanged(snapshot)
 
+    def test_error_assessment_is_not_reused_as_successful_cache(self):
+        snapshot = self.protected_snapshot()
+        llm = FakeLLM(responses=[InvalidLLMResponse('truncated_output')])
+        service = self.service(llm, runner=lambda form, context: ())
+
+        failed = service.assess_form(self.form.id)
+        self.assertEqual(failed.error_code, 'truncated_output')
+
+        recovered = service.assess_form(self.form.id)
+
+        self.assertFalse(recovered.cache_hit)
+        self.assertNotEqual(failed.assessment_id, recovered.assessment_id)
+        self.assertEqual(len(llm.calls), 2)
+        self.assertIsNone(recovered.error_code)
+        self.assert_protected_unchanged(snapshot)
+
     def test_force_refresh_adds_nonce_and_preserves_old_assessment(self):
         snapshot = self.protected_snapshot()
         llm = FakeLLM()
