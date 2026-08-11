@@ -128,12 +128,12 @@ def can_review_status(user_id, form_status):
         return False
     
     if permission == '审表_中心':
-        # 中心权限可以审核所有状态
-        return True
-    
+        # 最终审核必须接收已由首阶段管理员推进的表单。
+        return form_status == '部门已审核'
+
     elif permission in ['审表_部门', '审表_小组']:
-        # 部门和小组权限只能审核待审核和部门已审核状态
-        return form_status in ['待审核', '部门已审核']
+        # 首阶段管理员只能审核待审核版本，避免重复推进同一阶段。
+        return form_status == '待审核'
     
     return False
 

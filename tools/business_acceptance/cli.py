@@ -35,6 +35,7 @@ from .generator import (
     write_acceptance_workbooks,
 )
 from .seed import load_manifest_file, seed_acceptance_database
+from .human_flow import HumanFlowError, run_route_backed_human_flow
 
 
 def _runtime_dirs(config: AcceptanceConfig) -> None:
@@ -318,7 +319,36 @@ def _build_parser() -> argparse.ArgumentParser:
     batches.add_argument('--manifest', type=Path, default=DEFAULT_RUNTIME_RELATIVE / 'manifest.json')
     batches.add_argument('--sample-size', type=int, default=50)
     batches.add_argument('--fake-client', action='store_true')
+    human_flow = subparsers.add_parser(
+        'run-human-flow',
+        help='run the route-backed synthetic administrator and resubmission flow',
+    )
+    human_flow.add_argument('--manifest', type=Path, default=DEFAULT_RUNTIME_RELATIVE / 'manifest.json')
     return parser
+
+
+def _build_route_reassessment(manifest, requester_id):
+    """Return a synchronous callback for a new form version's original mode."""
+
+    def reassess(form_id, review_mode):
+        mode = str(getattr(review_mode, 'value', review_mode))
+        if mode != 'rules_only' and not os.environ.get('DEEPSEEK_API_KEY'):
+            raise RuntimeError('DEEPSEEK_API_KEY_REQUIRED_FOR_HUMAN_REASSESSMENT')
+        from app.review_automation.tasks.review import create_review_batch, run_review_batch_task
+
+        batch = create_review_batch(
+            [int(form_id)],
+            requester_id=requester_id,
+            force_refresh=False,
+            review_mode=mode,
+            transient_retries=0,
+            semester=manifest.config.semester,
+            semester_monday=manifest.config.semester_monday,
+            enqueue=False,
+        )
+        return run_review_batch_task(str(batch.id))
+
+    return reassess
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -424,6 +454,54 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f'retried={result["retried"]} '
                 f'http_attempts={result["http_attempts"]}'
             )
+        return 0
+    if args.command == 'run-human-flow':
+        if os.environ.get('ACCEPTANCE_RUN') != '1':
+            print(
+                'HUMAN_FLOW=BLOCKED reason=ACCEPTANCE_RUN=1 is required',
+                file=__import__('sys').stderr,
+            )
+            return 2
+        if not os.environ.get('SQLITE_DB_PATH'):
+            print(
+                'HUMAN_FLOW=BLOCKED reason=SQLITE_DB_PATH must explicitly select acceptance database',
+                file=__import__('sys').stderr,
+            )
+            return 2
+        try:
+            manifest, run_password = load_manifest_file(args.manifest)
+            os.environ.setdefault(
+                'AUTOMATION_UPLOAD_DIR',
+                str(manifest.config.output_path('uploads')),
+            )
+            from app.app import app
+            from app.models import User
+
+            with app.app_context():
+                super_admin = User.query.filter_by(number='YAS01').first()
+                if super_admin is None:
+                    raise HumanFlowError('acceptance super administrator is missing')
+                result = run_route_backed_human_flow(
+                    app,
+                    manifest,
+                    run_password,
+                    reassess=_build_route_reassessment(manifest, super_admin.id),
+                )
+            _write_json_atomic(manifest.config.output_path('results/human-flow.json'), result)
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(f'HUMAN_FLOW=FAIL reason={exc}', file=__import__('sys').stderr)
+            return 2
+        print(
+            'HUMAN_FLOW=PASS '
+            f"group_logins={result['logins']['group']} "
+            f"department_logins={result['logins']['department']} "
+            f"center_logins={result['logins']['center']} "
+            f"super_logins={result['logins']['super']} "
+            f"first_stage={result['first_stage']['planned']} "
+            f"first_stage_rejected={result['first_stage']['rejected']} "
+            f"final_rejected={result['final']['rejected']} "
+            f"final_left_rejected={result['final']['left_rejected']}"
+        )
         return 0
     return 2
 

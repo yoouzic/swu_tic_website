@@ -187,6 +187,10 @@ class ReviewFormDraftTest(unittest.TestCase):
         self.client.put(f'/admin/api/review/form/{self.form.id}/draft', json=payload)
         self.assertEqual(LectureFormDraft.query.count(), 1)
 
+        # A super administrator is a final reviewer; the production status gate
+        # requires a department-approved source before the final submission.
+        self.form.status = '部门已审核'
+        db.session.commit()
         submit_response = self.client.post(f'/admin/api/review/submit/{self.form.id}', json=payload)
 
         self.assertEqual(submit_response.status_code, 200)
