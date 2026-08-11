@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import secrets
 from typing import Sequence
@@ -20,6 +21,7 @@ from .generator import (
     write_acceptance_school_schedule,
     write_acceptance_workbooks,
 )
+from .seed import load_manifest_file, seed_acceptance_database
 
 
 def _runtime_dirs(config: AcceptanceConfig) -> None:
@@ -143,6 +145,8 @@ def _build_parser() -> argparse.ArgumentParser:
     prepare.add_argument('--runtime-root', type=Path, default=DEFAULT_RUNTIME_RELATIVE)
     prepare.add_argument('--demo-dir', type=Path)
     prepare.add_argument('--school-schedule', type=Path)
+    seed = subparsers.add_parser('seed', help='seed the isolated synthetic acceptance database')
+    seed.add_argument('--manifest', type=Path, default=DEFAULT_RUNTIME_RELATIVE / 'manifest.json')
     return parser
 
 
@@ -167,6 +171,44 @@ def main(argv: Sequence[str] | None = None) -> int:
             f'combined={manifest.batch_counts["combined"]} '
             f'normal={manifest.normal_control_count} '
             f'violation_intended={manifest.violation_intended_count}'
+        )
+        return 0
+    if args.command == 'seed':
+        # Refuse to import the Flask application until the caller has selected
+        # an explicit SQLite path.  This keeps a failed acceptance invocation
+        # from creating or opening the default business database.
+        if os.environ.get('ACCEPTANCE_RUN') != '1':
+            print('SEED=BLOCKED reason=ACCEPTANCE_RUN=1 is required', file=__import__('sys').stderr)
+            return 2
+        if not os.environ.get('SQLITE_DB_PATH'):
+            print('SEED=BLOCKED reason=SQLITE_DB_PATH must explicitly select acceptance database', file=__import__('sys').stderr)
+            return 2
+        try:
+            manifest, run_password = load_manifest_file(args.manifest)
+            os.environ.setdefault(
+                'AUTOMATION_UPLOAD_DIR',
+                str(manifest.config.output_path('uploads')),
+            )
+            from app.app import app
+
+            with app.app_context():
+                result = seed_acceptance_database(
+                    app,
+                    manifest,
+                    password=run_password,
+                )
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(f'SEED=BLOCKED reason={exc}', file=__import__('sys').stderr)
+            return 2
+        print(
+            'SEED=PASS '
+            f'officers={result.information_officers} '
+            f'admins={result.administrators} '
+            f'departments={result.departments} '
+            f'groups={result.groups} '
+            f'logical_forms={result.logical_forms} '
+            f'physical_rows={result.physical_form_rows} '
+            f'active_datasets={result.active_datasets}'
         )
         return 0
     return 2

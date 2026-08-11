@@ -1,13 +1,27 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import hashlib
+import os
 import unittest
+
+from sqlalchemy import text
+
+from app.app import app
+from app.models import LectureForm, Permission, User, db
+from app.review_automation.models import ScheduleDataset, ScheduleImportIssue
+from app.review_automation.schedules.importer import CLASS_MAPPING_KIND, PERSONAL_KIND, SCHOOL_KIND
+from app.utils.review_permissions import get_reviewable_users, get_user_review_permission
+from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
 
 from tools.business_acceptance.config import AcceptanceConfig
 from tools.business_acceptance.generator import (
+    AcceptanceManifest,
     ScheduleStructure,
     assert_real_identity_patterns_absent,
     build_acceptance_school_schedule,
     generate_manifest,
+    write_acceptance_school_schedule,
+    write_acceptance_workbooks,
 )
 
 
@@ -107,6 +121,156 @@ class BusinessAcceptanceGeneratorTest(unittest.TestCase):
                     and form.student_grade_class == entry.teaching_class
                 )]
                 self.assertTrue(matches)
+
+class BusinessAcceptanceSeedTest(unittest.TestCase):
+    def test_seed_isolated_database_closes_counts_permissions_and_schedule_datasets(self):
+        from tools.business_acceptance.seed import seed_acceptance_database
+
+        instance_root = Path('data/instance/acceptance-2026-08-11').resolve()
+        storage_root = Path('data/storage/acceptance-2026-08-11').resolve()
+        instance_root.mkdir(parents=True, exist_ok=True)
+        storage_root.mkdir(parents=True, exist_ok=True)
+        old_acceptance_run = os.environ.get('ACCEPTANCE_RUN')
+        old_upload_dir = app.config.get('AUTOMATION_UPLOAD_DIR')
+        with TemporaryDirectory(dir=instance_root) as instance_dir, TemporaryDirectory(dir=storage_root) as runtime_dir:
+            runtime = Path(runtime_dir)
+            config = AcceptanceConfig(runtime_root=runtime)
+            manifest = generate_manifest(config, ['该老师讲解具体，课堂组织清晰。'])
+            write_acceptance_workbooks(manifest, runtime / 'generated')
+            write_acceptance_school_schedule(manifest, runtime / 'generated' / 'school-schedule-acceptance.xlsx')
+            db_path = Path(instance_dir) / 'acceptance.sqlite'
+            try:
+                os.environ['ACCEPTANCE_RUN'] = '1'
+                configure_sqlite_database(app, db, db_path)
+                app.config['AUTOMATION_UPLOAD_DIR'] = str(runtime / 'uploads')
+                with app.app_context():
+                    db.drop_all()
+                    db.create_all()
+                    result = seed_acceptance_database(app, manifest, password='test-only-password')
+
+                    self.assertEqual(result.information_officers, 1002)
+                    self.assertEqual(result.administrators, 10)
+                    self.assertEqual(result.departments, 4)
+                    self.assertEqual(result.groups, 8)
+                    self.assertEqual(result.logical_forms, 1500)
+                    self.assertEqual(result.physical_form_rows, 1500)
+                    self.assertEqual(result.active_datasets, 3)
+                    self.assertEqual(
+                        result.coverage_counts,
+                        {'complete': 334, 'basic': 334, 'missing': 334},
+                    )
+                    active_datasets = ScheduleDataset.query.filter_by(
+                        semester=manifest.config.semester,
+                        status='active',
+                    ).all()
+                    self.assertEqual(
+                        {dataset.kind for dataset in active_datasets},
+                        {SCHOOL_KIND, CLASS_MAPPING_KIND, PERSONAL_KIND},
+                    )
+                    for kind, filename in (
+                        (SCHOOL_KIND, 'school-schedule-acceptance.xlsx'),
+                        (CLASS_MAPPING_KIND, 'class-mapping.xlsx'),
+                        (PERSONAL_KIND, 'personal-schedule.xlsx'),
+                    ):
+                        dataset = next(item for item in active_datasets if item.kind == kind)
+                        data = (runtime / 'generated' / filename).read_bytes()
+                        self.assertEqual(dataset.sha256, hashlib.sha256(data).hexdigest())
+                        self.assertEqual(dataset.error_count, 0)
+                        self.assertEqual(
+                            ScheduleImportIssue.query.filter_by(dataset_id=dataset.id).count(),
+                            0,
+                        )
+                    self.assertEqual(LectureForm.query.filter_by(status='待审核').count(), 1500)
+                    permissions = {permission.name for permission in Permission.query.all()}
+                    self.assertTrue({'审表_小组', '审表_部门', '审表_中心'} <= permissions)
+                    for admin_id, expected_permission in result.permission_by_admin.items():
+                        self.assertEqual(get_user_review_permission(admin_id), expected_permission)
+
+                    officers = {user.number: user.id for user in User.query.filter_by(role='信息员').all()}
+                    for admin_id in result.admin_user_ids['group']:
+                        admin = db.session.get(User, admin_id)
+                        expected = {
+                            officer.id for officer in User.query.filter_by(
+                                role='信息员', department=admin.department, group_id=admin.group_id,
+                            ).all()
+                        }
+                        actual = {
+                            user_id for user_id in get_reviewable_users(admin_id)
+                            if db.session.get(User, user_id).role == '信息员'
+                        }
+                        self.assertEqual(actual, expected)
+                    for admin_id in result.admin_user_ids['department']:
+                        admin = db.session.get(User, admin_id)
+                        expected = {
+                            officer.id for officer in User.query.filter_by(
+                                role='信息员', department=admin.department,
+                            ).all()
+                        }
+                        actual = {
+                            user_id for user_id in get_reviewable_users(admin_id)
+                            if db.session.get(User, user_id).role == '信息员'
+                        }
+                        self.assertEqual(actual, expected)
+                    all_officer_ids = set(officers.values())
+                    for key in ('center', 'super'):
+                        for admin_id in result.admin_user_ids[key]:
+                            actual = {
+                                user_id for user_id in get_reviewable_users(admin_id)
+                                if db.session.get(User, user_id).role == '信息员'
+                            }
+                            self.assertEqual(actual, all_officer_ids)
+
+                    self.assertEqual(db.session.execute(text('PRAGMA journal_mode')).scalar(), 'wal')
+                    self.assertEqual(db.session.execute(text('PRAGMA busy_timeout')).scalar(), 30000)
+
+                    second = seed_acceptance_database(app, manifest, password='test-only-password')
+                    self.assertEqual(second.logical_forms, result.logical_forms)
+                    self.assertEqual(second.dataset_ids, result.dataset_ids)
+                    self.assertEqual(
+                        LectureForm.query.filter_by(status='\u5f85\u5ba1\u6838').count(),
+                        1500,
+                    )
+            finally:
+                with app.app_context():
+                    cleanup_sqlite_database(db, drop_all=False)
+                if old_acceptance_run is None:
+                    os.environ.pop('ACCEPTANCE_RUN', None)
+                else:
+                    os.environ['ACCEPTANCE_RUN'] = old_acceptance_run
+                app.config['AUTOMATION_UPLOAD_DIR'] = old_upload_dir
+
+    def test_seed_rejects_database_outside_acceptance_instance_root(self):
+        repo = Path(__file__).resolve().parents[1]
+        outside_root = repo / 'data' / 'instance'
+        storage_root = repo / 'data' / 'storage' / 'acceptance-2026-08-11'
+        outside_root.mkdir(parents=True, exist_ok=True)
+        storage_root.mkdir(parents=True, exist_ok=True)
+        old_acceptance_run = os.environ.get('ACCEPTANCE_RUN')
+        old_upload_dir = app.config.get('AUTOMATION_UPLOAD_DIR')
+        with TemporaryDirectory(dir=outside_root) as instance_dir, TemporaryDirectory(dir=storage_root) as runtime_dir:
+            manifest = AcceptanceManifest(
+                config=AcceptanceConfig(runtime_root=Path(runtime_dir)),
+                officers=(),
+                forms=(),
+                corpus_sha256='',
+                sha256='',
+            )
+            try:
+                os.environ['ACCEPTANCE_RUN'] = '1'
+                configure_sqlite_database(app, db, Path(instance_dir) / 'outside.sqlite')
+                with app.app_context():
+                    with self.assertRaisesRegex(RuntimeError, 'outside the isolated acceptance root'):
+                        from tools.business_acceptance.seed import seed_acceptance_database
+                        seed_acceptance_database(app, manifest, password='x')
+            finally:
+                with app.app_context():
+                    cleanup_sqlite_database(db, drop_all=False)
+                if old_acceptance_run is None:
+                    os.environ.pop('ACCEPTANCE_RUN', None)
+                else:
+                    os.environ['ACCEPTANCE_RUN'] = old_acceptance_run
+                app.config['AUTOMATION_UPLOAD_DIR'] = old_upload_dir
+
 
 if __name__ == '__main__':
     unittest.main()
