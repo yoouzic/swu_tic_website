@@ -111,6 +111,7 @@ def build_default_service(config=None):
             timeout=flask_app.config.get('DEEPSEEK_TIMEOUT_SECONDS', 60),
             reasoning_effort=flask_app.config.get('DEEPSEEK_REASONING_EFFORT', 'high'),
             max_retries=flask_app.config.get('DEEPSEEK_MAX_RETRIES', 3),
+            max_tokens=flask_app.config.get('DEEPSEEK_MAX_TOKENS', 8192),
         )
     configured_enabled = config.get('llm_enabled')
     llm_enabled = bool(client) if configured_enabled is None else bool(configured_enabled)

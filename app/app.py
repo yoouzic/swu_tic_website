@@ -61,6 +61,10 @@ app.config['DEEPSEEK_THINKING_ENABLED'] = env_bool('DEEPSEEK_THINKING_ENABLED', 
 app.config['DEEPSEEK_REASONING_EFFORT'] = env_value('DEEPSEEK_REASONING_EFFORT', 'high')
 app.config['DEEPSEEK_TIMEOUT_SECONDS'] = env_int('DEEPSEEK_TIMEOUT_SECONDS', 60, minimum=1)
 app.config['DEEPSEEK_MAX_RETRIES'] = env_int('DEEPSEEK_MAX_RETRIES', 3, minimum=0)
+app.config['DEEPSEEK_MAX_TOKENS'] = min(
+    env_int('DEEPSEEK_MAX_TOKENS', 8192, minimum=1),
+    8192,
+)
 app.config['DEEPSEEK_PROMPT_VERSION'] = env_value(
     'DEEPSEEK_PROMPT_VERSION', '2026-08-10-v2-context'
 )

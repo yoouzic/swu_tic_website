@@ -74,6 +74,7 @@ class AutomationBootstrapTest(unittest.TestCase):
         self.assertEqual(app.config['DEEPSEEK_BASE_URL'], 'https://api.deepseek.com')
         self.assertEqual(app.config['DEEPSEEK_MODEL'], 'deepseek-v4-flash')
         self.assertTrue(app.config['DEEPSEEK_THINKING_ENABLED'])
+        self.assertEqual(app.config['DEEPSEEK_MAX_TOKENS'], 8192)
         self.assertFalse(app.config['CELERY_TASK_ALWAYS_EAGER'])
         self.assertNotIn('DEEPSEEK_API_KEY', app.config.get('AUTOMATION_PUBLIC_CONFIG', {}))
 
