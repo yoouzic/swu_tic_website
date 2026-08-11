@@ -190,10 +190,9 @@ def build_first_stage_actions(
                 ),
                 None,
             )
-            if candidate is None:
-                raise HumanFlowError(f'group scope lacks category {category} for {department}')
-            selected.append(candidate)
-            selected_ids.add(candidate['form_id'])
+            if candidate is not None:
+                selected.append(candidate)
+                selected_ids.add(candidate['form_id'])
         for row in group_candidates:
             if len(selected) >= group_forms_per_department:
                 break
@@ -202,8 +201,6 @@ def build_first_stage_actions(
                 selected_ids.add(row['form_id'])
 
         department_rows = [row for row in rows if row['form_id'] not in selected_ids]
-        if {classifications.get(row['form_id'], classifications.get(str(row['form_id']))) for row in department_rows} != set(FIRST_STAGE_CATEGORIES):
-            raise HumanFlowError(f'department scope lacks all categories for {department}')
 
         for role, role_rows in (('group', selected), ('department', department_rows)):
             for row in role_rows:

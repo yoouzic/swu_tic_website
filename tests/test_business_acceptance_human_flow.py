@@ -281,6 +281,39 @@ class BusinessAcceptanceHumanFlowTest(unittest.TestCase):
                 {'approve'},
             )
 
+    def test_first_stage_plan_accepts_real_scopes_without_missing_categories(self):
+        clear = '\u65e0\u660e\u663e\u98ce\u9669'
+        review = '\u5efa\u8bae\u590d\u6838'
+        rows = []
+        classifications = {}
+        form_id = 2000
+        for group, category in (('group-0', clear), ('group-1', review)):
+            for ordinal in range(4):
+                form_id += 1
+                rows.append({
+                    'form_id': form_id,
+                    'unique_id': f'U-{form_id}',
+                    'department': 'dept-0',
+                    'group': group,
+                    'ordinal': form_id,
+                })
+                classifications[form_id] = category
+
+        actions = build_first_stage_actions(
+            rows,
+            classifications,
+            group_admin_groups={'dept-0': 'group-0'},
+            group_forms_per_department=4,
+        )
+
+        self.assertEqual(len(actions), len(rows))
+        self.assertEqual({item.role for item in actions}, {'group', 'department'})
+        self.assertEqual(
+            {item.action for item in actions if item.role == 'group'},
+            {'approve'},
+        )
+        self.assertIn('reject', {item.action for item in actions if item.role == 'department'})
+
     def test_route_runner_reassesses_repairs_and_leaves_half_final_rejections(self):
         categories = ('无明显风险', '建议复核', '高风险疑似假表', '系统无法判断')
         for index, form in enumerate(self.forms):
