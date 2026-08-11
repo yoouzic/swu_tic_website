@@ -36,6 +36,7 @@ TRANSIENT_ERROR_CODES = frozenset({
     'provider_unavailable',
     'transient',
 })
+STAGE_RECOVERY_ERROR_CODES = frozenset({'truncated_output'})
 
 
 class RealAcceptanceError(RuntimeError):
@@ -273,6 +274,79 @@ def _aggregate_records(records: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _merge_stage_record(
+    original: Mapping[str, Any],
+    recovery: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Merge a failed-item recovery into one fixed-size staged record."""
+
+    merged = dict(original)
+    target = int(original.get('target', 0) or 0)
+    form_keys = [str(value) for value in original.get('form_keys', ())]
+    allowed_keys = set(form_keys)
+    successful = {
+        str(value)
+        for record in (original, recovery)
+        for value in record.get('successful_form_keys', ())
+        if str(value) in allowed_keys
+    }
+    failed_by_key: dict[str, dict[str, Any]] = {}
+    for record in (original, recovery):
+        for item in record.get('failed_items', ()):
+            if not isinstance(item, Mapping):
+                continue
+            key = str(item.get('form_key', ''))
+            if key in allowed_keys and key not in successful:
+                failed_by_key[key] = {
+                    'form_key': key,
+                    'error_code': item.get('error_code'),
+                }
+    failed_items = [failed_by_key[key] for key in form_keys if key in failed_by_key]
+    processed = len(successful)
+    failed = len(failed_items)
+    cancelled = int(original.get('cancelled', 0) or 0) + int(
+        recovery.get('cancelled', 0) or 0
+    )
+    terminal_count = min(target, processed + failed + cancelled)
+    if failed or cancelled:
+        status = 'completed_with_errors'
+    elif terminal_count == target:
+        status = 'completed'
+    else:
+        status = 'queued'
+    batch_ids = []
+    for record in (original, recovery):
+        for value in record.get('batch_ids', ()):
+            value = str(value)
+            if value not in batch_ids:
+                batch_ids.append(value)
+    merged.update({
+        'form_keys': form_keys,
+        'target': target,
+        'processed': processed,
+        'terminal_count': terminal_count,
+        'failed': failed,
+        'cancelled': cancelled,
+        'status': status,
+        'http_attempts': sum(
+            int(record.get('http_attempts', 0) or 0)
+            for record in (original, recovery)
+        ),
+        'batch_ids': batch_ids,
+        'successful_form_keys': [key for key in form_keys if key in successful],
+        'failed_items': failed_items,
+    })
+    for key in ('cache_hits',):
+        merged[key] = sum(
+            int(record.get(key, 0) or 0) for record in (original, recovery)
+        )
+    for key in ('p50_duration_ms', 'p95_duration_ms', 'max_duration_ms'):
+        merged[key] = max(
+            int(record.get(key, 0) or 0) for record in (original, recovery)
+        )
+    return merged
+
+
 def _state_after_records(manifest, records, *, phase: str, safe_concurrency: int | None = None):
     state = _load_real_state(manifest)
     primary = [item for item in records if item.get('phase') in {'staged', 'main'}]
@@ -427,11 +501,14 @@ def _decorate_and_run(
     timeout_seconds: float,
     poll_seconds: float,
     stage_index: int | None = None,
+    force_refresh: bool | None = None,
 ):
+    if force_refresh is None:
+        force_refresh = phase == 'retry'
     summary = run_batch(
         tuple(key_to_id[key] for key in form_keys),
         mode,
-        force_refresh=(phase == 'retry'),
+        force_refresh=force_refresh,
         timeout_seconds=timeout_seconds,
         poll_seconds=poll_seconds,
     )
@@ -465,6 +542,91 @@ def _stage_observations(payload: Mapping[str, Any]) -> list[StageObservation]:
     return observations
 
 
+def _recover_existing_stage(
+    existing_stage: Mapping[str, Any],
+    stage,
+    *,
+    key_to_id,
+    id_to_key,
+    mode_by_key,
+    run_batch,
+    timeout_seconds: float,
+    poll_seconds: float,
+    stage_index: int,
+) -> dict[str, Any]:
+    """Recover only staged items failed by the known output-length defect."""
+
+    failed_by_mode: dict[str, list[str]] = defaultdict(list)
+    stage_keys = set(stage.form_keys)
+    for record in existing_stage.get('records', ()):
+        if not isinstance(record, Mapping):
+            continue
+        mode = str(record.get('mode'))
+        for item in record.get('failed_items', ()):
+            if not isinstance(item, Mapping):
+                continue
+            key = item.get('form_key')
+            code = item.get('error_code')
+            if key not in stage_keys or mode_by_key.get(key) != mode:
+                raise RealAcceptanceError('staged recovery artifact has an invalid form mapping')
+            if code not in STAGE_RECOVERY_ERROR_CODES:
+                raise RealAcceptanceError(
+                    f'staged recovery is not permitted for error code {code}'
+                )
+            if key not in failed_by_mode[mode]:
+                failed_by_mode[mode].append(key)
+    if not any(failed_by_mode.values()):
+        raise RealAcceptanceError('staged artifact is incomplete without recoverable failed items')
+
+    recovery_by_mode: dict[str, dict[str, Any]] = {}
+    for mode in ('llm_only', 'combined'):
+        keys = tuple(failed_by_mode.get(mode, ()))
+        if not keys:
+            continue
+        recovery_by_mode[mode] = _decorate_and_run(
+            run_batch,
+            phase='staged',
+            mode=mode,
+            form_keys=keys,
+            key_to_id=key_to_id,
+            id_to_key=id_to_key,
+            timeout_seconds=timeout_seconds,
+            poll_seconds=poll_seconds,
+            stage_index=stage_index,
+            force_refresh=True,
+        )
+
+    merged_records = []
+    for record in existing_stage.get('records', ()):
+        if not isinstance(record, Mapping):
+            continue
+        mode = str(record.get('mode'))
+        recovery = recovery_by_mode.get(mode)
+        merged_records.append(
+            _merge_stage_record(record, recovery)
+            if recovery is not None else dict(record)
+        )
+    aggregate = _aggregate_records(merged_records)
+    rate_limited = sum(
+        1 for record in merged_records for item in record.get('failed_items', ())
+        if isinstance(item, Mapping) and item.get('error_code') == 'rate_limited'
+    )
+    stage_payload = dict(existing_stage)
+    stage_payload.update({
+        'target': int(existing_stage.get('target', stage.target) or stage.target),
+        'processed': aggregate['processed'],
+        'terminal_count': aggregate['terminal_count'],
+        'failed': aggregate['failed'],
+        'cancelled': aggregate['cancelled'],
+        'rate_limited': rate_limited,
+        'status': aggregate['status'],
+        'batch_ids': aggregate['batch_ids'],
+        'http_attempts': aggregate['http_attempts'],
+        'records': merged_records,
+    })
+    return stage_payload
+
+
 def _run_staged(
     manifest,
     plan,
@@ -487,12 +649,47 @@ def _run_staged(
     if not isinstance(payload, dict):
         payload = {'phase': 'staged', 'stages': []}
     existing_stages = [item for item in payload.get('stages', ()) if isinstance(item, Mapping)]
-    if any(int(item.get('stage_index', 0) or 0) == stage_index for item in existing_stages):
+    stage = plan.stages[stage_index - 1]
+    existing_index = next(
+        (
+            index for index, item in enumerate(existing_stages)
+            if int(item.get('stage_index', 0) or 0) == stage_index
+        ),
+        None,
+    )
+    if existing_index is not None:
+        existing_stage = existing_stages[existing_index]
+        if (
+            existing_stage.get('status') == 'completed'
+            and int(existing_stage.get('failed', 0) or 0) == 0
+            and int(existing_stage.get('terminal_count', 0) or 0)
+            == int(existing_stage.get('target', stage.target) or stage.target)
+        ):
+            return payload
+        existing_stages[existing_index] = _recover_existing_stage(
+            existing_stage,
+            stage,
+            key_to_id=key_to_id,
+            id_to_key=id_to_key,
+            mode_by_key=mode_by_key,
+            run_batch=run_batch,
+            timeout_seconds=timeout_seconds,
+            poll_seconds=poll_seconds,
+            stage_index=stage_index,
+        )
+        payload.update({
+            'phase': 'staged',
+            'stages': existing_stages,
+            'forms': sum(int(item.get('target', 0) or 0) for item in existing_stages),
+            'processed': sum(int(item.get('terminal_count', 0) or 0) for item in existing_stages),
+            'http_attempts': sum(int(item.get('http_attempts', 0) or 0) for item in existing_stages),
+            'concurrency': [int(item.get('concurrency')) for item in existing_stages],
+        })
+        _write_json_atomic(path, payload)
         return payload
     if len({int(item.get('stage_index', 0) or 0) for item in existing_stages}) < stage_index - 1:
         raise RealAcceptanceError('staged ladder must be executed in order')
 
-    stage = plan.stages[stage_index - 1]
     grouped: dict[str, list[str]] = defaultdict(list)
     for key in stage.form_keys:
         grouped[mode_by_key[key]].append(key)

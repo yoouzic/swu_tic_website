@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from tools.business_acceptance.batches import plan_real_batches
 from tools.business_acceptance.cli import _real_phase_conclusion
 from tools.business_acceptance.real_batches import wait_for_batch
+from tools.business_acceptance.real_runner import _merge_stage_record
 
 
 class RealBatchPlanningTest(unittest.TestCase):
@@ -96,6 +97,50 @@ class RealBatchPlanningTest(unittest.TestCase):
         self.assertEqual(_real_phase_conclusion({'status': 'failed'}), 'FAIL')
         self.assertEqual(_real_phase_conclusion({'status': 'queued'}), 'BLOCKED')
         self.assertEqual(_real_phase_conclusion({}), 'BLOCKED')
+
+    def test_stage_recovery_merges_failed_items_without_inflating_target(self):
+        original = {
+            'phase': 'staged',
+            'mode': 'llm_only',
+            'form_keys': ['AC-0001', 'AC-0002', 'AC-0003'],
+            'target': 3,
+            'processed': 2,
+            'terminal_count': 3,
+            'failed': 1,
+            'cancelled': 0,
+            'status': 'completed_with_errors',
+            'http_attempts': 3,
+            'batch_ids': ['first-batch'],
+            'successful_form_keys': ['AC-0001', 'AC-0002'],
+            'failed_items': [{'form_key': 'AC-0003', 'error_code': 'truncated_output'}],
+        }
+        recovery = {
+            'phase': 'staged',
+            'mode': 'llm_only',
+            'form_keys': ['AC-0003'],
+            'target': 1,
+            'processed': 1,
+            'terminal_count': 1,
+            'failed': 0,
+            'cancelled': 0,
+            'status': 'completed',
+            'http_attempts': 1,
+            'batch_ids': ['recovery-batch'],
+            'successful_form_keys': ['AC-0003'],
+            'failed_items': [],
+        }
+
+        merged = _merge_stage_record(original, recovery)
+
+        self.assertEqual(merged['target'], 3)
+        self.assertEqual(merged['processed'], 3)
+        self.assertEqual(merged['terminal_count'], 3)
+        self.assertEqual(merged['failed'], 0)
+        self.assertEqual(merged['status'], 'completed')
+        self.assertEqual(merged['http_attempts'], 4)
+        self.assertEqual(set(merged['successful_form_keys']), {'AC-0001', 'AC-0002', 'AC-0003'})
+        self.assertEqual(merged['failed_items'], [])
+        self.assertEqual(set(merged['batch_ids']), {'first-batch', 'recovery-batch'})
 
 
 if __name__ == '__main__':
