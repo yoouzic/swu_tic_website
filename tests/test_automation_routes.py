@@ -346,7 +346,7 @@ class AutomationRoutesTest(unittest.TestCase):
         self.assertEqual(activated.status_code, 200)
         second = self.client.get('/admin/api/automation/datasets')
         self.assertEqual(second.status_code, 200)
-        self.assertEqual(second.get_json()['coverage'], {'complete': 1, 'basic': 1, 'missing': 0, 'total': 2})
+        self.assertEqual(second.get_json()['coverage'], {'complete': 1, 'basic': 1, 'missing': 1, 'total': 3})
 
     def test_assessment_summary_and_detail_are_bulk_safe_and_read_only(self):
         assessment = ReviewAssessment(

@@ -231,6 +231,7 @@ def _dataset_coverage():
         User.role == '信息员',
         active_user_filter(),
     ).all()
+    all_officer_ids = {user.id for user in information_officers}
     identity_to_users = {}
     for user in information_officers:
         for identity in (user.number, user.student_id):
@@ -269,15 +270,14 @@ def _dataset_coverage():
             if mapping_dataset_semesters.get(row.dataset_id) in supported_semesters:
                 supported_mapping_ids.update(matched)
 
-    total_ids = personal_ids | mapping_ids
-    complete = personal_ids
-    basic = supported_mapping_ids - complete
-    missing = total_ids - complete - basic
+    complete = personal_ids & all_officer_ids
+    basic = (supported_mapping_ids & all_officer_ids) - complete
+    missing = all_officer_ids - complete - basic
     return {
         'complete': len(complete),
         'basic': len(basic),
         'missing': len(missing),
-        'total': len(total_ids),
+        'total': len(all_officer_ids),
     }
 
 
