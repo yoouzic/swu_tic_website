@@ -9,6 +9,8 @@ SETTINGS_TEMPLATE = Path('app/templates/admin/_settings_automation.html')
 SYSTEM_TEMPLATE = Path('app/templates/admin/system_management.html')
 AUTOMATION_SCRIPT = Path('app/static/js/automation-center.js')
 STYLE_SHEET = Path('app/static/css/style.css')
+REVIEW_QUEUE_TEMPLATE = Path('app/templates/admin/review_forms.html')
+AUTO_RESULTS_TEMPLATE = Path('app/templates/admin/auto_review_results.html')
 
 
 class AutomationSettingsTemplateTest(unittest.TestCase):
@@ -158,6 +160,88 @@ setTimeout(() => {
         for fragment in ('automation-center', 'automation-service-status', 'automation-dataset-card', 'automation-coverage'):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, styles)
+
+    def test_review_queue_exposes_four_categories_coverage_and_evidence_drawer(self):
+        template = REVIEW_QUEUE_TEMPLATE.read_text(encoding='utf-8')
+        for fragment in (
+            'riskFilter',
+            '无明显风险',
+            '建议复核',
+            '高风险疑似假表',
+            '系统无法判断',
+            'data-automation-coverage="none"',
+            'data-automation-coverage="basic"',
+            'data-automation-coverage="complete"',
+            '缺失',
+            '基础',
+            '完整',
+            '批量智能检查',
+            'evidence-section-schedule',
+            'evidence-section-rule',
+            'evidence-section-text',
+            'evidence-section-history',
+            'evidence-section-llm',
+            'evidence-section-system',
+            'automationSuggestedComment',
+            '系统仅提供分类和证据，最终通过或驳回由人工审核人执行。',
+            'reviewQueueFeedback',
+            'reviewQueueConfirmModal',
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, template)
+        self.assertNotIn('一键自动审核', template)
+        self.assertNotIn('autoReviewNormalBtn', template)
+        self.assertNotIn('autoReviewForceBtn', template)
+
+    def test_review_queue_batch_flow_requires_preview_and_literal_external_ack(self):
+        template = REVIEW_QUEUE_TEMPLATE.read_text(encoding='utf-8')
+        for fragment in (
+            '/admin/api/automation/batches/preview',
+            '/admin/api/automation/batches',
+            '/admin/api/automation/batches/',
+            'external_transfer_acknowledged',
+            'checked',
+            'cache_reusable',
+            'processable',
+            'data-batch-preview',
+            'setTimeout',
+            'reviewQueueBatchPoll',
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, template)
+        self.assertRegex(template, r'transferAck[^\n]*===\s*true')
+        self.assertNotIn('force_all', template)
+        self.assertNotIn('location.reload', template)
+
+    def test_review_queue_suggested_comment_stays_draft_until_existing_human_action(self):
+        template = REVIEW_QUEUE_TEMPLATE.read_text(encoding='utf-8')
+        self.assertIn('data-human-review-action', template)
+        self.assertIn('data-suggested-comment-draft', template)
+        self.assertIn('automationSuggestedComment', template)
+        self.assertNotIn('/admin/api/review/approve', template)
+        self.assertNotIn('/admin/api/review/reject', template)
+
+    def test_auto_review_results_is_evidence_only_and_keeps_human_review_link(self):
+        template = AUTO_RESULTS_TEMPLATE.read_text(encoding='utf-8')
+        for fragment in (
+            'evidence-section-schedule',
+            'evidence-section-rule',
+            'evidence-section-text',
+            'evidence-section-history',
+            'evidence-section-llm',
+            'evidence-section-system',
+            '系统仅提供分类和证据，最终通过或驳回由人工审核人执行。',
+            'data-human-review-action',
+            'data-suggested-comment-draft',
+            'reviewQueueFeedback',
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, template)
+        self.assertNotIn('一键自动审核', template)
+        self.assertNotIn('window.appPrompt', template)
+        self.assertNotIn('window.appConfirm', template)
+        self.assertNotIn('/admin/api/review/approve', template)
+        self.assertNotIn('/admin/api/review/reject', template)
 
 
 if __name__ == '__main__':

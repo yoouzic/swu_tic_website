@@ -61,6 +61,16 @@
                                                 <option value="已驳回">已驳回</option>
                                             </select>
                                         </div>
+                                        <div class="col-md-2">
+                                            <label for="riskFilter">自动化分类：</label>
+                                            <select class="form-control" id="riskFilter" style="color: black;">
+                                                <option value="">全部分类</option>
+                                                <option value="无明显风险">无明显风险</option>
+                                                <option value="建议复核">建议复核</option>
+                                                <option value="高风险疑似假表">高风险疑似假表</option>
+                                                <option value="系统无法判断">系统无法判断</option>
+                                            </select>
+                                        </div>
                                         
                                         <!-- 搜索按钮 -->
                                         <div class="col-md-4">
@@ -133,6 +143,11 @@
                                         <i class="fas fa-list mr-2"></i>表单列表
                                         <span class="badge bg-primary text-white ms-2" id="formsCount">0</span>
                                     </h5>
+                                    <div class="automation-coverage-legend small" aria-label="课表证据覆盖">
+                                        <span class="badge automation-coverage-badge automation-coverage-badge--none" data-automation-coverage="none">缺失</span>
+                                        <span class="badge automation-coverage-badge automation-coverage-badge--basic" data-automation-coverage="basic">基础</span>
+                                        <span class="badge automation-coverage-badge automation-coverage-badge--complete" data-automation-coverage="complete">完整</span>
+                                    </div>
                                     <div>
                                         <span class="badge bg-info text-dark me-2" id="selectedFormsHint" style="display:none;">已选择0表单</span>
                                         <button class="btn btn-outline-secondary btn-sm me-2" onclick="toggleSelectionLock()" id="btnLockSelection" style="display:none;">
@@ -145,7 +160,7 @@
                                             <i class="fas fa-tags"></i> 批量定义表单
                                         </button>
                                         <button class="btn btn-warning btn-sm" onclick="batchAutoReview()" id="btnAutoReview" style="display:none;">
-                                            <i class="fas fa-magic"></i> 一键自动审核
+                                            <i class="fas fa-magic"></i> 批量智能检查
                                         </button>
                                     </div>
                                 </div>
@@ -164,6 +179,8 @@
                                                     <th width="15%">课程</th>
                                                     <th width="8%">听课时间</th>
                                                     <th width="8%">状态</th>
+                                                    <th width="12%">自动化分类</th>
+                                                    <th width="8%">课表证据</th>
                                                     <th width="7%">版本数</th>
                                                     <th width="10%">更新时间</th>
                                                     <th width="20%">操作</th>
@@ -247,22 +264,47 @@
     </div>
 </div>
 
-<div class="modal fade" id="autoReviewDecisionModal" tabindex="-1">
+<div class="modal fade" id="autoReviewDecisionModal" tabindex="-1" aria-labelledby="autoReviewDecisionTitle" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="fas fa-magic mr-2"></i>自动审核确认</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h2 class="modal-title fs-5" id="autoReviewDecisionTitle"><i class="fas fa-magic mr-2"></i>批量智能检查预览</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
-                <pre id="autoReviewDecisionSummary" class="mb-0" style="white-space: pre-wrap;"></pre>
+                <div id="autoReviewDecisionSummary" class="automation-batch-preview" data-batch-preview aria-live="polite"></div>
+                <p class="small text-muted mb-2">系统仅提供分类和证据，最终通过或驳回由人工审核人执行。</p>
+                <label class="form-check d-flex gap-2 align-items-start" for="autoReviewExternalAck">
+                    <input class="form-check-input mt-1" id="autoReviewExternalAck" type="checkbox">
+                    <span>我确认：完整表单和相关证据会发送到 DeepSeek 外部 API。</span>
+                </label>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" id="autoReviewCancelBtn" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" id="autoReviewNormalBtn">仅自动审核“无需人工审核”</button>
-                <button type="button" class="btn btn-danger" id="autoReviewForceBtn">强制审核“需人工审核”标签</button>
+                <button type="button" class="btn btn-primary" id="autoReviewStartBtn" disabled>确认开始检查</button>
             </div>
         </div>
+    </div>
+</div>
+
+<div class="offcanvas offcanvas-end app-evidence-drawer" tabindex="-1" id="automationEvidenceDrawer" aria-labelledby="automationEvidenceTitle">
+    <div class="offcanvas-header">
+        <h2 class="offcanvas-title fs-5" id="automationEvidenceTitle">自动化证据</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="关闭"></button>
+    </div>
+    <div class="offcanvas-body" id="automationEvidenceBody" aria-live="polite">
+        <p class="text-muted">选择表单后查看分类与证据。</p>
+        <div class="automation-evidence-sections">
+            <section class="evidence-section-schedule" data-evidence-source="schedule"><h3>schedule</h3><p data-evidence-value>—</p></section>
+            <section class="evidence-section-rule" data-evidence-source="rule"><h3>rule</h3><p data-evidence-value>—</p></section>
+            <section class="evidence-section-text" data-evidence-source="text"><h3>text</h3><p data-evidence-value>—</p></section>
+            <section class="evidence-section-history" data-evidence-source="history"><h3>history</h3><p data-evidence-value>—</p></section>
+            <section class="evidence-section-llm" data-evidence-source="llm"><h3>llm</h3><p data-evidence-value>—</p></section>
+            <section class="evidence-section-system" data-evidence-source="system"><h3>system</h3><p data-evidence-value>—</p></section>
+        </div>
+        <label class="form-label mt-3" for="automationSuggestedComment">建议评论（草稿）</label>
+        <textarea id="automationSuggestedComment" class="form-control" data-suggested-comment-draft rows="4"></textarea>
+        <button type="button" class="btn btn-outline-primary mt-2" data-human-review-action disabled>打开人工审核</button>
     </div>
 </div>
 
@@ -655,6 +697,7 @@ let currentFormGroups = [];
 let selectionLocked = false;
 let lockedFormIds = new Set();
 let lockedFormGroups = new Map();
+let reviewQueueBatchPoll = null;
 
 function escapeAttrValue(value) {
     return String(value || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
@@ -755,6 +798,7 @@ function checkPermission() {
                 document.getElementById('endDate').value = queueParams.get('end_date') || endDate.toISOString().split('T')[0];
                 document.getElementById('timeFilterType').value = queueParams.get('time_filter_type') || 'created';
                 document.getElementById('statusFilter').value = queueParams.get('status') || '';
+                document.getElementById('riskFilter').value = queueParams.get('risk') || '';
                 if (queueParams.get('review_queue') === '1') {
                     loadUserStructure();
                 }
@@ -1170,6 +1214,7 @@ function loadForms() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     const status = document.getElementById('statusFilter').value;
+    const risk = document.getElementById('riskFilter').value;
     const timeFilterType = document.getElementById('timeFilterType').value || 'created';
     
     const params = new URLSearchParams({
@@ -1180,6 +1225,9 @@ function loadForms() {
     
     if (status) {
         params.append('status', status);
+    }
+    if (risk) {
+        params.append('risk', risk);
     }
     
     selectedUserIds.forEach(id => {
@@ -1215,11 +1263,15 @@ function loadForms() {
 function renderFormsList(formGroups, checkedFormIds = []) {
     currentFormGroups = Array.isArray(formGroups) ? formGroups : [];
     const checkedIdSet = new Set(checkedFormIds.map(id => String(id)));
+    const riskFilter = document.getElementById('riskFilter')?.value || '';
+    const visibleFormGroups = riskFilter
+        ? currentFormGroups.filter(group => getAutomationCategoryLabel((group.forms?.[0] || {}).automation?.category) === riskFilter)
+        : currentFormGroups;
     const tbody = document.getElementById('formsTableBody');
     let html = '';
     let totalGroups = 0;
 
-    currentFormGroups.forEach(group => {
+    visibleFormGroups.forEach(group => {
         const uniqueId = group.unique_id;
         const forms = group.forms || [];
         if (forms.length === 0) {
@@ -1228,6 +1280,11 @@ function renderFormsList(formGroups, checkedFormIds = []) {
         totalGroups += 1;
 
         const latestForm = forms[0];
+        const automation = latestForm.automation || {};
+        const automationCategory = getAutomationCategoryLabel(automation.category);
+        const automationCoverage = ['none', 'basic', 'complete'].includes(automation.coverage)
+            ? automation.coverage
+            : 'none';
         const groupCollapseId = `versions-${uniqueId}`;
         const chevronId = `chevron-${uniqueId}`;
         const latestCanReview = canReviewForm(latestForm.status);
@@ -1255,6 +1312,11 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                 <td title="${latestForm.course_title || ''}">${(latestForm.course_title || '').length > 30 ? latestForm.course_title.substring(0, 30) + '...' : (latestForm.course_title || '-')}</td>
                 <td>${latestForm.lecture_date || '-'}</td>
                 <td><span class="badge ${getStatusClass(latestForm.status)}">${latestForm.status || '-'}</span></td>
+                <td>
+                    <span class="badge ${getAutomationCategoryClass(automationCategory)}" data-automation-category>${escapeHtml(automationCategory)}</span>
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-1" onclick="openAutomationEvidence(${latestForm.id})">证据</button>
+                </td>
+                <td><span class="badge ${getAutomationCoverageClass(automationCoverage)}" data-automation-coverage="${automationCoverage}">${getAutomationCoverageLabel(automationCoverage)}</span></td>
                 <td>
                     <span class="badge bg-info text-dark">${forms.length}</span>
                     ${forms.length > 1 ? `
@@ -1292,7 +1354,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
         if (forms.length > 1) {
             html += `
                 <tr id="${groupCollapseId}" class="version-history" style="display: none;">
-                    <td colspan="11">
+                    <td colspan="13">
                         <div class="card">
                             <div class="card-header">
                                 <h6 class="mb-0">版本历史 (按更新时间排序)</h6>
@@ -1470,8 +1532,8 @@ function reviewForm(formId) {
                     showPermissionWarning(`您无权限审核处于"${form.status}"状态的表单`);
                     return;
                 }
-                if (window.openFullReview) {
-                    window.openFullReview(formId);
+                if (typeof openFullReview === 'function') {
+                    openFullReview(formId);
                 }
             } else {
                 setReviewQueueFeedback(data.message || '获取表单信息失败。', 'error');
@@ -1930,6 +1992,51 @@ function saveFormTagDefinitions() {
     });
 }
 
+function setAutomationBatchButtonState(button, label, disabled) {
+    if (!button) return;
+    button.disabled = disabled;
+    button.textContent = label;
+}
+
+function renderAutomationBatchPreview(stats) {
+    const summary = document.getElementById('autoReviewDecisionSummary');
+    if (!summary) return;
+    summary.replaceChildren();
+    const values = [
+        ['可处理', stats.processable],
+        ['可复用缓存', stats.cache_reusable],
+        ['基础课表证据', stats.basic],
+        ['完整课表证据', stats.complete],
+        ['缺失课表证据', stats.missing],
+    ];
+    values.forEach(([label, value]) => {
+        const item = document.createElement('div');
+        item.className = 'automation-batch-preview__item';
+        const name = document.createElement('span');
+        name.textContent = label;
+        const number = document.createElement('strong');
+        number.textContent = String(Number(value || 0));
+        item.append(name, number);
+        summary.appendChild(item);
+    });
+}
+
+function showAutoReviewDecision(stats, formIds, button) {
+    const modalEl = document.getElementById('autoReviewDecisionModal');
+    const ack = document.getElementById('autoReviewExternalAck');
+    const startButton = document.getElementById('autoReviewStartBtn');
+    if (!modalEl || !ack || !startButton) return;
+    renderAutomationBatchPreview(stats);
+    ack.checked = false;
+    startButton.disabled = false;
+    startButton.onclick = () => {
+        const transferAck = ack.checked === true;
+        bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        startBatchReview(formIds, button, transferAck);
+    };
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+}
+
 function batchAutoReview() {
     const formIds = getSelectedReviewableFormIds();
     if (formIds.length === 0) {
@@ -1937,107 +2044,153 @@ function batchAutoReview() {
         return;
     }
 
-    const btn = document.getElementById('btnAutoReview');
-    const originalBtnContent = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在分析...';
-    setReviewQueueFeedback('正在分析所选表单...', 'info');
-
-    fetch('/admin/api/review/batch_auto_check/preview', {
+    const button = document.getElementById('btnAutoReview');
+    setAutomationBatchButtonState(button, '正在生成预览…', true);
+    setReviewQueueFeedback('正在生成批次预览…', 'info');
+    fetch('/admin/api/automation/batches/preview', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ form_ids: formIds })
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({form_ids: formIds, llm_enabled: false}),
     })
-    .then(response => response.json())
-    .then(async data => {
-        btn.disabled = false;
-        btn.innerHTML = originalBtnContent;
+        .then(async response => {
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || '批次预览失败。');
+            return data;
+        })
+        .then(data => {
+            setAutomationBatchButtonState(button, '批量智能检查', false);
+            showAutoReviewDecision(data.stats || {}, formIds, button);
+        })
+        .catch(error => {
+            setAutomationBatchButtonState(button, '批量智能检查', false);
+            setReviewQueueFeedback(error.message || '批次预览失败。', 'error');
+        });
+}
 
-        if (data.success) {
-            const stats = data.stats;
-            let msg = `您选择了 ${stats.total} 个可审核表单。\n\n`;
-            msg += `✅ 将自动审核: ${stats.will_process} 个\n`;
-            msg += `🚫 将被忽略: ${stats.will_ignore} 个 (因状态不允许或标签需人工审核)\n\n`;
-
-            if (stats.will_ignore > 0 && stats.ignored_reasons && stats.ignored_reasons.length > 0) {
-                msg += `忽略原因示例:\n${stats.ignored_reasons.join('\n')}\n...\n\n`;
-            }
-            msg += '请选择执行方式。\n强制模式仅放开“需人工审核”标签限制，不会强制审核已驳回等状态不允许的表单。';
-            const decision = await showAutoReviewDecision(msg);
-            if (decision === 'normal') {
-                setReviewQueueFeedback('正在启动自动审核...', 'info');
-                startBatchReview(formIds, btn, false);
-                return;
-            }
-            if (decision === 'force') {
-                setReviewQueueFeedback('正在启动自动审核...', 'info');
-                startBatchReview(formIds, btn, true);
-                return;
-            }
-        } else {
-            setReviewQueueFeedback(data.message || '预览失败。', 'error');
-        }
+function startBatchReview(formIds, button, transferAck) {
+    setAutomationBatchButtonState(button, '正在启动检查…', true);
+    setReviewQueueFeedback('正在启动批量智能检查…', 'info');
+    const payload = {
+        form_ids: formIds,
+        llm_enabled: transferAck === true,
+        external_transfer_acknowledged: transferAck === true,
+    };
+    fetch('/admin/api/automation/batches', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
     })
-    .catch(error => {
-        console.error('Error:', error);
-        setReviewQueueFeedback('操作失败，请检查网络连接。', 'error');
-        btn.disabled = false;
-        btn.innerHTML = originalBtnContent;
+        .then(async response => {
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || '批次创建失败。');
+            return data;
+        })
+        .then(data => {
+            pollAutomationBatch(data.batch_id, button);
+        })
+        .catch(error => {
+            setAutomationBatchButtonState(button, '批量智能检查', false);
+            setReviewQueueFeedback(error.message || '批次创建失败。', 'error');
+        });
+}
+
+function renderAutomationBatchProgress(batch) {
+    const processed = Number(batch.processed_count || 0);
+    const total = Number(batch.target_form_count || 0);
+    const cache = Number(batch.cache_count || 0);
+    const status = String(batch.status || 'unknown');
+    setReviewQueueFeedback(`批次${status}：${processed}/${total}，缓存复用 ${cache}。`, 'info');
+}
+
+function updateAutomationRows(results) {
+    (Array.isArray(results) ? results : []).forEach(result => {
+        const row = document.querySelector(`[data-review-row-form-id="${result.form_id}"]`);
+        const badge = row?.querySelector('[data-automation-category]');
+        if (!badge) return;
+        const category = getAutomationCategoryLabel(result.category);
+        badge.textContent = category;
+        badge.className = `badge ${getAutomationCategoryClass(category)}`;
     });
 }
 
-function showAutoReviewDecision(message) {
-    return new Promise((resolve) => {
-        const modalEl = document.getElementById('autoReviewDecisionModal');
-        const summaryEl = document.getElementById('autoReviewDecisionSummary');
-        const cancelBtn = document.getElementById('autoReviewCancelBtn');
-        const normalBtn = document.getElementById('autoReviewNormalBtn');
-        const forceBtn = document.getElementById('autoReviewForceBtn');
-        const modal = new bootstrap.Modal(modalEl);
-        let decision = null;
-
-        summaryEl.textContent = message;
-        cancelBtn.onclick = () => { decision = 'cancel'; modal.hide(); };
-        normalBtn.onclick = () => { decision = 'normal'; modal.hide(); };
-        forceBtn.onclick = () => { decision = 'force'; modal.hide(); };
-        modalEl.addEventListener('hidden.bs.modal', () => resolve(decision), { once: true });
-        modal.show();
-    });
+function pollAutomationBatch(batchId, button) {
+    if (reviewQueueBatchPoll) clearTimeout(reviewQueueBatchPoll);
+    const poll = () => {
+        fetch(`/admin/api/automation/batches/${encodeURIComponent(batchId)}`)
+            .then(async response => {
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || '批次状态读取失败。');
+                return data.batch || {};
+            })
+            .then(batch => {
+                renderAutomationBatchProgress(batch);
+                updateAutomationRows(batch.results);
+                if (['completed', 'completed_with_errors', 'cancelled', 'failed'].includes(batch.status)) {
+                    setAutomationBatchButtonState(button, '批量智能检查', false);
+                    setReviewQueueFeedback(`批次${batch.status}，已局部更新分类结果。`, batch.status === 'completed' ? 'success' : 'warning');
+                    return;
+                }
+                reviewQueueBatchPoll = setTimeout(poll, 1500);
+            })
+            .catch(error => {
+                setAutomationBatchButtonState(button, '批量智能检查', false);
+                setReviewQueueFeedback(error.message || '批次状态读取失败。', 'error');
+            });
+    };
+    reviewQueueBatchPoll = setTimeout(poll, 0);
 }
 
-function startBatchReview(formIds, btn, forceAll = false) {
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 启动中...';
-    setReviewQueueFeedback('正在启动自动审核...', 'info');
+function setAutomationEvidenceValue(source, value) {
+    const node = document.querySelector(`#automationEvidenceDrawer [data-evidence-source="${source}"] [data-evidence-value]`);
+    if (node) node.textContent = value || '暂无证据';
+}
 
-    fetch('/admin/api/review/batch_auto_check', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ form_ids: formIds, force_all: forceAll })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            setReviewQueueFeedback(data.message || '自动审核任务已启动。', 'success');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-magic"></i> 一键自动审核';
-            loadForms();
-        } else {
-            setReviewQueueFeedback(data.message || '启动失败。', 'error');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-magic"></i> 一键自动审核';
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        setReviewQueueFeedback('启动失败，请检查网络连接。', 'error');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-magic"></i> 一键自动审核';
+function renderAutomationAssessment(formId, assessment) {
+    const findings = Array.isArray(assessment.findings) ? assessment.findings : [];
+    const grouped = {schedule: [], rule: [], text: [], history: [], llm: [], system: []};
+    findings.forEach(finding => {
+        const source = Object.prototype.hasOwnProperty.call(grouped, finding.source) ? finding.source : 'system';
+        grouped[source].push(`${finding.title || ''}${finding.message ? `：${finding.message}` : ''}`);
     });
+    Object.keys(grouped).forEach(source => setAutomationEvidenceValue(source, grouped[source].join('；')));
+    if (assessment.coverage) setAutomationEvidenceValue('schedule', `覆盖：${getAutomationCoverageLabel(assessment.coverage)}；${grouped.schedule.join('；')}`);
+    if (assessment.model_result && Object.keys(assessment.model_result).length > 0) setAutomationEvidenceValue('llm', 'DeepSeek 结构化结果已验证。');
+    if (assessment.error_code) setAutomationEvidenceValue('system', `系统记录：${assessment.error_code}`);
+    const comment = document.getElementById('automationSuggestedComment');
+    if (comment) comment.value = String(assessment.suggested_comment || '');
+    const humanAction = document.querySelector('[data-human-review-action]');
+    if (humanAction) {
+        humanAction.disabled = false;
+        humanAction.dataset.formId = String(formId);
+        humanAction.onclick = () => reviewForm(Number(humanAction.dataset.formId));
+    }
+}
+
+function openAutomationEvidence(formId) {
+    const drawer = document.getElementById('automationEvidenceDrawer');
+    if (!drawer) return;
+    const feedback = document.getElementById('reviewQueueFeedback');
+    if (feedback) feedback.textContent = '正在加载自动化证据…';
+    fetch(`/admin/api/automation/forms/${encodeURIComponent(formId)}/assessment`)
+        .then(async response => {
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || '证据加载失败。');
+            return data.assessment;
+        })
+        .then(summary => {
+            if (!summary || !summary.assessment_id) throw new Error('该表单尚无自动化评估。');
+            return fetch(`/admin/api/automation/assessments/${encodeURIComponent(summary.assessment_id)}`)
+                .then(async response => {
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.message || '证据详情加载失败。');
+                    return data.assessment;
+                });
+        })
+        .then(assessment => {
+            renderAutomationAssessment(formId, assessment);
+            bootstrap.Offcanvas.getOrCreateInstance(drawer).show();
+        })
+        .catch(error => setReviewQueueFeedback(error.message || '证据加载失败。', 'error'));
 }
 
 
@@ -2056,6 +2209,7 @@ function resetFilters() {
     document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
     document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
     document.getElementById('statusFilter').value = '';
+    document.getElementById('riskFilter').value = '';
     document.getElementById('timeFilterType').value = 'created';
     
     // 隐藏用户选择和表单列表区域
@@ -2071,6 +2225,34 @@ function resetFilters() {
     if (window.clearReviewQueueUrl) {
         window.clearReviewQueueUrl();
     }
+}
+
+function getAutomationCategoryLabel(category) {
+    const labels = {
+        '无明显风险': '无明显风险',
+        '建议复核': '建议复核',
+        '高风险疑似假表': '高风险疑似假表',
+        '系统无法判断': '系统无法判断'
+    };
+    return labels[category] || labels['系统无法判断'];
+}
+
+function getAutomationCategoryClass(category) {
+    switch (getAutomationCategoryLabel(category)) {
+        case '无明显风险': return 'automation-risk-badge automation-risk-badge--clear';
+        case '建议复核': return 'automation-risk-badge automation-risk-badge--review';
+        case '高风险疑似假表': return 'automation-risk-badge automation-risk-badge--high';
+        default: return 'automation-risk-badge automation-risk-badge--unknown';
+    }
+}
+
+function getAutomationCoverageLabel(coverage) {
+    return ({none: '缺失', basic: '基础', complete: '完整'})[coverage] || '缺失';
+}
+
+function getAutomationCoverageClass(coverage) {
+    const safeCoverage = ['none', 'basic', 'complete'].includes(coverage) ? coverage : 'none';
+    return `automation-coverage-badge automation-coverage-badge--${safeCoverage}`;
 }
 </script>
 {% endblock %}

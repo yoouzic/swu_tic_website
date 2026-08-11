@@ -145,6 +145,21 @@ a { color: var(--color-accent-strong); }
 .automation-coverage { min-height: 100%; }
 .automation-coverage__item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--color-border); }
 .automation-coverage__item:last-child { border-bottom: 0; }
+.automation-coverage-legend { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.automation-risk-badge,.automation-coverage-badge { border: 1px solid transparent; font-weight: 600; }
+.automation-risk-badge--clear,.automation-coverage-badge--complete { color: #215c39; background: #dff1e5; border-color: #9ed1ad; }
+.automation-risk-badge--review,.automation-coverage-badge--basic { color: #76530b; background: #fff0c2; border-color: #e2c46e; }
+.automation-risk-badge--high { color: #8d2d26; background: #f8d9d6; border-color: #dc9a93; }
+.automation-risk-badge--unknown,.automation-coverage-badge--none { color: #5d5550; background: #ece8e5; border-color: #cfc6c0; }
+.automation-batch-preview { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin-bottom: 14px; }
+.automation-batch-preview__item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--control-radius); background: var(--color-background); }
+.automation-evidence-sections { display: grid; gap: 10px; }
+.automation-evidence-sections section,.app-evidence-drawer [data-evidence-source] { padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--control-radius); background: var(--color-background); }
+.automation-evidence-sections h3,.app-evidence-drawer [data-evidence-source] h3 { margin: 0 0 4px; font-size: .82rem; text-transform: uppercase; }
+.automation-evidence-sections p,.app-evidence-drawer [data-evidence-source] p { margin: 0; color: var(--color-text-muted); font-size: .84rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.app-evidence-drawer { width: min(620px,100vw); background: var(--color-surface); }
+.app-evidence-drawer .offcanvas-body { display: grid; gap: 10px; padding: 20px; }
+.automation-results-summary { margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--control-radius); background: var(--color-background); }
 .record-description { max-width: 22rem; white-space: normal; word-break: break-word; }
 .version-history[hidden],.registration-detail[hidden],.time-suggestion[hidden] { display: none; }
 .version-history > td { padding: 0; background: var(--color-background); }

@@ -1,237 +1,193 @@
 {% extends "base.html" %}
 
-{% block title %}自动审核结果 - 专业审查{% endblock %}
+{% block title %}自动化证据 - 专业审查{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h3 class="card-title">
-                        <i class="fas fa-clipboard-check mr-2"></i> 
-                        自动审核结果 - 专业审查
-                    </h3>
-                    <div>
-                        <span id="taskStatus" class="badge bg-secondary me-2">加载中...</span>
-                        <button class="btn btn-primary btn-sm" onclick="loadResults()">
-                            <i class="fas fa-sync"></i> 刷新
-                        </button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div id="resultsContent">
-                        <div class="text-center py-5">
-                            <div class="spinner-border text-primary" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                            <p class="mt-2 text-muted">正在加载审核结果...</p>
-                        </div>
-                    </div>
-                </div>
+<div class="container-fluid automation-results-page">
+    <div id="reviewQueueFeedback" class="activity-feedback" role="status" aria-live="polite"></div>
+    <section class="activity-panel" aria-labelledby="automationResultsTitle">
+        <div class="activity-panel__header activity-panel__header--split">
+            <div>
+                <h1 id="automationResultsTitle"><i class="fas fa-clipboard-check" aria-hidden="true"></i> 自动化分类与证据</h1>
+                <p>系统仅提供分类和证据，最终通过或驳回由人工审核人执行。</p>
+            </div>
+            <div>
+                <span id="taskStatus" class="badge bg-secondary me-2">加载中...</span>
+                <button class="btn btn-primary btn-sm" id="refreshResults" type="button">刷新证据</button>
             </div>
         </div>
-    </div>
+        <div class="activity-panel__body">
+            <div id="resultsSummary" class="automation-results-summary" aria-live="polite"></div>
+            <div id="resultsContent">
+                <div class="activity-empty">正在加载自动化批次……</div>
+            </div>
+        </div>
+    </section>
 </div>
 
-<!-- 查看表单模态框 -->
-<div class="modal fade" id="viewFormModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">表单详情</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" id="viewFormContent">
-                <div class="text-center py-5">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
-            </div>
-        </div>
+<div class="offcanvas offcanvas-end app-evidence-drawer" tabindex="-1" id="automationResultsEvidenceDrawer" aria-labelledby="automationResultsEvidenceTitle">
+    <div class="offcanvas-header">
+        <h2 class="offcanvas-title fs-5" id="automationResultsEvidenceTitle">自动化证据</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="关闭"></button>
+    </div>
+    <div class="offcanvas-body" id="automationResultsEvidenceBody" aria-live="polite">
+        <section class="evidence-section-schedule" data-evidence-source="schedule"><h3>schedule</h3><p data-evidence-value>—</p></section>
+        <section class="evidence-section-rule" data-evidence-source="rule"><h3>rule</h3><p data-evidence-value>—</p></section>
+        <section class="evidence-section-text" data-evidence-source="text"><h3>text</h3><p data-evidence-value>—</p></section>
+        <section class="evidence-section-history" data-evidence-source="history"><h3>history</h3><p data-evidence-value>—</p></section>
+        <section class="evidence-section-llm" data-evidence-source="llm"><h3>llm</h3><p data-evidence-value>—</p></section>
+        <section class="evidence-section-system" data-evidence-source="system"><h3>system</h3><p data-evidence-value>—</p></section>
+        <label class="form-label mt-3" for="automationResultsSuggestedComment">建议评论（草稿）</label>
+        <textarea id="automationResultsSuggestedComment" class="form-control" data-suggested-comment-draft rows="4"></textarea>
+        <a class="btn btn-outline-primary mt-2" data-human-review-action href="#">打开人工审核</a>
     </div>
 </div>
 
 <script>
-    // 查看表单详情
-    function viewForm(id) {
-        const modal = new bootstrap.Modal(document.getElementById('viewFormModal'));
-        modal.show();
-        
-        const contentDiv = document.getElementById('viewFormContent');
-        contentDiv.innerHTML = `
-            <div class="text-center py-5">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
-                <p class="mt-2 text-muted">正在加载表单详情...</p>
-            </div>
-        `;
-        
-        fetch(`/admin/form/${id}?format=json`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    contentDiv.innerHTML = data.html || '<div class="alert alert-warning">暂无表单详情</div>';
-                } else {
-                    contentDiv.innerHTML = `<div class="alert alert-danger">加载失败: ${data.message || '未知错误'}</div>`;
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                contentDiv.innerHTML = `<div class="alert alert-danger">加载失败: ${error.message}</div>`;
-            });
-    }
+(() => {
+    const feedback = document.getElementById('reviewQueueFeedback');
+    const resultsContent = document.getElementById('resultsContent');
+    const statusNode = document.getElementById('taskStatus');
+    const summaryNode = document.getElementById('resultsSummary');
+    const categoryLabels = {
+        '无明显风险': '无明显风险',
+        '建议复核': '建议复核',
+        '高风险疑似假表': '高风险疑似假表',
+        '系统无法判断': '系统无法判断',
+    };
+    const sourceNames = ['schedule', 'rule', 'text', 'history', 'llm', 'system'];
 
-    // 驳回表单
-    async function rejectForm(id) {
-        const reason = window.appPrompt ? await window.appPrompt('请输入驳回原因：', '', '驳回表单') : '';
-        if (reason === false) return;
-        const confirmed = window.appConfirm ? await window.appConfirm('确定要驳回此表单吗？') : true;
-        if (confirmed) {
-            fetch(`/admin/api/review/reject/${id}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    reason: reason
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    window.appFeedback('表单已驳回');
-                    loadResults(); // 刷新列表
-                } else {
-                    window.appFeedback('驳回失败: ' + (data.message || '未知错误'));
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                window.appFeedback('驳回失败: 网络错误');
-            });
+    const setFeedback = (message, level = 'info') => {
+        if (!feedback) return;
+        feedback.textContent = String(message || '');
+        feedback.className = `activity-feedback activity-feedback--${level}`;
+    };
+
+    const setStatus = (status) => {
+        const labels = {completed: '已完成', completed_with_errors: '完成但有失败', running: '运行中', queued: '排队中', failed: '失败', cancelled: '已取消'};
+        statusNode.textContent = labels[status] || '未运行';
+        statusNode.className = `badge ${status === 'completed' ? 'bg-success' : status === 'failed' ? 'bg-danger' : 'bg-secondary'}`;
+    };
+
+    const appendCell = (row, value) => {
+        const cell = document.createElement('td');
+        cell.textContent = String(value ?? '—');
+        row.appendChild(cell);
+        return cell;
+    };
+
+    const clearEvidence = () => {
+        sourceNames.forEach((source) => {
+            const node = document.querySelector(`#automationResultsEvidenceDrawer [data-evidence-source="${source}"] [data-evidence-value]`);
+            if (node) node.textContent = '暂无证据';
+        });
+        const comment = document.getElementById('automationResultsSuggestedComment');
+        if (comment) comment.value = '';
+    };
+
+    const renderEvidence = (assessment, formId) => {
+        clearEvidence();
+        const grouped = {schedule: [], rule: [], text: [], history: [], llm: [], system: []};
+        (assessment.findings || []).forEach((finding) => {
+            const source = Object.prototype.hasOwnProperty.call(grouped, finding.source) ? finding.source : 'system';
+            grouped[source].push(`${finding.title || ''}${finding.message ? `：${finding.message}` : ''}`);
+        });
+        sourceNames.forEach((source) => {
+            const node = document.querySelector(`#automationResultsEvidenceDrawer [data-evidence-source="${source}"] [data-evidence-value]`);
+            if (node && grouped[source].length) node.textContent = grouped[source].join('；');
+        });
+        const comment = document.getElementById('automationResultsSuggestedComment');
+        if (comment) comment.value = String(assessment.suggested_comment || '');
+        const humanAction = document.querySelector('#automationResultsEvidenceDrawer [data-human-review-action]');
+        if (humanAction) {
+            humanAction.href = `/admin/review/form/${encodeURIComponent(formId)}`;
+            humanAction.textContent = '打开人工审核';
         }
-    }
+        bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('automationResultsEvidenceDrawer')).show();
+    };
 
-    function loadResults() {
-        fetch('/admin/api/review/auto_check/status')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    renderResults(data);
-                } else {
-                    document.getElementById('resultsContent').innerHTML = '<div class="alert alert-danger">加载失败: ' + (data.message || '未知错误') + '</div>';
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                document.getElementById('resultsContent').innerHTML = '<div class="alert alert-danger">加载失败，请检查网络</div>';
-            });
-    }
-
-    function renderResults(data) {
-        const statusBadge = document.getElementById('taskStatus');
-        if (data.status === 'completed') {
-            statusBadge.textContent = '已完成';
-            statusBadge.className = 'badge bg-success';
-        } else if (data.status === 'running') {
-            statusBadge.textContent = '运行中';
-            statusBadge.className = 'badge bg-primary';
-        } else if (data.status === 'failed') {
-            statusBadge.textContent = '失败';
-            statusBadge.className = 'badge bg-danger';
-        } else {
-            statusBadge.textContent = '未运行';
-            statusBadge.className = 'badge bg-secondary';
-        }
-
-        if (!data.result || !data.result.results) {
-            document.getElementById('resultsContent').innerHTML = `
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle me-2"></i> 暂无审核结果数据。请先在“审核表单”页面进行一键自动审核。
-                </div>`;
+    const openEvidence = (formId, assessmentId) => {
+        if (!assessmentId) {
+            clearEvidence();
+            setFeedback('该表单尚无自动化评估。', 'info');
             return;
         }
+        fetch(`/admin/api/automation/assessments/${encodeURIComponent(assessmentId)}`)
+            .then(async response => {
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || '证据加载失败。');
+                return data.assessment;
+            })
+            .then(assessment => renderEvidence(assessment, formId))
+            .catch(error => setFeedback(error.message || '证据加载失败。', 'error'));
+    };
 
-        const results = data.result.results;
-        const processed = data.result.processed || 0;
-        const ignored = data.result.ignored || 0;
-        
-        let html = `
-            <div class="alert alert-success mb-4">
-                <h5 class="alert-heading"><i class="fas fa-check-circle me-2"></i>审核完成</h5>
-                <p class="mb-0">本次自动审核共处理 <strong>${processed}</strong> 份表单，忽略 <strong>${ignored}</strong> 份（非待审核或非无需人工审核）。</p>
-                <small class="text-muted">审核时间：${data.time || '-'}</small>
-            </div>
-            
-            <div class="table-responsive">
-                <table class="table table-bordered table-striped table-hover">
-                    <thead class="table-light">
-                        <tr>
-                            <th style="width: 10%">听课人</th>
-                            <th style="width: 10%">编号</th>
-                            <th style="width: 15%">专业</th>
-                            <th style="width: 20%">班级组成</th>
-                            <th style="width: 10%">审核状态</th>
-                            <th style="width: 25%">问题项</th>
-                            <th style="width: 10%">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
-
-        if (results.length === 0) {
-            html += `<tr><td colspan="7" class="text-center text-muted py-3">没有符合条件的表单被处理</td></tr>`;
-        } else {
-            results.forEach(item => {
-                const issuesHtml = (item.issues || []).map(i => `<div class="text-danger small mb-1"><i class="fas fa-exclamation-circle me-1"></i> ${i}</div>`).join('');
-                const fixesHtml = (item.fixes || []).map(f => `<div class="text-success small mb-1"><i class="fas fa-wrench me-1"></i> ${f}</div>`).join('');
-                
-                let statusBadge = '';
-                if (item.passed) {
-                    statusBadge = '<span class="badge bg-success">通过</span>';
-                } else {
-                    statusBadge = '<span class="badge bg-warning text-dark">发现问题</span>';
-                }
-                
-                html += `
-                    <tr>
-                        <td>${item.listener || '-'}</td>
-                        <td>${item.listener_number || '-'}</td>
-                        <td>${item.major || '-'}</td>
-                        <td>${item.class_composition || '-'}</td>
-                        <td>${statusBadge}</td>
-                        <td>
-                            ${issuesHtml || '<span class="text-muted small">无问题</span>'}
-                            ${fixesHtml}
-                        </td>
-                        <td>
-                            <div class="btn-group btn-group-sm">
-                                <button onclick="viewForm(${item.id})" class="btn btn-outline-info" title="查看表单详情">
-                                    <i class="fas fa-eye me-1"></i> 查看详情
-                                </button>
-                                <button onclick="rejectForm(${item.id})" class="btn btn-outline-danger" title="驳回">
-                                    <i class="fas fa-times me-1"></i> 驳回
-                                </button>
-                                <a href="/admin/review/form/${item.id}" class="btn btn-outline-warning" title="人工复审">
-                                    <i class="fas fa-user-edit me-1"></i> 人工审核
-                                </a>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            });
+    const renderResults = (payload) => {
+        const batch = payload.batch || {};
+        setStatus(payload.status || batch.status);
+        summaryNode.replaceChildren();
+        const summary = document.createElement('span');
+        summary.textContent = `处理 ${Number(batch.processed_count || 0)}/${Number(batch.target_form_count || 0)}；无明显风险 ${Number(batch.clear_count || 0)}；建议复核 ${Number(batch.review_count || 0)}；高风险 ${Number(batch.high_risk_count || 0)}；无法判断 ${Number(batch.unknown_count || 0)}。`;
+        summaryNode.appendChild(summary);
+        resultsContent.replaceChildren();
+        const results = Array.isArray(batch.results) ? batch.results : [];
+        if (!results.length) {
+            const empty = document.createElement('div');
+            empty.className = 'activity-empty';
+            empty.textContent = '暂无自动化评估结果。';
+            resultsContent.appendChild(empty);
+            return;
         }
+        const table = document.createElement('table');
+        table.className = 'table table-hover align-middle';
+        const head = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        ['表单', '分类', '缓存', '错误', '操作'].forEach(label => {
+            const cell = document.createElement('th');
+            cell.textContent = label;
+            headRow.appendChild(cell);
+        });
+        head.appendChild(headRow);
+        table.appendChild(head);
+        const body = document.createElement('tbody');
+        results.forEach(result => {
+            const row = document.createElement('tr');
+            appendCell(row, result.form_id);
+            appendCell(row, categoryLabels[result.category] || categoryLabels['系统无法判断']);
+            appendCell(row, result.cache_hit ? '已复用' : '新评估');
+            appendCell(row, result.error_code || '—');
+            const actions = document.createElement('td');
+            const evidence = document.createElement('button');
+            evidence.type = 'button';
+            evidence.className = 'btn btn-sm btn-outline-info me-1';
+            evidence.textContent = '查看证据';
+            evidence.addEventListener('click', () => openEvidence(result.form_id, result.assessment_id));
+            const human = document.createElement('a');
+            human.className = 'btn btn-sm btn-outline-primary';
+            human.href = `/admin/review/form/${encodeURIComponent(result.form_id)}`;
+            human.textContent = '人工审核';
+            human.dataset.humanReviewAction = 'true';
+            actions.append(evidence, human);
+            row.appendChild(actions);
+            body.appendChild(row);
+        });
+        table.appendChild(body);
+        resultsContent.appendChild(table);
+    };
 
-        html += `</tbody></table></div>`;
-        document.getElementById('resultsContent').innerHTML = html;
-    }
+    const loadResults = () => {
+        fetch('/admin/api/review/auto_check/status')
+            .then(async response => {
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || '批次读取失败。');
+                return data;
+            })
+            .then(renderResults)
+            .catch(error => setFeedback(error.message || '批次读取失败。', 'error'));
+    };
 
+    document.getElementById('refreshResults')?.addEventListener('click', loadResults);
     document.addEventListener('DOMContentLoaded', loadResults);
+})();
 </script>
 {% endblock %}

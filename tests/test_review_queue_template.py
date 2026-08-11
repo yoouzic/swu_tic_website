@@ -42,6 +42,12 @@ class ReviewQueueTemplateTest(unittest.TestCase):
                 with self.subTest(template=path, pattern=pattern):
                     self.assertIsNone(re.search(pattern, template), f'{path}: {pattern}')
 
+    def test_automation_queue_has_no_legacy_auto_review_label_or_decision_controls(self):
+        template = Path('app/templates/admin/review_forms.html').read_text(encoding='utf-8')
+        self.assertNotIn('一键自动审核', template)
+        self.assertNotIn('autoReviewNormalBtn', template)
+        self.assertNotIn('autoReviewForceBtn', template)
+
     def test_full_review_has_no_stray_middle_dot(self):
         template = Path('app/templates/admin/review_form.html').read_text(encoding='utf-8')
         self.assertNotIn('</div>·', template)
