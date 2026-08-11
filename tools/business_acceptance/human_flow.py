@@ -661,7 +661,14 @@ def run_route_backed_human_flow(
                     visible.add(int(group['id']))
             return visible
 
-        expected_ids = {int(row['form_id']) for row in form_rows}
+        def visible_form_unique_ids(actor: BusinessActor) -> set[str]:
+            visible = visible_form_ids(actor)
+            if not visible:
+                return set()
+            forms = LectureForm.query.filter(LectureForm.id.in_(visible)).all()
+            return {str(form.unique_id or form.id) for form in forms}
+
+        expected_ids = {str(row['unique_id']) for row in form_rows}
         scope_evidence = {
             'group': [],
             'department': [],
@@ -670,11 +677,11 @@ def run_route_backed_human_flow(
         }
         for user in accounts['group']:
             expected = {
-                int(row['form_id'])
+                str(row['unique_id'])
                 for row in form_rows
                 if row['department'] == user.department and row['group'] == user.group
             }
-            visible = visible_form_ids(group_actors[user.department])
+            visible = visible_form_unique_ids(group_actors[user.department])
             scope_evidence['group'].append({
                 'department': user.department,
                 'group': user.group,
@@ -684,19 +691,19 @@ def run_route_backed_human_flow(
             })
         for user in accounts['department']:
             expected = {
-                int(row['form_id'])
+                str(row['unique_id'])
                 for row in form_rows
                 if row['department'] == user.department
             }
-            visible = visible_form_ids(department_actors[user.department])
+            visible = visible_form_unique_ids(department_actors[user.department])
             scope_evidence['department'].append({
                 'department': user.department,
                 'expected_count': len(expected),
                 'visible_count': len(visible),
                 'passed': visible == expected,
             })
-        center_visible = visible_form_ids(center_actor)
-        super_visible = visible_form_ids(super_actor)
+        center_visible = visible_form_unique_ids(center_actor)
+        super_visible = visible_form_unique_ids(super_actor)
         scope_evidence['center'].append({
             'expected_count': len(expected_ids),
             'visible_count': len(center_visible),
