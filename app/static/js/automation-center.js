@@ -72,6 +72,13 @@
         if (!usesDeepSeek && batchTransferCheckbox) batchTransferCheckbox.checked = false;
     };
 
+    const invalidateBatchPreview = () => {
+        if (!pendingBatchPayload) return;
+        pendingBatchPayload = null;
+        if (batchStartButton) batchStartButton.hidden = true;
+        if (batchProgressSummary) batchProgressSummary.textContent = '批次输入已变更，请重新预览。';
+    };
+
     const selectedFormIds = (form) => (form?.querySelector('[name="form_ids"]')?.value || '')
         .split(/[\s,，]+/)
         .map((value) => Number(value))
@@ -519,6 +526,10 @@
         });
         batchPreviewButton?.addEventListener('click', previewBatch);
         batchStartButton?.addEventListener('click', startBatch);
+        if (batchForm) {
+            batchForm.addEventListener('input', invalidateBatchPreview);
+            batchForm.addEventListener('change', invalidateBatchPreview);
+        }
         updateBatchTransferGate();
         loadSettingsData().catch((error) => setFeedback(error.message, 'danger'));
     };

@@ -83,6 +83,96 @@ class AutomationSettingsTemplateTest(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, template + script)
 
+    def test_batch_preview_is_invalidated_when_any_batch_input_changes(self):
+        script = AUTOMATION_SCRIPT.read_text(encoding='utf-8')
+        self.assertIn('const invalidateBatchPreview', script)
+        self.assertIn("batchForm.addEventListener('input', invalidateBatchPreview);", script)
+        self.assertIn("batchForm.addEventListener('change', invalidateBatchPreview);", script)
+        self.assertIn('pendingBatchPayload = null', script)
+        self.assertIn('batchStartButton.hidden = true', script)
+
+        node = shutil.which('node')
+        self.assertIsNotNone(node, 'Node.js is required for the batch preview invalidation test')
+        harness = r'''
+const fs = require('fs');
+const vm = require('vm');
+class EventTarget {
+  constructor() { this.listeners = {}; }
+  addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); }
+  dispatchEvent(event) { for (const fn of (this.listeners[event.type] || [])) fn(event); }
+}
+class Element extends EventTarget {
+  constructor() {
+    super();
+    this.dataset = {};
+    this.hidden = false;
+    this.checked = false;
+    this.value = '';
+    this.style = {};
+  }
+  setAttribute() {}
+  querySelector() { return null; }
+  querySelectorAll() { return []; }
+}
+const settingsPanel = new Element();
+const automationPanel = new Element();
+const batchForm = new Element();
+const previewButton = new Element();
+const startButton = new Element();
+const transferWrap = new Element();
+const transferCheckbox = new Element();
+const formIds = new Element();
+const rules = new Element();
+const llm = new Element();
+const combined = new Element();
+rules.value = 'rules_only';
+rules.checked = true;
+llm.value = 'llm_only';
+combined.value = 'combined';
+formIds.value = '101';
+const controls = [rules, llm, combined];
+batchForm.querySelector = (selector) => {
+  if (selector === '[name="review_mode"]:checked') return controls.find((control) => control.checked) || null;
+  if (selector === '[name="review_mode"]') return controls[0];
+  if (selector === '[name="form_ids"]') return formIds;
+  if (selector === '#automationExternalTransferAck') return transferCheckbox;
+  return null;
+};
+batchForm.querySelectorAll = (selector) => selector === '[name="review_mode"]' ? controls : [];
+automationPanel.querySelector = (selector) => ({
+  '[data-automation-batch-form]': batchForm,
+  '[data-automation-batch-preview]': previewButton,
+  '[data-automation-batch-start]': startButton,
+  '#automationExternalTransferAckWrap': transferWrap,
+  '#automationExternalTransferAck': transferCheckbox,
+  '#automationBatchProgress': null,
+  '#automationBatchPreviewSummary': null,
+}[selector] || null);
+automationPanel.querySelectorAll = (selector) => selector === '[name="review_mode"]' ? controls : [];
+settingsPanel.querySelector = (selector) => selector === '[data-automation-center]' ? automationPanel : null;
+const document = { querySelector: (selector) => selector === '[data-settings-panel="automation"]' ? settingsPanel : null };
+const fetch = async (url) => ({
+  ok: true,
+  json: async () => url.endsWith('/preview') ? {stats: {processable: 1, cache_reusable: 0}} : {},
+});
+const context = {document, fetch, console, setTimeout};
+vm.runInNewContext(fs.readFileSync('app/static/js/automation-center.js', 'utf8'), context);
+settingsPanel.dispatchEvent({type: 'settings:shown'});
+setTimeout(() => {
+  previewButton.dispatchEvent({type: 'click'});
+  setTimeout(() => {
+    if (startButton.hidden) throw new Error('preview-did-not-enable-start');
+    formIds.value = '102';
+    batchForm.dispatchEvent({type: 'input'});
+    if (!startButton.hidden) throw new Error('input-did-not-invalidate-preview');
+    process.stdout.write('batch-preview-invalidated');
+  }, 10);
+}, 10);
+'''
+        result = subprocess.run([node, '-e', harness], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, 'batch-preview-invalidated')
+
     def test_system_management_loads_automation_script_after_settings_script(self):
         template = SYSTEM_TEMPLATE.read_text(encoding='utf-8')
         settings_index = template.index('js/settings-center.js')
