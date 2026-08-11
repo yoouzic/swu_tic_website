@@ -97,6 +97,10 @@ class RealBatchPlanningTest(unittest.TestCase):
         self.assertEqual(_real_phase_conclusion({'status': 'failed'}), 'FAIL')
         self.assertEqual(_real_phase_conclusion({'status': 'queued'}), 'BLOCKED')
         self.assertEqual(_real_phase_conclusion({}), 'BLOCKED')
+        self.assertEqual(
+            _real_phase_conclusion({'stages': [{'status': 'completed'}]}),
+            'PASS',
+        )
 
     def test_stage_recovery_merges_failed_items_without_inflating_target(self):
         original = {

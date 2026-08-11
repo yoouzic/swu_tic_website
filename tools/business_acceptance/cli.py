@@ -966,7 +966,15 @@ def _report_payload(manifest, verification: list[VerificationResult]) -> dict[st
 def _real_phase_conclusion(result: Mapping[str, object]) -> str:
     """Map a production phase result to the acceptance conclusion vocabulary."""
 
-    status = str(result.get('status', '')).strip().lower()
+    raw_status = result.get('status')
+    if not raw_status:
+        stages = result.get('stages')
+        if isinstance(stages, (list, tuple)):
+            for stage in reversed(stages):
+                if isinstance(stage, Mapping) and stage.get('status'):
+                    raw_status = stage.get('status')
+                    break
+    status = str(raw_status or '').strip().lower()
     if status == 'completed':
         return 'PASS'
     if status in {'failed', 'completed_with_errors'}:
