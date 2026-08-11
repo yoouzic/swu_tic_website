@@ -131,6 +131,20 @@ a { color: var(--color-accent-strong); }
 .activity-panel .table { margin-bottom: 0; }
 .activity-panel .table th { color: var(--color-text-muted); font-size: .78rem; font-weight: 600; white-space: nowrap; }
 .activity-panel .table td { min-width: 7rem; }
+.automation-center { display: grid; gap: 18px; }
+.automation-service-status { border-color: var(--color-border); }
+.automation-service-card { display: grid; gap: 6px; min-height: 84px; padding: 14px; border: 1px solid var(--color-border); border-radius: var(--surface-radius); background: var(--color-bg-subtle, #f8f9fa); }
+.automation-service-card__name { font-weight: 600; }
+.automation-service-card__key { color: var(--color-text-muted); font-size: .78rem; }
+.automation-semester-field { min-width: 10rem; }
+.automation-dataset-card { display: flex; min-height: 100%; flex-direction: column; gap: 10px; padding: 16px; border: 1px solid var(--color-border); border-radius: var(--surface-radius); background: var(--color-surface); }
+.automation-dataset-card h3 { margin: 0; font-size: 1rem; }
+.automation-dataset-card p { min-height: 2.5rem; margin: 0; color: var(--color-text-muted); font-size: .84rem; }
+.automation-dataset-card__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+.automation-dataset-card [data-automation-activate] { align-self: flex-start; }
+.automation-coverage { min-height: 100%; }
+.automation-coverage__item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--color-border); }
+.automation-coverage__item:last-child { border-bottom: 0; }
 .record-description { max-width: 22rem; white-space: normal; word-break: break-word; }
 .version-history[hidden],.registration-detail[hidden],.time-suggestion[hidden] { display: none; }
 .version-history > td { padding: 0; background: var(--color-background); }

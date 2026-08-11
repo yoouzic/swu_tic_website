@@ -1,162 +1,198 @@
-<div class="settings-panel-body">
-    <div class="row g-3">
-        <div class="col-lg-6">
-            <section class="activity-panel h-100">
-                <div class="activity-panel__header"><h2><i class="bi bi-gear" aria-hidden="true"></i> 自动审核基础设置</h2></div>
-                <div class="activity-panel__body">
-                    <div class="mb-3">
-                        <label class="form-label" for="semesterMonday">学期第一周星期一（YYYY-MM-DD）</label>
-                        <input type="text" class="form-control" id="semesterMonday" placeholder="2025-09-01" value="{{ status.semester_monday or '' }}">
-                        <div class="form-text">用于计算听课周次与日期有效性。</div>
+<div class="settings-panel-body automation-center" data-automation-center>
+    <div id="automationSettingsFeedback" class="alert alert-info" role="status" aria-live="polite">
+        自动化中心尚未加载。
+    </div>
+
+    <section class="activity-panel automation-service-status" id="automationServiceStatus" aria-labelledby="automationServiceTitle">
+        <div class="activity-panel__header">
+            <h2 id="automationServiceTitle"><i class="bi bi-heart-pulse" aria-hidden="true"></i> 自动化服务状态</h2>
+            <p>状态检查只返回可展示的健康摘要，不显示密钥或原始连接信息。</p>
+        </div>
+        <div class="activity-panel__body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="automation-service-card" data-service-state="redis">
+                        <span class="automation-service-card__name">Redis</span>
+                        <span class="badge text-bg-secondary" data-service-value>检查中</span>
                     </div>
-                    <div class="mb-3">
-                        <span class="form-label d-block">共用参考文件状态</span>
-                        <ul class="list-group">
-                            <li class="list-group-item d-flex justify-content-between align-items-center file-status-item">
-                                课表文件
-                                {% if status.schedule_exists %}<span class="badge bg-success">已检测到</span>{% else %}<span class="badge bg-danger">未检测到</span>{% endif %}
-                                <span class="text-muted small file-path" id="schedulePath">{{ status.schedule_path }}</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center file-status-item">
-                                通讯录文件
-                                {% if status.contacts_exists %}<span class="badge bg-success">已检测到</span>{% else %}<span class="badge bg-danger">未检测到</span>{% endif %}
-                                <span class="text-muted small file-path" id="contactsPath">{{ status.contacts_path }}</span>
-                            </li>
-                        </ul>
+                </div>
+                <div class="col-md-4">
+                    <div class="automation-service-card" data-service-state="worker">
+                        <span class="automation-service-card__name">Celery Worker</span>
+                        <span class="badge text-bg-secondary" data-service-value>检查中</span>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="fileSchedule">上传课表文件</label>
-                        <div id="dropSchedule" class="border border-secondary rounded p-3 text-center bg-white" role="button" tabindex="0">拖拽到此或点击选择</div>
-                        <input type="file" id="fileSchedule" accept=".xls,.xlsx" hidden>
-                        <div class="form-text">支持 .xls/.xlsx，上传后自动保存路径。</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="automation-service-card" data-service-state="deepseek">
+                        <span class="automation-service-card__name">DeepSeek</span>
+                        <span class="badge text-bg-secondary" data-service-value>检查中</span>
+                        <span class="automation-service-card__key">API Key: <span id="automationDeepseekKeyStatus">missing</span></span>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="fileContacts">上传通讯录文件</label>
-                        <div id="dropContacts" class="border border-secondary rounded p-3 text-center bg-white" role="button" tabindex="0">拖拽到此或点击选择</div>
-                        <input type="file" id="fileContacts" accept=".xls,.xlsx" hidden>
-                    </div>
-                    <button class="btn btn-primary" id="saveSettings" type="button"><i class="bi bi-save" aria-hidden="true"></i> 保存设置</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="activity-panel mt-3" aria-labelledby="automationDatasetTitle">
+        <div class="activity-panel__header activity-panel__header--split">
+            <div>
+                <h2 id="automationDatasetTitle"><i class="bi bi-calendar3" aria-hidden="true"></i> 课表数据集</h2>
+                <p>上传后先生成 staged 预览；只有确认启用后才切换 active 数据集。</p>
+            </div>
+            <label class="automation-semester-field">
+                <span class="form-label">学期</span>
+                <input class="form-control form-control-sm" id="automationSemester" type="text" placeholder="2025-2026-1" autocomplete="off">
+            </label>
+        </div>
+        <div class="activity-panel__body">
+            <div class="row g-3">
+                <div class="col-xl-4">
+                    <article class="automation-dataset-card" id="schoolScheduleDataset" data-dataset-kind="school">
+                        <h3>学校课表</h3>
+                        <p>用于课程、教师与时间段的基础匹配。</p>
+                        <label class="form-label" for="schoolScheduleFile">课表文件</label>
+                        <input class="form-control" id="schoolScheduleFile" type="file" data-automation-file accept=".xls,.xlsx,.csv">
+                        <div class="automation-dataset-card__actions">
+                            <button type="button" class="btn btn-primary" data-automation-preview data-kind="school">上传并预览</button>
+                            <button type="button" class="btn btn-outline-secondary" data-automation-download data-kind="school">下载模板</button>
+                        </div>
+                        <div class="small text-muted" data-preview-summary aria-live="polite">尚无预览。</div>
+                        <button type="button" class="btn btn-outline-success btn-sm" data-automation-activate data-kind="school" hidden>确认启用</button>
+                    </article>
+                </div>
+                <div class="col-xl-4">
+                    <article class="automation-dataset-card" id="classMappingDataset" data-dataset-kind="class_mapping">
+                        <h3>听课人班级映射</h3>
+                        <p>将听课人身份映射到课表中的班级或教学班。</p>
+                        <label class="form-label" for="classMappingFile">映射文件</label>
+                        <input class="form-control" id="classMappingFile" type="file" data-automation-file accept=".xls,.xlsx,.csv">
+                        <div class="automation-dataset-card__actions">
+                            <button type="button" class="btn btn-primary" data-automation-preview data-kind="class_mapping">上传并预览</button>
+                            <button type="button" class="btn btn-outline-secondary" data-automation-download data-kind="class_mapping">下载模板</button>
+                        </div>
+                        <div class="small text-muted" data-preview-summary aria-live="polite">尚无预览。</div>
+                        <button type="button" class="btn btn-outline-success btn-sm" data-automation-activate data-kind="class_mapping" hidden>确认启用</button>
+                    </article>
+                </div>
+                <div class="col-xl-4">
+                    <article class="automation-dataset-card" id="personalScheduleDataset" data-dataset-kind="personal">
+                        <h3>个人课表</h3>
+                        <p>用于标记听课人与个人时段之间的冲突证据。</p>
+                        <label class="form-label" for="personalScheduleFile">个人课表文件</label>
+                        <input class="form-control" id="personalScheduleFile" type="file" data-automation-file accept=".xls,.xlsx,.csv">
+                        <div class="automation-dataset-card__actions">
+                            <button type="button" class="btn btn-primary" data-automation-preview data-kind="personal">上传并预览</button>
+                            <button type="button" class="btn btn-outline-secondary" data-automation-download data-kind="personal">下载模板</button>
+                        </div>
+                        <div class="small text-muted" data-preview-summary aria-live="polite">尚无预览。</div>
+                        <button type="button" class="btn btn-outline-success btn-sm" data-automation-activate data-kind="personal" hidden>确认启用</button>
+                    </article>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="row g-3 mt-0">
+        <div class="col-xl-7">
+            <section class="activity-panel h-100" aria-labelledby="automationDatasetHistoryTitle">
+                <div class="activity-panel__header">
+                    <h2 id="automationDatasetHistoryTitle"><i class="bi bi-clock-history" aria-hidden="true"></i> 数据集历史</h2>
+                </div>
+                <div class="activity-panel__body table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead><tr><th>类型</th><th>学期</th><th>版本</th><th>状态</th><th>行数</th><th>更新时间</th></tr></thead>
+                        <tbody id="automationDatasetHistory"><tr><td colspan="6" class="text-muted">尚未加载。</td></tr></tbody>
+                    </table>
                 </div>
             </section>
         </div>
-        <div class="col-lg-6">
-            <section class="activity-panel h-100">
-                <div class="activity-panel__header"><h2><i class="bi bi-play-circle" aria-hidden="true"></i> 自动审核（EXCEL版）</h2></div>
-                <div class="activity-panel__body">
-                    <div class="mb-3">
-                        <span class="form-label d-block">待审核 EXCEL 文件状态</span>
-                        <ul class="list-group">
-                            <li class="list-group-item d-flex justify-content-between align-items-center file-status-item">
-                                反馈文件
-                                {% if status.feedback_exists %}<span class="badge bg-success">已检测到</span>{% else %}<span class="badge bg-danger">未检测到</span>{% endif %}
-                                <span class="text-muted small file-path" id="feedbackPath">{{ status.feedback_path }}</span>
-                            </li>
-                        </ul>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="fileFeedback">上传待审核 EXCEL 文件</label>
-                        <div id="dropFeedback" class="border border-secondary rounded p-3 text-center bg-white" role="button" tabindex="0">拖拽到此或点击选择</div>
-                        <input type="file" id="fileFeedback" accept=".xls,.xlsx" hidden>
-                        <div class="form-text">上传与系统约定结构一致的反馈表。</div>
-                    </div>
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" id="exportReport" checked>
-                        <label class="form-check-label" for="exportReport">导出审核报告（xlsx）</label>
-                    </div>
-                    <button class="btn btn-outline-success" id="runFeedback" type="button"><i class="bi bi-play-fill" aria-hidden="true"></i> 自动审核（EXCEL版）</button>
+        <div class="col-xl-5">
+            <section class="activity-panel automation-coverage h-100" aria-labelledby="automationCoverageTitle">
+                <div class="activity-panel__header">
+                    <h2 id="automationCoverageTitle"><i class="bi bi-pie-chart" aria-hidden="true"></i> 覆盖统计</h2>
+                </div>
+                <div class="activity-panel__body" id="automationCoverageSummary" aria-live="polite">
+                    <div class="automation-coverage__item"><span>完整证据</span><strong data-coverage="complete">—</strong></div>
+                    <div class="automation-coverage__item"><span>基础证据</span><strong data-coverage="basic">—</strong></div>
+                    <div class="automation-coverage__item"><span>缺少证据</span><strong data-coverage="missing">—</strong></div>
+                    <div class="automation-coverage__item"><span>有效信息员总数</span><strong data-coverage="total">—</strong></div>
                 </div>
             </section>
         </div>
     </div>
-    <section class="activity-panel mt-3">
+
+    <section class="activity-panel mt-3" aria-labelledby="automationRulesTitle">
         <div class="activity-panel__header activity-panel__header--split">
-            <h2><i class="bi bi-list-check" aria-hidden="true"></i> EXCEL 审核结果</h2>
-            <a id="downloadLink" class="btn btn-sm btn-outline-secondary" hidden><i class="bi bi-download" aria-hidden="true"></i> 下载报告</a>
-        </div>
-        <div class="activity-panel__body">
-            <div id="summary" class="activity-empty">尚未运行自动审核。</div>
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead><tr><th>表单 ID</th><th>听课人</th><th>教师</th><th>课程</th><th>是否通过</th><th>问题详情</th><th>修正建议</th></tr></thead>
-                    <tbody id="resultBody"></tbody>
-                </table>
+            <div>
+                <h2 id="automationRulesTitle"><i class="bi bi-journal-check" aria-hidden="true"></i> 规则与 revision</h2>
+                <p>每次变更都会形成可追溯的规则 revision，批次读取固定版本。</p>
             </div>
+            <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#automationRuleRevision">新建 revision</button>
+        </div>
+        <div class="activity-panel__body table-responsive">
+            <table class="table table-hover align-middle">
+                <thead><tr><th>规则</th><th>severity</th><th>版本</th><th>启用</th><th>parameters</th><th>操作</th></tr></thead>
+                <tbody id="automationRuleList"><tr><td colspan="5" class="text-muted">尚未加载。</td></tr></tbody>
+            </table>
         </div>
     </section>
-</div>
 
-<script>
-(() => {
-    const feedback = (text, variant) => window.appFeedback ? window.appFeedback(text, variant) : console.warn(text);
-    async function saveSettings() {
-        const monday = document.getElementById('semesterMonday').value.trim();
-        const resp = await fetch('{{ url_for('admin.auto_review_settings') }}', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({semester_monday: monday})
-        });
-        const data = await resp.json();
-        feedback(data.success ? '设置已保存' : (data.message || '保存失败'), data.success ? 'success' : 'error');
-    }
-    async function runFeedback() {
-        const summary = document.getElementById('summary');
-        const link = document.getElementById('downloadLink');
-        summary.textContent = '自动审核运行中...';
-        link.hidden = true;
-        const resp = await fetch('{{ url_for('admin.auto_review_feedback_run') }}', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({export: document.getElementById('exportReport').checked})
-        });
-        const data = await resp.json();
-        if (!data.success) {
-            summary.textContent = data.message || '运行失败';
-            feedback(summary.textContent, 'error');
-            return;
-        }
-        const s = data.data.summary;
-        summary.textContent = `共 ${s.total} 条，通过 ${s.passed} 条，未通过 ${s.failed} 条`;
-        const tbody = document.getElementById('resultBody');
-        tbody.replaceChildren();
-        for (const result of data.data.results) {
-            const row = document.createElement('tr');
-            row.innerHTML = `<td>${result.form_id ?? ''}</td><td>${result.listener ?? ''}</td><td>${result.teacher ?? ''}</td><td>${result.course ?? ''}</td><td>${result.passed ? '是' : '否'}</td><td>${(result.issues || []).join('<br>')}</td><td>${(result.fixes || []).join('<br>')}</td>`;
-            tbody.appendChild(row);
-        }
-        if (data.download_url) {
-            link.href = data.download_url;
-            link.hidden = false;
-        }
-    }
-    async function uploadFile(file, fileType) {
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('file_type', fileType);
-        const resp = await fetch('{{ url_for('admin.auto_review_upload') }}', {method: 'POST', body: fd});
-        const data = await resp.json();
-        if (!data.success) {
-            feedback(data.message || '上传失败', 'error');
-            return;
-        }
-        feedback('上传成功', 'success');
-        const status = data.status || {};
-        [['schedulePath', 'schedule_path'], ['contactsPath', 'contacts_path'], ['feedbackPath', 'feedback_path']].forEach(([id, key]) => {
-            const node = document.getElementById(id);
-            if (node && key in status) node.textContent = status[key] || '';
-        });
-    }
-    function wireDrop(zoneId, inputId, type) {
-        const zone = document.getElementById(zoneId);
-        const input = document.getElementById(inputId);
-        if (!zone || !input) return;
-        zone.addEventListener('click', () => input.click());
-        zone.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); input.click(); } });
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((eventName) => zone.addEventListener(eventName, (event) => event.preventDefault()));
-        zone.addEventListener('drop', (event) => { const file = event.dataTransfer?.files?.[0]; if (file) uploadFile(file, type); });
-        input.addEventListener('change', (event) => { const file = event.target.files?.[0]; if (file) uploadFile(file, type); });
-    }
-    document.getElementById('saveSettings')?.addEventListener('click', saveSettings);
-    document.getElementById('runFeedback')?.addEventListener('click', runFeedback);
-    wireDrop('dropSchedule', 'fileSchedule', 'schedule');
-    wireDrop('dropContacts', 'fileContacts', 'contacts');
-    wireDrop('dropFeedback', 'fileFeedback', 'feedback');
-})();
-</script>
+    <aside class="alert alert-warning mt-3" role="note">
+        <i class="bi bi-shield-exclamation" aria-hidden="true"></i>
+        <span>启用 LLM 前必须明确确认：完整表单和相关证据会发送到 DeepSeek 外部 API。</span>
+    </aside>
+
+    <div class="modal fade" id="automationPreviewModal" tabindex="-1" aria-labelledby="automationPreviewTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title fs-5" id="automationPreviewTitle">数据集预览</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body" id="automationPreviewBody" aria-live="polite">选择文件并点击“上传并预览”。</div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">返回修改</button>
+                    <button type="button" class="btn btn-success" id="automationPreviewActivate" disabled>确认启用</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="automationRuleRevision" tabindex="-1" aria-labelledby="automationRuleRevisionTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form id="automationRuleRevisionForm">
+                    <div class="modal-header">
+                        <h2 class="modal-title fs-5" id="automationRuleRevisionTitle">新建规则 revision</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                    </div>
+                    <div class="modal-body">
+                        <label class="form-label" for="automationRuleKey">规则 key</label>
+                        <input class="form-control mb-3" id="automationRuleKey" name="rule_key" required>
+                        <label class="form-label" for="automationRuleHandler">处理器</label>
+                        <input class="form-control mb-3" id="automationRuleHandler" name="handler" required>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" id="automationRuleEnabled" name="enabled" type="checkbox" checked>
+                            <label class="form-check-label" for="automationRuleEnabled">启用规则</label>
+                        </div>
+                        <label class="form-label" for="automationRuleSeverity">severity</label>
+                        <select class="form-select mb-3" id="automationRuleSeverity" name="severity">
+                            <option value="info">info</option>
+                            <option value="review" selected>review</option>
+                            <option value="high">high</option>
+                            <option value="unknown">unknown</option>
+                        </select>
+                        <label class="form-label" for="automationRuleParameters">parameters JSON</label>
+                        <textarea class="form-control mb-3" id="automationRuleParameters" name="parameters" rows="4" placeholder="{}">{}</textarea>
+                        <label class="form-label" for="automationRuleChangeReason">变更原因</label>
+                        <input class="form-control" id="automationRuleChangeReason" name="change_reason" required>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary">保存 revision</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
