@@ -85,12 +85,23 @@
         if (comment) comment.value = '';
     };
 
+    function automationEvidenceSource(finding, assessment) {
+        const source = String(finding.source || 'system');
+        if (source !== 'rule') {
+            return ['schedule', 'rule', 'text', 'history', 'llm', 'system'].includes(source) ? source : 'system';
+        }
+        const ruleVersion = assessment.rule_version || {};
+        const revision = ruleVersion[finding.rule_key];
+        const handler = revision && revision.handler;
+        if (['required_prefix', 'regex_pattern', 'min_length'].includes(handler)) return 'text';
+        return 'rule';
+    }
+
     const renderEvidence = (assessment, formId) => {
         clearEvidence();
         const grouped = {schedule: [], rule: [], text: [], history: [], llm: [], system: []};
         (assessment.findings || []).forEach((finding) => {
-            const source = Object.prototype.hasOwnProperty.call(grouped, finding.source) ? finding.source : 'system';
-            grouped[source].push(`${finding.title || ''}${finding.message ? `：${finding.message}` : ''}`);
+            grouped[automationEvidenceSource(finding, assessment)].push(`${finding.title || ''}${finding.message ? `：${finding.message}` : ''}`);
         });
         sourceNames.forEach((source) => {
             const node = document.querySelector(`#automationResultsEvidenceDrawer [data-evidence-source="${source}"] [data-evidence-value]`);

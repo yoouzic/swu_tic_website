@@ -2028,11 +2028,18 @@ function showAutoReviewDecision(stats, formIds, button) {
     if (!modalEl || !ack || !startButton) return;
     renderAutomationBatchPreview(stats);
     ack.checked = false;
-    startButton.disabled = false;
+    startButton.disabled = true;
+    ack.addEventListener('change', () => {
+        startButton.disabled = !(ack.checked === true);
+    });
     startButton.onclick = () => {
         const transferAck = ack.checked === true;
+        if (!transferAck) {
+            setReviewQueueFeedback('请先确认 DeepSeek 外部传输。', 'warning');
+            return;
+        }
         bootstrap.Modal.getOrCreateInstance(modalEl).hide();
-        startBatchReview(formIds, button, transferAck);
+        startBatchReview(formIds, button, true);
     };
     bootstrap.Modal.getOrCreateInstance(modalEl).show();
 }
@@ -2068,12 +2075,16 @@ function batchAutoReview() {
 }
 
 function startBatchReview(formIds, button, transferAck) {
+    if (transferAck !== true) {
+        setReviewQueueFeedback('请先确认 DeepSeek 外部传输。', 'warning');
+        return;
+    }
     setAutomationBatchButtonState(button, '正在启动检查…', true);
     setReviewQueueFeedback('正在启动批量智能检查…', 'info');
     const payload = {
         form_ids: formIds,
-        llm_enabled: transferAck === true,
-        external_transfer_acknowledged: transferAck === true,
+        llm_enabled: true,
+        external_transfer_acknowledged: true,
     };
     fetch('/admin/api/automation/batches', {
         method: 'POST',
@@ -2145,12 +2156,23 @@ function setAutomationEvidenceValue(source, value) {
     if (node) node.textContent = value || '暂无证据';
 }
 
+function automationEvidenceSource(finding, assessment) {
+    const source = String(finding.source || 'system');
+    if (source !== 'rule') {
+        return ['schedule', 'rule', 'text', 'history', 'llm', 'system'].includes(source) ? source : 'system';
+    }
+    const ruleVersion = assessment.rule_version || {};
+    const revision = ruleVersion[finding.rule_key];
+    const handler = revision && revision.handler;
+    if (['required_prefix', 'regex_pattern', 'min_length'].includes(handler)) return 'text';
+    return 'rule';
+}
+
 function renderAutomationAssessment(formId, assessment) {
     const findings = Array.isArray(assessment.findings) ? assessment.findings : [];
     const grouped = {schedule: [], rule: [], text: [], history: [], llm: [], system: []};
     findings.forEach(finding => {
-        const source = Object.prototype.hasOwnProperty.call(grouped, finding.source) ? finding.source : 'system';
-        grouped[source].push(`${finding.title || ''}${finding.message ? `：${finding.message}` : ''}`);
+        grouped[automationEvidenceSource(finding, assessment)].push(`${finding.title || ''}${finding.message ? `：${finding.message}` : ''}`);
     });
     Object.keys(grouped).forEach(source => setAutomationEvidenceValue(source, grouped[source].join('；')));
     if (assessment.coverage) setAutomationEvidenceValue('schedule', `覆盖：${getAutomationCoverageLabel(assessment.coverage)}；${grouped.schedule.join('；')}`);

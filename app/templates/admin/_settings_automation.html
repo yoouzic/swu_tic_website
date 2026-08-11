@@ -52,6 +52,8 @@
                         <p>用于课程、教师与时间段的基础匹配。</p>
                         <label class="form-label" for="schoolScheduleFile">课表文件</label>
                         <input class="form-control" id="schoolScheduleFile" type="file" data-automation-file accept=".xls,.xlsx,.csv">
+                        <div class="automation-drop-zone" data-automation-drop-zone data-kind="school" role="button" tabindex="0" aria-describedby="schoolScheduleDropStatus">拖拽文件到这里，或按 Enter 选择文件</div>
+                        <div class="small text-muted" id="schoolScheduleDropStatus" data-drop-status aria-live="polite">支持 CSV/XLS/XLSX</div>
                         <div class="automation-dataset-card__actions">
                             <button type="button" class="btn btn-primary" data-automation-preview data-kind="school">上传并预览</button>
                             <button type="button" class="btn btn-outline-secondary" data-automation-download data-kind="school">下载模板</button>
@@ -66,6 +68,8 @@
                         <p>将听课人身份映射到课表中的班级或教学班。</p>
                         <label class="form-label" for="classMappingFile">映射文件</label>
                         <input class="form-control" id="classMappingFile" type="file" data-automation-file accept=".xls,.xlsx,.csv">
+                        <div class="automation-drop-zone" data-automation-drop-zone data-kind="class_mapping" role="button" tabindex="0" aria-describedby="classMappingDropStatus">拖拽文件到这里，或按 Enter 选择文件</div>
+                        <div class="small text-muted" id="classMappingDropStatus" data-drop-status aria-live="polite">支持 CSV/XLS/XLSX</div>
                         <div class="automation-dataset-card__actions">
                             <button type="button" class="btn btn-primary" data-automation-preview data-kind="class_mapping">上传并预览</button>
                             <button type="button" class="btn btn-outline-secondary" data-automation-download data-kind="class_mapping">下载模板</button>
@@ -80,6 +84,8 @@
                         <p>用于标记听课人与个人时段之间的冲突证据。</p>
                         <label class="form-label" for="personalScheduleFile">个人课表文件</label>
                         <input class="form-control" id="personalScheduleFile" type="file" data-automation-file accept=".xls,.xlsx,.csv">
+                        <div class="automation-drop-zone" data-automation-drop-zone data-kind="personal" role="button" tabindex="0" aria-describedby="personalScheduleDropStatus">拖拽文件到这里，或按 Enter 选择文件</div>
+                        <div class="small text-muted" id="personalScheduleDropStatus" data-drop-status aria-live="polite">支持 CSV/XLS/XLSX</div>
                         <div class="automation-dataset-card__actions">
                             <button type="button" class="btn btn-primary" data-automation-preview data-kind="personal">上传并预览</button>
                             <button type="button" class="btn btn-outline-secondary" data-automation-download data-kind="personal">下载模板</button>

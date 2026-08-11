@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import re
 import shutil
 import subprocess
@@ -212,6 +213,98 @@ setTimeout(() => {
         self.assertRegex(template, r'transferAck[^\n]*===\s*true')
         self.assertNotIn('force_all', template)
         self.assertNotIn('location.reload', template)
+
+    def test_review_queue_ack_is_a_literal_gate_for_batch_creation(self):
+        template = REVIEW_QUEUE_TEMPLATE.read_text(encoding='utf-8')
+        show_start = template.index('function showAutoReviewDecision')
+        show_end = template.index('function batchAutoReview', show_start)
+        show_flow = template[show_start:show_end]
+        start_start = template.index('function startBatchReview')
+        start_end = template.index('function renderAutomationBatchProgress', start_start)
+        start_flow = template[start_start:start_end]
+
+        self.assertIn('startButton.disabled = true;', show_flow)
+        self.assertIn("ack.addEventListener('change'", show_flow)
+        self.assertIn('ack.checked === true', show_flow)
+        self.assertRegex(show_flow, r'if\s*\(!transferAck\)\s*\{')
+        self.assertLess(show_flow.index('if (!transferAck)'), show_flow.index('.hide()'))
+        self.assertIn('return;', show_flow)
+        self.assertIn('llm_enabled: true', start_flow)
+        self.assertIn('external_transfer_acknowledged: true', start_flow)
+        self.assertNotIn('llm_enabled: transferAck', start_flow)
+
+        node = shutil.which('node')
+        self.assertIsNotNone(node, 'Node.js is required for the literal acknowledgement execution test')
+        function_start = template.index('function startBatchReview')
+        brace_start = template.index('{', function_start)
+        depth = 0
+        function_end = None
+        for index in range(brace_start, len(template)):
+            if template[index] == '{':
+                depth += 1
+            elif template[index] == '}':
+                depth -= 1
+                if depth == 0:
+                    function_end = index + 1
+                    break
+        self.assertIsNotNone(function_end)
+        function_source = template[function_start:function_end]
+        harness = f'''
+const startBatchReview = new Function(
+  'setAutomationBatchButtonState',
+  'setReviewQueueFeedback',
+  'fetch',
+  'pollAutomationBatch',
+  {json.dumps(function_source)} + '; return startBatchReview;'
+)((...args) => {{ }}, (...args) => {{ }}, (url, options) => {{
+  globalThis.calls.push({{url, body: JSON.parse(options.body)}});
+  return Promise.resolve({{ok: true, json: async () => ({{batch_id: 'batch-1'}})}});
+}}, (...args) => {{ }});
+globalThis.calls = [];
+const button = {{disabled: false, textContent: ''}};
+(async () => {{
+  startBatchReview([1], button, false);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  if (calls.length !== 0) throw new Error('unchecked acknowledgement created a batch');
+  startBatchReview([1], button, true);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  if (calls.length !== 1) throw new Error(`checked acknowledgement calls: ${{calls.length}}`);
+  if (calls[0].body.llm_enabled !== true || calls[0].body.external_transfer_acknowledged !== true) {{
+    throw new Error('batch creation did not force literal external-transfer acknowledgement');
+  }}
+  process.stdout.write('literal-ack-gate');
+}})().catch(error => {{ console.error(error); process.exit(1); }});
+'''
+        result = subprocess.run([node, '-e', harness], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, 'literal-ack-gate')
+
+    def test_evidence_maps_text_rule_handlers_in_both_views(self):
+        queue = REVIEW_QUEUE_TEMPLATE.read_text(encoding='utf-8')
+        results = AUTO_RESULTS_TEMPLATE.read_text(encoding='utf-8')
+        for template in (queue, results):
+            with self.subTest(template=template[:30]):
+                self.assertIn('assessment.rule_version', template)
+                self.assertIn('required_prefix', template)
+                self.assertIn('regex_pattern', template)
+                self.assertIn('min_length', template)
+                self.assertIn('automationEvidenceSource', template)
+                self.assertIn('automationEvidenceSource(finding, assessment)', template)
+        self.assertRegex(queue, r"grouped\[automationEvidenceSource\(finding, assessment\)\]")
+        self.assertRegex(results, r"grouped\[automationEvidenceSource\(finding, assessment\)\]")
+
+    def test_settings_dataset_cards_support_accessible_drag_and_drop(self):
+        template = SETTINGS_TEMPLATE.read_text(encoding='utf-8')
+        script = AUTOMATION_SCRIPT.read_text(encoding='utf-8')
+        self.assertEqual(template.count('data-automation-drop-zone'), 3)
+        for fragment in ('role="button"', 'tabindex="0"', 'aria-live="polite"'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, template)
+        for fragment in ('data-automation-drop-zone', 'dragover', "addEventListener('drop'", 'DataTransfer', 'input.files'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, script)
+        self.assertIn("input.click()", script)
+        self.assertIn('无法读取拖拽文件', script)
 
     def test_review_queue_suggested_comment_stays_draft_until_existing_human_action(self):
         template = REVIEW_QUEUE_TEMPLATE.read_text(encoding='utf-8')

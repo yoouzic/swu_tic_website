@@ -312,6 +312,53 @@
         setFeedback('模板已下载。', 'success');
     };
 
+    const wireDropZone = (zone) => {
+        const kind = zone.dataset.kind;
+        const card = panel.querySelector(`[data-dataset-kind="${kind}"]`);
+        const input = card?.querySelector('[data-automation-file]');
+        const status = zone.parentElement?.querySelector('[data-drop-status]');
+        if (!input) return;
+
+        const showFile = (file) => {
+            if (!file) return;
+            zone.textContent = `已选择：${text(file.name, '文件')}`;
+            if (status) status.textContent = '文件已选择，可生成预览。';
+        };
+
+        const assignFile = (file) => {
+            if (!file) return;
+            try {
+                if (typeof DataTransfer !== 'function') throw new Error('DataTransfer unavailable');
+                const transfer = new DataTransfer();
+                transfer.items.add(file);
+                input.files = transfer.files;
+                showFile(file);
+            } catch (error) {
+                setFeedback('无法读取拖拽文件，请使用文件选择器。', 'warning');
+                if (status) status.textContent = '拖拽失败，请点击文件选择器重试。';
+            }
+        };
+
+        zone.addEventListener('click', () => input.click());
+        zone.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                input.click();
+            }
+        });
+        zone.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            zone.classList.add('is-dragover');
+        });
+        zone.addEventListener('dragleave', () => zone.classList.remove('is-dragover'));
+        zone.addEventListener('drop', (event) => {
+            event.preventDefault();
+            zone.classList.remove('is-dragover');
+            assignFile(event.dataTransfer?.files?.[0]);
+        });
+        input.addEventListener('change', () => showFile(input.files?.[0]));
+    };
+
     const init = () => {
         if (initialized) return;
         initialized = true;
@@ -323,6 +370,7 @@
             button.addEventListener('click', () => activateDataset(button.dataset.kind, button.dataset.datasetId));
         });
         panel.querySelectorAll('[data-automation-download]').forEach((button) => button.addEventListener('click', downloadTemplate));
+        panel.querySelectorAll('[data-automation-drop-zone]').forEach(wireDropZone);
         panel.querySelector('#automationPreviewActivate')?.addEventListener('click', () => {
             const datasetId = pendingDatasets.get(activePreviewKind);
             activateDataset(activePreviewKind, datasetId);
