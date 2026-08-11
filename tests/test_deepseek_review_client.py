@@ -171,6 +171,7 @@ class DeepSeekReviewClientTest(unittest.TestCase):
             client.review(self.FORM)
 
         self.assertEqual(raised.exception.code, 'timeout')
+        self.assertEqual(client.last_attempt_count, 1)
         self.assertNotIn('SYNTHETIC_TIMEOUT', str(raised.exception))
 
     def test_rate_limit_is_typed_transient(self):

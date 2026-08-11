@@ -116,6 +116,7 @@ class DeepSeekReviewClient:
         self.max_retries = max(0, int(max_retries))
         self.max_tokens = max_tokens
         self.prompt_version = PROMPT_VERSION
+        self.last_attempt_count = 0
         self._client = openai_client or OpenAI(
             api_key=api_key,
             base_url=base_url,
@@ -123,6 +124,7 @@ class DeepSeekReviewClient:
         )
 
     def review(self, form: Any) -> DeepSeekReviewResponse:
+        self.last_attempt_count = 0
         messages = build_review_messages(form)
         request = {
             'model': self.model,
@@ -135,6 +137,7 @@ class DeepSeekReviewClient:
         for attempt in range(self.max_retries + 1):
             provider_failure = None
             try:
+                self.last_attempt_count += 1
                 response = self._client.chat.completions.create(**request)
             except Exception as exc:
                 provider_failure = _provider_error(exc)

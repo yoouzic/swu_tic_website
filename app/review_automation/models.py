@@ -178,6 +178,40 @@ class ReviewBatch(db.Model):
     finished_at = db.Column(db.DateTime, nullable=True)
 
     assessments = db.relationship('ReviewAssessment', back_populates='batch')
+    items = db.relationship(
+        'ReviewBatchItem',
+        back_populates='batch',
+        cascade='all, delete-orphan',
+        order_by='ReviewBatchItem.ordinal',
+    )
+
+
+class ReviewBatchItem(db.Model):
+    __tablename__ = 'review_batch_items'
+    __table_args__ = (
+        db.UniqueConstraint('batch_id', 'form_id', name='uq_review_batch_item_form'),
+        db.Index('ix_review_batch_item_status', 'batch_id', 'status'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    batch_id = db.Column(
+        db.String(36), db.ForeignKey('automation_review_batches.id'), nullable=False
+    )
+    form_id = db.Column(db.Integer, db.ForeignKey('lecture_forms.id'), nullable=False)
+    ordinal = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(16), nullable=False, default='queued')
+    assessment_id = db.Column(
+        db.String(36), db.ForeignKey('automation_review_assessments.id'), nullable=True
+    )
+    category = db.Column(db.String(32), nullable=True)
+    error_code = db.Column(db.String(64), nullable=True)
+    cache_hit = db.Column(db.Boolean, nullable=False, default=False)
+    http_attempts = db.Column(db.Integer, nullable=False, default=0)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+    duration_ms = db.Column(db.Integer, nullable=True)
+
+    batch = db.relationship('ReviewBatch', back_populates='items')
 
 
 class ReviewAssessment(db.Model):
@@ -256,6 +290,7 @@ __all__ = [
     'PersonalScheduleSlot',
     'ReviewAssessment',
     'ReviewBatch',
+    'ReviewBatchItem',
     'ReviewFinding',
     'ReviewRuleRevision',
     'ScheduleDataset',

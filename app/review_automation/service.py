@@ -45,6 +45,7 @@ class AssessmentSummary:
     finding_count: int = 0
     error_code: str | None = None
     suggested_comment: str = ''
+    http_attempts: int = 0
 
     @property
     def classification(self):
@@ -406,6 +407,7 @@ class AssessmentService:
         model_result = None
         suggested_comment = ''
         error_code = None
+        http_attempts = 0
         llm_available = not run_llm or bool(enabled and self.llm_client is not None)
         if not run_llm:
             pass
@@ -429,13 +431,16 @@ class AssessmentService:
             )
             try:
                 model_result = _model_dump(self.llm_client.review(review_payload))
+                http_attempts = int(getattr(self.llm_client, 'last_attempt_count', 0) or 0)
                 suggested_comment = str(model_result.get('suggested_comment', ''))
                 deterministic = tuple(deterministic) + self._llm_findings(model_result)
             except (TransientLLMError, PermanentLLMError, InvalidLLMResponse) as exc:
+                http_attempts = int(getattr(self.llm_client, 'last_attempt_count', 0) or 0)
                 error_code = exc.code
                 llm_available = False
                 deterministic = tuple(deterministic) + (_error_finding(error_code),)
             except Exception:
+                http_attempts = int(getattr(self.llm_client, 'last_attempt_count', 0) or 0)
                 error_code = 'client_error'
                 llm_available = False
                 deterministic = tuple(deterministic) + (_error_finding(error_code),)
@@ -484,7 +489,11 @@ class AssessmentService:
                 evidence_json=json.dumps(finding.evidence, ensure_ascii=False, sort_keys=True, separators=(',', ':')),
             ))
         db.session.commit()
-        return self._summary(assessment, cache_hit=False)
+        return self._summary(
+            assessment,
+            cache_hit=False,
+            http_attempts=http_attempts,
+        )
 
     def _load_latest_form(self, form_id: int):
         form = db.session.get(LectureForm, form_id)
@@ -571,7 +580,7 @@ class AssessmentService:
         return ids, versions
 
     @staticmethod
-    def _summary(assessment, *, cache_hit):
+    def _summary(assessment, *, cache_hit, http_attempts=0):
         return AssessmentSummary(
             assessment_id=assessment.id,
             form_id=assessment.form_id,
@@ -582,6 +591,7 @@ class AssessmentService:
             finding_count=len(assessment.findings),
             error_code=assessment.error_code,
             suggested_comment=assessment.suggested_comment or '',
+            http_attempts=int(http_attempts or 0),
         )
 
 

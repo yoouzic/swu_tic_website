@@ -114,6 +114,7 @@ class AutomationModelTest(unittest.TestCase):
             'automation_schedule_import_issues',
             'automation_rule_revisions',
             'automation_review_batches',
+            'review_batch_items',
             'automation_review_assessments',
             'automation_review_findings',
             'automation_audit_logs',

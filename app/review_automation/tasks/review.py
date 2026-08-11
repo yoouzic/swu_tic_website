@@ -7,6 +7,8 @@ from datetime import date, datetime
 from inspect import signature
 from typing import Any, Mapping
 
+from celery import chord, group
+
 from app.app import app as flask_app
 from app.models import User, db
 
@@ -19,7 +21,7 @@ from ..llm.client import (
 )
 from ..llm.client import DeepSeekReviewClient
 from ..llm.prompts import PROMPT_VERSION
-from ..models import ReviewAssessment, ReviewBatch, ReviewRuleRevision
+from ..models import ReviewAssessment, ReviewBatch, ReviewBatchItem, ReviewRuleRevision
 from ..service import AssessmentService
 from ..schedules.importer import CLASS_MAPPING_KIND, PERSONAL_KIND, SCHOOL_KIND
 from ..schedules.repository import (
@@ -201,35 +203,78 @@ def _summary_value(summary: Any, name: str, default: Any = None):
     return default
 
 
-def _result_payload(summary: Any, *, error_code: str | None = None) -> dict[str, Any]:
+def _result_payload(
+    summary: Any,
+    *,
+    error_code: str | None = None,
+    http_attempts: int | None = None,
+) -> dict[str, Any]:
+    attempts = (
+        _summary_value(summary, 'http_attempts', 0)
+        if http_attempts is None else http_attempts
+    )
     return {
         'assessment_id': _summary_value(summary, 'assessment_id'),
         'category': _summary_value(summary, 'category', ReviewCategory.UNKNOWN.value),
         'error_code': error_code or _summary_value(summary, 'error_code'),
         'cache_hit': bool(_summary_value(summary, 'cache_hit', False)),
+        'http_attempts': int(attempts or 0),
     }
 
 
-def _record_progress(batch: ReviewBatch, result: Mapping[str, Any], form_id: int):
-    snapshot = _load_snapshot(batch)
-    results = list(snapshot.get('results', []))
-    results = [
-        item for item in results
-        if item.get('form_id') != int(form_id)
-    ]
-    stored_result = dict(result)
-    stored_result['form_id'] = int(form_id)
-    results.append(stored_result)
-    assessment_ids = sorted({
-        item['assessment_id']
-        for item in results
-        if item.get('assessment_id')
-    })
-    snapshot['results'] = results
-    snapshot['assessment_ids'] = assessment_ids
-    snapshot['processed_count'] = len(results)
-    snapshot['cache_count'] = sum(bool(item.get('cache_hit')) for item in results)
-    _save_snapshot(batch, snapshot)
+def _batch_item(batch_id: str, form_id: int) -> ReviewBatchItem:
+    item = ReviewBatchItem.query.filter_by(
+        batch_id=str(batch_id),
+        form_id=int(form_id),
+    ).first()
+    if item is None:
+        ordinal = db.session.query(ReviewBatchItem.ordinal).filter_by(
+            batch_id=str(batch_id),
+        ).order_by(ReviewBatchItem.ordinal.desc()).first()
+        item = ReviewBatchItem(
+            batch_id=str(batch_id),
+            form_id=int(form_id),
+            ordinal=(int(ordinal[0]) + 1) if ordinal else 0,
+        )
+        db.session.add(item)
+        db.session.flush()
+    return item
+
+
+def _mark_item_running(batch_id: str, form_id: int) -> datetime:
+    item = _batch_item(batch_id, form_id)
+    started_at = datetime.now()
+    item.status = 'running'
+    item.started_at = started_at
+    item.finished_at = None
+    item.duration_ms = None
+    db.session.commit()
+    return started_at
+
+
+def _record_progress(
+    batch: ReviewBatch,
+    result: Mapping[str, Any],
+    form_id: int,
+    *,
+    started_at: datetime | None = None,
+    status: str | None = None,
+):
+    """Persist only the current form item; live progress never uses snapshot_json."""
+    item = _batch_item(batch.id, form_id)
+    item.status = status or ('failed' if result.get('error_code') else 'completed')
+    item.assessment_id = result.get('assessment_id')
+    item.category = result.get('category') or ReviewCategory.UNKNOWN.value
+    item.error_code = result.get('error_code')
+    item.cache_hit = bool(result.get('cache_hit', False))
+    item.http_attempts = int(result.get('http_attempts', 0) or 0)
+    item.finished_at = datetime.now()
+    effective_start = started_at or item.started_at
+    if effective_start is not None:
+        item.duration_ms = max(
+            0,
+            int((item.finished_at - effective_start).total_seconds() * 1000),
+        )
     db.session.commit()
 
 
@@ -244,7 +289,33 @@ def _mark_assessment_error(assessment_id: str | None, code: str):
     db.session.commit()
 
 
-def _fallback(service: Any, batch_id: str, form_id: int, force_refresh: bool, code: str):
+def _client_attempts(service: Any) -> int:
+    client = getattr(service, 'llm_client', None)
+    return int(getattr(client, 'last_attempt_count', 0) or 0)
+
+
+def _configured_transient_retries(config: Mapping[str, Any]) -> int:
+    value = config.get('transient_retries', TASK_TRANSIENT_RETRIES)
+    if isinstance(value, bool):
+        raise ValueError('transient_retries must be an integer from 0 to 3')
+    try:
+        value = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError('transient_retries must be an integer from 0 to 3') from exc
+    if not 0 <= value <= 3:
+        raise ValueError('transient_retries must be an integer from 0 to 3')
+    return value
+
+
+def _fallback(
+    service: Any,
+    batch_id: str,
+    form_id: int,
+    force_refresh: bool,
+    code: str,
+    *,
+    http_attempts: int = 0,
+):
     try:
         summary = service.assess_form(
             form_id,
@@ -254,13 +325,18 @@ def _fallback(service: Any, batch_id: str, form_id: int, force_refresh: bool, co
             review_mode=ReviewMode.RULES_ONLY,
         )
         _mark_assessment_error(_summary_value(summary, 'assessment_id'), code)
-        return _result_payload(summary, error_code=code)
+        return _result_payload(
+            summary,
+            error_code=code,
+            http_attempts=http_attempts,
+        )
     except Exception:
         return {
             'assessment_id': None,
             'category': ReviewCategory.UNKNOWN.value,
             'error_code': code,
             'cache_hit': False,
+            'http_attempts': int(http_attempts or 0),
         }
 
 
@@ -272,16 +348,30 @@ def _assess_one(batch_id: str, form_id: int, force_refresh: bool = False):
         BatchStatus.CANCEL_REQUESTED.value,
         BatchStatus.CANCELLED.value,
     }:
-        return {
+        result = {
             'assessment_id': None,
             'category': ReviewCategory.UNKNOWN.value,
             'error_code': 'cancelled',
             'cache_hit': False,
+            'http_attempts': 0,
         }
+        _record_progress(batch, result, form_id, status='cancelled')
+        return result
 
     config = _load_config(batch)
     llm_enabled = bool(config.get('llm_enabled', True))
     review_mode = _review_mode_from_config(config)
+    item = _batch_item(batch.id, form_id)
+    if item.status == 'cancelled':
+        return {
+            'assessment_id': item.assessment_id,
+            'category': item.category or ReviewCategory.UNKNOWN.value,
+            'error_code': item.error_code or 'cancelled',
+            'cache_hit': bool(item.cache_hit),
+            'http_attempts': int(item.http_attempts or 0),
+        }
+    started_at = _mark_item_running(batch.id, form_id)
+    attempt_total = 0
     try:
         service = _service_from_config(config)
     except Exception:
@@ -290,10 +380,23 @@ def _assess_one(batch_id: str, form_id: int, force_refresh: bool = False):
             'category': ReviewCategory.UNKNOWN.value,
             'error_code': 'task_error',
             'cache_hit': False,
+            'http_attempts': 0,
         }
-        _record_progress(batch, result, form_id)
+        _record_progress(batch, result, form_id, started_at=started_at)
         return result
-    for attempt in range(TASK_TRANSIENT_RETRIES + 1):
+    try:
+        transient_retries = _configured_transient_retries(config)
+    except ValueError:
+        result = {
+            'assessment_id': None,
+            'category': ReviewCategory.UNKNOWN.value,
+            'error_code': 'invalid_retry_config',
+            'cache_hit': False,
+            'http_attempts': 0,
+        }
+        _record_progress(batch, result, form_id, started_at=started_at)
+        return result
+    for attempt in range(transient_retries + 1):
         try:
             summary = service.assess_form(
                 form_id,
@@ -302,60 +405,115 @@ def _assess_one(batch_id: str, form_id: int, force_refresh: bool = False):
                 llm_enabled=llm_enabled,
                 review_mode=review_mode,
             )
+            attempt_total += int(_summary_value(summary, 'http_attempts', 0) or 0)
             summary_error = _summary_value(summary, 'error_code')
             if summary_error in TRANSIENT_ERROR_CODES:
-                if attempt < TASK_TRANSIENT_RETRIES:
+                if attempt < transient_retries:
                     force_refresh = True
                     continue
-                result = _fallback(service, batch_id, form_id, force_refresh, summary_error)
-                _record_progress(batch, result, form_id)
+                result = _fallback(
+                    service,
+                    batch_id,
+                    form_id,
+                    force_refresh,
+                    summary_error,
+                    http_attempts=attempt_total,
+                )
+                _record_progress(batch, result, form_id, started_at=started_at)
                 return result
-            result = _result_payload(summary)
-            _record_progress(batch, result, form_id)
+            result = _result_payload(summary, http_attempts=attempt_total)
+            _record_progress(batch, result, form_id, started_at=started_at)
             return result
         except (TransientLLMError, PermanentLLMError, InvalidLLMResponse) as exc:
-            if isinstance(exc, TransientLLMError) and attempt < TASK_TRANSIENT_RETRIES:
+            attempt_total += _client_attempts(service)
+            if isinstance(exc, TransientLLMError) and attempt < transient_retries:
                 continue
-            result = _fallback(service, batch_id, form_id, force_refresh, exc.code)
-            _record_progress(batch, result, form_id)
+            result = _fallback(
+                service,
+                batch_id,
+                form_id,
+                force_refresh,
+                exc.code,
+                http_attempts=attempt_total,
+            )
+            _record_progress(batch, result, form_id, started_at=started_at)
             return result
         except Exception:
-            result = _fallback(service, batch_id, form_id, force_refresh, 'task_error')
-            _record_progress(batch, result, form_id)
+            attempt_total += _client_attempts(service)
+            result = _fallback(
+                service,
+                batch_id,
+                form_id,
+                force_refresh,
+                'task_error',
+                http_attempts=attempt_total,
+            )
+            _record_progress(batch, result, form_id, started_at=started_at)
             return result
+
+
+def _cancel_unstarted_items(batch_id: str):
+    items = ReviewBatchItem.query.filter_by(
+        batch_id=str(batch_id),
+        status='queued',
+    ).all()
+    finished_at = datetime.now()
+    for item in items:
+        item.status = 'cancelled'
+        item.error_code = 'cancelled'
+        item.category = ReviewCategory.UNKNOWN.value
+        item.finished_at = finished_at
+        item.duration_ms = 0
+    if items:
+        db.session.commit()
+
+
+def _item_result(item: ReviewBatchItem) -> dict[str, Any]:
+    return {
+        'form_id': int(item.form_id),
+        'assessment_id': item.assessment_id,
+        'category': item.category or ReviewCategory.UNKNOWN.value,
+        'error_code': item.error_code,
+        'cache_hit': bool(item.cache_hit),
+        'http_attempts': int(item.http_attempts or 0),
+        'status': item.status,
+        'duration_ms': item.duration_ms,
+    }
 
 
 def _aggregate_batch(batch_id: str, *, cancelled: bool = False):
     batch = db.session.get(ReviewBatch, batch_id)
     if batch is None:
         raise KeyError(f'unknown batch: {batch_id}')
+    if cancelled:
+        _cancel_unstarted_items(batch.id)
     snapshot = _load_snapshot(batch)
+    items = ReviewBatchItem.query.filter_by(batch_id=str(batch.id)).order_by(
+        ReviewBatchItem.ordinal.asc(),
+    ).all()
+    results = [_item_result(item) for item in items]
     assessment_ids = [
-        value for value in snapshot.get('assessment_ids', [])
-        if isinstance(value, str)
+        item.assessment_id
+        for item in items
+        if isinstance(item.assessment_id, str)
     ]
-    assessments = []
-    if assessment_ids:
-        assessments = ReviewAssessment.query.filter(
-            ReviewAssessment.id.in_(assessment_ids)
-        ).all()
-    results = list(snapshot.get('results', []))
     counts = {
         ReviewCategory.CLEAR.value: 0,
         ReviewCategory.REVIEW.value: 0,
         ReviewCategory.HIGH_RISK.value: 0,
         ReviewCategory.UNKNOWN.value: 0,
     }
-    for assessment in assessments:
-        if assessment.classification in counts:
-            counts[assessment.classification] += 1
-    failed_count = sum(bool(item.get('error_code')) for item in results)
-    failed_count += sum(
-        not item.get('assessment_id') and not item.get('error_code')
-        for item in results
+    for item in items:
+        if item.status in {'completed', 'failed'} and item.category in counts:
+            counts[item.category] += 1
+    failed_count = sum(item.status == 'failed' for item in items)
+    cancelled_count = sum(item.status == 'cancelled' for item in items)
+    cache_count = sum(bool(item.cache_hit) for item in items)
+    http_attempts = sum(int(item.http_attempts or 0) for item in items)
+    processed_count = sum(
+        item.status in {'completed', 'failed', 'cancelled'}
+        for item in items
     )
-    cache_count = sum(bool(item.get('cache_hit')) for item in results)
-    processed_count = len(results)
     target_count = batch.target_form_count
 
     batch.clear_count = counts[ReviewCategory.CLEAR.value]
@@ -365,6 +523,8 @@ def _aggregate_batch(batch_id: str, *, cancelled: bool = False):
     batch.failed_count = failed_count
     batch.cache_count = cache_count
     snapshot.update({
+        'results': results,
+        'assessment_ids': sorted(set(assessment_ids)),
         'processed_count': processed_count,
         'target_count': target_count,
         'clear_count': batch.clear_count,
@@ -372,11 +532,15 @@ def _aggregate_batch(batch_id: str, *, cancelled: bool = False):
         'high_risk_count': batch.high_risk_count,
         'unknown_count': batch.unknown_count,
         'failed_count': batch.failed_count,
+        'cancelled_count': cancelled_count,
         'cache_count': batch.cache_count,
+        'http_attempts': http_attempts,
         'category_counts': counts,
     })
     if cancelled:
         batch.status = BatchStatus.CANCELLED.value
+    elif processed_count < target_count:
+        batch.status = BatchStatus.RUNNING.value
     elif failed_count:
         batch.status = BatchStatus.COMPLETED_WITH_ERRORS.value
     else:
@@ -394,7 +558,10 @@ def _aggregate_batch(batch_id: str, *, cancelled: bool = False):
         'high_risk_count': int(batch.high_risk_count or 0),
         'unknown_count': int(batch.unknown_count or 0),
         'failed_count': int(batch.failed_count or 0),
+        'cancelled_count': int(cancelled_count),
         'cache_count': int(batch.cache_count or 0),
+        'http_attempts': int(http_attempts),
+        'results': results,
     }
 
 
@@ -406,7 +573,7 @@ def assess_form_task(batch_id: str, form_id: int, force_refresh: bool = False):
 
 @celery_app.task(name='review_automation.run_batch')
 def run_review_batch_task(batch_id: str):
-    """Durable root task that iterates the persisted batch snapshot."""
+    """Eager/test-compatible root task that processes persisted batch items."""
     batch = db.session.get(ReviewBatch, batch_id)
     if batch is None:
         raise KeyError(f'unknown batch: {batch_id}')
@@ -417,7 +584,12 @@ def run_review_batch_task(batch_id: str):
         return _aggregate_batch(batch.id, cancelled=True)
 
     config = _load_config(batch)
-    form_ids = [int(value) for value in config.get('form_ids', [])]
+    items = ReviewBatchItem.query.filter_by(batch_id=str(batch.id)).order_by(
+        ReviewBatchItem.ordinal.asc(),
+    ).all()
+    form_ids = [item.form_id for item in items]
+    if not form_ids:
+        form_ids = [int(value) for value in config.get('form_ids', [])]
     force_refresh = bool(config.get('force_refresh', False))
     batch.status = BatchStatus.RUNNING.value
     batch.started_at = datetime.now()
@@ -432,6 +604,12 @@ def run_review_batch_task(batch_id: str):
     return _aggregate_batch(batch.id, cancelled=cancelled)
 
 
+@celery_app.task(name='review_automation.finalize_review_batch')
+def finalize_review_batch_task(results, batch_id: str):
+    """Ignore untrusted task bodies and recompute totals from item rows."""
+    return _aggregate_batch(str(batch_id))
+
+
 def create_review_batch(
     form_ids,
     *,
@@ -439,6 +617,7 @@ def create_review_batch(
     force_refresh: bool = False,
     llm_enabled: bool = True,
     review_mode: str | ReviewMode | None = None,
+    transient_retries: int | None = None,
     semester: str | None = None,
     semester_monday: date | str | None = None,
     enqueue: bool = True,
@@ -450,6 +629,18 @@ def create_review_batch(
         else ReviewMode(review_mode)
     )
     mode_llm_enabled = mode != ReviewMode.RULES_ONLY
+    if transient_retries is None:
+        transient_retries_value = TASK_TRANSIENT_RETRIES
+    else:
+        transient_retries_value = transient_retries
+    if isinstance(transient_retries_value, bool):
+        raise ValueError('transient_retries must be an integer from 0 to 3')
+    try:
+        transient_retries_value = int(transient_retries_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError('transient_retries must be an integer from 0 to 3') from exc
+    if not 0 <= transient_retries_value <= 3:
+        raise ValueError('transient_retries must be an integer from 0 to 3')
     if isinstance(semester_monday, date):
         semester_monday_value = semester_monday.isoformat()
     elif semester_monday is None:
@@ -461,6 +652,7 @@ def create_review_batch(
         'force_refresh': bool(force_refresh),
         'llm_enabled': bool(mode_llm_enabled),
         'review_mode': mode.value,
+        'transient_retries': transient_retries_value,
         'semester': str(semester) if semester is not None else None,
         'semester_monday': semester_monday_value,
         'schedule_datasets': _dataset_snapshot(semester),
@@ -473,6 +665,7 @@ def create_review_batch(
         'force_refresh': bool(force_refresh),
         'llm_enabled': bool(mode_llm_enabled),
         'review_mode': mode.value,
+        'transient_retries': transient_retries_value,
         'results': [],
         'assessment_ids': [],
         'processed_count': 0,
@@ -495,6 +688,13 @@ def create_review_batch(
         ),
     )
     db.session.add(batch)
+    db.session.flush()
+    for ordinal, form_id in enumerate(ids):
+        db.session.add(ReviewBatchItem(
+            batch_id=batch.id,
+            form_id=form_id,
+            ordinal=ordinal,
+        ))
     db.session.commit()
     if enqueue:
         dispatch_review_batch(batch.id)
@@ -503,7 +703,27 @@ def create_review_batch(
 
 
 def dispatch_review_batch(batch_id: str):
-    result = run_review_batch_task.delay(str(batch_id))
+    batch = db.session.get(ReviewBatch, str(batch_id))
+    if batch is None:
+        raise KeyError(f'unknown batch: {batch_id}')
+    config = _load_config(batch)
+    force_refresh = bool(config.get('force_refresh', False))
+    items = ReviewBatchItem.query.filter_by(batch_id=str(batch.id)).order_by(
+        ReviewBatchItem.ordinal.asc(),
+    ).all()
+    if celery_app.conf.task_always_eager:
+        result = run_review_batch_task.delay(str(batch_id))
+    else:
+        batch.status = BatchStatus.RUNNING.value
+        batch.started_at = datetime.now()
+        db.session.commit()
+        header = group(
+            assess_form_task.s(batch.id, item.form_id, force_refresh)
+            for item in items
+        )
+        result = chord(header)(finalize_review_batch_task.s(batch.id))
+        batch.celery_root_id = result.id
+        db.session.commit()
     db.session.expire_all()
     return result
 
@@ -534,5 +754,6 @@ __all__ = [
     'create_review_batch',
     'dispatch_review_batch',
     'enqueue_review_batch',
+    'finalize_review_batch_task',
     'run_review_batch_task',
 ]

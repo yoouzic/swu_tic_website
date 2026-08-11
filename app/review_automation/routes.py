@@ -19,6 +19,7 @@ from .models import (
     PersonalScheduleSlot,
     ReviewAssessment,
     ReviewBatch,
+    ReviewBatchItem,
     ReviewFinding,
     ReviewRuleRevision,
     ScheduleDataset,
@@ -570,20 +571,73 @@ def _batch_payload(batch):
             if bool(config.get('llm_enabled', True))
             else ReviewMode.RULES_ONLY.value
         )
+    items = ReviewBatchItem.query.filter_by(batch_id=str(batch.id)).order_by(
+        ReviewBatchItem.ordinal.asc(),
+    ).all()
+    if items:
+        processed_count = sum(
+            item.status in {'completed', 'failed', 'cancelled'}
+            for item in items
+        )
+        category_counts = Counter(
+            item.category
+            for item in items
+            if item.status in {'completed', 'failed'} and item.category
+        )
+        failed_count = sum(item.status == 'failed' for item in items)
+        cancelled_count = sum(item.status == 'cancelled' for item in items)
+        cache_count = sum(bool(item.cache_hit) for item in items)
+        http_attempts = sum(int(item.http_attempts or 0) for item in items)
+        results = [
+            {
+                'form_id': item.form_id,
+                'assessment_id': item.assessment_id,
+                'category': item.category,
+                'error_code': item.error_code,
+                'cache_hit': bool(item.cache_hit),
+                'http_attempts': int(item.http_attempts or 0),
+                'status': item.status,
+                'duration_ms': item.duration_ms,
+            }
+            for item in items
+        ]
+    else:
+        processed_count = snapshot.get('processed_count', 0)
+        category_counts = Counter({
+            ReviewCategory.CLEAR.value: batch.clear_count,
+            ReviewCategory.REVIEW.value: batch.review_count,
+            ReviewCategory.HIGH_RISK.value: batch.high_risk_count,
+            ReviewCategory.UNKNOWN.value: batch.unknown_count,
+        })
+        failed_count = batch.failed_count
+        cancelled_count = snapshot.get('cancelled_count', 0)
+        cache_count = batch.cache_count
+        http_attempts = snapshot.get('http_attempts', 0)
+        results = snapshot.get('results', [])
+    live_status = batch.status
+    if items and live_status not in {
+        BatchStatus.COMPLETED.value,
+        BatchStatus.COMPLETED_WITH_ERRORS.value,
+        BatchStatus.CANCELLED.value,
+        BatchStatus.FAILED.value,
+    } and any(item.status == 'running' for item in items):
+        live_status = BatchStatus.RUNNING.value
     return {
         'batch_id': batch.id,
-        'status': batch.status,
+        'status': live_status,
         'target_form_count': batch.target_form_count,
-        'processed_count': snapshot.get('processed_count', 0),
-        'clear_count': batch.clear_count,
-        'review_count': batch.review_count,
-        'high_risk_count': batch.high_risk_count,
-        'unknown_count': batch.unknown_count,
-        'failed_count': batch.failed_count,
-        'cache_count': batch.cache_count,
+        'processed_count': processed_count,
+        'clear_count': category_counts.get(ReviewCategory.CLEAR.value, 0),
+        'review_count': category_counts.get(ReviewCategory.REVIEW.value, 0),
+        'high_risk_count': category_counts.get(ReviewCategory.HIGH_RISK.value, 0),
+        'unknown_count': category_counts.get(ReviewCategory.UNKNOWN.value, 0),
+        'failed_count': failed_count,
+        'cancelled_count': cancelled_count,
+        'cache_count': cache_count,
+        'http_attempts': http_attempts,
         'review_mode': review_mode,
         'cancel_requested': bool(batch.cancel_requested),
-        'results': snapshot.get('results', []),
+        'results': results,
         'created_at': batch.created_at.isoformat() if batch.created_at else None,
         'started_at': batch.started_at.isoformat() if batch.started_at else None,
         'finished_at': batch.finished_at.isoformat() if batch.finished_at else None,

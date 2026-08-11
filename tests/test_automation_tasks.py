@@ -13,7 +13,7 @@ from app.review_automation.contracts import (
 )
 from app.review_automation.llm.client import PermanentLLMError, TransientLLMError
 from app.review_automation.llm.schemas import DeepSeekReviewResponse
-from app.review_automation.models import ReviewAssessment, ReviewBatch
+from app.review_automation.models import ReviewAssessment, ReviewBatch, ReviewBatchItem
 from app.review_automation.service import AssessmentService
 from tests.automation_test_utils import make_synthetic_form, temporary_automation_database
 
@@ -306,10 +306,17 @@ class AutomationTasksTest(unittest.TestCase):
         self.review_tasks.assess_form_task.run(batch.id, self.form_ids[0], False)
         self.review_tasks.assess_form_task.run(batch.id, self.form_ids[0], False)
         db.session.expire_all()
-        progress = json.loads(db.session.get(ReviewBatch, batch.id).snapshot_json)
+        item = ReviewBatchItem.query.filter_by(
+            batch_id=batch.id,
+            form_id=self.form_ids[0],
+        ).one()
+        progress = self.review_tasks._aggregate_batch(batch.id)
+        snapshot_payload = json.loads(db.session.get(ReviewBatch, batch.id).snapshot_json)
 
+        self.assertEqual(item.status, 'completed')
         self.assertEqual(progress['processed_count'], 1)
-        self.assertEqual(len(progress['results']), 1)
+        self.assertEqual(snapshot_payload['processed_count'], 1)
+        self.assertEqual(len(snapshot_payload['results']), 1)
         self.assertEqual(ReviewAssessment.query.count(), 1)
         self.assert_protected_unchanged(snapshot)
 
