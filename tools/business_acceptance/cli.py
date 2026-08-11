@@ -7,7 +7,7 @@ from itertools import chain
 import os
 from pathlib import Path
 import secrets
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from .config import AcceptanceConfig, DEFAULT_RUNTIME_RELATIVE
 from .batches import (
@@ -38,6 +38,7 @@ from .generator import (
 from .seed import load_manifest_file, seed_acceptance_database
 from .human_flow import HumanFlowError, run_route_backed_human_flow
 from .report import write_report
+from .real_runner import RealAcceptanceError, run_real_phase
 from .verify import (
     REQUIRED_VERIFICATION_CHECKS,
     VerificationResult,
@@ -332,11 +333,16 @@ def _build_parser() -> argparse.ArgumentParser:
     prepare.add_argument('--school-schedule', type=Path)
     seed = subparsers.add_parser('seed', help='seed the isolated synthetic acceptance database')
     seed.add_argument('--manifest', type=Path, default=DEFAULT_RUNTIME_RELATIVE / 'manifest.json')
-    batches = subparsers.add_parser('run-batches', help='run a fake-client acceptance batch phase')
+    batches = subparsers.add_parser('run-batches', help='run an explicitly selected acceptance batch phase')
     batches.add_argument('--phase', choices=('staged', 'main', 'retry', 'cache'), required=True)
     batches.add_argument('--manifest', type=Path, default=DEFAULT_RUNTIME_RELATIVE / 'manifest.json')
     batches.add_argument('--sample-size', type=int, default=50)
     batches.add_argument('--fake-client', action='store_true')
+    batches.add_argument('--real-client', action='store_true')
+    batches.add_argument('--stage-index', type=int)
+    batches.add_argument('--worker-concurrency', type=int)
+    batches.add_argument('--timeout-seconds', type=float, default=3600)
+    batches.add_argument('--poll-seconds', type=float, default=2)
     human_flow = subparsers.add_parser(
         'run-human-flow',
         help='run the route-backed synthetic administrator and resubmission flow',
@@ -957,6 +963,17 @@ def _report_payload(manifest, verification: list[VerificationResult]) -> dict[st
     }
 
 
+def _real_phase_conclusion(result: Mapping[str, object]) -> str:
+    """Map a production phase result to the acceptance conclusion vocabulary."""
+
+    status = str(result.get('status', '')).strip().lower()
+    if status == 'completed':
+        return 'PASS'
+    if status in {'failed', 'completed_with_errors'}:
+        return 'FAIL'
+    return 'BLOCKED'
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.command == 'prepare':
@@ -1019,18 +1036,67 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
     if args.command == 'run-batches':
-        if not args.fake_client:
+        if args.fake_client and args.real_client:
             print(
-                'RUN_BATCHES=BLOCKED reason=fake-client-required-before-external-gate',
+                'RUN_BATCHES=BLOCKED reason=fake-and-real-client-are-mutually-exclusive',
+                file=__import__('sys').stderr,
+            )
+            return 2
+        if not args.fake_client and not args.real_client:
+            print(
+                'RUN_BATCHES=BLOCKED reason=explicit-fake-or-real-client-required',
                 file=__import__('sys').stderr,
             )
             return 2
         try:
             manifest, _run_password = load_manifest_file(args.manifest)
-            result = _run_fake_batch_phase(manifest, args.phase, args.sample_size)
-        except (OSError, ValueError, RuntimeError) as exc:
+            if args.fake_client:
+                result = _run_fake_batch_phase(manifest, args.phase, args.sample_size)
+            else:
+                result = run_real_phase(
+                    manifest,
+                    args.phase,
+                    stage_index=args.stage_index,
+                    worker_concurrency=args.worker_concurrency,
+                    sample_size=args.sample_size,
+                    timeout_seconds=args.timeout_seconds,
+                    poll_seconds=args.poll_seconds,
+                )
+        except (OSError, ValueError, RuntimeError, RealAcceptanceError) as exc:
             print(f'RUN_BATCHES=BLOCKED reason={exc}', file=__import__('sys').stderr)
             return 2
+        if args.real_client:
+            conclusion = _real_phase_conclusion(result)
+            if args.phase == 'staged':
+                print(
+                    f'REAL_STAGED={conclusion} '
+                    f"stage={result.get('stage_index', args.stage_index)} "
+                    f"forms={result.get('target', result.get('forms', 0))} "
+                    f"processed={result.get('processed', 0)} "
+                    f"http_attempts={result.get('http_attempts', 0)}"
+                )
+            elif args.phase == 'main':
+                print(
+                    f'REAL_MAIN={conclusion} '
+                    f"rules_only={result.get('cumulative_mode_counts', {}).get('rules_only', 0)} "
+                    f"llm_only={result.get('cumulative_mode_counts', {}).get('llm_only', 0)} "
+                    f"combined={result.get('cumulative_mode_counts', {}).get('combined', 0)} "
+                    f"logical_llm={result.get('logical_llm_reviews', 0)} "
+                    f"http_attempts={result.get('http_attempts', 0)}"
+                )
+            elif args.phase == 'cache':
+                print(
+                    f'REAL_CACHE={conclusion} '
+                    f"cache_hits={result.get('cache_hits', 0)} "
+                    f"http_attempt_delta={result.get('http_attempt_delta', 0)}"
+                )
+            else:
+                print(
+                    f'REAL_RETRY={conclusion} '
+                    f"retried={result.get('retried', 0)} "
+                    f"http_attempts={result.get('http_attempts', 0)}"
+                )
+            return 0 if conclusion == 'PASS' else 2
         if args.phase == 'staged':
             print(
                 'FAKE_STAGED=PASS '

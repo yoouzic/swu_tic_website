@@ -127,6 +127,112 @@ class Stage:
     form_ids: tuple[int | str, ...]
 
 
+@dataclass(frozen=True)
+class RealStagePlan:
+    """One real-DeepSeek concurrency stage over synthetic form keys."""
+
+    concurrency: int
+    form_keys: tuple[str, ...]
+
+    @property
+    def target(self) -> int:
+        return len(self.form_keys)
+
+
+@dataclass(frozen=True)
+class RealBatchPlan:
+    """Disjoint staged and remaining mode partitions for the real run."""
+
+    stages: tuple[RealStagePlan, ...]
+    staged_by_mode: dict[str, tuple[str, ...]]
+    main_by_mode: dict[str, tuple[str, ...]]
+
+
+def _form_attribute(form: Any, name: str, default: Any = None) -> Any:
+    if isinstance(form, Mapping):
+        return form.get(name, default)
+    return getattr(form, name, default)
+
+
+def plan_real_batches(
+    forms: Sequence[Any],
+    *,
+    levels: Sequence[int] = (4, 8, 16),
+    size_each: int = 20,
+    per_mode: int = 500,
+) -> RealBatchPlan:
+    """Partition the 1500 synthetic forms for staged and final real runs.
+
+    The 60-form ladder is a subset of the D/RD forms and is counted toward
+    their final 500-form closures.  This keeps the ladder and the remaining
+    production batches mutually exclusive while preserving the three-mode
+    500/500/500 business arithmetic.
+    """
+
+    if not levels or any(not isinstance(level, int) or level < 1 for level in levels):
+        raise ValueError('real stage concurrency levels must be positive integers')
+    if not isinstance(size_each, int) or size_each < 1:
+        raise ValueError('real stage size must be a positive integer')
+    if not isinstance(per_mode, int) or per_mode < 1:
+        raise ValueError('real per-mode count must be a positive integer')
+
+    mode_keys: dict[str, list[str]] = {mode: [] for mode in REVIEW_MODES}
+    seen: set[str] = set()
+    for form in forms:
+        key = _form_attribute(form, 'synthetic_key')
+        mode = _form_attribute(form, 'review_mode')
+        mode = getattr(mode, 'value', mode)
+        if not isinstance(key, str) or not key:
+            raise ValueError('real batch forms require unique synthetic keys')
+        if key in seen:
+            raise ValueError('real batch forms must have unique synthetic keys')
+        if mode not in mode_keys:
+            raise ValueError(f'unsupported real batch review mode: {mode}')
+        seen.add(key)
+        mode_keys[mode].append(key)
+
+    if any(len(values) != per_mode for values in mode_keys.values()):
+        raise ValueError('real batch mode counts must close over three equal batches')
+
+    staged_total = len(levels) * size_each
+    if staged_total % 2:
+        raise ValueError('real staged form count must split evenly between D and RD')
+    staged_per_llm_mode = staged_total // 2
+    if staged_per_llm_mode > per_mode:
+        raise ValueError('real staged form count exceeds D/RD mode capacity')
+
+    staged_by_mode = {
+        'rules_only': (),
+        'llm_only': tuple(mode_keys['llm_only'][:staged_per_llm_mode]),
+        'combined': tuple(mode_keys['combined'][:staged_per_llm_mode]),
+    }
+    staged_sequence = staged_by_mode['llm_only'] + staged_by_mode['combined']
+    stages = tuple(
+        RealStagePlan(
+            concurrency=concurrency,
+            form_keys=tuple(
+                staged_sequence[index * size_each:(index + 1) * size_each]
+            ),
+        )
+        for index, concurrency in enumerate(levels)
+    )
+    main_by_mode = {
+        mode: tuple(key for key in values if key not in set(staged_by_mode[mode]))
+        for mode, values in mode_keys.items()
+    }
+    if sum(stage.target for stage in stages) != staged_total:
+        raise AssertionError('real staged plan did not close over its target')
+    if set().union(*(set(stage.form_keys) for stage in stages)) & set().union(
+        *(set(values) for values in main_by_mode.values())
+    ):
+        raise AssertionError('real staged and main plans overlap')
+    return RealBatchPlan(
+        stages=stages,
+        staged_by_mode=staged_by_mode,
+        main_by_mode=main_by_mode,
+    )
+
+
 def build_stages(
     form_ids: Sequence[int | str],
     *,
@@ -513,6 +619,8 @@ __all__ = [
     'BatchItem',
     'BatchSummary',
     'RequestBudgetExceeded',
+    'RealBatchPlan',
+    'RealStagePlan',
     'RunState',
     'Stage',
     'StageObservation',
@@ -520,5 +628,6 @@ __all__ = [
     'choose_safe_concurrency',
     'close_batch',
     'partition_mode_form_ids',
+    'plan_real_batches',
     'run_batch',
 ]
