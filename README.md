@@ -24,6 +24,8 @@
 python -m flask auto-review init-schema
 docker run --rm --name swu-tic-review-redis -p 6389:6379 redis:7-alpine redis-server --save "" --appendonly no
 redis-cli -h 127.0.0.1 -p 6389 -n 15 ping
+$env:CELERY_BROKER_URL='redis://127.0.0.1:6389/15'
+$env:CELERY_RESULT_BACKEND='redis://127.0.0.1:6389/15'
 python -m celery -A celery_worker.celery_app worker --loglevel=INFO --pool=solo
 ```
 
@@ -41,7 +43,7 @@ python -m celery -A celery_worker.celery_app worker --loglevel=INFO --pool=solo
 
 批次只传递表单 ID；服务端重新读取表单、数据集和规则快照，并按指纹复用已有 assessment。完成、部分失败、取消和失败状态都应以批次状态及数据库计数为准。单个 DeepSeek 或规则错误必须保持隔离，不能把失败伪分类为“无明显风险”。
 
-需要重试时，在审核队列重新选择明确的表单 ID，重新预览并启动批次；重复指纹会复用缓存。需要停止时使用批次页面的取消动作（`POST /admin/api/automation/batches/<batch_id>/cancel`），然后等待状态聚合为已取消或已完成但有失败。不要手工删除 assessment 或改写历史。排障时可停止 worker 后安全重启，任务会按 ID 和指纹幂等恢复。
+需要重试时，在审核队列重新选择明确的表单 ID，重新预览并启动批次；重复指纹会复用缓存。需要停止时使用受保护的取消 API/运维动作（`POST /admin/api/automation/batches/<batch_id>/cancel`），然后等待状态聚合为已取消或已完成但有失败；不要假定批次页面已有取消按钮。不要手工删除 assessment 或改写历史。排障时可停止 worker 后安全重启，任务会按 ID 和指纹幂等恢复。
 
 ## 回滚
 
