@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from itertools import chain
 import os
@@ -36,6 +37,23 @@ from .generator import (
 )
 from .seed import load_manifest_file, seed_acceptance_database
 from .human_flow import HumanFlowError, run_route_backed_human_flow
+from .report import write_report
+from .verify import (
+    REQUIRED_VERIFICATION_CHECKS,
+    VerificationResult,
+    verify_batch_closure,
+    verify_batch_mode_isolation,
+    verify_cache_reuse,
+    verify_combined_sources,
+    verify_evidence_classification_alignment,
+    verify_export,
+    verify_http_budget,
+    verify_logical_form_counts,
+    verify_org_counts,
+    verify_pagination,
+    verify_rejection_return,
+    verify_statistics_alignment,
+)
 
 
 def _runtime_dirs(config: AcceptanceConfig) -> None:
@@ -324,6 +342,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help='run the route-backed synthetic administrator and resubmission flow',
     )
     human_flow.add_argument('--manifest', type=Path, default=DEFAULT_RUNTIME_RELATIVE / 'manifest.json')
+    verify = subparsers.add_parser('verify', help='verify persisted acceptance evidence')
+    verify.add_argument('--phase', choices=('pre-external', 'post-automation', 'final'), required=True)
+    verify.add_argument('--manifest', type=Path, default=DEFAULT_RUNTIME_RELATIVE / 'manifest.json')
+    report = subparsers.add_parser('report', help='render the sanitized acceptance report')
+    report.add_argument('--manifest', type=Path, default=DEFAULT_RUNTIME_RELATIVE / 'manifest.json')
     return parser
 
 
@@ -349,6 +372,589 @@ def _build_route_reassessment(manifest, requester_id):
         return run_review_batch_task(str(batch.id))
 
     return reassess
+
+
+def _load_runtime_json(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _blocked_result(check: str, code: str, message: str, **details: object) -> VerificationResult:
+    return VerificationResult(
+        check=check,
+        code=code,
+        passed=False,
+        message=message,
+        details=dict(details),
+        blocked=True,
+    )
+
+
+def _artifact_json(path: Path) -> dict[str, object] | None:
+    if not path.exists():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _artifact_or_blocked(
+    path: Path,
+    *,
+    check: str,
+    label: str,
+) -> tuple[dict[str, object] | None, VerificationResult | None]:
+    payload = _artifact_json(path)
+    if payload is None:
+        return None, _blocked_result(
+            check,
+            'EVIDENCE_MISSING',
+            f'{label} acceptance artifact is missing or invalid',
+            path=str(path),
+        )
+    return payload, None
+
+
+def _append_artifact_check(
+    results: list[VerificationResult],
+    manifest,
+    relative: str,
+    *,
+    check: str,
+    label: str,
+) -> dict[str, object] | None:
+    payload, missing = _artifact_or_blocked(
+        manifest.config.output_path(relative),
+        check=check,
+        label=label,
+    )
+    if missing is not None:
+        results.append(missing)
+    return payload
+
+
+def _verification_for_manifest(manifest, phase: str) -> tuple[str, list[VerificationResult]]:
+    if manifest.config.runtime_root is None:
+        raise ValueError('manifest runtime_root is required')
+    if phase not in {'pre-external', 'post-automation', 'final'}:
+        raise ValueError(f'unsupported verification phase: {phase}')
+
+    results: list[VerificationResult] = []
+    runtime_manifest = _load_runtime_json(manifest.config.output_path('manifest.json'))
+    seed = runtime_manifest.get('seed') if isinstance(runtime_manifest.get('seed'), dict) else None
+    seed_counts = seed.get('counts') if isinstance(seed, dict) and isinstance(seed.get('counts'), dict) else None
+
+    if phase == 'pre-external':
+        results.append(verify_org_counts(1002, manifest.officer_count))
+        results.append(verify_logical_form_counts(manifest.logical_form_count, manifest.forms))
+    elif seed_counts is None:
+        results.append(_blocked_result(
+            'ORG_COUNTS',
+            'EVIDENCE_MISSING',
+            'seed metadata is required for post-automation and final organization counts',
+        ))
+        results.append(_blocked_result(
+            'LOGICAL_FORM_COUNTS',
+            'EVIDENCE_MISSING',
+            'seed metadata is required for post-automation and final logical-form counts',
+        ))
+    else:
+        results.append(verify_org_counts(
+            1002,
+            int(seed_counts.get('information_officers', 0) or 0),
+            expected_administrators=10,
+            actual_administrators=int(seed_counts.get('administrators', 0) or 0),
+        ))
+        results.append(verify_logical_form_counts(
+            manifest.logical_form_count,
+            int(seed_counts.get('logical_forms', 0) or 0),
+        ))
+
+    results.append(verify_batch_mode_isolation(
+        manifest.forms,
+        expected_counts=manifest.batch_counts,
+    ))
+
+    state, state_missing = _artifact_or_blocked(
+        manifest.config.output_path('run-state.json'),
+        check='RUN_STATE',
+        label='run-state',
+    )
+    if state_missing is not None:
+        results.append(state_missing)
+        results.append(_blocked_result(
+            'HTTP_BUDGET',
+            'EVIDENCE_MISSING',
+            'run-state is required to verify the HTTP budget',
+        ))
+    else:
+        results.append(verify_http_budget(
+            int(state.get('http_attempts', 0) or 0),
+            manifest.config.http_attempt_ceiling,
+        ))
+
+    def require_fake(relative: str, check: str, label: str) -> dict[str, object] | None:
+        return _append_artifact_check(
+            results,
+            manifest,
+            relative,
+            check=check,
+            label=label,
+        )
+
+    def check_staged(staged: dict[str, object] | None) -> None:
+        if staged is None:
+            return
+        count = int(staged.get('forms', staged.get('processed', 0)) or 0)
+        if count != 60:
+            results.append(VerificationResult(
+                check='STAGED_MANIFEST',
+                code='STAGED_COUNT_MISMATCH',
+                passed=False,
+                message='staged manifest does not contain 60 forms',
+                details={'expected': 60, 'actual': count},
+            ))
+        else:
+            results.append(VerificationResult(
+                check='STAGED_MANIFEST',
+                code='PASS',
+                passed=True,
+                details={'forms': count},
+            ))
+        expected_levels = list(manifest.config.staged_concurrency)
+        actual_levels = staged.get('concurrency')
+        if actual_levels != expected_levels:
+            results.append(VerificationResult(
+                check='STAGED_CONCURRENCY',
+                code='STAGED_CONCURRENCY_MISMATCH',
+                passed=False,
+                message='staged concurrency levels differ from the fixed acceptance matrix',
+                details={'expected': expected_levels, 'actual': actual_levels},
+            ))
+        else:
+            results.append(VerificationResult(
+                check='STAGED_CONCURRENCY',
+                code='PASS',
+                passed=True,
+                details={'levels': expected_levels},
+            ))
+
+    staged = require_fake(
+        'results/fake-batches-staged.json',
+        'STAGED_MANIFEST',
+        'staged fake-batch',
+    )
+    check_staged(staged)
+
+    # The fake gate is deliberately closed over all three persisted fake
+    # artifacts.  A staged-only result is not enough to authorize any later
+    # external or real-data phase.
+    main_batch = require_fake(
+        'results/fake-batches-main.json',
+        'FAKE_MAIN_ARTIFACT',
+        'main fake-batch',
+    )
+    cache_batch = require_fake(
+        'results/fake-batches-cache.json',
+        'FAKE_CACHE_ARTIFACT',
+        'cache fake-batch',
+    )
+    if main_batch is not None:
+        results.append(verify_batch_closure({
+            'target': manifest.logical_form_count,
+            'processed': int(main_batch.get('processed', 0) or 0),
+            'failed': int(main_batch.get('failed', 0) or 0),
+            'cancelled': int(main_batch.get('cancelled', 0) or 0),
+        }))
+    if cache_batch is not None:
+        results.append(verify_cache_reuse(
+            int(cache_batch.get('cache_hits', 0) or 0),
+            int(cache_batch.get('http_attempt_delta', 0) or 0),
+        ))
+
+    if phase == 'pre-external':
+        real_attempts = None if state_missing is not None else int(state.get('real_http_attempts', 0) or 0)
+        if real_attempts is None:
+            results.append(_blocked_result(
+                'REAL_HTTP_GATE',
+                'EVIDENCE_MISSING',
+                'run-state is required to prove zero real HTTP attempts',
+            ))
+        elif real_attempts != 0:
+            results.append(VerificationResult(
+                check='REAL_HTTP_GATE',
+                code='HTTP_ATTEMPTS_NONZERO',
+                passed=False,
+                message='real HTTP attempts exist before the external gate',
+                details={'real_http_attempts': real_attempts},
+            ))
+        else:
+            results.append(VerificationResult(
+                check='REAL_HTTP_GATE',
+                code='PASS',
+                passed=True,
+                details={'real_http_attempts': 0},
+            ))
+        return phase.upper().replace('-', '_'), results
+
+    # Post-automation and final gates both require the explicit retry artifact;
+    # this prevents a main-batch success from hiding an unverified retry phase.
+    require_fake(
+        'results/fake-batches-retry.json',
+        'FAKE_RETRY_ARTIFACT',
+        'retry fake-batch',
+    )
+
+    if phase == 'post-automation':
+        return phase.upper().replace('-', '_'), results
+
+    human_flow = require_fake(
+        'results/human-flow.json',
+        'HUMAN_FLOW',
+        'human-flow',
+    )
+    if human_flow is not None:
+        first_stage = human_flow.get('first_stage')
+        final = human_flow.get('final')
+        if isinstance(first_stage, dict) and isinstance(final, dict):
+            planned = int(first_stage.get('planned', 0) or 0)
+            final_actions = int(final.get('center_actions', 0) or 0) + int(final.get('super_actions', 0) or 0)
+            if human_flow.get('status') != 'PASS' or planned != manifest.logical_form_count or final_actions != manifest.logical_form_count:
+                results.append(VerificationResult(
+                    check='STATUS_TRANSITIONS',
+                    code='STATUS_TRANSITION_INVALID',
+                    passed=False,
+                    message='human-flow action totals do not close over logical forms',
+                    details={'first_stage': planned, 'final': final_actions},
+                ))
+            else:
+                results.append(VerificationResult(
+                    check='STATUS_TRANSITIONS',
+                    code='PASS',
+                    passed=True,
+                    details={'first_stage': planned, 'final': final_actions},
+                ))
+        else:
+            results.append(_blocked_result(
+                'STATUS_TRANSITIONS',
+                'EVIDENCE_MISSING',
+                'human-flow status transition totals are missing',
+            ))
+
+        version_chains = human_flow.get('version_chains')
+        if isinstance(version_chains, dict) and int(version_chains.get('logical_forms', 0) or 0) == manifest.logical_form_count:
+            results.append(VerificationResult(
+                check='VERSION_HISTORY',
+                code='PASS',
+                passed=True,
+                details={
+                    'logical_forms': int(version_chains.get('logical_forms', 0) or 0),
+                    'with_multiple_versions': int(version_chains.get('with_multiple_versions', 0) or 0),
+                },
+            ))
+        else:
+            results.append(_blocked_result(
+                'VERSION_HISTORY',
+                'EVIDENCE_MISSING',
+                'human-flow version-chain totals are missing or incomplete',
+            ))
+
+        rejection_return = human_flow.get('rejection_return')
+        if isinstance(rejection_return, dict):
+            results.append(verify_rejection_return(rejection_return))
+        else:
+            results.append(_blocked_result(
+                'REJECTION_RETURN',
+                'EVIDENCE_MISSING',
+                'reject-response unique-ID evidence is missing',
+            ))
+
+        protected = human_flow.get('automation_protected_fields')
+        if isinstance(protected, dict) and int(protected.get('checked', 0) or 0) > 0:
+            if int(protected.get('changed', 0) or 0) == 0:
+                results.append(VerificationResult(
+                    check='AUTOMATION_HUMAN_FIELD_IMMUTABILITY',
+                    code='PASS',
+                    passed=True,
+                    details={'checked': int(protected.get('checked', 0) or 0)},
+                ))
+            else:
+                results.append(VerificationResult(
+                    check='AUTOMATION_HUMAN_FIELD_IMMUTABILITY',
+                    code='AUTOMATION_CHANGED_HUMAN_FIELD',
+                    passed=False,
+                    message='automation changed a protected human-review field',
+                    details={'changed': int(protected.get('changed', 0) or 0)},
+                ))
+        else:
+            results.append(_blocked_result(
+                'AUTOMATION_HUMAN_FIELD_IMMUTABILITY',
+                'EVIDENCE_MISSING',
+                'protected-field snapshots are missing',
+            ))
+
+        scope_payload = human_flow.get('administrator_scopes')
+        for role, check in (
+            ('group', 'GROUP_SCOPE'),
+            ('department', 'DEPARTMENT_SCOPE'),
+            ('center', 'CENTER_SCOPE'),
+            ('super', 'SUPERADMIN_SCOPE'),
+        ):
+            entries = scope_payload.get(role) if isinstance(scope_payload, dict) else None
+            if not isinstance(entries, list) or not entries:
+                results.append(_blocked_result(
+                    check,
+                    'EVIDENCE_MISSING',
+                    f'{role} administrator scope evidence is missing',
+                ))
+            elif all(isinstance(entry, dict) and entry.get('passed') is True for entry in entries):
+                results.append(VerificationResult(
+                    check=check,
+                    code='PASS',
+                    passed=True,
+                    details={'administrators': len(entries)},
+                ))
+            else:
+                results.append(VerificationResult(
+                    check=check,
+                    code='REVIEW_SCOPE_MISMATCH',
+                    passed=False,
+                    message=f'{role} administrator scope contains an out-of-scope form',
+                ))
+
+    # Pagination, export, statistics and evidence checks are independent
+    # artifacts.  Their absence is a blocked gate, not an empty pass.
+    pagination = require_fake(
+        'results/pagination.json',
+        'PAGINATION_UNIQUENESS',
+        'pagination',
+    )
+    if pagination is not None:
+        pages = pagination.get('pages')
+        if isinstance(pages, list):
+            results.append(verify_pagination(pages))
+        else:
+            results.append(_blocked_result(
+                'PAGINATION_UNIQUENESS',
+                'EVIDENCE_MISSING',
+                'pagination artifact does not contain page records',
+            ))
+
+    export_path = manifest.config.output_path('results/forms.csv')
+    export_rows: list[dict[str, str]] | None = None
+    if not export_path.exists():
+        results.append(_blocked_result(
+            'EXPORT_ALIGNMENT',
+            'EVIDENCE_MISSING',
+            'forms export artifact is missing',
+            path=str(export_path),
+        ))
+    else:
+        try:
+            with export_path.open('r', encoding='utf-8', newline='') as handle:
+                export_rows = list(csv.DictReader(handle))
+            results.append(verify_export(manifest.logical_form_count, export_rows))
+        except (OSError, UnicodeError, csv.Error) as exc:
+            results.append(VerificationResult(
+                check='EXPORT_ALIGNMENT',
+                code='EXPORT_EVIDENCE_INVALID',
+                passed=False,
+                message='forms export could not be parsed',
+                details={'error_type': type(exc).__name__},
+            ))
+
+    statistics = _artifact_json(manifest.config.output_path('results/batches.json'))
+    if statistics is None:
+        results.append(_blocked_result(
+            'STATISTICS_ALIGNMENT',
+            'EVIDENCE_MISSING',
+            'statistics artifact is missing or invalid',
+        ))
+    elif isinstance(statistics.get('expected'), dict) and isinstance(statistics.get('actual'), dict):
+        results.append(verify_statistics_alignment(statistics['expected'], statistics['actual']))
+    else:
+        results.append(_blocked_result(
+            'STATISTICS_ALIGNMENT',
+            'EVIDENCE_MISSING',
+            'statistics artifact lacks independently comparable expected and actual counts',
+        ))
+
+    deepseek = _artifact_json(manifest.config.output_path('results/deepseek-summary.json'))
+    if deepseek is None:
+        results.append(_blocked_result(
+            'EVIDENCE_CLASSIFICATION_ALIGNMENT',
+            'EVIDENCE_MISSING',
+            'DeepSeek classification summary is missing',
+        ))
+        results.append(_blocked_result(
+            'COMBINED_SOURCE_PRESERVATION',
+            'EVIDENCE_MISSING',
+            'combined-source evidence is missing',
+        ))
+    else:
+        evidence_rows = deepseek.get('classification_rows')
+        if not isinstance(evidence_rows, list) and export_rows is not None:
+            evidence_rows = export_rows
+        if isinstance(evidence_rows, list) and evidence_rows and all(
+            isinstance(row, dict)
+            and ('expected_category' in row or 'oracle_category' in row)
+            and ('category' in row or 'classification' in row)
+            for row in evidence_rows
+        ):
+            results.append(verify_evidence_classification_alignment(evidence_rows))
+        else:
+            results.append(_blocked_result(
+                'EVIDENCE_CLASSIFICATION_ALIGNMENT',
+                'EVIDENCE_MISSING',
+                'classification rows do not contain oracle and actual categories',
+            ))
+        combined = deepseek.get('combined_sources')
+        if isinstance(combined, dict):
+            results.append(verify_combined_sources(combined))
+        else:
+            results.append(_blocked_result(
+                'COMBINED_SOURCE_PRESERVATION',
+                'EVIDENCE_MISSING',
+                'combined-source summary is missing',
+            ))
+
+    present = {result.check for result in results}
+    for check in REQUIRED_VERIFICATION_CHECKS:
+        if check not in present:
+            results.append(_blocked_result(
+                check,
+                'EVIDENCE_MISSING',
+                f'{check} has not been executed or persisted',
+            ))
+    return phase.upper().replace('-', '_'), results
+
+
+def _report_payload(manifest, verification: list[VerificationResult]) -> dict[str, object]:
+    if any(result.blocked for result in verification):
+        conclusion = 'BLOCKED'
+    elif any(not result.passed for result in verification):
+        conclusion = 'FAIL'
+    else:
+        conclusion = 'PASS'
+    runtime = manifest.config.runtime_root
+    state = _load_runtime_json(manifest.config.output_path('run-state.json'))
+    human_flow = _load_runtime_json(manifest.config.output_path('results/human-flow.json'))
+    staged = _load_runtime_json(manifest.config.output_path('results/fake-batches-staged.json'))
+    main_batch = _load_runtime_json(manifest.config.output_path('results/fake-batches-main.json'))
+    cache_batch = _load_runtime_json(manifest.config.output_path('results/fake-batches-cache.json'))
+    # Keep only numerical/structural fields from runtime evidence.  In
+    # particular, do not copy model prompts, responses, credentials or user
+    # identifiers into the report payload.
+    human_final = human_flow.get('final') if isinstance(human_flow.get('final'), dict) else {}
+    human_first = human_flow.get('first_stage') if isinstance(human_flow.get('first_stage'), dict) else {}
+    human_versions = human_flow.get('version_chains') if isinstance(human_flow.get('version_chains'), dict) else {}
+    administrator_scopes = human_flow.get('administrator_scopes')
+    if not isinstance(administrator_scopes, dict):
+        administrator_scopes = {
+            role: {
+                'conclusion': 'BLOCKED',
+                'evidence': 'missing',
+            }
+            for role in ('group', 'department', 'center', 'super')
+        }
+    export_path = manifest.config.output_path('results/forms.csv')
+    statistics_path = manifest.config.output_path('results/batches.json')
+    return {
+        'conclusion': conclusion,
+        'scope': {
+            'synthetic_only': True,
+            'remote_push': False,
+            'default_business_database_touched': False,
+        },
+        'environment': {
+            'runtime_root': str(runtime) if runtime else None,
+            'real_http_attempts': int(state.get('real_http_attempts', 0) or 0),
+            'request_ceiling': manifest.config.http_attempt_ceiling,
+            'redis': 'not recorded in Task 8 verifier',
+        },
+        'dataset': {
+            'officers': manifest.officer_count,
+            'logical_forms': manifest.logical_form_count,
+            'batch_counts': manifest.batch_counts,
+        },
+        'batches': {
+            'staged': {
+                'forms': int(staged.get('forms', staged.get('processed', 0)) or 0),
+                'concurrency': staged.get('concurrency', []),
+            },
+            'main': {
+                'processed': int(main_batch.get('processed', 0) or 0),
+                'rules_only': int(main_batch.get('rules_only', 0) or 0),
+                'llm_only': int(main_batch.get('llm_only', 0) or 0),
+                'combined': int(main_batch.get('combined', 0) or 0),
+            },
+            'cache': {
+                'cache_hits': int(cache_batch.get('cache_hits', 0) or 0),
+                'http_attempt_delta': int(cache_batch.get('http_attempt_delta', 0) or 0),
+            },
+        },
+        'concurrency': {
+            'stages': list(manifest.config.staged_concurrency),
+            'selected': state.get('safe_concurrency'),
+        },
+        'deepseek_summary': {
+            'logical_llm_reviews': int(state.get('logical_llm_reviews', 0) or 0),
+            'http_attempts': int(state.get('http_attempts', 0) or 0),
+            'external_summary_artifact_present': manifest.config.output_path('results/deepseek-summary.json').exists(),
+        },
+        'administrator_scopes': administrator_scopes,
+        'resubmission_version_chains': {
+            'first_stage': {
+                'planned': int(human_first.get('planned', 0) or 0),
+                'rejected': int(human_first.get('rejected', 0) or 0),
+                'resubmitted': int(human_first.get('resubmitted', 0) or 0),
+                'reassessed': int(human_first.get('reassessed', 0) or 0),
+            },
+            'final': {
+                'rejected': int(human_final.get('rejected', 0) or 0),
+                'repaired': int(human_final.get('repaired', 0) or 0),
+                'left_rejected': int(human_final.get('left_rejected', 0) or 0),
+            },
+            'version_chains': {
+                'logical_forms': int(human_versions.get('logical_forms', 0) or 0),
+                'with_multiple_versions': int(human_versions.get('with_multiple_versions', 0) or 0),
+                'max_versions': int(human_versions.get('max_versions', 0) or 0),
+            },
+        },
+        'performance': {
+            'http_attempts': int(state.get('http_attempts', 0) or 0),
+            'safe_concurrency': state.get('safe_concurrency'),
+        },
+        'export': {
+            'path': str(export_path),
+            'present': export_path.exists(),
+        },
+        'statistics': {
+            'path': str(statistics_path),
+            'present': statistics_path.exists(),
+        },
+        'verification': [
+            result.to_dict()
+            for result in verification
+        ],
+        'defects': [
+            {
+                'check': result.check,
+                'code': result.code,
+                'conclusion': result.conclusion,
+                'message': result.message,
+            }
+            for result in verification
+            if not result.passed
+        ],
+    }
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -502,6 +1108,55 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"final_rejected={result['final']['rejected']} "
             f"final_left_rejected={result['final']['left_rejected']}"
         )
+        return 0
+    if args.command == 'verify':
+        try:
+            manifest, _run_password = load_manifest_file(args.manifest)
+            phase, results = _verification_for_manifest(manifest, args.phase)
+            payload = {
+                'phase': args.phase,
+                'conclusion': (
+                    'BLOCKED' if any(item.blocked for item in results)
+                    else 'PASS' if all(item.passed for item in results)
+                    else 'FAIL'
+                ),
+                'checks': [item.to_dict() for item in results],
+            }
+            _write_json_atomic(manifest.config.output_path(f'results/verification-{args.phase}.json'), payload)
+            if args.phase == 'final':
+                _write_json_atomic(manifest.config.output_path('results/verification.json'), payload)
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(f'VERIFY=BLOCKED reason={exc}', file=__import__('sys').stderr)
+            return 2
+        if args.phase == 'pre-external' and all(item.passed for item in results):
+            print(
+                'PRE_EXTERNAL_GATE=PASS '
+                f'real_http_attempts=0 officers={manifest.officer_count} '
+                f'forms={manifest.logical_form_count} staged_manifest=60 '
+                f'request_ceiling={manifest.config.http_attempt_ceiling}'
+            )
+        else:
+            gate_conclusion = (
+                'BLOCKED' if any(item.blocked for item in results)
+                else 'PASS' if all(item.passed for item in results)
+                else 'FAIL'
+            )
+            print(
+                f'VERIFY={gate_conclusion} '
+                f'phase={args.phase} checks={len(results)}'
+            )
+        return 0 if all(item.passed for item in results) else 2
+    if args.command == 'report':
+        try:
+            manifest, _run_password = load_manifest_file(args.manifest)
+            _phase, verification = _verification_for_manifest(manifest, 'final')
+            output = manifest.config.output_path('report/business-flow-acceptance.md')
+            report_payload = _report_payload(manifest, verification)
+            write_report(output, report_payload)
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(f'REPORT=BLOCKED reason={exc}', file=__import__('sys').stderr)
+            return 2
+        print(f"REPORT={report_payload['conclusion']} path={output}")
         return 0
     return 2
 

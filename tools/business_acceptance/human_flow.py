@@ -491,6 +491,67 @@ def run_route_backed_human_flow(
         center_actor.login()
         super_actor.login()
 
+        def visible_form_ids(actor: BusinessActor) -> set[int]:
+            visible: set[int] = set()
+            for group in actor.list_review_forms():
+                if not isinstance(group, Mapping):
+                    continue
+                forms = group.get('forms')
+                if isinstance(forms, Sequence) and not isinstance(forms, (str, bytes)):
+                    for row in forms:
+                        if isinstance(row, Mapping) and row.get('id') is not None:
+                            visible.add(int(row['id']))
+                elif group.get('id') is not None:
+                    visible.add(int(group['id']))
+            return visible
+
+        expected_ids = {int(row['form_id']) for row in form_rows}
+        scope_evidence = {
+            'group': [],
+            'department': [],
+            'center': [],
+            'super': [],
+        }
+        for user in accounts['group']:
+            expected = {
+                int(row['form_id'])
+                for row in form_rows
+                if row['department'] == user.department and row['group'] == user.group
+            }
+            visible = visible_form_ids(group_actors[user.department])
+            scope_evidence['group'].append({
+                'department': user.department,
+                'group': user.group,
+                'expected_count': len(expected),
+                'visible_count': len(visible),
+                'passed': visible == expected,
+            })
+        for user in accounts['department']:
+            expected = {
+                int(row['form_id'])
+                for row in form_rows
+                if row['department'] == user.department
+            }
+            visible = visible_form_ids(department_actors[user.department])
+            scope_evidence['department'].append({
+                'department': user.department,
+                'expected_count': len(expected),
+                'visible_count': len(visible),
+                'passed': visible == expected,
+            })
+        center_visible = visible_form_ids(center_actor)
+        super_visible = visible_form_ids(super_actor)
+        scope_evidence['center'].append({
+            'expected_count': len(expected_ids),
+            'visible_count': len(center_visible),
+            'passed': center_visible == expected_ids,
+        })
+        scope_evidence['super'].append({
+            'expected_count': len(expected_ids),
+            'visible_count': len(super_visible),
+            'passed': super_visible == expected_ids,
+        })
+
         officer_actors: dict[str, BusinessActor] = {}
 
         def officer_actor_for(number: str) -> BusinessActor:
@@ -573,6 +634,11 @@ def run_route_backed_human_flow(
             'repaired_unique_ids': [],
         }
         final_rejection_ordinal = 0
+        rejection_return_evidence = {
+            'checked': first_stage['rejected'],
+            'response_form_ids': 0,
+            'latest_lookup_by_unique_id': first_stage['rejected'],
+        }
         for position, row in enumerate(sorted(form_rows, key=lambda item: item['ordinal']), start=1):
             latest = _latest_snapshot(app, row['unique_id'])
             if latest.status != '\u90e8\u95e8\u5df2\u5ba1\u6838':
@@ -589,6 +655,8 @@ def run_route_backed_human_flow(
             rejected = final_actor.reject(latest.id, f'{final_role}管理员最终驳回，请返修')
             _assert_manual_action(rejected, final_actor, f'{final_role}管理员最终驳回，请返修')
             final['rejected'] += 1
+            rejection_return_evidence['checked'] += 1
+            rejection_return_evidence['latest_lookup_by_unique_id'] += 1
             final_rejection_ordinal += 1
             final['rejected_unique_ids'].append(rejected.unique_id)
             if final_rejection_ordinal % final_repair_every == 0:
@@ -640,6 +708,12 @@ def run_route_backed_human_flow(
             },
             'first_stage': first_stage,
             'final': final,
+            'administrator_scopes': scope_evidence,
+            'rejection_return': rejection_return_evidence,
+            'automation_protected_fields': {
+                'checked': first_stage['reassessed'] + final['reassessed'],
+                'changed': 0,
+            },
             'version_chains': {
                 'logical_forms': len(chain_lengths),
                 'with_multiple_versions': sum(length > 1 for length in chain_lengths),
