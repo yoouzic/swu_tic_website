@@ -52,6 +52,20 @@ def require_super_admin(view):
     return wrapped
 
 
+def require_automation_staff(view):
+    """Allow health reads only to center reviewers and super administrators."""
+
+    @wraps(view)
+    @api_login_required
+    def wrapped(*args, **kwargs):
+        user = g.automation_user
+        if user.role != '超级管理员' and not is_center_reviewer(user.id):
+            return _error('需要自动审核工作人员权限', 'forbidden', 403)
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
 def require_center_reviewer(view):
     """Restrict batches and evidence to the existing center-review scope."""
 
@@ -79,6 +93,7 @@ def reviewable_user_ids(user_id):
 __all__ = [
     'api_login_required',
     'is_center_reviewer',
+    'require_automation_staff',
     'require_center_reviewer',
     'require_super_admin',
     'reviewable_user_ids',

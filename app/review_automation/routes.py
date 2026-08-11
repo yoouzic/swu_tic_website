@@ -10,10 +10,13 @@ from flask import Blueprint, current_app, g, jsonify, request, url_for
 from sqlalchemy import func
 
 from app.models import LectureForm, User, db
+from app.utils.user_status import active_user_filter
 
 from .contracts import BatchStatus, DatasetStatus, ReviewCategory, ScheduleCoverage
 from .models import (
     AutomationAuditLog,
+    ListenerClassMapping,
+    PersonalScheduleSlot,
     ReviewAssessment,
     ReviewBatch,
     ReviewFinding,
@@ -24,6 +27,7 @@ from .models import (
 from .permissions import (
     api_login_required,
     is_center_reviewer,
+    require_automation_staff,
     require_center_reviewer,
     require_super_admin,
     reviewable_user_ids,
@@ -96,9 +100,16 @@ def _health_payload():
 
 
 @review_automation_bp.get('/admin/api/automation/health')
-@api_login_required
+@require_automation_staff
 def health():
-    return jsonify(_health_payload())
+    try:
+        return jsonify(_health_payload())
+    except Exception:
+        return jsonify({
+            'success': False,
+            'code': 'health_unavailable',
+            'message': '服务状态暂不可用',
+        }), 503
 
 
 def _latest_rule_rows():
@@ -201,6 +212,75 @@ def _dataset_payload(dataset, issue_counts=None):
     }
 
 
+def _dataset_coverage():
+    """Count active schedule identities against active information officers."""
+
+    active_datasets = ScheduleDataset.query.filter_by(status=DatasetStatus.ACTIVE.value).all()
+    school_semesters = {
+        dataset.semester
+        for dataset in active_datasets
+        if dataset.kind == 'school'
+    }
+    mapping_datasets = [
+        dataset for dataset in active_datasets if dataset.kind == 'class_mapping'
+    ]
+    personal_datasets = [
+        dataset for dataset in active_datasets if dataset.kind == 'personal'
+    ]
+    information_officers = User.query.filter(
+        User.role == '信息员',
+        active_user_filter(),
+    ).all()
+    identity_to_users = {}
+    for user in information_officers:
+        for identity in (user.number, user.student_id):
+            if identity:
+                identity_to_users.setdefault(str(identity).strip(), set()).add(user.id)
+
+    def matched_users(row):
+        matched = set()
+        for identity in (row.listener_number, row.student_id):
+            if identity:
+                matched.update(identity_to_users.get(str(identity).strip(), set()))
+        return matched
+
+    personal_ids = set()
+    if personal_datasets:
+        personal_ids = {
+            user_id
+            for row in PersonalScheduleSlot.query.filter(
+                PersonalScheduleSlot.dataset_id.in_([dataset.id for dataset in personal_datasets])
+            ).all()
+            for user_id in matched_users(row)
+        }
+
+    mapping_ids = set()
+    supported_mapping_ids = set()
+    supported_semesters = school_semesters
+    mapping_dataset_semesters = {
+        dataset.id: dataset.semester for dataset in mapping_datasets
+    }
+    if mapping_datasets:
+        for row in ListenerClassMapping.query.filter(
+            ListenerClassMapping.dataset_id.in_([dataset.id for dataset in mapping_datasets])
+        ).all():
+            matched = matched_users(row)
+            mapping_ids.update(matched)
+            if mapping_dataset_semesters.get(row.dataset_id) in supported_semesters:
+                supported_mapping_ids.update(matched)
+
+    total_ids = personal_ids | mapping_ids
+    complete = personal_ids
+    basic = supported_mapping_ids - complete
+    missing = total_ids - complete - basic
+    return {
+        'complete': len(complete),
+        'basic': len(basic),
+        'missing': len(missing),
+        'total': len(total_ids),
+    }
+
+
 def _normalize_dataset_kind(kind):
     from .schedules.importer import normalize_dataset_kind
 
@@ -228,8 +308,8 @@ def preview_dataset_api(kind):
     except Exception as exc:
         return jsonify({
             'success': False,
-            'code': getattr(exc, 'code', 'dataset_preview_failed'),
-            'message': _safe_message(exc, '课表预览失败'),
+            'code': 'dataset_preview_failed',
+            'message': '课表预览失败',
         }), 400
     return jsonify({'success': True, 'dataset': _dataset_payload(dataset)}), 201
 
@@ -246,8 +326,8 @@ def activate_dataset_api(dataset_id):
     except Exception as exc:
         return jsonify({
             'success': False,
-            'code': getattr(exc, 'code', 'dataset_activation_failed'),
-            'message': _safe_message(exc, '课表启用失败'),
+            'code': 'dataset_activation_failed',
+            'message': '课表启用失败',
         }), 400
     return jsonify({'success': True, 'dataset': _dataset_payload(dataset)}), 200
 
@@ -265,6 +345,7 @@ def list_datasets():
         'success': True,
         'datasets': [_dataset_payload(dataset, counts) for dataset in datasets],
         'kinds': sorted(_DATASET_KINDS),
+        'coverage': _dataset_coverage(),
     })
 
 
@@ -362,10 +443,13 @@ def _coverage_counts(summaries, form_ids):
 
 
 def _transfer_acknowledged(data):
-    return bool(
-        data.get('external_transfer_acknowledged')
-        or data.get('external_transfer_ack')
-        or data.get('deepseek_transfer_acknowledged')
+    return any(
+        data.get(key) is True
+        for key in (
+            'external_transfer_acknowledged',
+            'external_transfer_ack',
+            'deepseek_transfer_acknowledged',
+        )
     )
 
 

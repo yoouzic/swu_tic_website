@@ -3,12 +3,21 @@ import os
 import tempfile
 import unittest
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 from werkzeug.security import generate_password_hash
 
 from app.app import app
 from app.models import LectureForm, Permission, RolePermission, User, db
-from app.review_automation.models import ReviewAssessment, ReviewBatch, ReviewFinding
+from app.review_automation.models import (
+    ListenerClassMapping,
+    PersonalScheduleSlot,
+    ReviewAssessment,
+    ReviewBatch,
+    ReviewFinding,
+    ScheduleDataset,
+    SchoolScheduleEntry,
+)
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
 
 
@@ -131,9 +140,12 @@ class AutomationRoutesTest(unittest.TestCase):
         response = self.client.get('/admin/api/automation/health')
         self.assertEqual(response.status_code, 401)
         self.login(self.officer)
+        self.assertEqual(self.client.get('/admin/api/automation/health').status_code, 403)
         self.assertEqual(self.client.get('/admin/api/automation/rules').status_code, 403)
         self.login(self.center_reviewer)
         self.assertEqual(self.client.get('/admin/api/automation/rules').status_code, 403)
+        self.assertEqual(self.client.get('/admin/api/automation/health').status_code, 200)
+        self.login(self.super_admin)
         self.assertEqual(self.client.get('/admin/api/automation/health').status_code, 200)
         app.config['DEEPSEEK_API_KEY'] = 'SYNTHETIC_SECRET_MUST_NOT_LEAK'
         health = self.client.get('/admin/api/automation/health')
@@ -219,12 +231,122 @@ class AutomationRoutesTest(unittest.TestCase):
 
     def test_llm_batch_requires_external_transfer_acknowledgement(self):
         self.login(self.center_reviewer)
-        response = self.client.post(
+        for value in (False, 'false', 'true', 1, 'synthetic-ack', None):
+            with self.subTest(value=value):
+                response = self.client.post(
+                    '/admin/api/automation/batches/preview',
+                    json={
+                        'form_ids': [self.latest_form.id],
+                        'llm_enabled': True,
+                        'external_transfer_acknowledged': value,
+                    },
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json()['code'], 'external_transfer_ack_required')
+
+        accepted = self.client.post(
             '/admin/api/automation/batches/preview',
-            json={'form_ids': [self.latest_form.id], 'llm_enabled': True},
+            json={
+                'form_ids': [self.latest_form.id],
+                'llm_enabled': True,
+                'external_transfer_acknowledged': True,
+            },
         )
+        self.assertEqual(accepted.status_code, 200)
+
+        for value in ('false', 'true', 1, 'synthetic-ack'):
+            with self.subTest(legacy_value=value):
+                response = self.client.post(
+                    '/admin/api/review/batch_auto_check',
+                    json={
+                        'form_ids': [self.latest_form.id],
+                        'llm_enabled': True,
+                        'external_transfer_acknowledged': value,
+                    },
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json()['code'], 'external_transfer_ack_required')
+
+    def test_dataset_failures_return_fixed_safe_messages(self):
+        self.login(self.super_admin)
+        marker = 'SYNTHETIC_RAW_EXCEPTION https://internal.example/api?x=marker'
+        with patch('app.review_automation.routes._health_payload', side_effect=ValueError(marker)):
+            health = self.client.get('/admin/api/automation/health')
+        self.assertEqual(health.status_code, 503)
+        self.assertEqual(health.get_json(), {
+            'success': False,
+            'code': 'health_unavailable',
+            'message': '服务状态暂不可用',
+        })
+        self.assertNotIn(marker.encode(), health.data)
+
+        with patch('app.review_automation.schedules.importer.preview_dataset', side_effect=ValueError(marker)):
+            response = self.client.post(
+                '/admin/api/automation/datasets/school/preview',
+                data={'semester': 'SYN-SEM', 'file': (tempfile.SpooledTemporaryFile(), 'synthetic.xlsx')},
+                content_type='multipart/form-data',
+            )
         self.assertEqual(response.status_code, 400)
-        self.assertIn('external', response.get_json()['code'])
+        self.assertEqual(response.get_json()['code'], 'dataset_preview_failed')
+        self.assertEqual(response.get_json()['message'], '课表预览失败')
+        self.assertNotIn(marker.encode(), response.data)
+
+        with patch('app.review_automation.schedules.repository.activate_dataset', side_effect=ValueError(marker)):
+            response = self.client.post('/admin/api/automation/datasets/SYN-DATASET/activate')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['code'], 'dataset_activation_failed')
+        self.assertEqual(response.get_json()['message'], '课表启用失败')
+        self.assertNotIn(marker.encode(), response.data)
+
+    def test_dataset_coverage_counts_valid_information_officers_and_changes_on_active_switch(self):
+        third_officer = self.create_user('officer-3', 'INFO-003', '第三信息员', '信息员')
+        school = ScheduleDataset(
+            id='SYN-SCHOOL-ACTIVE', kind='school', semester='SYN-SEM', sha256='a' * 64,
+            original_filename='school.xlsx', status='active', created_by=self.super_admin.id,
+        )
+        mapping = ScheduleDataset(
+            id='SYN-MAPPING-ACTIVE', kind='class_mapping', semester='SYN-SEM', sha256='b' * 64,
+            original_filename='mapping.xlsx', status='active', created_by=self.super_admin.id,
+        )
+        personal = ScheduleDataset(
+            id='SYN-PERSONAL-ACTIVE', kind='personal', semester='SYN-SEM', sha256='c' * 64,
+            original_filename='personal.xlsx', status='active', created_by=self.super_admin.id,
+        )
+        replacement = ScheduleDataset(
+            id='SYN-PERSONAL-STAGED', kind='personal', semester='SYN-SEM', sha256='d' * 64,
+            original_filename='personal-v2.xlsx', status='staged', created_by=self.super_admin.id,
+        )
+        db.session.add_all([school, mapping, personal, replacement])
+        db.session.flush()
+        db.session.add(SchoolScheduleEntry(
+            dataset_id=school.id, teacher_name='合成教师', teacher_college='合成学院',
+            course_title='合成课程', teaching_class='合成班级', major='合成专业',
+            weeks_json='[1]', weekday=1, start_period=1, end_period=2, location='合成教室',
+        ))
+        db.session.add_all([
+            ListenerClassMapping(dataset_id=mapping.id, listener_number=self.other_officer.number, admin_class='合成班级'),
+            ListenerClassMapping(dataset_id=mapping.id, listener_number=third_officer.number, admin_class='合成班级'),
+            PersonalScheduleSlot(
+                dataset_id=personal.id, listener_number=self.officer.number, course_title='个人课',
+                weeks_json='[1]', weekday=1, start_period=1, end_period=2,
+            ),
+            PersonalScheduleSlot(
+                dataset_id=replacement.id, listener_number=third_officer.number, course_title='个人课二',
+                weeks_json='[1]', weekday=1, start_period=3, end_period=4,
+            ),
+        ])
+        db.session.commit()
+
+        self.login(self.super_admin)
+        first = self.client.get('/admin/api/automation/datasets')
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.get_json()['coverage'], {'complete': 1, 'basic': 2, 'missing': 0, 'total': 3})
+
+        activated = self.client.post('/admin/api/automation/datasets/SYN-PERSONAL-STAGED/activate')
+        self.assertEqual(activated.status_code, 200)
+        second = self.client.get('/admin/api/automation/datasets')
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.get_json()['coverage'], {'complete': 1, 'basic': 1, 'missing': 0, 'total': 2})
 
     def test_assessment_summary_and_detail_are_bulk_safe_and_read_only(self):
         assessment = ReviewAssessment(
