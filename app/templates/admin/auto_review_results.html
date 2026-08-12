@@ -236,11 +236,12 @@
 
     const query = new URLSearchParams(window.location.search);
     const batchId = query.get('batch_id');
+    const endpoint = batchId ? `/admin/api/review/auto_check/status?batch_id=${encodeURIComponent(batchId)}` : '/admin/api/review/auto_check/status';
     const batchIds = (query.get('batch_ids') || '').split(',').map(value => value.trim()).filter(Boolean);
     const requestedBatchIds = batchIds.length > 1 ? batchIds : (batchId ? [batchId] : []);
     const endpoints = requestedBatchIds.length
         ? requestedBatchIds.map(id => `/admin/api/review/auto_check/status?batch_id=${encodeURIComponent(id)}`)
-        : ['/admin/api/review/auto_check/status'];
+        : [endpoint];
 
     const loadResults = () => {
         Promise.all(endpoints.map(endpoint => fetch(endpoint).then(async response => {
