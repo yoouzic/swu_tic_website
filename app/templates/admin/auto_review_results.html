@@ -17,6 +17,7 @@
             </div>
         </div>
         <div class="activity-panel__body">
+            <div id="batchSummary" class="automation-results-summary mb-3" aria-live="polite" hidden></div>
             <div id="resultsSummary" class="automation-results-summary" aria-live="polite"></div>
             <div id="resultsContent">
                 <div class="activity-empty">正在加载自动化批次……</div>
@@ -48,6 +49,7 @@
     const feedback = document.getElementById('reviewQueueFeedback');
     const resultsContent = document.getElementById('resultsContent');
     const statusNode = document.getElementById('taskStatus');
+    const batchSummaryNode = document.getElementById('batchSummary');
     const summaryNode = document.getElementById('resultsSummary');
     const categoryLabels = {
         '无明显风险': '无明显风险',
@@ -69,6 +71,15 @@
         statusNode.textContent = labels[status] || '未运行';
         statusNode.className = `badge ${status === 'completed' ? 'bg-success' : status === 'failed' ? 'bg-danger' : 'bg-secondary'}`;
     };
+
+    const statusLabel = (status) => ({
+        completed: '已完成',
+        completed_with_errors: '完成但有失败',
+        running: '运行中',
+        queued: '排队中',
+        failed: '失败',
+        cancelled: '已取消',
+    }[status] || '未运行');
 
     const appendCell = (row, value) => {
         const cell = document.createElement('td');
@@ -188,18 +199,59 @@
         resultsContent.appendChild(table);
     };
 
+    const renderBatchSummary = (payloads) => {
+        if (!batchSummaryNode) return;
+        batchSummaryNode.replaceChildren();
+        batchSummaryNode.hidden = payloads.length < 2;
+        if (payloads.length < 2) return;
+
+        const heading = document.createElement('h2');
+        heading.className = 'h5 mb-3';
+        heading.textContent = '批次汇总';
+        const table = document.createElement('table');
+        table.className = 'table table-sm table-bordered mb-0';
+        const head = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        ['审核模式', '批次', '处理/目标', '失败', '状态'].forEach(label => {
+            const cell = document.createElement('th');
+            cell.textContent = label;
+            headRow.appendChild(cell);
+        });
+        head.appendChild(headRow);
+        table.appendChild(head);
+        const body = document.createElement('tbody');
+        payloads.forEach(payload => {
+            const batch = payload.batch || {};
+            const row = document.createElement('tr');
+            appendCell(row, modeLabels[batch.review_mode] || 'unknown');
+            appendCell(row, batch.batch_id || batch.id || '—');
+            appendCell(row, `${Number(batch.processed_count || 0)}/${Number(batch.target_form_count || 0)}`);
+            appendCell(row, Number(batch.failed_count || 0));
+            appendCell(row, statusLabel(payload.status || batch.status));
+            body.appendChild(row);
+        });
+        table.appendChild(body);
+        batchSummaryNode.append(heading, table);
+    };
+
     const query = new URLSearchParams(window.location.search);
     const batchId = query.get('batch_id');
-    const endpoint = batchId ? `/admin/api/review/auto_check/status?batch_id=${encodeURIComponent(batchId)}` : '/admin/api/review/auto_check/status';
+    const batchIds = (query.get('batch_ids') || '').split(',').map(value => value.trim()).filter(Boolean);
+    const requestedBatchIds = batchIds.length > 1 ? batchIds : (batchId ? [batchId] : []);
+    const endpoints = requestedBatchIds.length
+        ? requestedBatchIds.map(id => `/admin/api/review/auto_check/status?batch_id=${encodeURIComponent(id)}`)
+        : ['/admin/api/review/auto_check/status'];
 
     const loadResults = () => {
-        fetch(endpoint)
-            .then(async response => {
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.message || '批次读取失败。');
-                return data;
+        Promise.all(endpoints.map(endpoint => fetch(endpoint).then(async response => {
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || '批次读取失败。');
+            return data;
+        })))
+            .then(payloads => {
+                renderBatchSummary(payloads);
+                renderResults(payloads[0]);
             })
-            .then(renderResults)
             .catch(error => setFeedback(error.message || '批次读取失败。', 'error'));
     };
 

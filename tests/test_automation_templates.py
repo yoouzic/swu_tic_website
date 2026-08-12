@@ -26,6 +26,14 @@ class AutomationSettingsTemplateTest(unittest.TestCase):
         self.assertIn('text-white', template)
         self.assertIn('logical_form_count', blueprint)
 
+    def test_automation_results_support_real_batch_summary(self):
+        template = AUTO_RESULTS_TEMPLATE.read_text(encoding='utf-8')
+        self.assertIn('batch_ids', template)
+        self.assertIn('batchSummary', template)
+        self.assertIn('renderBatchSummary', template)
+        self.assertIn('Promise.all', template)
+        self.assertIn('批次汇总', template)
+
     def test_settings_panel_covers_services_datasets_rules_history_and_notice(self):
         template = SETTINGS_TEMPLATE.read_text(encoding='utf-8')
         required_fragments = (
