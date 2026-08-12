@@ -12,9 +12,20 @@ AUTOMATION_SCRIPT = Path('app/static/js/automation-center.js')
 STYLE_SHEET = Path('app/static/css/style.css')
 REVIEW_QUEUE_TEMPLATE = Path('app/templates/admin/review_forms.html')
 AUTO_RESULTS_TEMPLATE = Path('app/templates/admin/auto_review_results.html')
+STATISTICS_TEMPLATE = Path('app/templates/admin/statistics.html')
+ADMIN_BLUEPRINT = Path('app/blueprints/admin.py')
 
 
 class AutomationSettingsTemplateTest(unittest.TestCase):
+    def test_statistics_exposes_logical_form_group_count(self):
+        template = STATISTICS_TEMPLATE.read_text(encoding='utf-8')
+        blueprint = ADMIN_BLUEPRINT.read_text(encoding='utf-8')
+        self.assertIn('逻辑表单组数', template)
+        self.assertIn('logical_form_count', template)
+        self.assertIn('bg-secondary', template)
+        self.assertIn('text-white', template)
+        self.assertIn('logical_form_count', blueprint)
+
     def test_settings_panel_covers_services_datasets_rules_history_and_notice(self):
         template = SETTINGS_TEMPLATE.read_text(encoding='utf-8')
         required_fragments = (

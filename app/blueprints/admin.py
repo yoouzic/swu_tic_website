@@ -6398,6 +6398,16 @@ def statistics():
             active_user_filter()
         )
     total_forms = form_query.count()
+    logical_form_keys = {
+        ('unique_id', str(unique_id).strip())
+        if unique_id is not None and str(unique_id).strip()
+        else ('id', str(form_id))
+        for unique_id, form_id in form_query.with_entities(
+            LectureForm.unique_id,
+            LectureForm.id,
+        ).all()
+    }
+    logical_form_count = len(logical_form_keys)
     pending_forms = form_query.filter(LectureForm.status == '待审核').count()
     approved_forms = form_query.filter(LectureForm.status.in_(['已审核', '部门已审核', '中心已审核'])).count()
     rejected_forms = form_query.filter(LectureForm.status == '已驳回').count()
@@ -6407,6 +6417,7 @@ def statistics():
         can_access_extended_stats=can_access_extended_stats,
         can_manage_department_leave=can_manage_department_leave,
         total_forms=total_forms,
+        logical_form_count=logical_form_count,
         pending_forms=pending_forms,
         approved_forms=approved_forms,
         rejected_forms=rejected_forms,
