@@ -55,6 +55,7 @@
         '高风险疑似假表': '高风险疑似假表',
         '系统无法判断': '系统无法判断',
     };
+    const modeLabels = {rules_only: 'rules_only', llm_only: 'llm_only', combined: 'combined'};
     const sourceNames = ['schedule', 'rule', 'text', 'history', 'llm', 'system'];
 
     const setFeedback = (message, level = 'info') => {
@@ -138,7 +139,8 @@
         setStatus(payload.status || batch.status);
         summaryNode.replaceChildren();
         const summary = document.createElement('span');
-        summary.textContent = `处理 ${Number(batch.processed_count || 0)}/${Number(batch.target_form_count || 0)}；无明显风险 ${Number(batch.clear_count || 0)}；建议复核 ${Number(batch.review_count || 0)}；高风险 ${Number(batch.high_risk_count || 0)}；无法判断 ${Number(batch.unknown_count || 0)}。`;
+        const mode = modeLabels[batch.review_mode] || 'unknown';
+        summary.textContent = `审核模式 ${mode}；处理 ${Number(batch.processed_count || 0)}/${Number(batch.target_form_count || 0)}；失败 ${Number(batch.failed_count || 0)}；无明显风险 ${Number(batch.clear_count || 0)}；建议复核 ${Number(batch.review_count || 0)}；高风险 ${Number(batch.high_risk_count || 0)}；无法判断 ${Number(batch.unknown_count || 0)}。`;
         summaryNode.appendChild(summary);
         resultsContent.replaceChildren();
         const results = Array.isArray(batch.results) ? batch.results : [];

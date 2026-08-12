@@ -466,6 +466,12 @@ const button = {{disabled: false, textContent: ''}};
         )
         self.assertIn('fetch(endpoint)', template)
 
+    def test_auto_review_results_labels_the_real_review_mode_and_failures(self):
+        template = AUTO_RESULTS_TEMPLATE.read_text(encoding='utf-8')
+        self.assertIn("const modeLabels = {rules_only: 'rules_only', llm_only: 'llm_only', combined: 'combined'};", template)
+        self.assertIn('审核模式', template)
+        self.assertIn('失败', template)
+
 
 if __name__ == '__main__':
     unittest.main()
