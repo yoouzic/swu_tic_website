@@ -456,6 +456,16 @@ const button = {{disabled: false, textContent: ''}};
         self.assertNotIn('/admin/api/review/approve', template)
         self.assertNotIn('/admin/api/review/reject', template)
 
+    def test_auto_review_results_can_load_a_requested_real_batch(self):
+        template = AUTO_RESULTS_TEMPLATE.read_text(encoding='utf-8')
+        self.assertIn("const query = new URLSearchParams(window.location.search);", template)
+        self.assertIn("const batchId = query.get('batch_id');", template)
+        self.assertIn(
+            "const endpoint = batchId ? `/admin/api/review/auto_check/status?batch_id=${encodeURIComponent(batchId)}` : '/admin/api/review/auto_check/status';",
+            template,
+        )
+        self.assertIn('fetch(endpoint)', template)
+
 
 if __name__ == '__main__':
     unittest.main()

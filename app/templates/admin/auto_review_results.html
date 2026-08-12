@@ -186,8 +186,12 @@
         resultsContent.appendChild(table);
     };
 
+    const query = new URLSearchParams(window.location.search);
+    const batchId = query.get('batch_id');
+    const endpoint = batchId ? `/admin/api/review/auto_check/status?batch_id=${encodeURIComponent(batchId)}` : '/admin/api/review/auto_check/status';
+
     const loadResults = () => {
-        fetch('/admin/api/review/auto_check/status')
+        fetch(endpoint)
             .then(async response => {
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.message || '批次读取失败。');
