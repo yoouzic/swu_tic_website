@@ -272,14 +272,26 @@ class AutomatedReviewIntegrationTest(unittest.TestCase):
 
         second_batch = self.review_tasks.enqueue_review_batch(self.form_ids)
         second_batch, second_snapshot, second_assessments = self.batch_assessments(second_batch)
-        self.assertEqual(ReviewAssessment.query.count(), 200)
-        self.assertEqual(second_batch.cache_count, 200)
-        self.assertEqual(len(self.llm.payloads), 200)
-        self.assertTrue(all(item["cache_hit"] for item in second_snapshot["results"]))
+        error_form_ids = {form.id for form in self.forms[-5:]}
+        successful_form_ids = set(self.form_ids) - error_form_ids
+        self.assertEqual(ReviewAssessment.query.count(), 205)
+        self.assertEqual(second_batch.cache_count, 195)
+        self.assertEqual(len(self.llm.payloads), 205)
         self.assertEqual(
-            {form.id: first_assessments[form.id].id for form in self.forms},
-            {form.id: second_assessments[form.id].id for form in self.forms},
+            sum(item["cache_hit"] for item in second_snapshot["results"]),
+            195,
         )
+        self.assertEqual(
+            {form.id: first_assessments[form.id].id for form in self.forms
+             if form.id in successful_form_ids},
+            {form.id: second_assessments[form.id].id for form in self.forms
+             if form.id in successful_form_ids},
+        )
+        self.assertTrue(all(
+            second_assessments[form_id].id != first_assessments[form_id].id
+            and second_assessments[form_id].error_code == "authentication_failed"
+            for form_id in error_form_ids
+        ))
         self.assert_batch_database_counts(second_batch, second_snapshot, second_assessments)
 
         db.session.add(ReviewRuleRevision(
@@ -306,16 +318,23 @@ class AutomatedReviewIntegrationTest(unittest.TestCase):
             )
         for form in self.forms:
             if form.id not in affected_id_set:
+                expected_assessment = (
+                    second_assessments[form.id]
+                    if form.id in error_form_ids
+                    else first_assessments[form.id]
+                )
                 self.assertEqual(
                     ReviewAssessment.query.filter_by(form_id=form.id).count(),
-                    1,
+                    2 if form.id in error_form_ids else 1,
                 )
                 self.assertEqual(
-                    ReviewAssessment.query.filter_by(form_id=form.id).first().fingerprint,
-                    first_assessments[form.id].fingerprint,
+                    ReviewAssessment.query.filter_by(form_id=form.id)
+                    .order_by(ReviewAssessment.created_at.desc())
+                    .first().fingerprint,
+                    expected_assessment.fingerprint,
                 )
-        self.assertEqual(ReviewAssessment.query.count(), 250)
-        self.assertEqual(len(self.llm.payloads), 250)
+        self.assertEqual(ReviewAssessment.query.count(), 255)
+        self.assertEqual(len(self.llm.payloads), 255)
         self.assert_batch_database_counts(third_batch, third_snapshot, third_assessments)
 
         with app.test_request_context("/admin/review_forms"):
@@ -325,6 +344,8 @@ class AutomatedReviewIntegrationTest(unittest.TestCase):
             expected = (
                 third_assessments[form.id]
                 if form.id in affected_id_set
+                else second_assessments[form.id]
+                if form.id in error_form_ids
                 else first_assessments[form.id]
             )
             self.assertEqual(merged_summaries[form.id]["assessment_id"], expected.id)
