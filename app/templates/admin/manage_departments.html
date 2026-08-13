@@ -7,19 +7,22 @@
     <div id="peopleManagementFeedback" class="activity-feedback" role="status" aria-live="polite" hidden></div>
     <div class="row">
         <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2><i class="bi bi-building-gear"></i> 部门管理</h2>
-                <div>
+            <div class="page-header">
+                <div class="page-header__heading">
+                    <h1><i class="bi bi-building-gear"></i> 部门与人员</h1>
+                    <p>管理部门、小组、信息员与人员流动记录。</p>
+                </div>
+                <div class="page-header__actions">
                     {% if manage_permission == '超级管理员' %}
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDepartmentModal">
                         <i class="bi bi-plus-circle"></i> 添加部门
                     </button>
                     {% endif %}
-                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addGroupModal">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addGroupModal">
                         <i class="bi bi-plus-circle"></i> 添加小组
                     </button>
                     {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
-                    <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addUserModal">
                         <i class="bi bi-plus-circle"></i> 添加用户
                     </button>
                     {% endif %}
@@ -27,10 +30,10 @@
                         <i class="bi bi-clock-history"></i> 人员流动记录
                     </button>
                     {% if manage_permission == '超级管理员' %}
-                    <a href="#contacts-import" class="btn btn-warning">
+                    <a href="#contacts-import" class="btn btn-outline-primary">
                         <i class="bi bi-upload"></i> 通讯录导入
                     </a>
-                    <a href="#contacts-export" class="btn btn-outline-warning">
+                    <a href="#contacts-export" class="btn btn-outline-secondary">
                         <i class="bi bi-download"></i> 通讯录导出
                     </a>
                     {% endif %}
@@ -1032,7 +1035,7 @@ function renderDepartments(departments) {
     container.innerHTML = departments.map(dept => {
         const isVirtualDepartment = dept.is_virtual || dept.id === null;
         const buttonsHtml = isVirtualDepartment ? '' : `
-            <div class="btn-group">
+            <div class="department-card__actions">
                 <button class="btn btn-sm btn-outline-primary" onclick="editDepartment(${dept.id})">
                     <i class="bi bi-pencil"></i> 编辑
                 </button>
@@ -1047,8 +1050,8 @@ function renderDepartments(departments) {
         return `
         <div class="col-12 mb-4 department-card">
             <div class="card shadow-sm">
-                <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0 text-primary">
+                <div class="card-header bg-light department-card__header">
+                    <h5 class="mb-0 text-primary department-card__title">
                         <i class="bi bi-building"></i> ${dept.name}
                         <span class="badge bg-secondary ms-2" style="font-size: 0.8rem;">${dept.groups.length} 个小组</span>
                         <span class="badge bg-info text-dark ms-1" style="font-size: 0.8rem;">${dept.total_users || '0'} 名用户</span>
@@ -1062,7 +1065,7 @@ function renderDepartments(departments) {
                         
                         <!-- 部门评价概览 -->
                         <div class="mt-2 p-2 bg-light rounded border">
-                            <div class="d-flex justify-content-between align-items-center">
+                            <div class="department-evaluation__summary">
                                 <span><strong>部门累计扣分：</strong><span class="text-danger">${dept.total_deduction || 0}</span> 分</span>
                                 <button class="btn btn-sm btn-link text-decoration-none" type="button" data-bs-toggle="collapse" data-bs-target="#deptEval${dept.id}">
                                     查看部员扣分详情 <i class="bi bi-chevron-down"></i>
@@ -1137,12 +1140,12 @@ function createGroupCard(group) {
     // 判断是否为未分配小组，如果是则不显示操作按钮
     const isUnassigned = group.id === null || group.is_virtual;
     const buttonsHtml = isUnassigned ? '' : `
-        <div class="btn-group">
-            <button class="btn btn-outline-success" onclick="editGroup(${group.id})" title="编辑">
+        <div class="group-card__actions">
+            <button class="btn btn-sm btn-outline-secondary" onclick="editGroup(${group.id})" title="编辑">
                 <i class="bi bi-pencil"></i> 编辑
             </button>
             {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
-            <button class="btn btn-outline-warning" onclick="disbandGroup(${group.id}, '${group.name}')" title="解散">
+            <button class="btn btn-sm btn-outline-danger" onclick="disbandGroup(${group.id}, '${group.name}')" title="解散">
                 <i class="bi bi-box-arrow-right"></i> 解散
             </button>
             {% endif %}
@@ -1150,9 +1153,9 @@ function createGroupCard(group) {
     `;
 
     return `
-        <div class="col-md-6 col-lg-4 mb-3 group-card">
+        <div class="col-12 col-xl-6 mb-3 group-card">
             <div class="card border-secondary">
-                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                <div class="card-header group-card__header py-2">
                     <h6 class="mb-0">
                         <i class="bi bi-people"></i> ${group.name}
                         <span class="badge bg-secondary ms-1">${group.member_count}${group.max_members === '无限制' ? '' : '/' + group.max_members}</span>
@@ -1165,23 +1168,23 @@ function createGroupCard(group) {
                     
                     <div class="user-list">
                         ${group.members.map(user => `
-                            <div class="d-flex justify-content-between align-items-center mb-1 group-user-row">
-                                <span class="small">${user.name} (${user.role})</span>
+                            <div class="group-user-row mb-1">
+                                <span class="small group-user-row__identity">${user.name} (${user.role})</span>
                                 {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
-                                <div class="btn-group">
-                                    <button type="button" class="btn btn-outline-secondary" onclick="viewUser(${user.id})" title="查看">
+                                <div class="group-user-row__actions">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="viewUser(${user.id})" title="查看">
                                         <i class="bi bi-eye"></i> 查看
                                     </button>
-                                    <button class="btn btn-outline-info" onclick="editUser(${user.id})" title="编辑">
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="editUser(${user.id})" title="编辑">
                                         <i class="bi bi-pencil"></i> 编辑
                                     </button>
                                     ${user.role !== '超级管理员' ? `
-                                    <button class="btn btn-outline-warning" onclick="departUser(${user.id}, '${user.name}')" title="离任">
+                                    <button class="btn btn-sm btn-outline-danger" onclick="departUser(${user.id}, '${user.name}')" title="离任">
                                         <i class="bi bi-person-dash"></i> 离任
                                     </button>
                                     ` : ''}
                                     {% if manage_permission == '超级管理员' %}
-                                    <button class="btn btn-outline-danger" onclick="deleteUser(${user.id}, '${user.name}')" title="删除">
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${user.id}, '${user.name}')" title="删除">
                                         <i class="bi bi-trash"></i> 删除
                                     </button>
                                     {% endif %}

@@ -3,13 +3,54 @@ document.addEventListener('DOMContentLoaded', () => {
     if (shell) {
         const toggle = shell.querySelector('[data-shell-toggle]');
         const closeButtons = shell.querySelectorAll('[data-shell-close]');
+        const sidebar = shell.querySelector('.app-sidebar');
+        const frame = shell.querySelector('.app-frame');
+        let previouslyFocused = null;
+
+        const navigationTargets = () => sidebar
+            ? Array.from(sidebar.querySelectorAll('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+            : [];
         const setOpen = (open) => {
+            const wasOpen = shell.classList.contains('is-nav-open');
             shell.classList.toggle('is-nav-open', open);
             if (toggle) toggle.setAttribute('aria-expanded', String(open));
+            document.body.classList.toggle('is-shell-nav-open', open);
+            if (frame) {
+                frame.inert = open;
+                if (open) frame.setAttribute('aria-hidden', 'true');
+                else frame.removeAttribute('aria-hidden');
+            }
+            if (open) {
+                previouslyFocused = document.activeElement;
+                navigationTargets()[0]?.focus();
+            } else if (wasOpen && previouslyFocused?.focus) {
+                previouslyFocused.focus();
+                previouslyFocused = null;
+            }
         };
         toggle?.addEventListener('click', () => setOpen(!shell.classList.contains('is-nav-open')));
         closeButtons.forEach((button) => button.addEventListener('click', () => setOpen(false)));
-        document.addEventListener('keydown', (event) => { if (event.key === 'Escape') setOpen(false); });
+        sidebar?.querySelectorAll('a[href]').forEach((link) => link.addEventListener('click', () => setOpen(false)));
+        document.addEventListener('keydown', (event) => {
+            if (!shell.classList.contains('is-nav-open')) return;
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                setOpen(false);
+                return;
+            }
+            if (event.key !== 'Tab') return;
+            const targets = navigationTargets();
+            if (!targets.length) return;
+            const first = targets[0];
+            const last = targets[targets.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        });
     }
 
     const confirmDialog = document.getElementById('appConfirmDialog');

@@ -1,6 +1,15 @@
-{% macro page_header(title, description='', action_label='', action_href='') %}
+{% macro page_header(title, description='', action_label='', action_href='', secondary_actions=[], metadata=[]) %}
 <div class="page-header">
-    <div><h1>{{ title }}</h1>{% if description %}<p>{{ description }}</p>{% endif %}</div>
-    {% if action_label and action_href %}<a class="btn btn-primary" href="{{ action_href }}">{{ action_label }}</a>{% endif %}
+    <div class="page-header__heading">
+        <h1>{{ title }}</h1>
+        {% if description %}<p>{{ description }}</p>{% endif %}
+        {% if metadata %}<div class="page-header__meta">{% for item in metadata %}<span>{{ item }}</span>{% endfor %}</div>{% endif %}
+    </div>
+    {% if (action_label and action_href) or secondary_actions %}
+    <div class="page-header__actions">
+        {% for action in secondary_actions %}<a class="btn btn-outline-secondary" href="{{ action.href }}">{{ action.label }}</a>{% endfor %}
+        {% if action_label and action_href %}<a class="btn btn-primary" href="{{ action_href }}">{{ action_label }}</a>{% endif %}
+    </div>
+    {% endif %}
 </div>
 {% endmacro %}

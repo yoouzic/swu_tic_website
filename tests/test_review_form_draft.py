@@ -211,7 +211,8 @@ class ReviewFormDraftTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
-        self.assertIn('id="reviewDraftStatus"', html)
+        self.assertIn('id="draftSaveStatus" role="status" aria-live="polite"', html)
+        self.assertNotIn('id="reviewDraftStatus"', html)
         self.assertIn('/admin/api/review/form/${formId}/draft', html)
         self.assertIn('loadReviewFormDraft();', html)
         self.assertIn('scheduleReviewFormDraftSave', html)

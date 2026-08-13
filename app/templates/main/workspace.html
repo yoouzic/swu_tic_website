@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% from "partials/_page_header.html" import page_header %}
 {% from "partials/_empty_state.html" import empty_state %}
+{% from "partials/_metric.html" import metric %}
 {% block title %}今日工作 - 西大听课工作台{% endblock %}
 {% block content %}
 <div class="workspace" data-workspace-role="{{ workspace.role_slug }}">
     {{ page_header(workspace.title, workspace.summary, workspace.primary_action.label, url_for(workspace.primary_action.endpoint)) }}
     <section class="workspace-metrics" aria-label="工作指标">
-        {% for metric in workspace.metrics %}<div class="workspace-metric"><strong>{{ metric.value }}</strong><span>{{ metric.label }}</span></div>{% endfor %}
+        {% for item in workspace.metrics %}{{ metric(item.label, item.value, extra_class='workspace-metric') }}{% endfor %}
     </section>
     <div class="workspace-grid">
         <section class="workspace-panel"><div class="workspace-panel__header"><h2>优先处理</h2></div>

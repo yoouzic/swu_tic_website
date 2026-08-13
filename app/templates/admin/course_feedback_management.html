@@ -9,9 +9,18 @@
 <div class="container-fluid">
     <div class="row">
         <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2><i class="bi {{ 'bi-journal-text' if is_course_management else 'bi-calendar-check' }}"></i> {{ current_page_title }}</h2>
-                <div>
+            <div class="page-header">
+                <div class="page-header__heading">
+                    <h1><i class="bi {{ 'bi-journal-text' if is_course_management else 'bi-calendar-check' }}"></i> {{ current_page_title }}</h1>
+                    <p>
+                        {% if is_course_management %}
+                        维护课程、教师与禁听规则。
+                        {% else %}
+                        查询课程并完成听课登记。
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="page-header__actions">
                     {% if is_course_management %}
                     <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#columnSettingsModal">
                         <i class="bi bi-gear"></i> 列设置
@@ -19,13 +28,13 @@
                     <button type="button" class="btn btn-primary" id="batchBanBtn" disabled>
                         <i class="bi bi-ban"></i> 批量禁听
                     </button>
-                    <a href="{{ url_for('admin.download_banned_teacher_import_template') }}" class="btn btn-outline-success">
+                    <a href="{{ url_for('admin.download_banned_teacher_import_template') }}" class="btn btn-outline-secondary">
                         <i class="bi bi-download"></i> 下载禁听教师模板
                     </a>
-                    <button type="button" class="btn btn-success" onclick="openBanTeacherImportModal()">
+                    <button type="button" class="btn btn-outline-secondary" onclick="openBanTeacherImportModal()">
                         <i class="bi bi-file-earmark-arrow-up"></i> 导入禁听教师
                     </button>
-                    <a href="{{ url_for('admin.registration_statistics') }}" class="btn btn-outline-primary">
+                    <a href="{{ url_for('admin.registration_statistics') }}" class="btn btn-outline-secondary">
                         <i class="bi bi-bar-chart"></i> 听课登记统计
                     </a>
                     {% endif %}

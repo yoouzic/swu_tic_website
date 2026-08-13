@@ -13,6 +13,16 @@ class WorkspaceSnapshot:
     draft_saved: bool = False
 
 
+def _build_review_tasks(pending_forms):
+    if pending_forms <= 0:
+        return []
+    return [{
+        'label': '处理待审核表单',
+        'description': f'{pending_forms} 份表单等待处理，进入审核队列继续工作。',
+        'endpoint': 'admin.review_forms',
+    }]
+
+
 def load_workspace_snapshot(user):
     from app.models import CourseRegistration, LectureForm, LectureFormDraft, User
 
@@ -78,14 +88,14 @@ def build_workspace(user, snapshot):
                 {'label': '部门成员', 'value': snapshot.department_users},
                 {'label': '部门表单', 'value': snapshot.department_forms},
             ],
-            'tasks': [],
+            'tasks': _build_review_tasks(snapshot.pending_forms),
             'quick_actions': [
                 {'label': '人员与部门', 'endpoint': 'admin.manage_departments'},
                 {'label': '统计与导出', 'endpoint': 'admin.statistics'},
             ],
         }
 
-    tasks = []
+    tasks = _build_review_tasks(snapshot.pending_forms)
     if snapshot.failed_jobs:
         tasks.append({
             'label': '检查系统任务',

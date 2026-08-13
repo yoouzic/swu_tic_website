@@ -39,16 +39,12 @@
                             <i class="fas fa-search"></i> 查看参考数据
                         </button>
                         <span class="badge bg-info text-dark" id="statusBadge">加载中...</span>
-                        <a class="btn btn-sm btn-outline-secondary" data-review-return href="{{ review_return_url or url_for('admin.review_forms') }}">
-                            <i class="fas fa-arrow-left"></i> 返回队列
-                        </a>
                     </div>
                 </div>
                 
                 <div class="card-body" id="reviewFormContent" style="display: none;">
                     <form id="reviewForm">
                         <input type="hidden" id="formId" name="form_id">
-                        <div id="reviewDraftStatus" class="alert alert-secondary py-2 small" style="display: none;"></div>
                         
                         <!-- 基本信息 -->
                         <div class="row mb-4">
@@ -451,16 +447,14 @@
 </div>
 
 <!-- 提交确认模态框 -->
-<div class="modal fade" id="submitConfirmModal" tabindex="-1">
+<div class="modal fade" id="submitConfirmModal" tabindex="-1" aria-labelledby="submitConfirmTitle" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header bg-success">
-                <h4 class="modal-title">
+                <h4 class="modal-title" id="submitConfirmTitle">
                     <i class="fas fa-check"></i> 确认提交审核
                 </h4>
-                <button type="button" class="close" data-dismiss="modal" onclick="cancelSubmit()">
-                    <span>&times;</span>
-                </button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
                 <p><strong>审核权限：</strong><span id="confirmPermission"></span></p>
@@ -495,7 +489,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="cancelSubmit()">取消</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                 <button type="button" class="btn btn-success" id="confirmSubmitBtn" onclick="confirmSubmit()">确认提交</button>
             </div>
         </div>
@@ -503,20 +497,18 @@
 </div>
 
 <!-- 结果提示模态框 -->
-<div class="modal fade" id="resultModal" tabindex="-1">
+<div class="modal fade" id="resultModal" tabindex="-1" aria-labelledby="resultTitle" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header" id="resultHeader">
                 <h4 class="modal-title" id="resultTitle"></h4>
-                <button type="button" class="close" data-dismiss="modal">
-                    <span>&times;</span>
-                </button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body" id="resultBody">
                 <!-- 结果内容 -->
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-primary" data-dismiss="modal" onclick="returnToReviewQueue()">返回审核队列</button>
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="returnToReviewQueue()">返回审核队列</button>
             </div>
         </div>
     </div>
@@ -1010,12 +1002,6 @@ function getReviewDraftUrl() {
 }
 
 function setReviewDraftStatus(message, level = 'secondary') {
-    const statusEl = document.getElementById('reviewDraftStatus');
-    if (statusEl) {
-        statusEl.className = `alert alert-${level} py-2 small`;
-        statusEl.textContent = message;
-        statusEl.style.display = message ? 'block' : 'none';
-    }
     const toolbarStatus = document.getElementById('draftSaveStatus');
     if (toolbarStatus) {
         toolbarStatus.textContent = message || '尚未保存';
@@ -1311,7 +1297,7 @@ function submitReview() {
     }
     
     // 显示确认模态框
-    $('#submitConfirmModal').modal('show');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('submitConfirmModal')).show();
     scheduleReviewFormDraftSave();
 }
 
@@ -1364,7 +1350,7 @@ function collectScoreData() {
 
 // 取消提交
 function cancelSubmit() {
-    $('#submitConfirmModal').modal('hide');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('submitConfirmModal')).hide();
 }
 
 // 确认提交
@@ -1416,7 +1402,7 @@ function confirmSubmit() {
         submitBtn.innerHTML = '确认提交';
         
         // 关闭确认模态框
-        $('#submitConfirmModal').modal('hide');
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('submitConfirmModal')).hide();
         
         if (data.success) {
             deleteReviewFormDraft();
@@ -1432,7 +1418,7 @@ function confirmSubmit() {
         submitBtn.innerHTML = '确认提交';
         
         // 关闭确认模态框
-        $('#submitConfirmModal').modal('hide');
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('submitConfirmModal')).hide();
         
         console.error('Error:', error);
         showResult(false, '审核提交失败', '网络错误，请稍后重试');
@@ -1503,7 +1489,7 @@ function showResult(success, title, message) {
     resultAlert.append(resultMessage, resultHint);
     resultBody.appendChild(resultAlert);
     
-    $('#resultModal').modal('show');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('resultModal')).show();
 }
 
 // 显示错误

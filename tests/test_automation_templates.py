@@ -22,8 +22,11 @@ class AutomationSettingsTemplateTest(unittest.TestCase):
         blueprint = ADMIN_BLUEPRINT.read_text(encoding='utf-8')
         self.assertIn('逻辑表单组数', template)
         self.assertIn('logical_form_count', template)
-        self.assertIn('bg-secondary', template)
-        self.assertIn('text-white', template)
+        self.assertIn('{% from "partials/_metric.html" import metric %}', template)
+        self.assertRegex(
+            template,
+            r"metric\('逻辑表单组数',\s*logical_form_count,\s*tone='neutral'\)",
+        )
         self.assertIn('logical_form_count', blueprint)
 
     def test_automation_results_support_real_batch_summary(self):

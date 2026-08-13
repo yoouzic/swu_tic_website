@@ -85,7 +85,7 @@ from app.utils.user_status import is_user_active
 from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.review_permissions import get_user_review_permission
 from app.utils.storage_cleanup import run_scheduled_storage_cleanup
-from app.ui.navigation import build_navigation
+from app.ui.navigation import build_navigation, resolve_page_label
 
 
 # 初始化数据库
@@ -144,11 +144,16 @@ def inject_app_context():
     user.is_authenticated = True
     review_permission = get_user_review_permission(user.id) if user.role == '管理员' else None
     manage_permission = get_user_manage_permission(user.id) if user.role == '管理员' else None
+    current_endpoint = request.endpoint or ''
+    app_navigation = build_navigation(user, current_endpoint, review_permission, manage_permission)
+    is_information_officer = user.role == '信息员'
     return {
         'current_user': user,
-        'app_navigation': build_navigation(user, request.endpoint or '', review_permission, manage_permission),
-        'current_endpoint': request.endpoint or '',
-        'app_search_endpoint': 'user.my_forms' if user.role == '信息员' else 'admin.view_forms',
+        'app_navigation': app_navigation,
+        'current_endpoint': current_endpoint,
+        'page_label': resolve_page_label(app_navigation, current_endpoint),
+        'app_search_endpoint': 'user.my_forms' if is_information_officer else 'admin.view_forms',
+        'app_search_label': '搜索课程、教师或地点' if is_information_officer else '搜索听课人、教师或课程',
     }
 
 # 创建上传目录

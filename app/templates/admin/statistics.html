@@ -1,23 +1,23 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
+{% from "partials/_metric.html" import metric %}
 
 {% block title %}统计分析 - 管理员面板{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
     {% if can_access_extended_stats %}
-    <div class="row mb-3">
-        <div class="col-12 d-flex justify-content-end">
-            <a href="{{ url_for('admin.submission_count_stats') }}" class="btn btn-outline-success mr-2">
-                <i class="fas fa-file-signature mr-1"></i> 交表数量统计
-            </a>
-            <a href="{{ url_for('admin.review_assessment_stats') }}" class="btn btn-outline-primary mr-2">
-                <i class="fas fa-clipboard-check mr-1"></i> 审表考评统计
-            </a>
-            <a href="{{ url_for('admin.department_monthly_assessment_stats') }}" class="btn btn-outline-warning">
-                <i class="fas fa-building mr-1"></i> 部门月度考评统计
-            </a>
-        </div>
-    </div>
+    {{ page_header(
+        '统计分析',
+        '查看提交、审核与部门统计数据。',
+        secondary_actions=[
+            {'label': '交表数量统计', 'href': url_for('admin.submission_count_stats')},
+            {'label': '审表考评统计', 'href': url_for('admin.review_assessment_stats')},
+            {'label': '部门月度考评统计', 'href': url_for('admin.department_monthly_assessment_stats')}
+        ]
+    ) }}
+    {% else %}
+    {{ page_header('统计分析', '查看提交、审核与部门统计数据。', secondary_actions=[]) }}
     {% endif %}
     {% if can_manage_department_leave %}
     <div class="row mb-3">
@@ -25,7 +25,7 @@
             <div class="card h-100">
                 <div class="card-header">
                     <h3 class="card-title mb-0">
-                        <i class="fas fa-user-clock mr-2"></i>
+                        <i class="fas fa-user-clock me-2"></i>
                         成员请假
                     </h3>
                 </div>
@@ -42,7 +42,7 @@
                         <input type="text" class="form-control" id="leaveReasonInput" maxlength="200" placeholder="可选">
                     </div>
                     <button type="button" class="btn btn-warning" id="btnCreateLeave">
-                        <i class="fas fa-check mr-1"></i> 为当前教学周请假
+                        <i class="fas fa-check me-1"></i> 为当前教学周请假
                     </button>
                     <div class="small text-muted mt-2">该功能仅对超级管理员开放，用于为信息员登记当前教学周请假。</div>
                 </div>
@@ -52,7 +52,7 @@
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h3 class="card-title mb-0">
-                        <i class="fas fa-list mr-2"></i>
+                        <i class="fas fa-list me-2"></i>
                         请假状态
                     </h3>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="btnReloadLeaveStatus">刷新</button>
@@ -65,63 +65,13 @@
     </div>
     {% endif %}
     <!-- 统计概览 -->
-    <div class="row mb-4">
-        <div class="col-lg-3 col-6">
-            <div class="small-box bg-info">
-                <div class="inner">
-                    <h3>{{ total_forms }}</h3>
-                    <p>物理版本总数</p>
-                </div>
-                <div class="icon">
-                    <i class="fas fa-clipboard-list"></i>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-6">
-            <div class="small-box bg-secondary text-white">
-                <div class="inner">
-                    <h3 class="text-white">{{ logical_form_count }}</h3>
-                    <p class="text-white">逻辑表单组数</p>
-                </div>
-                <div class="icon">
-                    <i class="fas fa-layer-group"></i>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-6">
-            <div class="small-box bg-warning">
-                <div class="inner">
-                    <h3>{{ pending_forms }}</h3>
-                    <p>待审核表单</p>
-                </div>
-                <div class="icon">
-                    <i class="fas fa-clock"></i>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-6">
-            <div class="small-box bg-success">
-                <div class="inner">
-                    <h3>{{ approved_forms }}</h3>
-                    <p>已通过表单</p>
-                </div>
-                <div class="icon">
-                    <i class="fas fa-check-circle"></i>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-6">
-            <div class="small-box bg-danger">
-                <div class="inner">
-                    <h3>{{ rejected_forms }}</h3>
-                    <p>已驳回表单</p>
-                </div>
-                <div class="icon">
-                    <i class="fas fa-times-circle"></i>
-                </div>
-            </div>
-        </div>
-    </div>
+    <section class="metric-grid mb-4" aria-label="统计概览">
+        {{ metric('物理版本总数', total_forms, tone='neutral') }}
+        {{ metric('逻辑表单组数', logical_form_count, tone='neutral') }}
+        {{ metric('待审核表单', pending_forms, tone='attention') }}
+        {{ metric('已通过表单', approved_forms, tone='success') }}
+        {{ metric('已驳回表单', rejected_forms, tone='danger') }}
+    </section>
 
     <!-- 筛选条件 -->
     <div class="row mb-3">
@@ -129,7 +79,7 @@
             <div class="card">
                 <div class="card-header">
                     <h3 class="card-title">
-                        <i class="fas fa-filter mr-2"></i>
+                        <i class="fas fa-filter me-2"></i>
                         筛选条件
                     </h3>
                 </div>
@@ -141,9 +91,7 @@
                                     <label>时间范围：</label>
                                     <div class="input-group">
                                         <input type="date" class="form-control" name="start_date" value="{{ request.args.get('start_date', '') }}">
-                                        <div class="input-group-prepend input-group-append">
-                                            <span class="input-group-text">至</span>
-                                        </div>
+                                        <span class="input-group-text">至</span>
                                         <input type="date" class="form-control" name="end_date" value="{{ request.args.get('end_date', '') }}">
                                     </div>
                                 </div>
@@ -189,10 +137,10 @@
                                         <button type="submit" class="btn btn-primary">
                                             <i class="fas fa-search"></i> 查询
                                         </button>
-                                        <button type="button" class="btn btn-secondary ml-2" onclick="resetFilters()">
+                                        <button type="button" class="btn btn-secondary ms-2" onclick="resetFilters()">
                                             <i class="fas fa-undo"></i> 重置
                                         </button>
-                                        <button type="button" class="btn btn-success ml-2" onclick="exportStatistics()">
+                                        <button type="button" class="btn btn-success ms-2" onclick="exportStatistics()">
                                             <i class="fas fa-download"></i> 导出
                                         </button>
                                     </div>
@@ -322,15 +270,13 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h4 class="modal-title" id="detailModalTitle">详细信息</h4>
-                <button type="button" class="close" data-dismiss="modal">
-                    <span>&times;</span>
-                </button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body" id="detailModalContent">
                 <!-- 详细内容将通过AJAX加载 -->
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
             </div>
         </div>
     </div>
@@ -342,9 +288,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h4 class="modal-title" id="leaveMakeupModalTitle">选择补交表单</h4>
-                <button type="button" class="close" data-dismiss="modal">
-                    <span>&times;</span>
-                </button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-3 text-muted" id="leaveMakeupModalHint"></div>
@@ -353,7 +297,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                 <button type="button" class="btn btn-primary" id="btnSaveLeaveMakeup">保存</button>
             </div>
         </div>
@@ -434,7 +378,7 @@ function renderMakeupForms(forms) {
         const title = form.course_title || '未命名课程';
         const teacher = form.teacher_name ? ` / ${escapeHtml(form.teacher_name)}` : '';
         const formId = form.form_id ? `#${form.form_id}` : `unique:${escapeHtml(form.unique_id || '-')}`;
-        return `<div class="small"><span class="badge badge-light border mr-1">${escapeHtml(formId)}</span>${escapeHtml(title)}${teacher}</div>`;
+        return `<div class="small"><span class="badge badge-light border me-1">${escapeHtml(formId)}</span>${escapeHtml(title)}${teacher}</div>`;
     }).join('');
 }
 
@@ -468,7 +412,7 @@ function buildLeaveStatusTable(title, rows, badgeClass) {
                     <tbody>
                         ${rows.map(item => `
                             <tr>
-                                <td><span class="badge ${badgeClass} mr-1">${escapeHtml(item.status_label)}</span>${escapeHtml(item.name)}</td>
+                                <td><span class="badge ${badgeClass} me-1">${escapeHtml(item.status_label)}</span>${escapeHtml(item.name)}</td>
                                 <td>${escapeHtml(item.number || '-')}</td>
                                 <td>${escapeHtml(item.department || '-')}</td>
                                 <td>${escapeHtml(item.role || '-')}</td>
@@ -517,8 +461,8 @@ function renderLeaveStatus(data) {
 
 function showLeaveMakeupModal() {
     const modal = document.getElementById('leaveMakeupModal');
-    if (window.$ && modal) {
-        $('#leaveMakeupModal').modal('show');
+    if (window.bootstrap && modal) {
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('leaveMakeupModal')).show();
     } else if (modal) {
         modal.style.display = 'block';
         modal.classList.add('show');
@@ -527,8 +471,8 @@ function showLeaveMakeupModal() {
 
 function hideLeaveMakeupModal() {
     const modal = document.getElementById('leaveMakeupModal');
-    if (window.$ && modal) {
-        $('#leaveMakeupModal').modal('hide');
+    if (window.bootstrap && modal) {
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('leaveMakeupModal')).hide();
     } else if (modal) {
         modal.style.display = 'none';
         modal.classList.remove('show');
@@ -684,7 +628,7 @@ function createCurrentWeekLeave() {
         .catch(error => window.appFeedback(error.message || '请假发起失败'))
         .finally(() => {
             btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-check mr-1"></i> 为当前教学周请假';
+            btn.innerHTML = '<i class="fas fa-check me-1"></i> 为当前教学周请假';
         });
 }
 
@@ -787,7 +731,7 @@ function viewDetails(name, dimension) {
         .then(data => {
             document.getElementById('detailModalTitle').textContent = `${name} - 详细信息`;
             document.getElementById('detailModalContent').innerHTML = data.html;
-            $('#detailModal').modal('show');
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('detailModal')).show();
         })
         .catch(error => {
             console.error('Error:', error);

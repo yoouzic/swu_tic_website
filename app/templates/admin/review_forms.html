@@ -165,25 +165,15 @@
                                     </div>
                                 </div>
                                 <div class="card-body">
-                                    <div class="table-responsive">
-                                        <table class="table table-bordered table-striped" id="formsTable">
+                                    <div class="review-queue__table-wrap">
+                                        <table class="table review-queue__table" id="formsTable">
                                             <thead>
                                                 <tr>
-                                                    <th width="5%">
-                                                        <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                                                    <th class="review-list__select">
+                                                        <input type="checkbox" id="selectAll" aria-label="选择本页全部可审核表单" onchange="toggleSelectAll()">
                                                     </th>
-                                                    <th width="10%">提交时间</th>
-                                                    <th width="9%">听课人</th>
-                                                    <th width="9%">信息员编号</th>
-                                                    <th width="9%">授课教师</th>
-                                                    <th width="15%">课程</th>
-                                                    <th width="8%">听课时间</th>
-                                                    <th width="8%">状态</th>
-                                                    <th width="12%">自动化分类</th>
-                                                    <th width="8%">课表证据</th>
-                                                    <th width="7%">版本数</th>
-                                                    <th width="10%">更新时间</th>
-                                                    <th width="20%">操作</th>
+                                                    <th class="review-list__summary">表单摘要</th>
+                                                    <th class="review-list__actions">操作</th>
                                                 </tr>
                                             </thead>
                                             <tbody id="formsTableBody">
@@ -511,22 +501,20 @@ function getStatusBadgeClass(status) {
     }
 }
 </script>
-<div class="modal fade" id="permissionWarningModal" tabindex="-1">
+<div class="modal fade" id="permissionWarningModal" tabindex="-1" aria-labelledby="permissionWarningTitle" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header bg-warning">
-                <h4 class="modal-title">
+                <h4 class="modal-title" id="permissionWarningTitle">
                     <i class="fas fa-exclamation-triangle"></i> 权限警告
                 </h4>
-                <button type="button" class="close" data-dismiss="modal">
-                    <span>&times;</span>
-                </button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
                 <p id="permissionWarningMessage"></p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">我知道了</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">我知道了</button>
             </div>
         </div>
     </div>
@@ -534,7 +522,7 @@ function getStatusBadgeClass(status) {
 
 <!-- 表单详情模态框 -->
 <div class="modal fade" id="formDetailModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-dialog modal-lg modal-fullscreen-md-down" role="document">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">表单详情</h5>
@@ -564,59 +552,59 @@ function getStatusBadgeClass(status) {
                         导出范围：已选择 0 份表单
                     </div>
 
-                    <div class="form-group">
-                        <label>导出模式</label>
-                        <div class="custom-control custom-radio">
-                            <input type="radio" id="selectedExportModeStandard" name="export_mode" value="standard" class="custom-control-input" checked onchange="handleSelectedExportModeChange()">
-                            <label class="custom-control-label" for="selectedExportModeStandard">规范 Excel 文件</label>
+                    <fieldset class="mb-3">
+                        <legend class="form-label">导出模式</legend>
+                        <div class="form-check">
+                            <input type="radio" id="selectedExportModeStandard" name="export_mode" value="standard" class="form-check-input" checked onchange="handleSelectedExportModeChange()">
+                            <label class="form-check-label" for="selectedExportModeStandard">规范 Excel 文件</label>
                         </div>
-                        <div class="custom-control custom-radio">
-                            <input type="radio" id="selectedExportModeAllData" name="export_mode" value="all_data" class="custom-control-input" onchange="handleSelectedExportModeChange()">
-                            <label class="custom-control-label" for="selectedExportModeAllData">数据库全部字段</label>
+                        <div class="form-check">
+                            <input type="radio" id="selectedExportModeAllData" name="export_mode" value="all_data" class="form-check-input" onchange="handleSelectedExportModeChange()">
+                            <label class="form-check-label" for="selectedExportModeAllData">数据库全部字段</label>
                         </div>
-                    </div>
+                    </fieldset>
 
-                    <div class="form-group">
-                        <label>排序方式</label>
-                        <div class="custom-control custom-radio">
-                            <input type="radio" id="selectedExportSortTime" name="sort_by" value="time" class="custom-control-input" checked>
-                            <label class="custom-control-label" for="selectedExportSortTime">按听课时间排序</label>
+                    <fieldset class="mb-3">
+                        <legend class="form-label">排序方式</legend>
+                        <div class="form-check">
+                            <input type="radio" id="selectedExportSortTime" name="sort_by" value="time" class="form-check-input" checked>
+                            <label class="form-check-label" for="selectedExportSortTime">按听课时间排序</label>
                         </div>
-                        <div class="custom-control custom-radio">
-                            <input type="radio" id="selectedExportSortCourse" name="sort_by" value="course" class="custom-control-input">
-                            <label class="custom-control-label" for="selectedExportSortCourse">按课程排序 (学院-教师-课程)</label>
+                        <div class="form-check">
+                            <input type="radio" id="selectedExportSortCourse" name="sort_by" value="course" class="form-check-input">
+                            <label class="form-check-label" for="selectedExportSortCourse">按课程排序 (学院-教师-课程)</label>
                         </div>
-                    </div>
+                    </fieldset>
 
-                    <div class="form-group">
-                        <label>状态筛选 (可多选)</label>
+                    <fieldset class="mb-3">
+                        <legend class="form-label">状态筛选 (可多选)</legend>
                         <div class="row">
                             <div class="col-md-6">
-                                <div class="custom-control custom-checkbox">
-                                    <input type="checkbox" class="custom-control-input selected-export-status-checkbox" id="selectedExportStatusCenter" value="中心已审核" checked>
-                                    <label class="custom-control-label" for="selectedExportStatusCenter">中心已审核</label>
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input selected-export-status-checkbox" id="selectedExportStatusCenter" value="中心已审核" checked>
+                                    <label class="form-check-label" for="selectedExportStatusCenter">中心已审核</label>
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <div class="custom-control custom-checkbox">
-                                    <input type="checkbox" class="custom-control-input selected-export-status-checkbox" id="selectedExportStatusDept" value="部门已审核" checked>
-                                    <label class="custom-control-label" for="selectedExportStatusDept">部门已审核</label>
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input selected-export-status-checkbox" id="selectedExportStatusDept" value="部门已审核" checked>
+                                    <label class="form-check-label" for="selectedExportStatusDept">部门已审核</label>
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <div class="custom-control custom-checkbox">
-                                    <input type="checkbox" class="custom-control-input selected-export-status-checkbox" id="selectedExportStatusPending" value="待审核">
-                                    <label class="custom-control-label" for="selectedExportStatusPending">待审核</label>
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input selected-export-status-checkbox" id="selectedExportStatusPending" value="待审核">
+                                    <label class="form-check-label" for="selectedExportStatusPending">待审核</label>
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <div class="custom-control custom-checkbox">
-                                    <input type="checkbox" class="custom-control-input selected-export-status-checkbox" id="selectedExportStatusRejected" value="已驳回">
-                                    <label class="custom-control-label" for="selectedExportStatusRejected">已驳回</label>
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input selected-export-status-checkbox" id="selectedExportStatusRejected" value="已驳回">
+                                    <label class="form-check-label" for="selectedExportStatusRejected">已驳回</label>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </fieldset>
 
                     <div class="form-group" id="selectedExportFilenameGroup">
                         <label>文件名标题 (可选)</label>
@@ -916,7 +904,8 @@ function renderUserStructure() {
                 <div class="card scope-group" data-keywords="${groupKeywords}">
                     <div class="card-header p-2 d-flex align-items-center">
                         <div class="me-2">
-                            <input class="form-check-input group-checkbox" type="checkbox" 
+                            <input class="form-check-input group-checkbox" type="checkbox"
+                                   aria-label="选择小组 ${escapeHtml(groupName)}"
                                    id="group_${index}" onchange="toggleGroup('${index}')">
                         </div>
                         <div class="flex-grow-1 d-flex justify-content-between align-items-center" 
@@ -966,7 +955,8 @@ function renderUserStructure() {
                 <div class="card scope-dept" data-keywords="${deptKeywords}">
                     <div class="card-header p-2 d-flex align-items-center">
                         <div class="me-2">
-                            <input class="form-check-input dept-checkbox" type="checkbox" 
+                            <input class="form-check-input dept-checkbox" type="checkbox"
+                                   aria-label="选择部门 ${escapeHtml(deptName)}"
                                    id="dept_${deptIndex}" onchange="toggleDepartment('${deptIndex}')">
                         </div>
                         <div class="flex-grow-1 d-flex justify-content-between align-items-center" 
@@ -989,7 +979,8 @@ function renderUserStructure() {
                     <div class="card mb-2 border-0 shadow-sm scope-group" data-keywords="${groupKeywords}">
                         <div class="card-header p-2 d-flex align-items-center bg-light">
                             <div class="me-2">
-                                <input class="form-check-input group-checkbox dept-${deptIndex}" type="checkbox" 
+                                <input class="form-check-input group-checkbox dept-${deptIndex}" type="checkbox"
+                                       aria-label="选择小组 ${escapeHtml(groupName)}"
                                        id="group_${groupId}" onchange="toggleGroup('${groupId}')">
                             </div>
                             <div class="flex-grow-1 d-flex justify-content-between align-items-center" 
@@ -1299,37 +1290,43 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                 <td>
                     <input type="checkbox"
                            class="group-select-checkbox"
+                           aria-label="选择 ${escapeHtml(latestForm.listener_name || '当前信息员')} 的最新表单"
                            data-target-form-id="${groupTargetFormId}"
                            ${groupChecked ? 'checked' : ''}
                            ${groupDisabled ? 'disabled' : ''}
                            ${groupLocked ? 'title="已锁定，需取消锁定后才能取消选择"' : ''}
                            onchange="onGroupSelectChange(this)">
                 </td>
-                <td>${latestForm.created_at || '-'}</td>
-                <td>${latestForm.listener_name || '-'}</td>
-                <td>${latestForm.listener_number || '-'}</td>
-                <td>${latestForm.teacher_name || '-'}</td>
-                <td title="${latestForm.course_title || ''}">${(latestForm.course_title || '').length > 30 ? latestForm.course_title.substring(0, 30) + '...' : (latestForm.course_title || '-')}</td>
-                <td>${latestForm.lecture_date || '-'}</td>
-                <td><span class="badge ${getStatusClass(latestForm.status)}">${latestForm.status || '-'}</span></td>
-                <td>
-                    <span class="badge ${getAutomationCategoryClass(automationCategory)}" data-automation-category>${escapeHtml(automationCategory)}</span>
-                    <button type="button" class="btn btn-link btn-sm p-0 ms-1" onclick="openAutomationEvidence(${latestForm.id})">证据</button>
+                <td class="review-item__summary">
+                    <div class="review-item__heading">
+                        <strong>${escapeHtml(latestForm.listener_name || '-')}</strong>
+                        <span>${escapeHtml(latestForm.listener_number || '-')}</span>
+                    </div>
+                    <div class="review-item__course" title="${escapeHtml(latestForm.course_title || '')}">
+                        ${escapeHtml(latestForm.course_title || '-')} · ${escapeHtml(latestForm.teacher_name || '-')}
+                    </div>
+                    <div class="review-item__meta">
+                        <span>提交 ${escapeHtml(latestForm.created_at || '-')}</span>
+                        <span>听课 ${escapeHtml(latestForm.lecture_date || '-')}</span>
+                        <span>更新 ${escapeHtml(latestForm.updated_at || latestForm.created_at || '-')}</span>
+                    </div>
+                    <div class="review-item__badges">
+                        <span class="badge ${getStatusClass(latestForm.status)}">${escapeHtml(latestForm.status || '-')}</span>
+                        <span class="badge ${getAutomationCategoryClass(automationCategory)}" data-automation-category>${escapeHtml(automationCategory)}</span>
+                        <button type="button" class="btn btn-link btn-sm p-0" onclick="openAutomationEvidence(${latestForm.id})">查看证据</button>
+                        <span class="badge ${getAutomationCoverageClass(automationCoverage)}" data-automation-coverage="${automationCoverage}">课表${getAutomationCoverageLabel(automationCoverage)}</span>
+                        <span class="badge bg-light text-dark">${forms.length} 个版本</span>
+                        ${forms.length > 1 ? `
+                            <button class="btn btn-outline-secondary btn-sm" onclick="toggleVersions('${groupCollapseId}', '${chevronId}')" title="展开或收起版本">
+                                <i class="fas fa-chevron-down me-1" id="${chevronId}"></i>版本历史
+                            </button>
+                        ` : ''}
+                    </div>
                 </td>
-                <td><span class="badge ${getAutomationCoverageClass(automationCoverage)}" data-automation-coverage="${automationCoverage}">${getAutomationCoverageLabel(automationCoverage)}</span></td>
                 <td>
-                    <span class="badge bg-info text-dark">${forms.length}</span>
-                    ${forms.length > 1 ? `
-                        <button class="btn btn-outline-info btn-sm ms-1" onclick="toggleVersions('${groupCollapseId}', '${chevronId}')" title="展开/收起版本">
-                            <i class="fas fa-chevron-down me-1" id="${chevronId}"></i> 展开/收起版本
-                        </button>
-                    ` : ''}
-                </td>
-                <td>${latestForm.updated_at || latestForm.created_at || '-'}</td>
-                <td>
-                    <div class="btn-group">
+                    <div class="review-item__actions">
                         <button class="btn btn-info btn-sm" onclick="viewForm(${latestForm.id})" title="查看最新版本">
-                            <i class="fas fa-eye me-1"></i> 查看最新版本
+                            <i class="fas fa-eye me-1"></i> 查看
                         </button>
                         ${isSuperAdmin ? `
                             <button class="btn btn-primary btn-sm" onclick="defineSingleForm(${latestForm.id}, this)" title="定义标签">
@@ -1354,7 +1351,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
         if (forms.length > 1) {
             html += `
                 <tr id="${groupCollapseId}" class="version-history" style="display: none;">
-                    <td colspan="13">
+                    <td colspan="3">
                         <div class="card">
                             <div class="card-header">
                                 <h6 class="mb-0">版本历史 (按更新时间排序)</h6>
@@ -1386,6 +1383,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                                                         <td>
                                                             <input type="checkbox"
                                                                    class="form-checkbox"
+                                                                   aria-label="选择 ${escapeHtml(version.listener_name || '当前信息员')} 的版本 v${forms.length - idx}"
                                                                    value="${version.id}"
                                                                    data-group-id="${uniqueId}"
                                                                    ${versionChecked ? 'checked' : ''}
@@ -1660,7 +1658,7 @@ function deleteForm(formId) {
 
 function showPermissionWarning(message) {
     document.getElementById('permissionWarningMessage').textContent = message;
-    $('#permissionWarningModal').modal('show');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('permissionWarningModal')).show();
 }
 
 function toggleSelectAll() {

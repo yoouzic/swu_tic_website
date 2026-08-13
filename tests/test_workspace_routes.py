@@ -56,6 +56,8 @@ class WorkspaceRouteTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'data-workspace-role="information-officer"', response.data)
         self.assertIn('填写听课表'.encode('utf-8'), response.data)
+        self.assertIn('placeholder="搜索课程、教师或地点"'.encode('utf-8'), response.data)
+        self.assertIn('aria-label="提交搜索"'.encode('utf-8'), response.data)
 
     def test_manager_root_renders_review_work(self):
         self.login_session(self.manager)
@@ -63,6 +65,7 @@ class WorkspaceRouteTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'data-workspace-role="manager"', response.data)
         self.assertIn('处理审核'.encode('utf-8'), response.data)
+        self.assertIn('placeholder="搜索听课人、教师或课程"'.encode('utf-8'), response.data)
 
     def test_legacy_dashboards_redirect_to_root(self):
         self.login_session(self.super_admin)

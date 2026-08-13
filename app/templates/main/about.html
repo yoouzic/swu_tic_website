@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}关于工作台 - 西南大学教学信息中心{% endblock %}
+
+{% block content %}
+<div class="auth-layout">
+    <section class="auth-intro">
+        <span class="auth-kicker">西南大学教学信息中心</span>
+        <h1>让听课、审核与教学管理，在同一张工作台上清晰衔接。</h1>
+        <p>面向校内信息员、管理员和超级管理员的教学信息工作台。</p>
+    </section>
+    <section class="auth-panel" aria-labelledby="about-panel-title">
+        <i class="bi bi-info-circle auth-panel__icon" aria-hidden="true"></i>
+        <h2 id="about-panel-title">关于工作台</h2>
+        <p>工作台把听课记录、审核流程和教学管理入口放在同一个清晰的工作空间中。</p>
+        <p>不同角色只会看到与职责相关的任务和操作，方便从待办继续推进工作。</p>
+        <a class="btn btn-primary" href="{{ url_for('auth.login') }}">返回登录</a>
+    </section>
+</div>
+{% endblock %}

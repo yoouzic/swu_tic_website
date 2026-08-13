@@ -46,10 +46,52 @@ class UnifiedShellTest(unittest.TestCase):
         self.assertIn('.form-check-input.is-invalid:checked', css)
         self.assertIn('.form-check-input.is-valid:checked', css)
 
+    def test_workspace_metrics_use_canonical_auto_fit_columns(self):
+        css = Path('app/static/css/style.css').read_text(encoding='utf-8')
+        metrics_start = css.index('.workspace-metrics')
+        metrics_block = css[metrics_start:metrics_start + 220]
+        self.assertIn(
+            'grid-template-columns: repeat(auto-fit,minmax(min(100%,14rem),1fr));',
+            metrics_block,
+        )
+
+    def test_shell_switches_to_a_drawer_below_960_pixels(self):
+        css = Path('app/static/css/style.css').read_text(encoding='utf-8')
+        tablet_start = css.index('@media (max-width: 959px)')
+        tablet_block = css[tablet_start:tablet_start + 760]
+        self.assertIn('.app-shell { display: block; }', tablet_block)
+        self.assertIn('.app-sidebar { position: fixed;', tablet_block)
+        self.assertIn('.app-topbar__menu { display: inline-flex; }', tablet_block)
+
+    def test_topbar_uses_one_accessible_bootstrap_user_dropdown(self):
+        template = Path('app/templates/partials/_topbar.html').read_text(encoding='utf-8')
+        self.assertIn('<div class="dropdown app-user-menu">', template)
+        self.assertEqual(template.count('data-bs-toggle="dropdown"'), 1)
+        self.assertIn('id="appUserMenuToggle"', template)
+        self.assertIn('aria-haspopup="true"', template)
+        self.assertIn('aria-expanded="false"', template)
+        self.assertIn('aria-label="打开用户菜单：{{ current_user.name }}"', template)
+        self.assertIn('<i class="bi bi-person-circle" aria-hidden="true"></i>', template)
+        self.assertIn('<span class="app-user-menu__name">{{ current_user.name }}</span>', template)
+        self.assertIn('aria-labelledby="appUserMenuToggle"', template)
+        self.assertEqual(template.count("url_for('user.profile')"), 1)
+        self.assertEqual(template.count("url_for('auth.logout')"), 1)
+        self.assertIn('>个人资料</a>', template)
+        self.assertIn('>退出登录</a>', template)
+
+    def test_user_dropdown_name_collapses_to_icon_on_small_screens(self):
+        css = Path('app/static/css/style.css').read_text(encoding='utf-8')
+        self.assertIn('.app-user-menu__toggle {', css)
+        mobile_start = css.index('@media (max-width: 576px)')
+        mobile_block = css[mobile_start:mobile_start + 220]
+        self.assertIn('.app-user-menu__name { display: none; }', mobile_block)
+
     def test_shell_script_never_rewrites_link_targets(self):
         script = Path('app/static/js/app-shell.js').read_text(encoding='utf-8')
-        self.assertNotIn('target', script)
+        css = Path('app/static/css/style.css').read_text(encoding='utf-8')
+        self.assertNotIn("setAttribute('target'", script)
         self.assertIn('data-shell-toggle', script)
+        self.assertIn('body.is-shell-nav-open { overflow: hidden; }', css)
 
     def test_every_legacy_full_page_uses_base_without_duplicate_document(self):
         for relative_path in FULL_PAGE_TEMPLATES:

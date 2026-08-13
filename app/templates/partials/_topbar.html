@@ -2,13 +2,24 @@
     <button class="app-topbar__menu" type="button" data-shell-toggle aria-controls="appSidebar" aria-expanded="false" aria-label="打开导航">
         <i class="bi bi-list" aria-hidden="true"></i>
     </button>
-    <div class="app-breadcrumb">{{ page_breadcrumb|default('今日工作') }}</div>
+    <div class="app-page-context">{{ page_label|default('今日工作') }}</div>
     <div class="app-topbar__actions">
         <form class="app-search" action="{{ url_for(app_search_endpoint) }}" method="get" role="search">
-            <label class="visually-hidden" for="appSearch">搜索</label>
-            <input class="form-control form-control-sm" id="appSearch" name="search" type="search" placeholder="搜索表单、人员或课程">
+            <label class="visually-hidden" for="appSearch">{{ app_search_label }}</label>
+            <div class="input-group input-group-sm">
+                <input class="form-control" id="appSearch" name="search" type="search" placeholder="{{ app_search_label }}" value="{{ request.args.get('search', '') }}">
+                <button class="btn btn-outline-secondary" type="submit" aria-label="提交搜索"><i class="bi bi-search" aria-hidden="true"></i></button>
+            </div>
         </form>
-        <a href="{{ url_for('user.profile') }}">{{ current_user.name }}</a>
-        <a href="{{ url_for('auth.logout') }}">退出</a>
+        <div class="dropdown app-user-menu">
+            <button class="btn app-user-menu__toggle dropdown-toggle" type="button" id="appUserMenuToggle" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true" aria-label="打开用户菜单：{{ current_user.name }}">
+                <i class="bi bi-person-circle" aria-hidden="true"></i>
+                <span class="app-user-menu__name">{{ current_user.name }}</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="appUserMenuToggle">
+                <li><a class="dropdown-item" href="{{ url_for('user.profile') }}"><i class="bi bi-person" aria-hidden="true"></i>个人资料</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right" aria-hidden="true"></i>退出登录</a></li>
+            </ul>
+        </div>
     </div>
 </header>

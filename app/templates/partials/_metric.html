@@ -1,0 +1,6 @@
+{% macro metric(label, value, tone='neutral', extra_class='') %}
+<div class="metric metric--{{ tone }}{% if extra_class %} {{ extra_class }}{% endif %}">
+    <strong class="metric__value">{{ value }}</strong>
+    <span class="metric__label">{{ label }}</span>
+</div>
+{% endmacro %}
