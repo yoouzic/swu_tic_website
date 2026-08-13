@@ -7,16 +7,17 @@
 {% block content %}
 <div class="container-fluid">
     {{ page_header('统计分析', '先查看核心指标与趋势，再按需进入专项统计或请假管理。') }}
-    {% if can_access_extended_stats %}
     <nav class="statistics-subnav" aria-label="统计模块">
+        <a href="{{ url_for('admin.statistics') }}" aria-current="page">综合统计</a>
+        {% if can_access_extended_stats %}
         <a href="{{ url_for('admin.submission_count_stats') }}">交表数量</a>
         <a href="{{ url_for('admin.review_assessment_stats') }}">审表考评</a>
         <a href="{{ url_for('admin.department_monthly_assessment_stats') }}">部门月度考评</a>
+        {% endif %}
     </nav>
-    {% endif %}
 
     <!-- 统计概览必须先于低频管理模块。 -->
-    <section class="metric-grid mb-4" aria-label="统计概览">
+    <section class="metric-grid statistics-metrics mb-4" aria-label="统计概览">
         {{ metric('物理版本总数', total_forms, tone='neutral') }}
         {{ metric('逻辑表单组数', logical_form_count, tone='neutral') }}
         {{ metric('待审核表单', pending_forms, tone='attention') }}
@@ -38,14 +39,14 @@
                 </div>
                 <div class="card-body">
                     <div class="mb-2 text-muted" id="leaveWeekHint">正在读取当前教学周...</div>
-                    <div class="form-group">
-                        <label for="leaveUserSelect">请假成员</label>
-                        <select class="form-control" id="leaveUserSelect">
+                    <div class="mb-3">
+                        <label class="form-label" for="leaveUserSelect">请假成员</label>
+                        <select class="form-select" id="leaveUserSelect">
                             <option value="">正在加载...</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label for="leaveReasonInput">请假说明</label>
+                    <div class="mb-3">
+                        <label class="form-label" for="leaveReasonInput">请假说明</label>
                         <input type="text" class="form-control" id="leaveReasonInput" maxlength="200" placeholder="可选">
                     </div>
                     <button type="button" class="btn btn-warning" id="btnCreateLeave">
@@ -87,8 +88,8 @@
                     <form method="GET" id="filterForm">
                         <div class="row">
                             <div class="col-md-3">
-                                <div class="form-group">
-                                    <label>时间范围：</label>
+                                <div class="mb-3">
+                                    <label class="form-label">时间范围：</label>
                                     <div class="input-group">
                                         <input type="date" class="form-control" name="start_date" value="{{ request.args.get('start_date', '') }}">
                                         <span class="input-group-text">至</span>
@@ -97,9 +98,9 @@
                                 </div>
                             </div>
                             <div class="col-md-2">
-                                <div class="form-group">
-                                    <label>部门：</label>
-                                    <select class="form-control" name="department">
+                                <div class="mb-3">
+                                    <label class="form-label">部门：</label>
+                                    <select class="form-select" name="department">
                                         <option value="">所有部门</option>
                                         {% for dept in departments %}
                                         <option value="{{ dept }}" {% if request.args.get('department') == dept %}selected{% endif %}>{{ dept }}</option>
@@ -108,9 +109,9 @@
                                 </div>
                             </div>
                             <div class="col-md-2">
-                                <div class="form-group">
-                                    <label>状态：</label>
-                                    <select class="form-control" name="status">
+                                <div class="mb-3">
+                                    <label class="form-label">状态：</label>
+                                    <select class="form-select" name="status">
                                         <option value="">所有状态</option>
                                         <option value="待审核" {% if request.args.get('status') == '待审核' %}selected{% endif %}>待审核</option>
                                         <option value="已审核" {% if request.args.get('status') == '已审核' %}selected{% endif %}>已审核</option>
@@ -119,20 +120,20 @@
                                 </div>
                             </div>
                             <div class="col-md-2">
-                                <div class="form-group">
-                                    <label>统计维度：</label>
-                                    <select class="form-control" name="dimension" id="dimensionSelect">
-                                        <option value="department" {% if request.args.get('dimension') == 'department' %}selected{% endif %}>按部门</option>
-                                        <option value="user" {% if request.args.get('dimension') == 'user' %}selected{% endif %}>按用户</option>
-                                        <option value="teacher" {% if request.args.get('dimension') == 'teacher' %}selected{% endif %}>按教师</option>
-                                        <option value="college" {% if request.args.get('dimension') == 'college' %}selected{% endif %}>按学院</option>
-                                        <option value="date" {% if request.args.get('dimension') == 'date' %}selected{% endif %}>按日期</option>
+                                <div class="mb-3">
+                                    <label class="form-label">统计维度：</label>
+                                    <select class="form-select" name="dimension" id="dimensionSelect">
+                                        <option value="department" {% if statistics_dimension == 'department' %}selected{% endif %}>按部门</option>
+                                        <option value="user" {% if statistics_dimension == 'user' %}selected{% endif %}>按用户</option>
+                                        <option value="teacher" {% if statistics_dimension == 'teacher' %}selected{% endif %}>按教师</option>
+                                        <option value="college" {% if statistics_dimension == 'college' %}selected{% endif %}>按学院</option>
+                                        <option value="date" {% if statistics_dimension == 'date' %}selected{% endif %}>按日期</option>
                                     </select>
                                 </div>
                             </div>
                             <div class="col-md-3">
-                                <div class="form-group">
-                                    <label>&nbsp;</label>
+                                <div class="mb-3">
+                                    <span class="form-label d-block">操作</span>
                                     <div>
                                         <button type="submit" class="btn btn-primary">
                                             <i class="bi bi-search"></i> 查询
@@ -140,7 +141,7 @@
                                         <button type="button" class="btn btn-secondary ms-2" onclick="resetFilters()">
                                             <i class="bi bi-arrow-counterclockwise"></i> 重置
                                         </button>
-                                        <button type="button" class="btn btn-success ms-2" onclick="exportStatistics()">
+                                        <button type="button" class="btn btn-outline-secondary ms-2" onclick="exportStatistics()">
                                             <i class="bi bi-download"></i> 导出
                                         </button>
                                     </div>
@@ -171,7 +172,21 @@
                     <h3 class="card-title">提交趋势</h3>
                 </div>
                 <div class="card-body">
+                    {% if visualization_state == 'DATA_READY' %}
                     <canvas id="trendChart" width="400" height="200"></canvas>
+                    {% elif visualization_state == 'INSUFFICIENT_DATA' %}
+                    <div class="statistics-visualization-state" role="status">
+                        <i class="bi bi-dot" aria-hidden="true"></i>
+                        <h4>暂不足以形成趋势</h4>
+                        <p>当前仅有一个提交日期，共 {{ trend_point_count }} 份记录；积累至少两个日期后再绘制趋势。</p>
+                    </div>
+                    {% else %}
+                    <div class="statistics-visualization-state" role="status">
+                        <i class="bi bi-graph-up" aria-hidden="true"></i>
+                        <h4>暂无提交趋势数据</h4>
+                        <p>当前权限范围内尚无可用于绘图的表单。</p>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -189,17 +204,17 @@
                         <table class="table table-bordered table-striped" id="statisticsTable">
                             <thead>
                                 <tr>
-                                    {% if request.args.get('dimension') == 'department' or not request.args.get('dimension') %}
+                                    {% if statistics_dimension == 'department' %}
                                     <th>部门</th>
-                                    {% elif request.args.get('dimension') == 'user' %}
+                                    {% elif statistics_dimension == 'user' %}
                                     <th>用户</th>
                                     <th>部门</th>
-                                    {% elif request.args.get('dimension') == 'teacher' %}
+                                    {% elif statistics_dimension == 'teacher' %}
                                     <th>教师</th>
                                     <th>学院</th>
-                                    {% elif request.args.get('dimension') == 'college' %}
+                                    {% elif statistics_dimension == 'college' %}
                                     <th>学院</th>
-                                    {% elif request.args.get('dimension') == 'date' %}
+                                    {% elif statistics_dimension == 'date' %}
                                     <th>日期</th>
                                     {% endif %}
                                     <th>总数</th>
@@ -213,28 +228,28 @@
                             <tbody>
                                 {% for item in statistics_data %}
                                 <tr>
-                                    {% if request.args.get('dimension') == 'department' or not request.args.get('dimension') %}
+                                    {% if statistics_dimension == 'department' %}
                                     <td>{{ item.name }}</td>
-                                    {% elif request.args.get('dimension') == 'user' %}
+                                    {% elif statistics_dimension == 'user' %}
                                     <td>{{ item.name }}</td>
                                     <td>{{ item.department }}</td>
-                                    {% elif request.args.get('dimension') == 'teacher' %}
+                                    {% elif statistics_dimension == 'teacher' %}
                                     <td>{{ item.name }}</td>
                                     <td>{{ item.college }}</td>
-                                    {% elif request.args.get('dimension') == 'college' %}
+                                    {% elif statistics_dimension == 'college' %}
                                     <td>{{ item.name }}</td>
-                                    {% elif request.args.get('dimension') == 'date' %}
+                                    {% elif statistics_dimension == 'date' %}
                                     <td>{{ item.name }}</td>
                                     {% endif %}
                                     <td>{{ item.total }}</td>
                                     <td>
-                                        <span class="badge badge-warning">{{ item.pending }}</span>
+                                        <span class="badge bg-warning text-dark">{{ item.pending }}</span>
                                     </td>
                                     <td>
-                                        <span class="badge badge-success">{{ item.approved }}</span>
+                                        <span class="badge bg-success">{{ item.approved }}</span>
                                     </td>
                                     <td>
-                                        <span class="badge badge-danger">{{ item.rejected }}</span>
+                                        <span class="badge bg-danger">{{ item.rejected }}</span>
                                     </td>
                                     <td>
                                         {% if item.total > 0 %}
@@ -249,7 +264,11 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <button class="btn btn-sm btn-info" onclick="viewDetails('{{ item.name }}', '{{ request.args.get('dimension', 'department') }}')">
+                                        <button class="btn btn-sm btn-info" type="button"
+                                                data-statistics-group="{{ item.detail_value }}"
+                                                data-statistics-label="{{ item.name }}"
+                                                data-statistics-dimension="{{ statistics_dimension }}"
+                                                aria-label="查看 {{ item.name }} 详情">
                                             <i class="bi bi-eye"></i> 详情
                                         </button>
                                     </td>
@@ -378,7 +397,7 @@ function renderMakeupForms(forms) {
         const title = form.course_title || '未命名课程';
         const teacher = form.teacher_name ? ` / ${escapeHtml(form.teacher_name)}` : '';
         const formId = form.form_id ? `#${form.form_id}` : `unique:${escapeHtml(form.unique_id || '-')}`;
-        return `<div class="small"><span class="badge badge-light border me-1">${escapeHtml(formId)}</span>${escapeHtml(title)}${teacher}</div>`;
+        return `<div class="small"><span class="badge bg-light text-dark border me-1">${escapeHtml(formId)}</span>${escapeHtml(title)}${teacher}</div>`;
     }).join('');
 }
 
@@ -677,7 +696,8 @@ const statusChart = new Chart(statusCtx, {
     }
 });
 
-// 趋势图
+{% if visualization_state == 'DATA_READY' %}
+// 仅在至少两个日期存在真实数据时绘制趋势图。
 const trendCtx = document.getElementById('trendChart').getContext('2d');
 const trendChart = new Chart(trendCtx, {
     type: 'line',
@@ -710,6 +730,7 @@ const trendChart = new Chart(trendCtx, {
         }
     }
 });
+{% endif %}
 
 // 重置筛选
 function resetFilters() {
@@ -720,17 +741,95 @@ function resetFilters() {
     document.querySelector('select[name="dimension"]').value = 'department';
 }
 
-// 查看详情
-function viewDetails(name, dimension) {
+function appendStatisticsCell(row, value) {
+    const cell = document.createElement('td');
+    cell.textContent = String(value ?? '-');
+    row.appendChild(cell);
+}
+
+function renderStatisticsDetails(forms, pagination) {
+    const content = document.getElementById('detailModalContent');
+    content.replaceChildren();
+    if (!Array.isArray(forms) || forms.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'text-muted mb-0';
+        empty.textContent = '当前筛选范围内没有明细记录。';
+        content.appendChild(empty);
+        return;
+    }
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-responsive';
+    const table = document.createElement('table');
+    table.className = 'table table-sm table-striped align-middle mb-0';
+    const head = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    ['听课人', '部门', '课程', '教师', '听课日期', '状态'].forEach(label => {
+        const heading = document.createElement('th');
+        heading.scope = 'col';
+        heading.textContent = label;
+        headRow.appendChild(heading);
+    });
+    head.appendChild(headRow);
+    const body = document.createElement('tbody');
+    forms.forEach(form => {
+        const row = document.createElement('tr');
+        appendStatisticsCell(row, form.listener_name);
+        appendStatisticsCell(row, form.listener_department);
+        appendStatisticsCell(row, form.course_name);
+        appendStatisticsCell(row, form.teacher_name);
+        appendStatisticsCell(row, form.listen_date);
+        appendStatisticsCell(row, form.status);
+        body.appendChild(row);
+    });
+    table.append(head, body);
+    wrapper.appendChild(table);
+    content.appendChild(wrapper);
+
+    if (pagination && pagination.pages > 1) {
+        const controls = document.createElement('nav');
+        controls.className = 'statistics-detail-pagination d-flex justify-content-between align-items-center gap-3 mt-3';
+        controls.setAttribute('aria-label', '统计明细分页');
+        const summary = document.createElement('span');
+        summary.className = 'small text-muted';
+        summary.textContent = `第 ${pagination.page} / ${pagination.pages} 页，共 ${pagination.total} 条`;
+        const actions = document.createElement('div');
+        actions.className = 'btn-group btn-group-sm';
+        const previous = document.createElement('button');
+        previous.type = 'button';
+        previous.className = 'btn btn-outline-secondary';
+        previous.textContent = '上一页';
+        previous.disabled = !pagination.has_prev;
+        previous.addEventListener('click', () => loadStatisticsDetails(pagination.page - 1));
+        const next = document.createElement('button');
+        next.type = 'button';
+        next.className = 'btn btn-outline-secondary';
+        next.textContent = '下一页';
+        next.disabled = !pagination.has_next;
+        next.addEventListener('click', () => loadStatisticsDetails(pagination.page + 1));
+        actions.append(previous, next);
+        controls.append(summary, actions);
+        content.appendChild(controls);
+    }
+}
+
+let currentStatisticsDetail = null;
+
+function loadStatisticsDetails(page = 1) {
+    if (!currentStatisticsDetail) return;
     const params = new URLSearchParams(window.location.search);
-    params.set('detail_name', name);
-    params.set('detail_dimension', dimension);
-    
-    fetch(`/admin/statistics_detail?${params.toString()}`)
-        .then(response => response.json())
+    params.set('detail_value', currentStatisticsDetail.detailValue);
+    params.set('detail_dimension', currentStatisticsDetail.dimension);
+    params.set('page', String(page));
+
+    fetch(`/admin/api/statistics_detail?${params.toString()}`)
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+        })
         .then(data => {
-            document.getElementById('detailModalTitle').textContent = `${name} - 详细信息`;
-            document.getElementById('detailModalContent').innerHTML = data.html;
+            document.getElementById('detailModalTitle').textContent = `${currentStatisticsDetail.label} - 详细信息`;
+            renderStatisticsDetails(data.forms, data.pagination);
             bootstrap.Modal.getOrCreateInstance(document.getElementById('detailModal')).show();
         })
         .catch(error => {
@@ -738,6 +837,22 @@ function viewDetails(name, dimension) {
             window.appFeedback('加载详情失败');
         });
 }
+
+// 查看详情
+function viewDetails(detailValue, label, dimension) {
+    currentStatisticsDetail = {detailValue, label, dimension};
+    loadStatisticsDetails(1);
+}
+
+document.addEventListener('click', function(event) {
+    const button = event.target.closest('[data-statistics-group]');
+    if (!button) return;
+    viewDetails(
+        button.dataset.statisticsGroup,
+        button.dataset.statisticsLabel,
+        button.dataset.statisticsDimension
+    );
+});
 
 // 导出统计
 function exportStatistics() {
@@ -755,10 +870,10 @@ document.getElementById('dimensionSelect').addEventListener('change', function()
     document.getElementById('filterForm').submit();
 });
 
-// 数据表格排序
-$(document).ready(function() {
-    if ($.fn.DataTable) {
-        $('#statisticsTable').DataTable({
+// 数据表格排序是可选增强；页面不能依赖全局 jQuery 才能完成初始化。
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.jQuery && window.jQuery.fn.DataTable) {
+        window.jQuery('#statisticsTable').DataTable({
             "paging": false,
             "searching": false,
             "info": false,

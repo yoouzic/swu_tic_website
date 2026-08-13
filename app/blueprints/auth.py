@@ -78,7 +78,6 @@ def login():
             session['user_id'] = user.id
             session['user_role'] = user.role
             session['user_name'] = user.name
-            flash(f'欢迎回来，{user.name}！', 'success')
             
             return redirect(url_for('main.index'))
         else:

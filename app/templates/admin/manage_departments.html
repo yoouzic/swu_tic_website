@@ -121,11 +121,16 @@
 
 <!-- 通讯录导入/导出区域 -->
 {% if manage_permission == '超级管理员' %}
-<div class="container-fluid">
+<details class="people-contact-tools mb-4" id="contactsTools">
+    <summary>
+        <span><i class="bi bi-person-lines-fill me-2" aria-hidden="true"></i>通讯录工具</span>
+        <small>按需展开导入与导出流程</small>
+    </summary>
+<div class="container-fluid pt-3">
     <div class="row">
         <div class="col-md-6" id="contacts-import">
             <div class="card shadow mb-4">
-                <div class="card-header bg-warning text-dark">
+                <div class="card-header">
                     <h5 class="mb-0"><i class="bi bi-upload"></i> 通讯录导入</h5>
                 </div>
                 <div class="card-body">
@@ -150,7 +155,7 @@
                             </div>
                         </div>
                         <div class="d-grid">
-                            <button type="submit" class="btn btn-warning" id="deptUploadBtn">
+                            <button type="submit" class="btn btn-primary" id="deptUploadBtn">
                                 <i class="bi bi-upload"></i> 上传并预览
                             </button>
                         </div>
@@ -162,7 +167,7 @@
         </div>
         <div class="col-md-6" id="contacts-export">
             <div class="card shadow mb-4">
-                <div class="card-header bg-warning text-dark">
+                <div class="card-header">
                     <h5 class="mb-0"><i class="bi bi-download"></i> 通讯录导出</h5>
                 </div>
                 <div class="card-body">
@@ -175,7 +180,7 @@
                                 </select>
                             </div>
                             <div class="col-md-6 d-grid align-items-end">
-                                <button type="submit" class="btn btn-warning mt-4" id="startExportBtn">
+                                <button type="submit" class="btn btn-primary mt-4" id="startExportBtn">
                                     <i class="bi bi-cloud-download"></i> 开始导出
                                 </button>
                             </div>
@@ -201,6 +206,7 @@
         </div>
     </div>
 </div>
+</details>
 {% endif %}
 
 <!-- 添加部门模态框 -->
@@ -821,6 +827,12 @@ let deleteCallback = null;
 let currentMoveType = null; // 'department' or 'group'
 let allDepartmentsData = [];
 
+function escapePeopleHtml(value) {
+    const holder = document.createElement('span');
+    holder.textContent = String(value ?? '');
+    return holder.innerHTML.replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+}
+
 function setPeopleManagementFeedback(message, level = 'info') {
     if (typeof window.setAdminFeedback === 'function') {
         window.setAdminFeedback('peopleManagementFeedback', message, level);
@@ -835,6 +847,15 @@ function showPeopleActionDialog(message, action) {
     }
 }
 
+function revealContactsToolsFromHash() {
+    if (window.location.hash === '#contacts-import' || window.location.hash === '#contacts-export') {
+        const tools = document.getElementById('contactsTools');
+        const target = document.querySelector(window.location.hash);
+        if (tools) tools.open = true;
+        window.requestAnimationFrame(() => target?.scrollIntoView({block: 'start'}));
+    }
+}
+
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {
     loadDepartments();
@@ -843,6 +864,8 @@ document.addEventListener('DOMContentLoaded', function() {
     loadPermissions();
     initContactsImport();
     initContactsExport();
+    revealContactsToolsFromHash();
+    window.addEventListener('hashchange', revealContactsToolsFromHash);
     {% endif %}
     
     // 绑定表单提交事件
@@ -885,6 +908,16 @@ document.addEventListener('hidden.bs.dropdown', function(event) {
     const userList = memberMenu?.closest('.user-list');
     if (userList) {
         userList.classList.remove('user-list--menu-open');
+    }
+
+    const actionMenu = event.target.closest?.('.department-card__menu');
+    const toggle = actionMenu?.querySelector('[data-bs-toggle="dropdown"]');
+    if (toggle) {
+        window.requestAnimationFrame(() => {
+            if (!document.activeElement?.closest?.('.modal.show, .offcanvas.show')) {
+                toggle.focus();
+            }
+        });
     }
 });
 
@@ -1059,18 +1092,33 @@ function renderDepartments(departments) {
         const hasLocatorQuery = Boolean(document.getElementById('departmentLocatorInput')?.value.trim());
         const departmentExpanded = (!isEmptyDepartment || hasLocatorQuery) ? 'true' : 'false';
         const departmentBodyState = departmentExpanded === 'true' ? 'show' : '';
-        const buttonsHtml = isVirtualDepartment ? '' : `
+        const standardButtonsHtml = `
             <div class="department-card__actions">
-                <button class="btn btn-sm btn-outline-primary" onclick="editDepartment(${dept.id})">
+                <button class="btn btn-sm btn-outline-primary" type="button" data-department-action="edit" data-department-id="${Number(dept.id)}">
                     <i class="bi bi-pencil"></i> 编辑
                 </button>
                 {% if manage_permission == '超级管理员' %}
-                <button class="btn btn-sm btn-outline-warning" onclick="disbandDepartment(${dept.id}, '${dept.name}')">
+                <button class="btn btn-sm btn-outline-warning" type="button" data-department-action="disband" data-department-id="${Number(dept.id)}">
                     <i class="bi bi-box-arrow-right"></i> 解散
                 </button>
                 {% endif %}
             </div>
         `;
+        const emptyButtonsHtml = `
+            <div class="dropdown department-card__menu">
+                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="departmentActions${departmentKey}" data-bs-toggle="dropdown" aria-expanded="false" aria-label="更多部门操作：${escapePeopleHtml(dept.name)}">
+                    更多
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="departmentActions${departmentKey}">
+                    <li><button class="dropdown-item" type="button" data-department-action="edit" data-department-id="${Number(dept.id)}"><i class="bi bi-pencil me-2" aria-hidden="true"></i>编辑部门</button></li>
+                    {% if manage_permission == '超级管理员' %}
+                    <li><hr class="dropdown-divider"></li>
+                    <li><button class="dropdown-item text-danger" type="button" data-department-action="disband" data-department-id="${Number(dept.id)}"><i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>解散部门</button></li>
+                    {% endif %}
+                </ul>
+            </div>
+        `;
+        const buttonsHtml = isVirtualDepartment ? '' : (isEmptyDepartment ? emptyButtonsHtml : standardButtonsHtml);
 
         return `
         <div class="col-12 mb-2 department-card${isEmptyDepartment ? ' department-card--empty' : ''}">
@@ -1363,6 +1411,23 @@ document.addEventListener('click', function(event) {
     const retryButton = event.target.closest('[data-user-detail-retry]');
     if (retryButton) {
         viewUser(retryButton.dataset.userId);
+        return;
+    }
+
+    const departmentAction = event.target.closest('[data-department-action]');
+    if (departmentAction) {
+        const departmentId = Number(departmentAction.dataset.departmentId);
+        if (!Number.isInteger(departmentId)) {
+            return;
+        }
+        if (departmentAction.dataset.departmentAction === 'edit') {
+            editDepartment(departmentId);
+            return;
+        }
+        if (departmentAction.dataset.departmentAction === 'disband') {
+            const department = allDepartmentsData.find(item => Number(item.id) === departmentId);
+            disbandDepartment(departmentId, department?.name || '该部门');
+        }
     }
 });
 
@@ -2293,7 +2358,7 @@ function initContactsImport() {
             }
             const confirmButton = document.createElement('button');
             confirmButton.type = 'button';
-            confirmButton.className = 'btn btn-warning';
+            confirmButton.className = 'btn btn-primary';
             confirmButton.textContent = '确认导入';
             confirmButton.addEventListener('click', confirmDeptImport);
             preview.appendChild(confirmButton);

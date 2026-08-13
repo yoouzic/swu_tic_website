@@ -40,40 +40,15 @@
             </div>
 
             <!-- 搜索和筛选区域 -->
-            <div class="card mb-4">
+            <!-- 搜索始终可见；高级筛选在紧凑视口默认收起，所有视口共用同一组控件。 -->
+            <div class="card mb-4 course-filter-panel">
                 <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-3">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-lg-7">
                             <label for="searchInput" class="form-label">搜索</label>
                             <input type="text" class="form-control" id="searchInput" placeholder="搜索课程名称、教师等...">
                         </div>
-                        <div class="col-md-2">
-                            <label for="semesterFilter" class="form-label">学期</label>
-                            <select class="form-select" id="semesterFilter">
-                                <option value="">所有学期</option>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <label for="weekdayFilter" class="form-label">星期</label>
-                            <select class="form-select" id="weekdayFilter">
-                                <option value="">所有星期</option>
-                                <option value="1">星期一</option>
-                                <option value="2">星期二</option>
-                                <option value="3">星期三</option>
-                                <option value="4">星期四</option>
-                                <option value="5">星期五</option>
-                                <option value="6">星期六</option>
-                                <option value="7">星期日</option>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <label for="timeSlotFilter" class="form-label">时间段</label>
-                            <select class="form-select" id="timeSlotFilter">
-                                <option value="">所有时间</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">&nbsp;</label>
+                        <div class="col-lg-5">
                             <div class="d-flex gap-2">
                                 <button class="btn btn-primary" type="button" onclick="searchCourses()">
                                     <i class="bi bi-search"></i> 搜索
@@ -84,6 +59,39 @@
                             </div>
                         </div>
                     </div>
+                    <details class="course-advanced-filters mt-3" id="courseAdvancedFilters">
+                        <summary>
+                            <span>高级筛选</span>
+                            <span class="course-filter-summary" id="courseFilterSummary">未启用附加筛选</span>
+                        </summary>
+                        <div class="row g-3 pt-3">
+                            <div class="col-md-4">
+                                <label for="semesterFilter" class="form-label">学期</label>
+                                <select class="form-select" id="semesterFilter">
+                                    <option value="">所有学期</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="weekdayFilter" class="form-label">星期</label>
+                                <select class="form-select" id="weekdayFilter">
+                                    <option value="">所有星期</option>
+                                    <option value="1">星期一</option>
+                                    <option value="2">星期二</option>
+                                    <option value="3">星期三</option>
+                                    <option value="4">星期四</option>
+                                    <option value="5">星期五</option>
+                                    <option value="6">星期六</option>
+                                    <option value="7">星期日</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="timeSlotFilter" class="form-label">时间段</label>
+                                <select class="form-select" id="timeSlotFilter">
+                                    <option value="">所有时间</option>
+                                </select>
+                            </div>
+                        </div>
+                    </details>
                 </div>
             </div>
 
@@ -128,9 +136,9 @@
             <!-- 课程表格 -->
             <div class="card">
                 <div class="card-header">
-                    <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex justify-content-between align-items-center course-list-header">
                         <h5 class="mb-0">课程列表</h5>
-                        <div class="d-flex align-items-center gap-3">
+                        <div class="d-flex align-items-center gap-3 course-list-header__actions">
                             <span class="text-muted" id="courseCount">共 0 门课程</span>
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-info" onclick="expandAllGroups()" title="展开所有课程组">
@@ -150,7 +158,8 @@
                     </div>
                 </div>
                 <div class="card-body p-0">
-                    <div class="table-responsive">
+                    <div class="course-summary-list" id="courseSummaryList" aria-label="课程摘要列表"></div>
+                    <div class="table-responsive course-desktop-table" id="courseDesktopTable">
                         <table class="table table-hover mb-0" id="coursesTable">
                             <thead class="table-light">
                                 <tr id="tableHeader">
@@ -471,9 +480,24 @@ function initializePage() {
     if (!sortConfig) sortConfig = { column: null, direction: null };
     if (!selectedCourses) selectedCourses = new Set();
     
+    initializeCourseFilterDisclosure();
     loadColumnSettings();
     loadCourses();
     setupEventListeners();
+}
+
+function initializeCourseFilterDisclosure() {
+    const disclosure = document.getElementById('courseAdvancedFilters');
+    if (!disclosure) return;
+    const desktopQuery = window.matchMedia('(min-width: 1200px)');
+    let userChangedDisclosure = false;
+    disclosure.open = desktopQuery.matches;
+    disclosure.addEventListener('toggle', () => {
+        userChangedDisclosure = true;
+    });
+    desktopQuery.addEventListener('change', event => {
+        if (!userChangedDisclosure) disclosure.open = event.matches;
+    });
 }
 
 // 设置事件监听器
@@ -520,6 +544,8 @@ function setupEventListeners() {
             }
         });
     }
+
+    document.addEventListener('click', handleCourseDetailLinkClick);
 
     const regListeningInfo = document.getElementById('regListeningInfo');
     if (regListeningInfo) {
@@ -708,7 +734,11 @@ function loadCourses() {
     // 显示加载状态
     const tbody = document.getElementById('coursesTableBody');
     tbody.innerHTML = '<tr><td colspan="100" class="text-center py-5"><div class="spinner-border text-primary" role="status"></div><div class="mt-2 text-muted">加载中...</div></td></tr>';
-    
+    const summaryList = document.getElementById('courseSummaryList');
+    if (summaryList) {
+        summaryList.innerHTML = '<div class="activity-empty"><div class="spinner-border text-primary" role="status"></div><div class="mt-2">加载中...</div></div>';
+    }
+
     fetch(`/admin/api/courses?${params.toString()}`)
         .then(response => response.json())
         .then(data => {
@@ -717,15 +747,17 @@ function loadCourses() {
                 currentCoursesData = Array.isArray(data.courses) ? data.courses : [];
                 
                 // 验证每个课程组的数据结构
-                currentCoursesData = currentCoursesData.map(courseGroup => {
+                currentCoursesData = currentCoursesData.map((courseGroup, groupIndex) => {
                     if (!courseGroup) return null;
                     if (!courseGroup.records || !Array.isArray(courseGroup.records)) {
                         courseGroup.records = [];
                     }
+                    // DOM 与事件只使用内部 token；课程号/选课号可能来自导入，不能拼进属性或选择器。
+                    courseGroup._domToken = `course-group-${groupIndex}`;
                     return courseGroup;
                 }).filter(courseGroup => courseGroup !== null);
                 
-                renderCoursesTable(currentCoursesData);
+                renderCoursePresentations(currentCoursesData);
                 renderPagination(data.pagination || {});
                 updateCourseCount((data.pagination && data.pagination.total) || 0);
                 
@@ -734,14 +766,114 @@ function loadCourses() {
                 }
             } else {
                 tbody.innerHTML = `<tr><td colspan="100" class="text-center py-5 text-danger">加载失败: ${data.message}</td></tr>`;
+                if (summaryList) summaryList.innerHTML = `<div class="activity-empty text-danger">加载失败: ${escapeHtml(data.message)}</div>`;
                 currentCoursesData = [];
             }
         })
         .catch(error => {
             console.error('加载课程数据失败:', error);
             tbody.innerHTML = '<tr><td colspan="100" class="text-center py-5 text-danger">网络错误，请稍后重试</td></tr>';
+            if (summaryList) summaryList.innerHTML = '<div class="activity-empty text-danger">网络错误，请稍后重试</div>';
             currentCoursesData = [];
         });
+}
+
+function handleCourseDetailLinkClick(event) {
+    const detailLink = event.target.closest('[data-course-detail-type]');
+    if (!detailLink) return;
+    event.preventDefault();
+    const detailId = detailLink.dataset.courseDetailId;
+    if (detailLink.dataset.courseDetailType === 'teacher') {
+        showTeacherDetail(detailId);
+    } else if (detailLink.dataset.courseDetailType === 'venue') {
+        showVenueDetail(detailId);
+    }
+}
+
+function renderCoursePresentations(courses) {
+    renderCoursesTable(courses);
+    renderCourseSummaryList(courses);
+    updateCourseFilterSummary();
+    syncCourseSelectionControls();
+}
+
+function updateCourseFilterSummary() {
+    const summary = document.getElementById('courseFilterSummary');
+    if (!summary) return;
+    const semester = document.getElementById('semesterFilter');
+    const weekday = document.getElementById('weekdayFilter');
+    const timeSlot = document.getElementById('timeSlotFilter');
+    const active = [
+        semester?.value ? semester.selectedOptions[0]?.text : '',
+        weekday?.value ? weekday.selectedOptions[0]?.text : '',
+        timeSlot?.value ? timeSlot.selectedOptions[0]?.text : ''
+    ].filter(Boolean);
+    summary.textContent = active.length ? active.join(' · ') : '未启用附加筛选';
+}
+
+function renderCourseSummaryList(courses) {
+    const container = document.getElementById('courseSummaryList');
+    if (!container) return;
+    if (!courses || courses.length === 0) {
+        container.innerHTML = '<div class="activity-empty activity-empty--large"><i class="bi bi-journal-x" aria-hidden="true"></i><h2>暂无课程数据</h2><p>调整搜索或筛选条件后重试。</p></div>';
+        return;
+    }
+
+    container.innerHTML = courses.map(courseGroup => {
+        const groupKey = courseGroup._domToken;
+        const records = Array.isArray(courseGroup.records) ? courseGroup.records : [];
+        const isGroupSelected = isCourseManagement && isGroupFullySelected(courseGroup);
+        const scheduleSummary = records.length
+            ? records.map(record => [record.teacher_name, record.class_time, record.venue_name].filter(Boolean).join(' · ')).filter(Boolean).join('；')
+            : '暂无教学安排';
+        const recordRows = courseGroup.expanded ? records.map(record => {
+            const isRecordSelected = isCourseManagement && selectedCourses.has(record.id);
+            const detailFieldKeys = [...new Set([
+                'course_code', 'semester', 'credits', 'total_hours', 'course_nature',
+                ...visibleColumns
+            ])];
+            const extraFields = detailFieldKeys.map(columnKey => {
+                const column = availableColumns.find(item => item.key === columnKey);
+                const value = record[columnKey] ?? courseGroup[columnKey];
+                if (!column || value === undefined || value === null || value === '' || ['teacher_id', 'venue_id', 'selection_code', 'course_name', 'offering_college'].includes(columnKey)) return '';
+                return `<div><dt>${escapeHtml(column.label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
+            }).filter(Boolean).join('');
+            const recordAction = isCourseManagement
+                ? `<button class="btn btn-sm btn-outline-warning" type="button" onclick="banSingleCourse(${record.id})"><i class="bi bi-slash-circle me-1" aria-hidden="true"></i>禁听设置</button>`
+                : `<button class="btn btn-sm btn-outline-primary" type="button" onclick="openReservationModal(${record.id})"><i class="bi bi-pencil-square me-1" aria-hidden="true"></i>登记</button>`;
+            return `
+                <div class="course-summary-record ${isRecordSelected ? 'is-selected' : ''}" data-record-id="${record.id}">
+                    ${isCourseManagement ? `<input class="form-check-input course-checkbox" type="checkbox" value="${record.id}" aria-label="选择 ${escapeHtml(record.teacher_name || courseGroup.course_name || '当前课程')}" ${isRecordSelected ? 'checked' : ''} onchange="toggleCourseSelection(${record.id})">` : ''}
+                    <div class="course-summary-record__body">
+                        <strong>${escapeHtml(record.teacher_name || '教师待定')}</strong>
+                        <span>${escapeHtml(record.class_time || '时间待定')} · ${escapeHtml(record.venue_name || '地点待定')}</span>
+                        ${extraFields ? `<dl class="course-summary-record__details">${extraFields}</dl>` : ''}
+                    </div>
+                    <div>${recordAction}</div>
+                </div>`;
+        }).join('') : '';
+        const groupAction = isCourseManagement
+            ? `<button class="btn btn-sm btn-outline-warning" type="button" onclick="banCourseGroup('${groupKey}')"><i class="bi bi-slash-circle me-1" aria-hidden="true"></i>组禁听设置</button>`
+            : '';
+        return `
+            <article class="course-summary-card ${isGroupSelected ? 'is-selected' : ''}" data-group-key="${groupKey}">
+                <header class="course-summary-card__header">
+                    ${isCourseManagement ? `<input class="form-check-input course-group-checkbox" type="checkbox" data-group-key="${groupKey}" aria-label="选择课程组 ${escapeHtml(courseGroup.course_name || '')}" ${isGroupSelected ? 'checked' : ''} onchange="toggleGroupSelection('${groupKey}', this.checked)">` : ''}
+                    <div class="course-summary-card__identity">
+                        <h3>${escapeHtml(courseGroup.course_name || '-')}</h3>
+                        <p>${escapeHtml(courseGroup.selection_code || '-')} · ${escapeHtml(courseGroup.offering_college || '-')} · ${records.length} 条记录</p>
+                    </div>
+                </header>
+                <p class="course-summary-card__schedule">${escapeHtml(scheduleSummary)}</p>
+                <div class="course-summary-card__actions">
+                    <button class="btn btn-sm btn-outline-primary expand-toggle-btn" type="button" data-group-key="${groupKey}" aria-expanded="${courseGroup.expanded ? 'true' : 'false'}" onclick="toggleGroupExpand('${groupKey}')">
+                        <i class="bi ${courseGroup.expanded ? 'bi-chevron-up' : 'bi-chevron-down'} me-1" aria-hidden="true"></i>${courseGroup.expanded ? '收起记录' : '展开记录'}
+                    </button>
+                    ${groupAction}
+                </div>
+                ${recordRows ? `<div class="course-summary-card__records">${recordRows}</div>` : ''}
+            </article>`;
+    }).join('');
 }
 
 // 渲染课程表格 - 支持分组显示和展开/折叠
@@ -764,7 +896,7 @@ function renderCoursesTable(courses) {
         if (!courseGroup) return;
         
         // 生成课程组的唯一标识
-        const groupKey = `${courseGroup.course_code}_${courseGroup.selection_code}`;
+        const groupKey = courseGroup._domToken;
         const isGroupSelected = isCourseManagement && isGroupFullySelected(courseGroup);
         
         // 渲染主行（课程组概览）
@@ -775,13 +907,13 @@ function renderCoursesTable(courses) {
             mainRowHtml += `
                 <td>
                     <input type="checkbox" class="course-group-checkbox" data-group-key="${groupKey}" 
-                           ${isGroupSelected ? 'checked' : ''} onchange="toggleGroupSelection('${groupKey}')">
+                           ${isGroupSelected ? 'checked' : ''} onchange="toggleGroupSelection('${groupKey}', this.checked)">
                 </td>
             `;
         }
         
         visibleColumns.forEach(columnKey => {
-            let cellContent = courseGroup[columnKey] || '-';
+            let cellContent = escapeHtml(courseGroup[columnKey] || '-');
             
             // 第一列添加展开/折叠按钮
             if (columnKey === visibleColumns[0]) {
@@ -856,16 +988,16 @@ function renderCoursesTable(courses) {
                         columnKey === 'weekly_hours' || columnKey === 'class_composition' ||
                         columnKey === 'major_composition') {
                         // 这些是课程组级别的信息，在详细行中显示为空或简化
-                        cellContent = index === 0 ? (courseGroup[columnKey] || '-') : '';
+                        cellContent = index === 0 ? escapeHtml(courseGroup[columnKey] || '-') : '';
                     } else {
                         // 这些是记录级别的信息
-                        cellContent = record[columnKey] || '-';
+                        cellContent = escapeHtml(record[columnKey] || '-');
                         
                         // 特殊处理某些列
                         if (columnKey === 'teacher_id' && record.teacher_name) {
-                            cellContent = `<a href="#" onclick="showTeacherDetail('${record.teacher_id}')" class="text-decoration-none">${record.teacher_name}</a>`;
+                            cellContent = `<a href="#" class="text-decoration-none" data-course-detail-type="teacher" data-course-detail-id="${escapeHtml(record.teacher_id)}">${escapeHtml(record.teacher_name)}</a>`;
                         } else if (columnKey === 'venue_id' && record.venue_name) {
-                            cellContent = `<a href="#" onclick="showVenueDetail('${record.venue_id}')" class="text-decoration-none">${record.venue_name}</a>`;
+                            cellContent = `<a href="#" class="text-decoration-none" data-course-detail-type="venue" data-course-detail-id="${escapeHtml(record.venue_id)}">${escapeHtml(record.venue_name)}</a>`;
                         }
                     }
                     
@@ -915,17 +1047,15 @@ function toggleCourseSelection(courseId) {
         selectedCourses.add(courseId);
     }
     
+    syncCourseSelectionControls();
     updateBatchBanButton();
     updateSelectAllCheckbox();
-    updateGroupCheckboxes();
 }
 
 // 切换课程组展开/折叠
 function toggleGroupExpand(groupKey) {
     // 更新数据中的展开状态
-    const courseData = currentCoursesData.find(course => 
-        `${course.course_code}_${course.selection_code}` === groupKey
-    );
+    const courseData = currentCoursesData.find(course => course._domToken === groupKey);
     if (courseData) {
         const wasExpanded = courseData.expanded;
         courseData.expanded = !courseData.expanded;
@@ -944,8 +1074,8 @@ function toggleGroupExpand(groupKey) {
         // showAlert(`课程组已${action}`, 'success', 1000);
     }
     
-    // 重新渲染表格
-    renderCoursesTable(currentCoursesData);
+    // 两种响应式呈现共享同一份展开状态。
+    renderCoursePresentations(currentCoursesData);
 }
 function expandAllGroups() {
     if (!currentCoursesData || currentCoursesData.length === 0) {
@@ -961,7 +1091,7 @@ function expandAllGroups() {
     });
     
     if (expandedCount > 0) {
-        renderCoursesTable(currentCoursesData);
+        renderCoursePresentations(currentCoursesData);
     }
 }
 
@@ -980,21 +1110,18 @@ function collapseAllGroups() {
     });
     
     if (collapsedCount > 0) {
-        renderCoursesTable(currentCoursesData);
+        renderCoursePresentations(currentCoursesData);
     }
 }
 
 // 切换课程组选择
-function toggleGroupSelection(groupKey) {
+function toggleGroupSelection(groupKey, checked) {
     if (!isCourseManagement) return;
-    const courseGroup = currentCoursesData.find(course => 
-        `${course.course_code}_${course.selection_code}` === groupKey
-    );
+    const courseGroup = currentCoursesData.find(course => course._domToken === groupKey);
     
     if (!courseGroup) return;
     
-    const checkbox = document.querySelector(`input[data-group-key="${groupKey}"]`);
-    const isChecked = checkbox.checked;
+    const isChecked = Boolean(checked);
     
     // 选择或取消选择该组的所有记录
     courseGroup.records.forEach(record => {
@@ -1005,18 +1132,30 @@ function toggleGroupSelection(groupKey) {
         }
     });
     
+    syncCourseSelectionControls();
     updateBatchBanButton();
     updateSelectAllCheckbox();
     
     // 如果组是展开的，更新详细记录的复选框
     if (courseGroup.expanded) {
         courseGroup.records.forEach(record => {
-            const recordCheckbox = document.querySelector(`input[value="${record.id}"]`);
-            if (recordCheckbox) {
+            document.querySelectorAll(`input[value="${record.id}"]`).forEach(recordCheckbox => {
                 recordCheckbox.checked = isChecked;
-            }
+            });
         });
     }
+}
+
+function syncCourseSelectionControls() {
+    document.querySelectorAll('.course-checkbox').forEach(checkbox => {
+        checkbox.checked = selectedCourses.has(Number(checkbox.value));
+    });
+    document.querySelectorAll('[data-record-id]').forEach(recordElement => {
+        const isSelected = selectedCourses.has(Number(recordElement.dataset.recordId));
+        recordElement.classList.toggle('is-selected', recordElement.classList.contains('course-summary-record') && isSelected);
+        recordElement.classList.toggle('table-active', recordElement.classList.contains('course-detail-row') && isSelected);
+    });
+    updateGroupCheckboxes();
 }
 
 // 检查课程组是否完全选中
@@ -1033,11 +1172,16 @@ function updateGroupCheckboxes() {
     
     currentCoursesData.forEach(courseGroup => {
         if (!courseGroup) return;
-        const groupKey = `${courseGroup.course_code}_${courseGroup.selection_code}`;
-        const groupCheckbox = document.querySelector(`input[data-group-key="${groupKey}"]`);
-        if (groupCheckbox) {
-            groupCheckbox.checked = isGroupFullySelected(courseGroup);
-        }
+        const groupKey = courseGroup._domToken;
+        const groupCheckboxes = document.querySelectorAll(`input[data-group-key="${groupKey}"]`);
+        const isSelected = isGroupFullySelected(courseGroup);
+        groupCheckboxes.forEach(groupCheckbox => {
+            groupCheckbox.checked = isSelected;
+        });
+        document.querySelectorAll(`[data-group-key="${groupKey}"]`).forEach(groupElement => {
+            groupElement.classList.toggle('is-selected', groupElement.classList.contains('course-summary-card') && isSelected);
+            groupElement.classList.toggle('table-active', groupElement.classList.contains('course-group-main') && isSelected);
+        });
     });
 }
 
@@ -1453,6 +1597,7 @@ function clearCourseSelection() {
         const checkbox = document.getElementById(id);
         if (checkbox) checkbox.checked = false;
     });
+    syncCourseSelectionControls();
     updateBatchBanButton();
 }
 
@@ -1574,7 +1719,7 @@ function applyFiltersAndSort() {
         });
     }
     
-    renderCoursesTable(filteredData);
+    renderCoursePresentations(filteredData);
 }
 
 // 获取排序值
@@ -1594,78 +1739,6 @@ function getSortValue(courseGroup, column) {
 function sortColumn(columnKey, direction) {
     sortConfig = { column: columnKey, direction: direction };
     applyFiltersAndSort();
-}
-
-// 列排序
-function sortColumn(columnKey, direction) {
-    sortConfig = { column: columnKey, direction: direction };
-    applyFiltersAndSort();
-}
-
-// 应用筛选和排序
-function applyFiltersAndSort() {
-    if (!currentCoursesData || !Array.isArray(currentCoursesData)) return;
-    
-    let filteredData = [...currentCoursesData];
-    
-    // 应用列筛选
-    Object.keys(columnFilters).forEach(columnKey => {
-        const filterValues = columnFilters[columnKey];
-        if (filterValues && filterValues.length > 0) {
-            filteredData = filteredData.filter(courseGroup => {
-                // 检查课程组级别的字段
-                if (['course_code', 'selection_code', 'course_name', 'offering_college', 
-                     'credits', 'total_hours', 'course_nature', 'semester', 'academic_year',
-                     'enrollment_count', 'weekly_hours', 'class_composition', 'major_composition'].includes(columnKey)) {
-                    const value = String(courseGroup[columnKey] || '');
-                    return filterValues.includes(value);
-                } else {
-                    // 检查记录级别的字段，只要有一个记录匹配就保留该课程组
-                    if (!courseGroup.records || !Array.isArray(courseGroup.records)) {
-                        return false;
-                    }
-                    return courseGroup.records.some(record => {
-                        if (!record) return false;
-                        const value = String(record[columnKey] || '');
-                        return filterValues.includes(value);
-                    });
-                }
-            });
-        }
-    });
-    
-    // 应用排序
-    if (sortConfig.column && sortConfig.direction) {
-        filteredData.sort((a, b) => {
-            let valueA, valueB;
-            
-            // 获取排序值
-            if (['course_code', 'selection_code', 'course_name', 'offering_college', 
-                 'credits', 'total_hours', 'course_nature', 'semester', 'academic_year',
-                 'enrollment_count', 'weekly_hours', 'class_composition', 'major_composition'].includes(sortConfig.column)) {
-                valueA = a[sortConfig.column] || '';
-                valueB = b[sortConfig.column] || '';
-            } else {
-                // 对于记录级别的字段，使用第一个记录的值
-                valueA = (a.records && Array.isArray(a.records) && a.records[0]) ? (a.records[0][sortConfig.column] || '') : '';
-                valueB = (b.records && Array.isArray(b.records) && b.records[0]) ? (b.records[0][sortConfig.column] || '') : '';
-            }
-            
-            // 数字排序
-            if (!isNaN(valueA) && !isNaN(valueB)) {
-                valueA = Number(valueA);
-                valueB = Number(valueB);
-            }
-            
-            if (sortConfig.direction === 'asc') {
-                return valueA > valueB ? 1 : valueA < valueB ? -1 : 0;
-            } else {
-                return valueA < valueB ? 1 : valueA > valueB ? -1 : 0;
-            }
-        });
-    }
-    
-    renderCoursesTable(filteredData);
 }
 
 // 渲染分页
@@ -1768,7 +1841,7 @@ function loadFilterOptions(options) {
 
 // 显示教师详情
 function showTeacherDetail(teacherId) {
-    fetch(`/admin/api/teachers/${teacherId}`)
+    fetch(`/admin/api/teachers/${encodeURIComponent(teacherId)}`)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
@@ -1793,12 +1866,12 @@ function renderTeacherDetail(teacher) {
             <div class="col-md-6">
                 <h6>基本信息</h6>
                 <table class="table table-sm">
-                    <tr><td><strong>教工号:</strong></td><td>${teacher.teacher_id || '-'}</td></tr>
-                    <tr><td><strong>姓名:</strong></td><td>${teacher.name || '-'}</td></tr>
-                    <tr><td><strong>性别:</strong></td><td>${teacher.gender || '-'}</td></tr>
-                    <tr><td><strong>职称:</strong></td><td>${teacher.title || '-'}</td></tr>
-                    <tr><td><strong>学院:</strong></td><td>${teacher.college || '-'}</td></tr>
-                    <tr><td><strong>系别:</strong></td><td>${teacher.department || '-'}</td></tr>
+                    <tr><td><strong>教工号:</strong></td><td>${escapeHtml(teacher.teacher_id || '-')}</td></tr>
+                    <tr><td><strong>姓名:</strong></td><td>${escapeHtml(teacher.name || '-')}</td></tr>
+                    <tr><td><strong>性别:</strong></td><td>${escapeHtml(teacher.gender || '-')}</td></tr>
+                    <tr><td><strong>职称:</strong></td><td>${escapeHtml(teacher.title || '-')}</td></tr>
+                    <tr><td><strong>学院:</strong></td><td>${escapeHtml(teacher.college || '-')}</td></tr>
+                    <tr><td><strong>系别:</strong></td><td>${escapeHtml(teacher.department || '-')}</td></tr>
                 </table>
             </div>
             <div class="col-md-6">
@@ -1808,8 +1881,8 @@ function renderTeacherDetail(teacher) {
                     <div class="list-group list-group-flush" style="max-height: 200px; overflow-y: auto;">
                         ${teacher.courses.map(course => `
                             <div class="list-group-item list-group-item-action py-2">
-                                <div class="fw-bold">${course.course_name}</div>
-                                <small class="text-muted">${course.semester} | ${course.class_time}</small>
+                                <div class="fw-bold">${escapeHtml(course.course_name || '-')}</div>
+                                <small class="text-muted">${escapeHtml(course.semester || '-')} | ${escapeHtml(course.class_time || '-')}</small>
                             </div>
                         `).join('')}
                     </div>
@@ -1821,7 +1894,7 @@ function renderTeacherDetail(teacher) {
 
 // 显示场地详情
 function showVenueDetail(venueId) {
-    fetch(`/admin/api/venues/${venueId}`)
+    fetch(`/admin/api/venues/${encodeURIComponent(venueId)}`)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
@@ -1846,12 +1919,12 @@ function renderVenueDetail(venue) {
             <div class="col-md-6">
                 <h6>场地信息</h6>
                 <table class="table table-sm">
-                    <tr><td><strong>场地编号:</strong></td><td>${venue.venue_id || '-'}</td></tr>
-                    <tr><td><strong>场地名称:</strong></td><td>${venue.name || '-'}</td></tr>
-                    <tr><td><strong>建筑:</strong></td><td>${venue.building || '-'}</td></tr>
-                    <tr><td><strong>楼层:</strong></td><td>${venue.floor || '-'}</td></tr>
-                    <tr><td><strong>容量:</strong></td><td>${venue.capacity || '-'}</td></tr>
-                    <tr><td><strong>类型:</strong></td><td>${venue.type || '-'}</td></tr>
+                    <tr><td><strong>场地编号:</strong></td><td>${escapeHtml(venue.venue_id || '-')}</td></tr>
+                    <tr><td><strong>场地名称:</strong></td><td>${escapeHtml(venue.name || '-')}</td></tr>
+                    <tr><td><strong>建筑:</strong></td><td>${escapeHtml(venue.building || '-')}</td></tr>
+                    <tr><td><strong>楼层:</strong></td><td>${escapeHtml(venue.floor || '-')}</td></tr>
+                    <tr><td><strong>容量:</strong></td><td>${escapeHtml(venue.capacity || '-')}</td></tr>
+                    <tr><td><strong>类型:</strong></td><td>${escapeHtml(venue.type || '-')}</td></tr>
                 </table>
             </div>
             <div class="col-md-6">
@@ -1861,8 +1934,8 @@ function renderVenueDetail(venue) {
                     <div class="list-group list-group-flush" style="max-height: 200px; overflow-y: auto;">
                         ${venue.courses.map(course => `
                             <div class="list-group-item list-group-item-action py-2">
-                                <div class="fw-bold">${course.course_name}</div>
-                                <small class="text-muted">${course.teacher_name} | ${course.class_time}</small>
+                                <div class="fw-bold">${escapeHtml(course.course_name || '-')}</div>
+                                <small class="text-muted">${escapeHtml(course.teacher_name || '-')} | ${escapeHtml(course.class_time || '-')}</small>
                             </div>
                         `).join('')}
                     </div>
@@ -2637,9 +2710,7 @@ function banSingleCourse(courseId) {
 
 // 课程组禁听
 function banCourseGroup(groupKey) {
-    const courseGroup = currentCoursesData.find(course => 
-        `${course.course_code}_${course.selection_code}` === groupKey
-    );
+    const courseGroup = currentCoursesData.find(course => course._domToken === groupKey);
     
     if (!courseGroup) return;
     
