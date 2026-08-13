@@ -17,7 +17,7 @@ class MetricComponentTest(unittest.TestCase):
             "{{ metric('待审核', 7, tone='attention', extra_class='workspace-metric') }}"
         )
         html = template.render()
-        self.assertIn('class="metric metric--attention workspace-metric"', html)
+        self.assertIn('class="metric metric--card metric--attention workspace-metric"', html)
         self.assertIn('class="metric__value">7</strong>', html)
         self.assertIn('class="metric__label">待审核</span>', html)
         self.assertNotIn('bg-warning', html)
@@ -25,7 +25,10 @@ class MetricComponentTest(unittest.TestCase):
     def test_workspace_uses_the_shared_metric_component(self):
         workspace = Path('app/templates/main/workspace.html').read_text(encoding='utf-8')
         self.assertIn('from "partials/_metric.html" import metric', workspace)
-        self.assertIn("metric(item.label, item.value, extra_class='workspace-metric')", workspace)
+        self.assertIn(
+            "metric(item.label, item.value, variant='plain', extra_class='workspace-metric')",
+            workspace,
+        )
 
 
 if __name__ == '__main__':

@@ -4553,6 +4553,7 @@ def system_management():
         active_tab=active_tab,
         status=AutoReviewEngine().files_status(),
         available_departments=list(_get_accessible_department_users(user.id).keys()),
+        account_username=user.student_id,
         is_super_admin=True,
     )
 

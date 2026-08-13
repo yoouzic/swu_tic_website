@@ -195,7 +195,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">列显示设置</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
                 <div class="form-text mb-3">选择要显示的列：</div>
@@ -217,7 +217,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">教师详情</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body" id="teacherDetailContent">
                 <!-- 动态加载教师详情 -->
@@ -232,7 +232,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">场地详情</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body" id="venueDetailContent">
                 <!-- 动态加载场地详情 -->
@@ -247,7 +247,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-pencil-square"></i> 听课登记</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
                 </div>
                 <div class="modal-body">
                     <div id="reservationModalAlert" class="mb-3" style="display: none;"></div>
@@ -326,7 +326,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">全部登记历史</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
                 </div>
                 <div class="modal-body">
                     <div class="table-responsive">
@@ -356,7 +356,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">选择禁听用户</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
                 <div class="row mb-3">
@@ -409,7 +409,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">导入禁听教师</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
                 <div class="alert alert-info">
@@ -2810,7 +2810,7 @@ function showAlert(message, type) {
     const alertHtml = `
         <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
             ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>
         </div>
     `;
     

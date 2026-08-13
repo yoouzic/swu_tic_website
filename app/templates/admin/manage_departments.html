@@ -81,7 +81,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">人员流动记录</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body" id="personnelMovementBody">
                 <div class="text-center text-muted py-4">正在加载...</div>
@@ -138,7 +138,7 @@
                         <a href="{{ url_for('admin.download_template') }}" class="btn btn-sm btn-primary">
                             <i class="bi bi-file-earmark-excel"></i> 下载Excel模板
                         </a>
-                        <a href="{{ url_for('admin.view_sample') }}" class="btn btn-sm btn-outline-info">
+                        <a href="{{ url_for('admin.view_sample') }}" class="btn btn-sm btn-outline-secondary">
                             <i class="bi bi-eye"></i> 查看示例
                         </a>
                     </div>
@@ -215,7 +215,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">添加部门</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <form id="addDepartmentForm">
                 <div class="modal-body">
@@ -260,7 +260,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">编辑部门</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <form id="editDepartmentForm">
                 <input type="hidden" id="editDeptId" name="id">
@@ -298,7 +298,7 @@
             </form>
             {% if manage_permission == '超级管理员' %}
             <div class="modal-footer justify-content-start border-top-0 pt-0">
-                <button type="button" class="btn btn-outline-info" onclick="showMoveMembersModal('department')">
+                <button type="button" class="btn btn-outline-secondary" onclick="showMoveMembersModal('department')">
                     <i class="bi bi-people-fill"></i> 批量移入成员
                 </button>
             </div>
@@ -313,7 +313,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">添加小组</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <form id="addGroupForm">
                 <div class="modal-body">
@@ -363,7 +363,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="submit" class="btn btn-success">添加</button>
+                    <button type="submit" class="btn btn-primary">添加</button>
                 </div>
             </form>
         </div>
@@ -376,7 +376,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">编辑小组</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <form id="editGroupForm">
                 <input type="hidden" id="editGroupId" name="id">
@@ -427,12 +427,12 @@
                 </div>
                 <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="submit" class="btn btn-success">保存</button>
+                <button type="submit" class="btn btn-primary">保存</button>
             </div>
             </form>
             {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
             <div class="modal-footer justify-content-start border-top-0 pt-0">
-                <button type="button" class="btn btn-outline-info" onclick="showMoveMembersModal('group')">
+                <button type="button" class="btn btn-outline-secondary" onclick="showMoveMembersModal('group')">
                     <i class="bi bi-people-fill"></i> 批量移入成员
                 </button>
             </div>
@@ -447,7 +447,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="moveMembersTitle">批量移动成员</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-3">
@@ -471,7 +471,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">添加用户</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <form id="addUserForm">
                 <div class="modal-body">
@@ -479,7 +479,7 @@
                     <div id="addUserErrorContainer" class="alert alert-danger d-none" role="alert">
                         <i class="bi bi-exclamation-triangle me-2"></i>
                         <span id="addUserErrorMessage"></span>
-                        <button type="button" class="btn-close float-end" onclick="hideAddUserError()"></button>
+                        <button type="button" class="btn-close float-end" onclick="hideAddUserError()" aria-label="关闭"></button>
                     </div>
                     <div class="row">
                         <div class="col-md-6">
@@ -611,7 +611,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="submit" class="btn btn-info">添加</button>
+                    <button type="submit" class="btn btn-primary">添加</button>
                 </div>
             </form>
         </div>
@@ -624,7 +624,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">编辑用户</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <form id="editUserForm">
                 <input type="hidden" id="editUserId" name="id">
@@ -755,7 +755,7 @@
                     </div>
                     <div class="mb-3">
                         {% if manage_permission == '超级管理员' %}
-                        <button type="button" class="btn btn-warning btn-sm" onclick="showPermissionModal()">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="showPermissionModal()">
                             <i class="bi bi-key"></i> 管理权限
                         </button>
                         {% endif %}
@@ -763,7 +763,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="submit" class="btn btn-info">保存</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
                 </div>
             </form>
         </div>
@@ -776,7 +776,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">权限管理</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
                 <div class="alert alert-info">
@@ -800,7 +800,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="confirmActionTitle">确认操作</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <form id="confirmDeleteForm">
             <div class="modal-body">
@@ -1097,11 +1097,11 @@ function renderDepartments(departments) {
         const departmentBodyState = departmentExpanded === 'true' ? 'show' : '';
         const standardButtonsHtml = `
             <div class="department-card__actions">
-                <button class="btn btn-sm btn-outline-primary" type="button" data-department-action="edit" data-department-id="${Number(dept.id)}">
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-department-action="edit" data-department-id="${Number(dept.id)}">
                     <i class="bi bi-pencil"></i> 编辑
                 </button>
                 {% if manage_permission == '超级管理员' %}
-                <button class="btn btn-sm btn-outline-warning" type="button" data-department-action="disband" data-department-id="${Number(dept.id)}">
+                <button class="btn btn-sm btn-outline-danger" type="button" data-department-action="disband" data-department-id="${Number(dept.id)}">
                     <i class="bi bi-box-arrow-right"></i> 解散
                 </button>
                 {% endif %}
@@ -2298,7 +2298,7 @@ function showPasswordConfirm(message, actionLabel, callback) {
     if (confirmBtn) {
         confirmBtn.textContent = `确认${actionLabel || '操作'}`;
         confirmBtn.classList.toggle('btn-danger', actionLabel === '删除');
-        confirmBtn.classList.toggle('btn-warning', actionLabel !== '删除');
+        confirmBtn.classList.toggle('btn-primary', actionLabel !== '删除');
     }
     document.getElementById('deleteMessage').textContent = message;
     document.getElementById('deletePassword').value = ''; // 清空密码框

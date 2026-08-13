@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,6 +26,9 @@ ADMIN_BLUEPRINT = Path('app/blueprints/admin.py')
 AUTH_BLUEPRINT = Path('app/blueprints/auth.py')
 STYLE = Path('app/static/css/style.css')
 PEOPLE_TEMPLATE = Path('app/templates/admin/manage_departments.html')
+METRIC_TEMPLATE = Path('app/templates/partials/_metric.html')
+WORKSPACE_TEMPLATE = Path('app/templates/main/workspace.html')
+SYSTEM_IMPORTS_TEMPLATE = Path('app/templates/admin/_settings_imports.html')
 
 
 class UIConsistencyStaticContractTest(unittest.TestCase):
@@ -36,6 +40,102 @@ class UIConsistencyStaticContractTest(unittest.TestCase):
         cls.auth = AUTH_BLUEPRINT.read_text(encoding='utf-8')
         cls.style = STYLE.read_text(encoding='utf-8')
         cls.people = PEOPLE_TEMPLATE.read_text(encoding='utf-8')
+        cls.metric = METRIC_TEMPLATE.read_text(encoding='utf-8')
+        cls.workspace = WORKSPACE_TEMPLATE.read_text(encoding='utf-8')
+        cls.system_imports = SYSTEM_IMPORTS_TEMPLATE.read_text(encoding='utf-8')
+
+    def test_system_destructive_confirmation_identifies_the_current_password(self):
+        self.assertIn('account_username=user.student_id', self.admin)
+        self.assertIn(
+            'id="clearDataUsername" name="username" value="{{ account_username }}" autocomplete="username"',
+            self.system_imports,
+        )
+        self.assertIn(
+            'id="passwordInput" name="password" autocomplete="current-password"',
+            self.system_imports,
+        )
+
+    def test_workspace_metrics_request_the_plain_metric_variant(self):
+        self.assertIn("variant='card'", self.metric)
+        self.assertIn('metric--{{ variant }}', self.metric)
+        self.assertIn("variant='plain'", self.workspace)
+        self.assertIn('.metric--plain', self.style)
+
+    def test_review_scope_toolbar_responds_to_its_component_width(self):
+        start = self.review.index('<div class="review-scope-toolbar')
+        end = self.review.index('id="userStructure"', start)
+        toolbar = self.review[start:end]
+        self.assertIn('review-scope-toolbar', toolbar)
+        self.assertIn('review-scope-toolbar__search', toolbar)
+        self.assertIn('review-scope-toolbar__actions', toolbar)
+        self.assertNotIn('col-md-6', toolbar)
+        self.assertIn('.review-scope-toolbar', self.style)
+        self.assertIn('repeat(auto-fit,minmax(min(100%,18rem),1fr))', self.style)
+        self.assertNotIn('一键全选全部门', self.review)
+
+    def test_group_cards_stretch_to_their_bootstrap_column_height(self):
+        self.assertIn('.group-card { display: flex;', self.style)
+        self.assertIn('.group-card > .card', self.style)
+        self.assertIn('height: 100%', self.style)
+
+    def test_activity_tabs_keep_business_labels_intact_in_narrow_containers(self):
+        self.assertIn('.activity-tabs::-webkit-scrollbar { display: none; }', self.style)
+        self.assertRegex(
+            self.style,
+            r'\.activity-tabs \{[^}]*overflow-x: auto;[^}]*scrollbar-width: none;',
+        )
+        self.assertRegex(
+            self.style,
+            r'\.activity-tabs button \{[^}]*flex: 0 0 auto;[^}]*padding: 11px 10px;[^}]*white-space: nowrap;',
+        )
+
+    def test_high_frequency_ordinary_actions_use_primary_or_neutral_styles(self):
+        def button_tag(source, marker):
+            marker_index = source.index(marker)
+            start = source.rfind('<button', 0, marker_index)
+            end = source.index('>', marker_index) + 1
+            return source[start:end]
+
+        review_actions = {
+            'id="btnExportSelectedForms"': 'btn-outline-secondary',
+            'id="btnBatchDefineTags"': 'btn-outline-secondary',
+            'id="btnAutoReview"': 'btn-primary',
+            'onclick="checkSelectedExportData()"': 'btn-outline-secondary',
+            'onclick="viewForm(${version.id})"': 'btn-outline-secondary',
+            'data-open-review="${version.id}"': 'btn-primary',
+        }
+        people_actions = {
+            'onclick="showMoveMembersModal(\'department\')"': 'btn-outline-secondary',
+            'onclick="showMoveMembersModal(\'group\')"': 'btn-outline-secondary',
+            'onclick="showPermissionModal()"': 'btn-outline-secondary',
+            'data-department-action="edit"': 'btn-outline-secondary',
+            'data-department-action="disband"': 'btn-outline-danger',
+        }
+        for marker, expected_class in review_actions.items():
+            with self.subTest(template='review', marker=marker):
+                self.assertIn(expected_class, button_tag(self.review, marker))
+        for marker, expected_class in people_actions.items():
+            with self.subTest(template='people', marker=marker):
+                self.assertIn(expected_class, button_tag(self.people, marker))
+
+        for ordinary_status_class in ('btn-success', 'class="btn btn-info"', 'btn-outline-info'):
+            with self.subTest(template='people', ordinary_status_class=ordinary_status_class):
+                self.assertNotIn(ordinary_status_class, self.people)
+        self.assertNotIn("classList.toggle('btn-warning', actionLabel !== '删除')", self.people)
+
+    def test_first_party_close_buttons_have_accessible_names(self):
+        unnamed = []
+        for path in Path('app/templates').rglob('*.html'):
+            source = path.read_text(encoding='utf-8')
+            for match in re.finditer(r'<button\b[^>]*>', source, flags=re.IGNORECASE | re.DOTALL):
+                tag = match.group(0)
+                classes = re.search(r'class\s*=\s*(["\'])(.*?)\1', tag, flags=re.IGNORECASE | re.DOTALL)
+                if not classes or 'btn-close' not in classes.group(2).split():
+                    continue
+                if not re.search(r'aria-(?:label|labelledby)\s*=', tag, flags=re.IGNORECASE):
+                    line = source[:match.start()].count('\n') + 1
+                    unnamed.append(f'{path}:{line}')
+        self.assertEqual([], unnamed, f'Unnamed first-party btn-close controls: {unnamed}')
 
     def test_member_drawer_uses_component_scoped_layout(self):
         self.assertIn('class="member-detail-layout"', self.member)

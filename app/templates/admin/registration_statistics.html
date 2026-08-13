@@ -24,7 +24,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">选择禁听用户</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
                 <div class="row mb-3">
@@ -511,7 +511,7 @@ function confirmBanUsers() {
 
 function showAlert(message, type) {
     const alertClass = type === 'success' ? 'alert-success' : type === 'warning' ? 'alert-warning' : 'alert-danger';
-    const html = `<div class="alert ${alertClass} alert-dismissible fade show" role="alert">${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`;
+    const html = `<div class="alert ${alertClass} alert-dismissible fade show" role="alert">${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button></div>`;
     const container = document.querySelector('.container-fluid');
     container.insertAdjacentHTML('afterbegin', html);
     setTimeout(() => {
