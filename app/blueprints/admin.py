@@ -2743,6 +2743,10 @@ def get_forms_for_review():
                     'teacher_name': form.teacher_name,
                     'lecture_date': form.lecture_date,
                     'status': form.status,
+                    'can_review': (
+                        form.id == latest_form.id
+                        and can_review_status(session['user_id'], form.status, permission=permission)
+                    ),
                     'created_at': form.created_at.strftime('%Y-%m-%d %H:%M:%S'),
                     'updated_at': form.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
                     'review_comment': form.review_comment or '',
@@ -2784,6 +2788,7 @@ def get_form_for_review(form_id):
             reviewer_display = form.reviewer.number if reviewer_display_mode == 'number' else form.reviewer.name
         else:
             reviewer_display = None
+        latest_form = form.get_latest_version()
         form_data = {
             'id': form.id,
             'unique_id': form.unique_id or form.id,
@@ -2811,6 +2816,10 @@ def get_form_for_review(form_id):
             'student_signature2': form.student_signature2,
             'contact_phone2': form.contact_phone2,
             'status': form.status,
+            'can_review': (
+                form.id == latest_form.id
+                and can_review_status(session['user_id'], form.status, permission=permission)
+            ),
             'reviewer_id': form.reviewer_id,
             'reviewer_display': reviewer_display,
             'review_time': form.review_time.strftime('%Y-%m-%d %H:%M:%S') if form.review_time else None,
@@ -2821,7 +2830,6 @@ def get_form_for_review(form_id):
             'audit_tag_info': _serialize_audit_tag(form.audit_tag)
         }
         from ..review_automation.routes import latest_assessment_summaries
-        latest_form = form.get_latest_version()
         automation = latest_assessment_summaries([latest_form.id]).get(latest_form.id)
         form_data['automation'] = automation
         form_data['automation_evidence_url'] = automation.get('evidence_url') if automation else None
@@ -6381,6 +6389,135 @@ def update_user_permissions(user_id):
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
+STATISTICS_APPROVED_STATUSES = {'已审核', '部门已审核', '中心已审核'}
+STATISTICS_DIMENSIONS = {'department', 'user', 'teacher', 'college', 'date'}
+STATISTICS_TEACHER_KEY_SEPARATOR = '\u241f'
+
+
+def _statistics_query(current_user, args):
+    """Build the shared, permission-scoped query used by statistics views and exports."""
+    query = db.session.query(LectureForm, User).join(
+        User,
+        LectureForm.listener_number == User.number,
+    ).filter(active_user_filter())
+
+    if current_user and current_user.role != '超级管理员':
+        query = query.filter(User.department == current_user.department)
+
+    start_date = (args.get('start_date') or '').strip()
+    end_date = (args.get('end_date') or '').strip()
+    if start_date:
+        try:
+            datetime.strptime(start_date, '%Y-%m-%d')
+        except ValueError:
+            start_date = ''
+    if end_date:
+        try:
+            datetime.strptime(end_date, '%Y-%m-%d')
+        except ValueError:
+            end_date = ''
+    if start_date:
+        query = query.filter(LectureForm.lecture_date >= start_date)
+    if end_date:
+        query = query.filter(LectureForm.lecture_date <= end_date)
+
+    department = (args.get('department') or '').strip()
+    if department and current_user and current_user.role == '超级管理员':
+        query = query.filter(User.department == department)
+
+    status = (args.get('status') or '').strip()
+    if status == '已审核':
+        query = query.filter(LectureForm.status.in_(STATISTICS_APPROVED_STATUSES))
+    elif status in {'待审核', '部门已审核', '中心已审核', '已驳回'}:
+        query = query.filter(LectureForm.status == status)
+
+    return query
+
+
+def _statistics_dimension(args):
+    dimension = (args.get('dimension') or 'department').strip()
+    return dimension if dimension in STATISTICS_DIMENSIONS else 'department'
+
+
+def _build_statistics_rows(records, dimension):
+    groups = {}
+    for form, listener in records:
+        if dimension == 'user':
+            key = ('user', listener.number or '')
+            label = listener.name or form.listener_name or '未知用户'
+            metadata = {
+                'department': listener.department or '未分配部门',
+                'detail_value': listener.number or '',
+            }
+        elif dimension == 'teacher':
+            teacher_name = form.teacher_name or '未知教师'
+            teacher_college = form.teacher_college or '未知学院'
+            key = ('teacher', teacher_name, teacher_college)
+            label = teacher_name
+            metadata = {
+                'college': teacher_college,
+                'detail_value': STATISTICS_TEACHER_KEY_SEPARATOR.join((teacher_name, teacher_college)),
+            }
+        elif dimension == 'college':
+            label = form.teacher_college or '未知学院'
+            key = ('college', label)
+            metadata = {'detail_value': label}
+        elif dimension == 'date':
+            label = str(form.lecture_date or '未知日期')
+            key = ('date', label)
+            metadata = {'detail_value': label}
+        else:
+            label = listener.department or '未分配部门'
+            key = ('department', label)
+            metadata = {'detail_value': label}
+
+        item = groups.setdefault(key, {
+            'name': label,
+            'total': 0,
+            'pending': 0,
+            'approved': 0,
+            'rejected': 0,
+            **metadata,
+        })
+        item['total'] += 1
+        if form.status == '待审核':
+            item['pending'] += 1
+        elif form.status in STATISTICS_APPROVED_STATUSES:
+            item['approved'] += 1
+        elif form.status == '已驳回':
+            item['rejected'] += 1
+
+    return sorted(
+        groups.values(),
+        key=lambda item: (str(item['name']).casefold(), str(item.get('detail_value', '')).casefold()),
+    )
+
+
+def _apply_statistics_detail_filter(query, dimension, detail_value):
+    detail_value = (detail_value or '').strip()
+    if not detail_value:
+        return query
+    if dimension == 'user':
+        return query.filter(User.number == detail_value)
+    if dimension == 'teacher':
+        teacher_name, separator, teacher_college = detail_value.partition(STATISTICS_TEACHER_KEY_SEPARATOR)
+        query = query.filter(LectureForm.teacher_name == teacher_name)
+        return query.filter(LectureForm.teacher_college == teacher_college) if separator else query
+    if dimension == 'college':
+        return query.filter(LectureForm.teacher_college == detail_value)
+    if dimension == 'date':
+        return query.filter(LectureForm.lecture_date == detail_value)
+    return query.filter(User.department == detail_value)
+
+
+def _safe_statistics_excel_text(value):
+    """Prevent aggregate labels from being interpreted as spreadsheet formulas."""
+    text = str(value or '')
+    if text.lstrip().startswith(('=', '+', '-', '@')):
+        return "'" + text
+    return text
+
+
 @admin_bp.route('/statistics')
 @role_required('管理员')
 def statistics():
@@ -6391,27 +6528,36 @@ def statistics():
     can_manage_department_leave = manage_permission == '超级管理员'
     available_departments = list(_get_accessible_department_users(session['user_id']).keys()) if can_access_extended_stats else []
 
-    form_query = LectureForm.query.join(User, LectureForm.listener_number == User.number).filter(active_user_filter())
-    if current_user and current_user.role != '超级管理员':
-        form_query = form_query.filter(
-            User.department == current_user.department,
-            active_user_filter()
-        )
-    total_forms = form_query.count()
+    form_query = _statistics_query(current_user, request.args)
+    records = form_query.order_by(LectureForm.created_at.asc(), LectureForm.id.asc()).all()
+    forms = [form for form, _listener in records]
+    total_forms = len(forms)
     logical_form_keys = {
         ('unique_id', str(unique_id).strip())
         if unique_id is not None and str(unique_id).strip()
         else ('id', str(form_id))
-        for unique_id, form_id in form_query.with_entities(
-            LectureForm.unique_id,
-            LectureForm.id,
-        ).all()
+        for unique_id, form_id in ((form.unique_id, form.id) for form in forms)
     }
     logical_form_count = len(logical_form_keys)
-    pending_forms = form_query.filter(LectureForm.status == '待审核').count()
-    approved_forms = form_query.filter(LectureForm.status.in_(['已审核', '部门已审核', '中心已审核'])).count()
-    rejected_forms = form_query.filter(LectureForm.status == '已驳回').count()
+    pending_forms = sum(form.status == '待审核' for form in forms)
+    approved_forms = sum(form.status in STATISTICS_APPROVED_STATUSES for form in forms)
+    rejected_forms = sum(form.status == '已驳回' for form in forms)
 
+    trend_counts = {}
+    for created_at in (form.created_at for form in forms):
+        if created_at:
+            label = created_at.strftime('%Y-%m-%d')
+            trend_counts[label] = trend_counts.get(label, 0) + 1
+    trend_labels = sorted(trend_counts)
+    trend_data = [trend_counts[label] for label in trend_labels]
+    if not trend_labels:
+        visualization_state='NO_DATA'
+    elif len(trend_labels) == 1:
+        visualization_state='INSUFFICIENT_DATA'
+    else:
+        visualization_state='DATA_READY'
+
+    statistics_dimension = _statistics_dimension(request.args)
     return render_template(
         'admin/statistics.html',
         can_access_extended_stats=can_access_extended_stats,
@@ -6422,9 +6568,77 @@ def statistics():
         approved_forms=approved_forms,
         rejected_forms=rejected_forms,
         departments=available_departments,
-        statistics_data=[],
-        trend_labels=json.dumps([], ensure_ascii=False),
-        trend_data=json.dumps([], ensure_ascii=False),
+        statistics_data=_build_statistics_rows(records, statistics_dimension),
+        statistics_dimension=statistics_dimension,
+        visualization_state=visualization_state,
+        trend_point_count=trend_data[0] if len(trend_data) == 1 else None,
+        trend_labels=json.dumps(trend_labels, ensure_ascii=False),
+        trend_data=json.dumps(trend_data, ensure_ascii=False),
+    )
+
+
+@admin_bp.route('/export_statistics')
+@role_required('管理员')
+def export_statistics():
+    """Export the currently filtered aggregate statistics as an XLSX workbook."""
+    current_user = User.query.get(session['user_id'])
+    dimension = _statistics_dimension(request.args)
+    records = _statistics_query(current_user, request.args).order_by(
+        LectureForm.created_at.asc(),
+        LectureForm.id.asc(),
+    ).all()
+    rows = _build_statistics_rows(records, dimension)
+
+    dimension_headers = {
+        'department': ['部门'],
+        'user': ['用户', '部门'],
+        'teacher': ['教师', '学院'],
+        'college': ['学院'],
+        'date': ['日期'],
+    }
+    workbook = openpyxl.Workbook()
+    worksheet = workbook.active
+    worksheet.title = '统计汇总'
+    headers = dimension_headers[dimension] + ['总数', '待审核', '已通过', '已驳回', '通过率']
+    worksheet.append(headers)
+    for cell in worksheet[1]:
+        cell.font = Font(bold=True)
+
+    for item in rows:
+        if dimension == 'user':
+            identity = [item['name'], item.get('department', '')]
+        elif dimension == 'teacher':
+            identity = [item['name'], item.get('college', '')]
+        else:
+            identity = [item['name']]
+        identity = [_safe_statistics_excel_text(value) for value in identity]
+        pass_rate = item['approved'] / item['total'] if item['total'] else 0
+        worksheet.append(identity + [
+            item['total'],
+            item['pending'],
+            item['approved'],
+            item['rejected'],
+            pass_rate,
+        ])
+        worksheet.cell(row=worksheet.max_row, column=len(headers)).number_format = '0.0%'
+
+    worksheet.freeze_panes = 'A2'
+    for column_index, header in enumerate(headers, start=1):
+        values = [str(worksheet.cell(row=row, column=column_index).value or '') for row in range(1, worksheet.max_row + 1)]
+        worksheet.column_dimensions[openpyxl.utils.get_column_letter(column_index)].width = min(
+            max(len(header) + 2, max((len(value) for value in values), default=0) + 2),
+            32,
+        )
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    filename = f'统计分析_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
 
 def _has_assessment_stats_access(user_id):
@@ -8808,49 +9022,28 @@ def get_statistics_data():
 @admin_bp.route('/api/statistics_detail')
 @role_required('管理员')
 def get_statistics_detail():
-    """获取详细统计数据"""
-    user = User.query.get(session['user_id'])
-    
-    # 获取筛选参数
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-    department = request.args.get('department')
-    status = request.args.get('status')
+    """Return detail rows from the same permission and filter scope as the overview."""
+    current_user = User.query.get(session['user_id'])
     page = request.args.get('page', 1, type=int)
     per_page = 10
-    
-    # 构建查询
-    if user.role == '超级管理员':
-        query = LectureForm.query.join(User, LectureForm.listener_number == User.number).filter(active_user_filter())
-    else:
-        query = LectureForm.query.join(User, LectureForm.listener_number == User.number)\
-                                 .filter(User.department == user.department, active_user_filter())
-    
-    # 应用筛选条件
-    if start_date:
-        query = query.filter(LectureForm.lecture_date >= start_date)
-    if end_date:
-        query = query.filter(LectureForm.lecture_date <= end_date)
-    if department and user.role == '超级管理员':
-        query = query.filter(User.department == department, active_user_filter())
-    if status:
-        query = query.filter(LectureForm.status == status)
-    
-    # 分页查询
-    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    forms = pagination.items
-    
-    # 构建返回数据
+    dimension = _statistics_dimension({'dimension': request.args.get('detail_dimension')})
+    query = _statistics_query(current_user, request.args)
+    query = _apply_statistics_detail_filter(
+        query,
+        dimension,
+        request.args.get('detail_value'),
+    ).order_by(LectureForm.created_at.desc(), LectureForm.id.desc())
+    pagination = query.paginate(page=max(page, 1), per_page=per_page, error_out=False)
+
     form_data = []
-    for form in forms:
-        listener = _active_user_query().filter_by(number=form.listener_number).first()
+    for form, listener in pagination.items:
         form_data.append({
             'id': form.id,
             'listener_name': form.listener_name,
-            'listener_department': listener.department if listener else '未知',
+            'listener_department': listener.department or '未知',
             'teacher_name': form.teacher_name,
             'course_name': form.course_title,
-            'listen_date': form.lecture_date,
+            'listen_date': str(form.lecture_date or ''),
             'listen_type': '普通听课',
             'overall_rating': form.overall_effect,
             'status': form.status,

@@ -119,11 +119,11 @@ def get_reviewable_status_list(user_id):
     
     return []
 
-def can_review_status(user_id, form_status):
+def can_review_status(user_id, form_status, permission=None):
     """
     检查用户是否可以审核指定状态的表单
     """
-    permission = get_user_review_permission(user_id)
+    permission = permission or get_user_review_permission(user_id)
     if not permission:
         return False
     

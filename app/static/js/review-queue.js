@@ -184,9 +184,30 @@ function handleReviewOpenClick(event) {
     }
 }
 
+function restoreReviewMenuFocus(event) {
+    const menu = event.target.closest('.review-item__menu');
+    const toggle = menu?.querySelector('[data-bs-toggle="dropdown"]');
+    if (!toggle) {
+        return;
+    }
+
+    const activeElement = document.activeElement;
+    const focusMovedToOverlay = Boolean(
+        activeElement?.closest?.('.modal.show, .offcanvas.show')
+    );
+    if (!focusMovedToOverlay && (
+        !activeElement
+        || activeElement === document.body
+        || menu.contains(activeElement)
+    )) {
+        window.requestAnimationFrame(() => toggle.focus());
+    }
+}
+
 function initReviewQueue() {
     restoreReviewQueueFields();
     document.addEventListener('click', handleReviewOpenClick);
+    document.addEventListener('hidden.bs.dropdown', restoreReviewMenuFocus);
 }
 
 window.currentQueueUrl = currentQueueUrl;

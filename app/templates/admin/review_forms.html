@@ -311,9 +311,10 @@
 
 <script>
 
-function setReviewQueueFeedback(message, level = 'info') {
+function setReviewQueueFeedback(message, level = 'info', compact = false) {
     if (typeof window.setAdminFeedback === 'function') {
         window.setAdminFeedback('reviewQueueFeedback', message, level);
+        document.getElementById('reviewQueueFeedback')?.classList.toggle('activity-feedback--compact', compact);
     }
 }
 
@@ -811,7 +812,7 @@ function checkPermission() {
         .catch(error => {
             console.error('Error:', error);
             document.getElementById('permissionBadge').textContent = '权限检查失败';
-            document.getElementById('permissionBadge').className = 'badge badge-danger';
+            document.getElementById('permissionBadge').className = 'badge bg-danger text-white';
             setReviewQueueFeedback('权限检查失败，请稍后重试。', 'error');
         });
 }
@@ -1249,12 +1250,12 @@ function loadForms() {
                 const reviewQueueIntro = document.getElementById('reviewQueueIntro');
                 reviewQueueSetup.open = false;
                 reviewQueueIntro.hidden = true;
-                setReviewQueueFeedback(
-                    formGroups.length > 0
-                        ? `审核队列已更新，共 ${formGroups.length} 个表单组。`
-                        : '当前筛选暂无符合条件的表单。',
-                    formGroups.length > 0 ? 'success' : 'warning'
-                );
+                if (formGroups.length > 0) {
+                    const summaryMessage = `审核队列已更新，共 ${formGroups.length} 个表单组。`;
+                    setReviewQueueFeedback(summaryMessage, 'success', true);
+                } else {
+                    setReviewQueueFeedback('当前筛选暂无符合条件的表单。', 'warning');
+                }
             } else {
                 setReviewQueueFeedback(data.message || '加载表单列表失败。', 'error');
             }
@@ -1293,7 +1294,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
             : 'none';
         const groupCollapseId = `versions-${uniqueId}`;
         const chevronId = `chevron-${uniqueId}`;
-        const latestCanReview = canReviewForm(latestForm.status);
+        const latestCanReview = latestForm.can_review === true;
         const groupLocked = isFormLocked(latestForm.id);
         const groupTargetFormId = (latestCanReview || groupLocked) ? latestForm.id : '';
         const groupSelectable = currentPermission === '审表_中心' && !!groupTargetFormId && latestCanReview;
@@ -1321,43 +1322,40 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                         ${escapeHtml(latestForm.course_title || '-')} · ${escapeHtml(latestForm.teacher_name || '-')}
                     </div>
                     <div class="review-item__meta">
-                        <span>提交 ${escapeHtml(latestForm.created_at || '-')}</span>
+                        <span class="review-item__meta--secondary">提交 ${escapeHtml(latestForm.created_at || '-')}</span>
                         <span>听课 ${escapeHtml(latestForm.lecture_date || '-')}</span>
-                        <span>更新 ${escapeHtml(latestForm.updated_at || latestForm.created_at || '-')}</span>
+                        <span class="review-item__meta--secondary">更新 ${escapeHtml(latestForm.updated_at || latestForm.created_at || '-')}</span>
                     </div>
                     <div class="review-item__badges">
                         <span class="badge ${getStatusClass(latestForm.status)}">${escapeHtml(latestForm.status || '-')}</span>
                         <span class="badge ${getAutomationCategoryClass(automationCategory)}" data-automation-category>${escapeHtml(automationCategory)}</span>
-                        <button type="button" class="btn btn-link btn-sm p-0" onclick="openAutomationEvidence(${latestForm.id})">查看证据</button>
                         <span class="badge ${getAutomationCoverageClass(automationCoverage)}" data-automation-coverage="${automationCoverage}">课表${getAutomationCoverageLabel(automationCoverage)}</span>
                         <span class="badge bg-light text-dark">${forms.length} 个版本</span>
-                        ${forms.length > 1 ? `
-                            <button class="btn btn-outline-secondary btn-sm" onclick="toggleVersions('${groupCollapseId}', '${chevronId}')" title="展开或收起版本">
-                                <i class="bi bi-chevron-down me-1" id="${chevronId}"></i>版本历史
-                            </button>
-                        ` : ''}
                     </div>
                 </td>
                 <td>
                     <div class="review-item__actions">
-                        <button class="btn btn-info btn-sm" onclick="viewForm(${latestForm.id})" title="查看最新版本">
-                            <i class="bi bi-eye me-1"></i> 查看
-                        </button>
-                        ${isSuperAdmin ? `
-                            <button class="btn btn-primary btn-sm" onclick="defineSingleForm(${latestForm.id}, this)" title="定义标签">
-                                <i class="bi bi-tags me-1"></i> 定义
-                            </button>
-                        ` : ''}
                         ${latestCanReview ? `
-                            <button class="btn btn-success btn-sm" type="button" data-open-review="${latestForm.id}" title="审核">
+                            <button class="review-item__primary-action btn btn-primary btn-sm" type="button" data-open-review="${latestForm.id}" title="审核">
                                 <i class="bi bi-pencil me-1"></i> 审核
                             </button>
-                        ` : ''}
-                        ${currentPermission === '审表_中心' ? `
-                        <button class="btn btn-danger btn-sm" onclick="deleteFormGroup(${uniqueId})" title="删除表单组">
-                            <i class="bi bi-trash me-1"></i> 删除
-                        </button>
-                        ` : ''}
+                        ` : `
+                            <button class="review-item__primary-action btn btn-outline-primary btn-sm" type="button" onclick="viewForm(${latestForm.id})" title="查看最新版本">
+                                <i class="bi bi-eye me-1"></i> 查看
+                            </button>
+                        `}
+                        <div class="dropdown review-item__menu">
+                            <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="reviewItemMenu${latestForm.id}" data-bs-toggle="dropdown" aria-expanded="false" aria-label="更多表单操作：${escapeHtml(latestForm.listener_name || '当前信息员')}">
+                                更多
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="reviewItemMenu${latestForm.id}">
+                                ${latestCanReview ? `<li><button class="dropdown-item" type="button" onclick="viewForm(${latestForm.id})"><i class="bi bi-eye me-2" aria-hidden="true"></i>查看最新版本</button></li>` : ''}
+                                <li><button class="dropdown-item" type="button" onclick="openAutomationEvidence(${latestForm.id})"><i class="bi bi-shield-check me-2" aria-hidden="true"></i>查看自动化证据</button></li>
+                                ${isSuperAdmin ? `<li><button class="dropdown-item" type="button" onclick="defineSingleForm(${latestForm.id}, this)"><i class="bi bi-tags me-2" aria-hidden="true"></i>定义标签</button></li>` : ''}
+                                ${forms.length > 1 ? `<li><button class="dropdown-item" type="button" onclick="toggleVersions('${groupCollapseId}', '${chevronId}')"><i class="bi bi-clock-history me-2" id="${chevronId}" aria-hidden="true"></i>版本历史</button></li>` : ''}
+                                ${currentPermission === '审表_中心' ? `<li><hr class="dropdown-divider"></li><li><button class="dropdown-item text-danger" type="button" onclick="deleteFormGroup(${uniqueId})"><i class="bi bi-trash me-2" aria-hidden="true"></i>删除表单组</button></li>` : ''}
+                            </ul>
+                        </div>
                     </div>
                 </td>
             </tr>
@@ -1388,7 +1386,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                                         <tbody>
                                             ${forms.map((version, idx) => {
                                                 const isLatest = idx === 0;
-                                                const canReviewVersion = isLatest && canReviewForm(version.status);
+                                                const canReviewVersion = isLatest && version.can_review === true;
                                                 const canSelectVersion = currentPermission === '审表_中心' && canReviewVersion;
                                                 const versionLocked = isFormLocked(version.id);
                                                 const versionChecked = versionLocked || checkedIdSet.has(String(version.id));
@@ -1468,16 +1466,6 @@ function getStatusClass(status) {
     }
 }
 
-// 检查是否可以审核表单
-function canReviewForm(status) {
-    if (currentPermission === '审表_中心') {
-        return true; // 中心权限可以审核所有状态
-    } else if (currentPermission === '审表_小组' || currentPermission === '审表_部门') {
-        return status === '待审核' || status === '部门已审核';
-    }
-    return false;
-}
-
 // 查看表单详情
 function viewForm(formId) {
     if (window.markReviewQueueSelection) {
@@ -1541,7 +1529,7 @@ function reviewForm(formId) {
         .then(data => {
             if (data.success) {
                 const form = data.form;
-                if (!canReviewForm(form.status)) {
+                if (form.can_review !== true) {
                     showPermissionWarning(`您无权限审核处于"${form.status}"状态的表单`);
                     return;
                 }
