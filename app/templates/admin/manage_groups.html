@@ -91,7 +91,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">添加小组</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <form id="addGroupForm">
                 <div class="modal-body">
@@ -155,7 +155,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">编辑小组</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <form id="editGroupForm">
                 <input type="hidden" id="editGroupId" name="id">
@@ -219,7 +219,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">确认解散</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
                 <div class="alert alert-warning">
@@ -547,7 +547,7 @@ function showAlert(message, type) {
     const alertHtml = `
         <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
             ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>
         </div>
     `;
     

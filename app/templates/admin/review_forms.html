@@ -7,7 +7,7 @@
     <div id="reviewQueueFeedback" class="activity-feedback" role="status" aria-live="polite" hidden></div>
     <div class="row">
         <div class="col-12">
-            <div class="card">
+            <div class="card review-workspace-card">
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="bi bi-clipboard-check me-2"></i>
@@ -45,33 +45,26 @@
                                         <button class="btn btn-outline-secondary btn-sm me-2" onclick="toggleSelectionLock()" id="btnLockSelection" style="display:none;">
                                             <i class="bi bi-lock"></i> 锁定选择
                                         </button>
-                                        <button class="btn btn-outline-success btn-sm me-2" onclick="openSelectedFormsExportModal()" id="btnExportSelectedForms" style="display:none;">
+                                        <button class="btn btn-outline-secondary btn-sm me-2" onclick="openSelectedFormsExportModal()" id="btnExportSelectedForms" style="display:none;">
                                             <i class="bi bi-file-earmark-excel"></i> 导出已选择表单
                                         </button>
-                                        <button class="btn btn-outline-primary btn-sm me-2" onclick="batchDefineForms()" id="btnBatchDefineTags" style="display:none;">
+                                        <button class="btn btn-outline-secondary btn-sm me-2" onclick="batchDefineForms()" id="btnBatchDefineTags" style="display:none;">
                                             <i class="bi bi-tags"></i> 批量定义表单
                                         </button>
-                                        <button class="btn btn-warning btn-sm" onclick="batchAutoReview()" id="btnAutoReview" style="display:none;">
+                                        <button class="btn btn-primary btn-sm" onclick="batchAutoReview()" id="btnAutoReview" style="display:none;">
                                             <i class="bi bi-stars"></i> 批量智能检查
                                         </button>
                                     </div>
                                 </div>
                                 <div class="card-body">
-                                    <div class="review-queue__table-wrap">
-                                        <table class="table review-queue__table" id="formsTable">
-                                            <thead>
-                                                <tr>
-                                                    <th class="review-list__select">
-                                                        <input type="checkbox" id="selectAll" aria-label="选择本页全部可审核表单" onchange="toggleSelectAll()">
-                                                    </th>
-                                                    <th class="review-list__summary">表单摘要</th>
-                                                    <th class="review-list__actions">操作</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody id="formsTableBody">
-                                                <!-- 表单数据将通过JavaScript动态加载 -->
-                                            </tbody>
-                                        </table>
+                                    <div class="review-queue__list" id="formsTable">
+                                        <label class="review-queue__select-all">
+                                            <input type="checkbox" id="selectAll" aria-label="选择本页全部可审核表单" onchange="toggleSelectAll()">
+                                            <span>选择本页全部可审核表单</span>
+                                        </label>
+                                        <div id="formsTableBody" class="review-queue__items" role="list">
+                                            <!-- 表单数据将通过JavaScript动态加载 -->
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -139,10 +132,10 @@
                                                 <button class="btn btn-primary" onclick="loadUserStructure()">
                                                     <i class="bi bi-search"></i> 查询表单
                                                 </button>
-                                                <button class="btn btn-info ms-2" onclick="showStatistics()">
+                                                <button class="btn btn-outline-secondary ms-2" onclick="showStatistics()">
                                                     <i class="bi bi-pie-chart"></i> 查看统计
                                                 </button>
-                                                <button class="btn btn-secondary ms-2" onclick="resetFilters()">
+                                                <button class="btn btn-outline-secondary ms-2" onclick="resetFilters()">
                                                     <i class="bi bi-arrow-counterclockwise"></i> 重置
                                                 </button>
                                             </div>
@@ -164,18 +157,15 @@
                                     </h5>
                                 </div>
                                 <div class="card-body">
-                                    <div class="row g-2 align-items-center mb-3">
-                                        <div class="col-md-6">
+                                    <div class="review-scope-toolbar mb-3">
+                                        <div class="review-scope-toolbar__search">
                                             <input type="text" class="form-control" id="scopeSearchInput" placeholder="搜索部门/小组/信息员姓名/编号" oninput="applyScopeSearch()">
                                         </div>
-                                        <div class="col-md-6 text-md-end">
-                                            <button class="btn btn-outline-primary btn-sm" id="scopeSearchBtn" onclick="applyScopeSearch()">
-                                                <i class="bi bi-search"></i> 搜索
+                                        <div class="review-scope-toolbar__actions">
+                                            <button class="btn btn-outline-secondary btn-sm" id="scopeSelectAllBtn" onclick="selectAllDepartments()">
+                                                <i class="bi bi-check2-all"></i> 全选当前范围
                                             </button>
-                                            <button class="btn btn-outline-success btn-sm ms-1" id="scopeSelectAllBtn" onclick="selectAllDepartments()">
-                                                <i class="bi bi-check2-all"></i> 全选
-                                            </button>
-                                            <button class="btn btn-outline-secondary btn-sm ms-1" onclick="clearScopeSelection()">
+                                            <button class="btn btn-outline-secondary btn-sm" onclick="clearScopeSelection()">
                                                 <i class="bi bi-eraser"></i> 清空选择
                                             </button>
                                         </div>
@@ -185,7 +175,7 @@
                                         <!-- 用户结构将通过JavaScript动态加载 -->
                                     </div>
                                     <div class="mt-3">
-                                        <button class="btn btn-success" onclick="loadForms()">
+                                        <button class="btn btn-primary" onclick="loadForms()">
                                             <i class="bi bi-list-ul"></i> 加载表单列表
                                         </button>
                                     </div>
@@ -248,7 +238,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-pie-chart me-2"></i>表单提交统计</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body" id="statisticsContent">
                 <div class="text-center py-5">
@@ -406,34 +396,30 @@ function renderStatistics(stats, rangeInfo) {
         : '时间范围获取失败';
 
     let html = `
-        <div class="alert alert-primary">
+        <div class="review-statistics-range">
             <i class="bi bi-calendar3 me-2"></i>当前统计范围：${rangeText}
         </div>
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="card h-100 border-success">
-                    <div class="card-header bg-success text-white">
+        <div class="review-statistics-grid">
+            <section class="review-statistics-card">
+                    <div class="review-statistics-card__header">
                         <h6 class="mb-0"><i class="bi bi-check-circle me-2"></i>已完成任务 (${stats.completed.count}人)</h6>
                     </div>
-                    <div class="card-body">
+                    <div class="review-statistics-card__body">
                         <div class="accordion" id="completedAccordion">
                             ${renderUserList(stats.completed.users, 'completed')}
                         </div>
                     </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card h-100 border-warning">
-                    <div class="card-header bg-warning text-dark">
+            </section>
+            <section class="review-statistics-card">
+                    <div class="review-statistics-card__header">
                         <h6 class="mb-0"><i class="bi bi-exclamation-circle me-2"></i>未完成任务 (${stats.incomplete.count}人)</h6>
                     </div>
-                    <div class="card-body">
+                    <div class="review-statistics-card__body">
                         <div class="accordion" id="incompleteAccordion">
                             ${renderUserList(stats.incomplete.users, 'incomplete')}
                         </div>
                     </div>
-                </div>
-            </div>
+            </section>
         </div>
     `;
     
@@ -634,7 +620,7 @@ function getStatusBadgeClass(status) {
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-info" onclick="checkSelectedExportData()">
+                <button type="button" class="btn btn-outline-secondary" onclick="checkSelectedExportData()">
                     <i class="bi bi-calculator"></i> 检查数量
                 </button>
                 <button type="button" class="btn btn-primary" id="btnConfirmSelectedExport" disabled onclick="executeSelectedExport()">
@@ -784,8 +770,8 @@ function checkPermission() {
         .then(data => {
             if (data.success && data.has_permission) {
                 currentPermission = data.permission;
-                document.getElementById('permissionBadge').textContent = `审核权限：${data.permission}`;
-                document.getElementById('permissionBadge').className = 'badge bg-success text-white';
+                document.getElementById('permissionBadge').textContent = data.permission_label;
+                document.getElementById('permissionBadge').className = 'badge bg-light text-dark';
                 document.getElementById('reviewMainContent').style.display = 'block';
                 setReviewQueueFeedback('审核权限已确认。', 'success');
                 
@@ -849,14 +835,10 @@ function loadUserStructure() {
                 currentPermission = data.permission;
                 renderUserStructure();
                 document.getElementById('userSelectionArea').style.display = 'block';
-                document.getElementById('permissionInfo').textContent = `当前权限：${currentPermission}`;
+                document.getElementById('permissionInfo').textContent = data.scope_label;
                 const selectAllBtn = document.getElementById('scopeSelectAllBtn');
                 if (selectAllBtn) {
-                    if (currentPermission === '审表_中心') {
-                        selectAllBtn.innerHTML = '<i class="bi bi-check2-all"></i> 一键全选全部门';
-                    } else {
-                        selectAllBtn.innerHTML = '<i class="bi bi-check2-all"></i> 全选当前范围';
-                    }
+                    selectAllBtn.innerHTML = '<i class="bi bi-check2-all"></i> 全选当前范围';
                 }
                 const searchInput = document.getElementById('scopeSearchInput');
                 if (searchInput) {
@@ -1274,7 +1256,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
     const visibleFormGroups = riskFilter
         ? currentFormGroups.filter(group => getAutomationCategoryLabel((group.forms?.[0] || {}).automation?.category) === riskFilter)
         : currentFormGroups;
-    const tbody = document.getElementById('formsTableBody');
+    const list = document.getElementById('formsTableBody');
     let html = '';
     let totalGroups = 0;
 
@@ -1302,8 +1284,8 @@ function renderFormsList(formGroups, checkedFormIds = []) {
         const groupDisabled = groupLocked || !groupSelectable;
 
         html += `
-            <tr data-review-row-form-id="${latestForm.id}" data-reviewable="${latestCanReview ? '1' : '0'}">
-                <td>
+            <article class="review-item" role="listitem" data-review-row-form-id="${latestForm.id}" data-reviewable="${latestCanReview ? '1' : '0'}">
+                <div class="review-item__select">
                     <input type="checkbox"
                            class="group-select-checkbox"
                            aria-label="选择 ${escapeHtml(latestForm.listener_name || '当前信息员')} 的最新表单"
@@ -1312,8 +1294,8 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                            ${groupDisabled ? 'disabled' : ''}
                            ${groupLocked ? 'title="已锁定，需取消锁定后才能取消选择"' : ''}
                            onchange="onGroupSelectChange(this)">
-                </td>
-                <td class="review-item__summary">
+                </div>
+                <div class="review-item__summary">
                     <div class="review-item__heading">
                         <strong>${escapeHtml(latestForm.listener_name || '-')}</strong>
                         <span>${escapeHtml(latestForm.listener_number || '-')}</span>
@@ -1332,8 +1314,8 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                         <span class="badge ${getAutomationCoverageClass(automationCoverage)}" data-automation-coverage="${automationCoverage}">课表${getAutomationCoverageLabel(automationCoverage)}</span>
                         <span class="badge bg-light text-dark">${forms.length} 个版本</span>
                     </div>
-                </td>
-                <td>
+                </div>
+                <div class="review-item__action-cell">
                     <div class="review-item__actions">
                         ${latestCanReview ? `
                             <button class="review-item__primary-action btn btn-primary btn-sm" type="button" data-open-review="${latestForm.id}" title="审核">
@@ -1357,19 +1339,18 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                             </ul>
                         </div>
                     </div>
-                </td>
-            </tr>
+                </div>
+            </article>
         `;
 
         if (forms.length > 1) {
             html += `
-                <tr id="${groupCollapseId}" class="version-history" style="display: none;">
-                    <td colspan="3">
-                        <div class="card">
-                            <div class="card-header">
+                <div id="${groupCollapseId}" class="version-history" style="display: none;">
+                        <div class="review-version-history">
+                            <div class="review-version-history__header">
                                 <h6 class="mb-0">版本历史 (按更新时间排序)</h6>
                             </div>
-                            <div class="card-body p-2">
+                            <div class="review-version-history__body">
                                 <div class="table-responsive">
                                     <table class="table table-sm table-borderless">
                                         <thead>
@@ -1414,11 +1395,11 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                                                         <td><span title="${version.review_comment || ''}">${(version.review_comment || '-').length > 24 ? version.review_comment.substring(0, 24) + '...' : (version.review_comment || '-')}</span></td>
                                                         <td>
                                                             <div class="btn-group">
-                                                                <button class="btn btn-outline-info btn-sm" onclick="viewForm(${version.id})" title="查看此版本">
+                                                                <button class="btn btn-outline-secondary btn-sm" onclick="viewForm(${version.id})" title="查看此版本">
                                                                     <i class="bi bi-eye me-1"></i> 查看此版本
                                                                 </button>
                                                                 ${canReviewVersion ? `
-                                                                    <button class="btn btn-outline-success btn-sm" type="button" data-open-review="${version.id}" title="审核">
+                                                                    <button class="btn btn-primary btn-sm" type="button" data-open-review="${version.id}" title="审核">
                                                                         <i class="bi bi-pencil me-1"></i> 审核
                                                                     </button>
                                                                 ` : ''}
@@ -1437,15 +1418,14 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                                 </div>
                             </div>
                         </div>
-                    </td>
-                </tr>
+                </div>
             `;
         }
     });
 
-    tbody.innerHTML = html;
+    list.innerHTML = html;
     if (totalGroups === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">当前筛选暂无符合条件的表单。</td></tr>';
+        list.innerHTML = '<div class="empty-state review-queue__empty"><i class="bi bi-inbox" aria-hidden="true"></i><p>当前筛选暂无符合条件的表单。</p><small>可调整时间、状态或成员范围后重新加载。</small></div>';
     }
     document.getElementById('formsCount').textContent = totalGroups;
     bindSelectionEvents();

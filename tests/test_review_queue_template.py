@@ -109,16 +109,16 @@ class ReviewQueueTemplateTest(unittest.TestCase):
         self.assertIn('aria-label="选择部门 ${escapeHtml(deptName)}"', template)
         self.assertIn('aria-label="选择 ${escapeHtml(version.listener_name || \'当前信息员\')} 的版本', template)
 
-    def test_review_queue_uses_compact_summary_columns_instead_of_thirteen_columns(self):
+    def test_review_queue_uses_compact_summary_list_instead_of_a_wide_table(self):
         template = Path('app/templates/admin/review_forms.html').read_text(encoding='utf-8')
-        self.assertIn('class="review-queue__table-wrap"', template)
-        self.assertIn('class="table review-queue__table"', template)
+        self.assertIn('class="review-queue__list"', template)
+        self.assertIn('class="review-queue__select-all"', template)
+        self.assertIn('class="review-item"', template)
         self.assertIn('class="review-item__summary"', template)
         self.assertIn('class="review-item__meta"', template)
         self.assertIn('class="review-item__badges"', template)
         self.assertIn('class="review-item__actions"', template)
-        self.assertIn('<th class="review-list__summary">表单摘要</th>', template)
-        self.assertIn('<td colspan="3">', template)
+        self.assertNotIn('class="table review-queue__table"', template)
         self.assertNotIn('<th width="15%">课程</th>', template)
 
     def test_review_queue_uses_bootstrap_five_modal_and_form_controls(self):

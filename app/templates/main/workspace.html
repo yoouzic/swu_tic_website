@@ -7,7 +7,7 @@
 <div class="workspace" data-workspace-role="{{ workspace.role_slug }}">
     {{ page_header(workspace.title, workspace.summary, workspace.primary_action.label, url_for(workspace.primary_action.endpoint)) }}
     <section class="workspace-metrics" aria-label="工作指标">
-        {% for item in workspace.metrics %}{{ metric(item.label, item.value, extra_class='workspace-metric') }}{% endfor %}
+        {% for item in workspace.metrics %}{{ metric(item.label, item.value, variant='plain', extra_class='workspace-metric') }}{% endfor %}
     </section>
     <div class="workspace-grid">
         <section class="workspace-panel"><div class="workspace-panel__header"><h2>优先处理</h2></div>

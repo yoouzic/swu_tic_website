@@ -97,7 +97,7 @@
             alertDiv.innerHTML = `
                 <i class="bi bi-exclamation-triangle-fill"></i> <strong>注意：</strong> 您正在重新填写被驳回的表单。
                 <br><strong>驳回原因：</strong> ${data.review_comment || '无'}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>
             `;
             document.querySelector('.card-body').insertBefore(alertDiv, document.querySelector('form'));
             {% endif %}
@@ -145,7 +145,7 @@
                                 <h3 class="form-section-title">课程信息</h3>
                                 <div id="autoFillAlert" class="alert alert-info alert-dismissible fade show" style="display: none;">
                                     <i class="bi bi-info-circle"></i> 已根据您的听课登记自动填充部分课程信息，您可以根据实际情况进行修改。
-                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>
                                 </div>
                             </div>
                             <div class="col-md-4">
@@ -428,7 +428,7 @@
         <div class="modal-content">
             <div class="modal-header bg-success text-white">
                 <h5 class="modal-title"><i class="bi bi-check-square"></i> 提交听课反馈</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
                 <div class="alert alert-info">

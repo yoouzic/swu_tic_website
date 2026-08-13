@@ -10,8 +10,10 @@ from ..utils.review_permissions import (
     get_user_structure_for_review, 
     get_reviewable_users,
     get_reviewable_status_list,
-    get_next_status_after_review
+    get_next_status_after_review,
+    get_review_permission_presentation,
 )
+from ..utils.permission_feedback import build_forbidden_payload, forbidden_json, flash_forbidden
 from ..utils.manage_permissions import (
     get_user_manage_permission,
     check_manage_permission
@@ -703,9 +705,15 @@ def _build_user_profile_stats(user):
         text = f"{form.course_feedback or ''}{form.suggestions or ''}"
         return len(''.join(str(text).split()))
 
-    current_week_num = 0
+    current_week_num = None
+    current_week_label = '当前不在教学周内'
     if first_week_date:
-        current_week_num = get_week_num(datetime.now().date())
+        resolved_week_num = get_week_num(datetime.now().date())
+        if resolved_week_num > 0:
+            current_week_num = resolved_week_num
+            current_week_label = f'当前教学周（第 {resolved_week_num} 周）'
+        else:
+            current_week_label = '本学期教学周尚未开始'
 
     all_forms = LectureForm.query.filter_by(listener_number=user.number).order_by(LectureForm.created_at.asc()).all()
     form_groups = {}
@@ -845,27 +853,43 @@ def _build_user_profile_stats(user):
         func.sum(ScoreRecord.total_personal_score).label('total')
     ).join(ScoreRecord, LectureForm.id == ScoreRecord.form_id).group_by(LectureForm.listener_number).all()
 
-    scores_map = {row[0]: row[1] for row in results}
-    all_users = _active_user_query().filter(User.role.in_(['信息员', '管理员', '超级管理员'])).with_entities(User.number).all()
-    all_scores = [scores_map.get(row.number, 0.0) for row in all_users]
+    scores_map = {row[0]: float(row[1] or 0.0) for row in results}
+    all_scores = list(scores_map.values())
     all_scores.sort(reverse=True)
 
-    user_score = scores_map.get(user.number, 0.0)
-    percentile = 1.0
-    if all_scores:
+    has_evaluation_sample = user.number in scores_map
+    user_score = scores_map.get(user.number)
+    percentile = None
+    if has_evaluation_sample and all_scores:
         try:
             rank_index = all_scores.index(user_score)
             percentile = (rank_index + 1) / len(all_scores)
         except ValueError:
-            percentile = 1.0
+            percentile = None
+
+    if percentile is None:
+        rating_label = '暂无评级'
+    elif percentile <= 0.2:
+        rating_label = '需要继续努力'
+    elif percentile <= 0.7:
+        rating_label = '表现良好'
+    else:
+        rating_label = '行为很好'
+
+    numeric_deduction = float(total_deduction or 0.0)
+    deduction_display = '0.00' if abs(numeric_deduction) < 0.005 else f'-{abs(numeric_deduction):.2f}'
 
     stats = {
         'total_forms': total_submitted_count,
         'this_month': this_month,
         'last_submit': last_submit,
         'total_deduction': total_deduction,
+        'deduction_display': deduction_display,
+        'has_evaluation_sample': has_evaluation_sample,
+        'rating_label': rating_label,
         'percentile': percentile,
         'current_week': current_week_num,
+        'current_week_label': current_week_label,
         'week_submitted': week_submitted_count,
         'week_approved': week_approved_count,
         'week_reward': week_reward_count,
@@ -2409,11 +2433,13 @@ def get_review_permission():
             return jsonify({'success': False, 'message': '请先登录'}), 401
         
         permission = get_user_review_permission(session['user_id'])
+        presentation = get_review_permission_presentation(permission)
         
         return jsonify({
             'success': True,
             'permission': permission,
-            'has_permission': permission is not None
+            'has_permission': permission is not None,
+            **presentation,
         })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -2477,10 +2503,12 @@ def get_user_structure_api():
         permission = get_user_review_permission(session['user_id'])
         if permission:
             structure = get_user_structure_for_review(session['user_id'])
+            presentation = get_review_permission_presentation(permission)
             return jsonify({
                 'success': True,
                 'permission': permission,
-                'structure': structure
+                'structure': structure,
+                **presentation,
             })
         manage_permission = get_user_manage_permission(session['user_id'])
         if manage_permission == '管理部门':
@@ -4525,6 +4553,7 @@ def system_management():
         active_tab=active_tab,
         status=AutoReviewEngine().files_status(),
         available_departments=list(_get_accessible_department_users(user.id).keys()),
+        account_username=user.student_id,
         is_super_admin=True,
     )
 
@@ -6721,7 +6750,7 @@ def _load_snapshot_payload(record):
 @role_required('管理员')
 def review_assessment_stats():
     if not _has_assessment_stats_access(session['user_id']):
-        flash('权限不足', 'error')
+        flash_forbidden('审表考评统计')
         return redirect(url_for('main.index'))
     manage_permission = get_user_manage_permission(session['user_id'])
     can_manual_assessment_import = manage_permission == '超级管理员'
@@ -6731,7 +6760,7 @@ def review_assessment_stats():
 @role_required('管理员')
 def submission_count_stats():
     if not _has_assessment_stats_access(session['user_id']):
-        flash('权限不足', 'error')
+        flash_forbidden('交表数量统计')
         return redirect(url_for('main.index'))
     return render_template('admin/submission_count_stats.html')
 
@@ -6740,7 +6769,7 @@ def submission_count_stats():
 @role_required('管理员')
 def department_monthly_assessment_stats():
     if not _has_assessment_stats_access(session['user_id']):
-        flash('权限不足', 'error')
+        flash_forbidden('部门月度考评')
         return redirect(url_for('main.index'))
     available_departments = list(_get_accessible_department_users(session['user_id']).keys())
     return render_template('admin/department_monthly_assessment_stats.html', available_departments=available_departments)
@@ -6834,7 +6863,7 @@ def _resolve_department_leave_users(current_user_id, user_ids=None):
 @login_required
 def get_leave_management_status():
     if get_user_manage_permission(session['user_id']) != '超级管理员':
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('成员请假设置')
 
     settings, settings_err = get_leave_teaching_settings()
     current_week = None
@@ -6902,7 +6931,7 @@ def get_leave_management_status():
 @login_required
 def create_current_week_leave():
     if get_user_manage_permission(session['user_id']) != '超级管理员':
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('成员请假设置')
 
     settings, settings_err = get_leave_teaching_settings()
     if settings_err:
@@ -6947,7 +6976,7 @@ def create_current_week_leave():
 
 def _get_super_admin_leave_record(override_id):
     if get_user_manage_permission(session['user_id']) != '超级管理员':
-        return None, jsonify({'success': False, 'message': '权限不足'}), 403
+        return None, jsonify(build_forbidden_payload('成员请假设置')), 403
     record = AssessmentOverride.query.filter_by(
         id=override_id,
         override_type=LEAVE_OVERRIDE_TYPE,
@@ -8031,7 +8060,7 @@ def _build_department_monthly_workbook(payload):
 @login_required
 def get_submission_count_stats():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('交表数量统计')
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     start_date, end_date, err = _parse_assessment_range(start_date_str, end_date_str)
@@ -8076,7 +8105,7 @@ def get_submission_count_stats():
 @login_required
 def export_submission_count_stats():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('交表数量统计')
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     start_date, end_date, err = _parse_assessment_range(start_date_str, end_date_str)
@@ -8104,7 +8133,7 @@ def export_submission_count_stats():
 @login_required
 def get_submission_reward_detail(user_id):
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('交表数量统计')
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     start_date, end_date, err = _parse_assessment_range(start_date_str, end_date_str)
@@ -8154,7 +8183,7 @@ def get_submission_reward_detail(user_id):
 @login_required
 def get_submission_count_detail(user_id):
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('交表数量统计')
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     start_date, end_date, err = _parse_assessment_range(start_date_str, end_date_str)
@@ -8242,7 +8271,7 @@ def get_submission_count_detail(user_id):
 @login_required
 def list_submission_count_snapshots():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('交表统计快照')
     return jsonify({
         'success': True,
         'snapshots': _build_snapshot_list_items(SNAPSHOT_TYPE_SUBMISSION_REWARD, session['user_id'])
@@ -8253,7 +8282,7 @@ def list_submission_count_snapshots():
 @login_required
 def save_submission_count_snapshot():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('交表统计快照')
     data = request.get_json() or {}
     start_date, end_date, err = _parse_assessment_range(data.get('start_date'), data.get('end_date'))
     if err:
@@ -8302,7 +8331,7 @@ def save_submission_count_snapshot():
 @login_required
 def get_submission_count_snapshot(snapshot_id):
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('交表统计快照')
     record, error_response, status_code = _get_snapshot_record_or_404(snapshot_id, SNAPSHOT_TYPE_SUBMISSION_REWARD, session['user_id'])
     if error_response:
         return error_response, status_code
@@ -8323,7 +8352,7 @@ def get_submission_count_snapshot(snapshot_id):
 @login_required
 def export_submission_count_snapshot(snapshot_id):
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('交表统计快照')
     record, error_response, status_code = _get_snapshot_record_or_404(snapshot_id, SNAPSHOT_TYPE_SUBMISSION_REWARD, session['user_id'])
     if error_response:
         return error_response, status_code
@@ -8337,7 +8366,7 @@ def export_submission_count_snapshot(snapshot_id):
 @login_required
 def get_department_monthly_assessment_stats():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('部门月度考评')
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     start_date, end_date, err = _parse_assessment_range(start_date_str, end_date_str)
@@ -8358,7 +8387,7 @@ def get_department_monthly_assessment_stats():
 @login_required
 def export_department_monthly_assessment_stats():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('部门月度考评')
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     start_date, end_date, err = _parse_assessment_range(start_date_str, end_date_str)
@@ -8384,7 +8413,7 @@ def export_department_monthly_assessment_stats():
 @login_required
 def list_department_monthly_assessment_snapshots():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('部门月度考评快照')
     return jsonify({
         'success': True,
         'snapshots': _build_snapshot_list_items(SNAPSHOT_TYPE_DEPARTMENT_MONTHLY, session['user_id'])
@@ -8395,7 +8424,7 @@ def list_department_monthly_assessment_snapshots():
 @login_required
 def save_department_monthly_assessment_snapshot():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('部门月度考评快照')
     data = request.get_json() or {}
     start_date, end_date, err = _parse_assessment_range(data.get('start_date'), data.get('end_date'))
     if err:
@@ -8440,7 +8469,7 @@ def save_department_monthly_assessment_snapshot():
 @login_required
 def get_department_monthly_assessment_snapshot(snapshot_id):
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('部门月度考评快照')
     record, error_response, status_code = _get_snapshot_record_or_404(snapshot_id, SNAPSHOT_TYPE_DEPARTMENT_MONTHLY, session['user_id'])
     if error_response:
         return error_response, status_code
@@ -8461,7 +8490,7 @@ def get_department_monthly_assessment_snapshot(snapshot_id):
 @login_required
 def export_department_monthly_assessment_snapshot(snapshot_id):
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('部门月度考评快照')
     record, error_response, status_code = _get_snapshot_record_or_404(snapshot_id, SNAPSHOT_TYPE_DEPARTMENT_MONTHLY, session['user_id'])
     if error_response:
         return error_response, status_code
@@ -8474,7 +8503,7 @@ def export_department_monthly_assessment_snapshot(snapshot_id):
 @login_required
 def get_review_assessment_stats():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('审表考评统计')
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     start_date, end_date, err = _parse_assessment_range(start_date_str, end_date_str)
@@ -8493,7 +8522,7 @@ def get_review_assessment_stats():
 @login_required
 def export_review_assessment_stats():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('审表考评统计')
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     start_date, end_date, err = _parse_assessment_range(start_date_str, end_date_str)
@@ -8535,7 +8564,7 @@ def export_review_assessment_stats():
 @login_required
 def get_review_assessment_detail(user_id):
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('审表考评统计')
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     start_date, end_date, err = _parse_assessment_range(start_date_str, end_date_str)
@@ -9505,7 +9534,7 @@ def assessment_exemption_settings():
     if user.role == '超级管理员':
         return redirect(url_for('admin.system_management', tab='assessment'))
     if not _has_assessment_stats_access(session['user_id']):
-        flash('权限不足', 'error')
+        flash_forbidden('考评规则设置')
         return redirect(url_for('main.index'))
     available_departments = list(_get_accessible_department_users(session['user_id']).keys())
     is_super_admin = get_user_manage_permission(session['user_id']) == '超级管理员'
@@ -9520,7 +9549,7 @@ def assessment_exemption_settings():
 @login_required
 def list_assessment_overrides():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('考评规则设置')
     department_names = request.args.getlist('departments')
     selected_departments, department_user_map = _resolve_selected_departments(
         session['user_id'],
@@ -9582,7 +9611,7 @@ def list_assessment_overrides():
 @login_required
 def create_assessment_override():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('考评规则设置')
     data = request.get_json() or {}
     user_ids = data.get('user_ids') or []
     if not user_ids:
@@ -9657,7 +9686,7 @@ def create_assessment_override():
 @login_required
 def delete_assessment_override(override_id):
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('考评规则设置')
     record = db.session.get(AssessmentOverride, override_id)
     if not record:
         return jsonify({'success': False, 'message': '规则不存在'}), 404
@@ -9675,7 +9704,7 @@ def delete_assessment_override(override_id):
 @login_required
 def get_teaching_month_definitions():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('教学月设置')
     custom = _load_custom_month_definitions()
     if custom:
         return jsonify({'success': True, 'is_custom': True, 'months': custom})
@@ -9695,7 +9724,7 @@ def get_teaching_month_definitions():
 @login_required
 def save_teaching_month_definitions():
     if not _has_assessment_stats_access(session['user_id']):
-        return jsonify({'success': False, 'message': '权限不足'}), 403
+        return forbidden_json('教学月设置')
     data = request.get_json() or {}
     months = data.get('months')
     if not months:
