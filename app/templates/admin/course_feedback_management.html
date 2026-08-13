@@ -25,18 +25,16 @@
                     <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#columnSettingsModal">
                         <i class="bi bi-gear"></i> 列设置
                     </button>
-                    <button type="button" class="btn btn-primary" id="batchBanBtn" disabled>
-                        <i class="bi bi-ban"></i> 批量禁听
-                    </button>
-                    <a href="{{ url_for('admin.download_banned_teacher_import_template') }}" class="btn btn-outline-secondary">
-                        <i class="bi bi-download"></i> 下载禁听教师模板
-                    </a>
-                    <button type="button" class="btn btn-outline-secondary" onclick="openBanTeacherImportModal()">
-                        <i class="bi bi-file-earmark-arrow-up"></i> 导入禁听教师
-                    </button>
-                    <a href="{{ url_for('admin.registration_statistics') }}" class="btn btn-outline-secondary">
-                        <i class="bi bi-bar-chart"></i> 听课登记统计
-                    </a>
+                    <div class="dropdown page-header__overflow">
+                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="courseMoreActions" data-bs-toggle="dropdown" aria-expanded="false">
+                            更多操作
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="courseMoreActions">
+                            <li><button type="button" class="dropdown-item" onclick="openBanTeacherImportModal()"><i class="bi bi-file-earmark-arrow-up" aria-hidden="true"></i>导入禁听教师</button></li>
+                            <li><a href="{{ url_for('admin.download_banned_teacher_import_template') }}" class="dropdown-item"><i class="bi bi-download" aria-hidden="true"></i>下载禁听教师模板</a></li>
+                            <li><a href="{{ url_for('admin.registration_statistics') }}" class="dropdown-item"><i class="bi bi-bar-chart" aria-hidden="true"></i>听课登记统计</a></li>
+                        </ul>
+                    </div>
                     {% endif %}
                 </div>
             </div>
@@ -113,6 +111,16 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if is_course_management %}
+            <div class="course-batch-toolbar" id="courseBatchToolbar" hidden aria-live="polite">
+                <div><strong>已选择 <span id="selectedCourseCount">0</span> 门课程</strong><div class="small text-muted">批量操作仅影响当前选择。</div></div>
+                <div class="course-batch-toolbar__actions">
+                    <button type="button" class="btn btn-outline-secondary" onclick="clearCourseSelection()">清空选择</button>
+                    <button type="button" class="btn btn-primary" id="batchBanBtn" disabled><i class="bi bi-slash-circle" aria-hidden="true"></i> 批量禁听</button>
                 </div>
             </div>
             {% endif %}
@@ -380,7 +388,7 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                 <button type="button" class="btn btn-primary" onclick="confirmBanUsers()" id="confirmBanBtn">
-                    <i class="bi bi-ban"></i> 确认禁听
+                    <i class="bi bi-slash-circle"></i> 确认禁听
                 </button>
             </div>
         </div>
@@ -438,6 +446,7 @@ let pageSize = 20;
 let totalPages = 0;
 let selectedCourses = new Set();
 let selectedUsers = new Set();
+let existingCourseBans = new Map();
 let availableColumns = [];
 let visibleColumns = [];
 let allUsers = [];
@@ -801,7 +810,7 @@ function renderCoursesTable(courses) {
         if (isCourseManagement) {
             mainRowActions = `
                 <button class="btn btn-outline-warning" onclick="banCourseGroup('${groupKey}')" title="禁听设置">
-                    <i class="bi bi-ban me-1"></i>
+                    <i class="bi bi-slash-circle me-1"></i>
                     禁听设置
                 </button>
             `;
@@ -868,7 +877,7 @@ function renderCoursesTable(courses) {
                 if (isCourseManagement) {
                     detailRowActions = `
                         <button class="btn btn-outline-warning" onclick="banSingleCourse(${record.id})" title="禁听设置">
-                            <i class="bi bi-ban me-1"></i>
+                            <i class="bi bi-slash-circle me-1"></i>
                             禁听设置
                         </button>
                     `;
@@ -1425,10 +1434,26 @@ function updateSelectAllCheckbox() {
 function updateBatchBanButton() {
     const batchBanBtn = document.getElementById('batchBanBtn');
     if (!batchBanBtn) return;
+    const courseBatchToolbar = document.getElementById('courseBatchToolbar');
+    const selectedCourseCount = document.getElementById('selectedCourseCount');
+    courseBatchToolbar.hidden = selectedCourses.size === 0;
+    if (selectedCourseCount) selectedCourseCount.textContent = String(selectedCourses.size);
     batchBanBtn.disabled = selectedCourses.size === 0;
-    batchBanBtn.innerHTML = selectedCourses.size > 0 ? 
-        `<i class="bi bi-ban"></i> 批量禁听 (${selectedCourses.size})` : 
-        '<i class="bi bi-ban"></i> 批量禁听';
+    batchBanBtn.innerHTML = selectedCourses.size > 0 ?
+        `<i class="bi bi-slash-circle"></i> 批量禁听 (${selectedCourses.size})` :
+        '<i class="bi bi-slash-circle"></i> 批量禁听';
+}
+
+function clearCourseSelection() {
+    selectedCourses.clear();
+    document.querySelectorAll('.course-checkbox').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    ['selectAll', 'headerSelectAll'].forEach(id => {
+        const checkbox = document.getElementById(id);
+        if (checkbox) checkbox.checked = false;
+    });
+    updateBatchBanButton();
 }
 
 // 更新课程数量显示
@@ -1850,6 +1875,7 @@ function renderVenueDetail(venue) {
 // 显示用户选择模态框
 function showUserSelectionModal() {
     selectedUsers.clear();
+    existingCourseBans.clear();
     loadSelectedCoursesInfo();
     
     // 先加载可选用户，然后加载已禁听用户
@@ -1904,31 +1930,31 @@ function loadAvailableUsers() {
 
 // 加载已禁听用户
 function loadBannedUsers() {
-    if (selectedCourses.size === 0) return;
+    existingCourseBans.forEach((bans, userId) => selectedUsers.delete(userId));
+    existingCourseBans.clear();
+    if (selectedCourses.size === 0) return Promise.resolve();
     
     // 获取所有选中课程的已禁听用户
     const courseIds = Array.from(selectedCourses);
-    const promises = courseIds.map(courseId => 
+    const promises = courseIds.map(courseId =>
         fetch(`/admin/api/courses/${courseId}/ban_users`)
             .then(response => response.json())
+            .then(data => ({ courseId, data }))
     );
     
-    Promise.all(promises)
+    return Promise.all(promises)
         .then(results => {
-            const bannedUserIds = new Set();
-            
-            results.forEach(data => {
+            results.forEach(({ courseId, data }) => {
                 if (data.success && data.ban_users) {
                     data.ban_users.forEach(ban => {
-                        bannedUserIds.add(ban.user_id);
+                        const bans = existingCourseBans.get(ban.user_id) || [];
+                        bans.push({ courseId, banId: ban.id });
+                        existingCourseBans.set(ban.user_id, bans);
                     });
                 }
             });
-            
-            // 将已禁听的用户添加到已选用户列表
-            bannedUserIds.forEach(userId => {
-                selectedUsers.add(userId);
-            });
+
+            existingCourseBans.forEach((bans, userId) => selectedUsers.add(userId));
             
             // 更新显示
             renderDepartmentUserTree();
@@ -2155,6 +2181,39 @@ function unselectUser(userId) {
     updateSelectedUsersDisplay();
 }
 
+async function removeExistingBanUser(userId) {
+    const bans = existingCourseBans.get(userId) || [];
+    const user = allUsers.find(item => item.id === userId);
+    if (bans.length === 0) return;
+    if (typeof window.appConfirm !== 'function') {
+        showAlert('确认组件尚未就绪，请稍后重试', 'warning');
+        return;
+    }
+
+    const confirmed = await window.appConfirm(
+        `确认从当前所选课程中解除“${user ? user.name : '该用户'}”的已有禁听吗？`,
+        '解除已有禁听'
+    );
+    if (!confirmed) return;
+
+    try {
+        await Promise.all(bans.map(async ban => {
+            const response = await fetch(`/admin/api/courses/${ban.courseId}/ban_users/${ban.banId}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || '解除禁听失败');
+            }
+        }));
+        await loadBannedUsers();
+        showAlert(`已解除“${user ? user.name : '该用户'}”在当前所选课程中的已有禁听`, 'success');
+    } catch (error) {
+        await loadBannedUsers();
+        showAlert(error.message || '解除禁听失败', 'error');
+    }
+}
+
 // 更新已选用户显示
 function updateSelectedUsersDisplay() {
     const container = document.getElementById('selectedUsersList');
@@ -2166,6 +2225,16 @@ function updateSelectedUsersDisplay() {
     selectedUsers.forEach(userId => {
         const user = allUsers.find(u => u.id === userId);
         if (user) {
+            const bans = existingCourseBans.get(userId) || [];
+            const action = bans.length > 0 ? `
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeExistingBanUser(${user.id})" aria-label="移除已有禁听：${user.name}">
+                    <i class="bi bi-unlock" aria-hidden="true"></i> 移除已有禁听
+                </button>
+            ` : `
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="unselectUser(${user.id})" aria-label="取消选择：${user.name}">
+                    <i class="bi bi-dash" aria-hidden="true"></i> 取消选择
+                </button>
+            `;
             const userItem = document.createElement('div');
             userItem.className = 'list-group-item list-group-item-action';
             userItem.innerHTML = `
@@ -2173,10 +2242,9 @@ function updateSelectedUsersDisplay() {
                     <div>
                         <div class="fw-bold">${user.name}</div>
                         <small class="text-muted">${user.number} | ${user.department || '未分配部门'}</small>
+                        ${bans.length > 0 ? `<div class="small text-danger mt-1">已在 ${bans.length} 门所选课程禁听</div>` : ''}
                     </div>
-                    <button class="btn btn-sm btn-outline-danger" onclick="unselectUser(${user.id})">
-                        <i class="bi bi-dash"></i>
-                    </button>
+                    ${action}
                 </div>
             `;
             container.appendChild(userItem);
@@ -2243,7 +2311,7 @@ function confirmBanUsers() {
     })
     .finally(() => {
         confirmBtn.disabled = false;
-        confirmBtn.innerHTML = '<i class="bi bi-ban"></i> 确认禁听';
+        confirmBtn.innerHTML = '<i class="bi bi-slash-circle"></i> 确认禁听';
     });
 }
 

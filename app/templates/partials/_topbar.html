@@ -4,6 +4,7 @@
     </button>
     <div class="app-page-context">{{ page_label|default('今日工作') }}</div>
     <div class="app-topbar__actions">
+        {% if show_app_search|default(true) %}
         <form class="app-search" action="{{ url_for(app_search_endpoint) }}" method="get" role="search">
             <label class="visually-hidden" for="appSearch">{{ app_search_label }}</label>
             <div class="input-group input-group-sm">
@@ -11,6 +12,7 @@
                 <button class="btn btn-outline-secondary" type="submit" aria-label="提交搜索"><i class="bi bi-search" aria-hidden="true"></i></button>
             </div>
         </form>
+        {% endif %}
         <div class="dropdown app-user-menu">
             <button class="btn app-user-menu__toggle dropdown-toggle" type="button" id="appUserMenuToggle" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true" aria-label="打开用户菜单：{{ current_user.name }}">
                 <i class="bi bi-person-circle" aria-hidden="true"></i>

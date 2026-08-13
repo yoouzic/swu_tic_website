@@ -58,7 +58,7 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                 <button type="button" class="btn btn-primary" onclick="confirmBanUsers()" id="confirmBanBtn">
-                    <i class="bi bi-ban"></i> 确认禁听
+                    <i class="bi bi-slash-circle"></i> 确认禁听
                 </button>
             </div>
         </div>
@@ -69,6 +69,7 @@
 let registrationStatsData = [];
 let selectedCourses = new Set();
 let selectedUsers = new Set();
+let existingCourseBans = new Map();
 let allUsers = [];
 let filteredUsers = [];
 let departmentData = [];
@@ -192,6 +193,7 @@ function banTeacherCourses(courseIds) {
 
 function showUserSelectionModal() {
     selectedUsers.clear();
+    existingCourseBans.clear();
     loadSelectedCoursesInfo();
     loadAvailableUsers().then(() => loadBannedUsers());
     const modal = new bootstrap.Modal(document.getElementById('userSelectionModal'));
@@ -217,15 +219,22 @@ function loadAvailableUsers() {
 }
 
 function loadBannedUsers() {
-    if (selectedCourses.size === 0) return;
+    existingCourseBans.forEach((bans, userId) => selectedUsers.delete(userId));
+    existingCourseBans.clear();
+    if (selectedCourses.size === 0) return Promise.resolve();
     const courseIds = Array.from(selectedCourses);
-    const requests = courseIds.map(courseId => fetch(`/admin/api/courses/${courseId}/ban_users`).then(r => r.json()));
-    Promise.all(requests).then(results => {
-        const bannedUserIds = new Set();
-        results.forEach(data => {
-            if (data.success && data.ban_users) data.ban_users.forEach(ban => bannedUserIds.add(ban.user_id));
+    const requests = courseIds.map(courseId => fetch(`/admin/api/courses/${courseId}/ban_users`)
+        .then(response => response.json())
+        .then(data => ({ courseId, data })));
+    return Promise.all(requests).then(results => {
+        results.forEach(({ courseId, data }) => {
+            if (data.success && data.ban_users) data.ban_users.forEach(ban => {
+                const bans = existingCourseBans.get(ban.user_id) || [];
+                bans.push({ courseId, banId: ban.id });
+                existingCourseBans.set(ban.user_id, bans);
+            });
         });
-        bannedUserIds.forEach(id => selectedUsers.add(id));
+        existingCourseBans.forEach((bans, userId) => selectedUsers.add(userId));
         renderDepartmentUserTree();
         updateSelectedUsersDisplay();
     });
@@ -386,6 +395,39 @@ function unselectUser(userId) {
     updateSelectedUsersDisplay();
 }
 
+async function removeExistingBanUser(userId) {
+    const bans = existingCourseBans.get(userId) || [];
+    const user = allUsers.find(item => item.id === userId);
+    if (bans.length === 0) return;
+    if (typeof window.appConfirm !== 'function') {
+        showAlert('确认组件尚未就绪，请稍后重试', 'warning');
+        return;
+    }
+
+    const confirmed = await window.appConfirm(
+        `确认从当前所选课程中解除“${user ? user.name : '该用户'}”的已有禁听吗？`,
+        '解除已有禁听'
+    );
+    if (!confirmed) return;
+
+    try {
+        await Promise.all(bans.map(async ban => {
+            const response = await fetch(`/admin/api/courses/${ban.courseId}/ban_users/${ban.banId}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || '解除禁听失败');
+            }
+        }));
+        await loadBannedUsers();
+        showAlert(`已解除“${user ? user.name : '该用户'}”在当前所选课程中的已有禁听`, 'success');
+    } catch (error) {
+        await loadBannedUsers();
+        showAlert(error.message || '解除禁听失败', 'error');
+    }
+}
+
 function selectAllUsersForBan() {
     allUsers.forEach(user => selectedUsers.add(user.id));
     renderDepartmentUserTree();
@@ -400,12 +442,26 @@ function updateSelectedUsersDisplay() {
     selectedUsers.forEach(userId => {
         const user = allUsers.find(u => u.id === userId);
         if (user) {
+            const bans = existingCourseBans.get(userId) || [];
+            const action = bans.length > 0 ? `
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeExistingBanUser(${user.id})" aria-label="移除已有禁听：${user.name}">
+                    <i class="bi bi-unlock" aria-hidden="true"></i> 移除已有禁听
+                </button>
+            ` : `
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="unselectUser(${user.id})" aria-label="取消选择：${user.name}">
+                    <i class="bi bi-dash" aria-hidden="true"></i> 取消选择
+                </button>
+            `;
             const userItem = document.createElement('div');
             userItem.className = 'list-group-item list-group-item-action';
             userItem.innerHTML = `
                 <div class="d-flex justify-content-between align-items-center">
-                    <div><div class="fw-bold">${user.name}</div><small class="text-muted">${user.number} | ${user.department || '未分配部门'}</small></div>
-                    <button class="btn btn-sm btn-outline-danger" onclick="unselectUser(${user.id})"><i class="bi bi-dash"></i></button>
+                    <div>
+                        <div class="fw-bold">${user.name}</div>
+                        <small class="text-muted">${user.number} | ${user.department || '未分配部门'}</small>
+                        ${bans.length > 0 ? `<div class="small text-danger mt-1">已在 ${bans.length} 门所选课程禁听</div>` : ''}
+                    </div>
+                    ${action}
                 </div>
             `;
             container.appendChild(userItem);
@@ -449,7 +505,7 @@ function confirmBanUsers() {
     .catch(() => showAlert('禁听操作失败', 'error'))
     .finally(() => {
         confirmBtn.disabled = false;
-        confirmBtn.innerHTML = '<i class="bi bi-ban"></i> 确认禁听';
+        confirmBtn.innerHTML = '<i class="bi bi-slash-circle"></i> 确认禁听';
     });
 }
 

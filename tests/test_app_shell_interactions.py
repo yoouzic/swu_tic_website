@@ -60,6 +60,7 @@ global.document = {{
   activeElement: toggle,
   addEventListener(type, handler) {{ documentEvents[type] = handler; }},
   querySelector(selector) {{ return selector === '.app-shell' ? shell : null; }},
+  querySelectorAll() {{ return []; }},
   getElementById() {{ return null; }},
 }};
 global.window = {{}};

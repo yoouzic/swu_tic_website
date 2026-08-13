@@ -6,26 +6,33 @@
 
 {% block content %}
 <div class="container-fluid">
+    {{ page_header('统计分析', '先查看核心指标与趋势，再按需进入专项统计或请假管理。') }}
     {% if can_access_extended_stats %}
-    {{ page_header(
-        '统计分析',
-        '查看提交、审核与部门统计数据。',
-        secondary_actions=[
-            {'label': '交表数量统计', 'href': url_for('admin.submission_count_stats')},
-            {'label': '审表考评统计', 'href': url_for('admin.review_assessment_stats')},
-            {'label': '部门月度考评统计', 'href': url_for('admin.department_monthly_assessment_stats')}
-        ]
-    ) }}
-    {% else %}
-    {{ page_header('统计分析', '查看提交、审核与部门统计数据。', secondary_actions=[]) }}
+    <nav class="statistics-subnav" aria-label="统计模块">
+        <a href="{{ url_for('admin.submission_count_stats') }}">交表数量</a>
+        <a href="{{ url_for('admin.review_assessment_stats') }}">审表考评</a>
+        <a href="{{ url_for('admin.department_monthly_assessment_stats') }}">部门月度考评</a>
+    </nav>
     {% endif %}
+
+    <!-- 统计概览必须先于低频管理模块。 -->
+    <section class="metric-grid mb-4" aria-label="统计概览">
+        {{ metric('物理版本总数', total_forms, tone='neutral') }}
+        {{ metric('逻辑表单组数', logical_form_count, tone='neutral') }}
+        {{ metric('待审核表单', pending_forms, tone='attention') }}
+        {{ metric('已通过表单', approved_forms, tone='success') }}
+        {{ metric('已驳回表单', rejected_forms, tone='danger') }}
+    </section>
+
     {% if can_manage_department_leave %}
-    <div class="row mb-3">
+    <details class="statistics-secondary mb-4" id="leaveManagement">
+        <summary><span><i class="bi bi-calendar2-check me-2" aria-hidden="true"></i>成员请假管理</span><small>登记当前教学周请假并跟踪补交</small></summary>
+    <div class="row p-3 pb-0">
         <div class="col-lg-4 mb-3">
             <div class="card h-100">
                 <div class="card-header">
                     <h3 class="card-title mb-0">
-                        <i class="fas fa-user-clock me-2"></i>
+                        <i class="bi bi-person me-2"></i>
                         成员请假
                     </h3>
                 </div>
@@ -42,7 +49,7 @@
                         <input type="text" class="form-control" id="leaveReasonInput" maxlength="200" placeholder="可选">
                     </div>
                     <button type="button" class="btn btn-warning" id="btnCreateLeave">
-                        <i class="fas fa-check me-1"></i> 为当前教学周请假
+                        <i class="bi bi-check2 me-1"></i> 为当前教学周请假
                     </button>
                     <div class="small text-muted mt-2">该功能仅对超级管理员开放，用于为信息员登记当前教学周请假。</div>
                 </div>
@@ -52,7 +59,7 @@
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h3 class="card-title mb-0">
-                        <i class="fas fa-list me-2"></i>
+                        <i class="bi bi-list-ul me-2"></i>
                         请假状态
                     </h3>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="btnReloadLeaveStatus">刷新</button>
@@ -63,15 +70,8 @@
             </div>
         </div>
     </div>
+    </details>
     {% endif %}
-    <!-- 统计概览 -->
-    <section class="metric-grid mb-4" aria-label="统计概览">
-        {{ metric('物理版本总数', total_forms, tone='neutral') }}
-        {{ metric('逻辑表单组数', logical_form_count, tone='neutral') }}
-        {{ metric('待审核表单', pending_forms, tone='attention') }}
-        {{ metric('已通过表单', approved_forms, tone='success') }}
-        {{ metric('已驳回表单', rejected_forms, tone='danger') }}
-    </section>
 
     <!-- 筛选条件 -->
     <div class="row mb-3">
@@ -79,7 +79,7 @@
             <div class="card">
                 <div class="card-header">
                     <h3 class="card-title">
-                        <i class="fas fa-filter me-2"></i>
+                        <i class="bi bi-funnel me-2"></i>
                         筛选条件
                     </h3>
                 </div>
@@ -135,13 +135,13 @@
                                     <label>&nbsp;</label>
                                     <div>
                                         <button type="submit" class="btn btn-primary">
-                                            <i class="fas fa-search"></i> 查询
+                                            <i class="bi bi-search"></i> 查询
                                         </button>
                                         <button type="button" class="btn btn-secondary ms-2" onclick="resetFilters()">
-                                            <i class="fas fa-undo"></i> 重置
+                                            <i class="bi bi-arrow-counterclockwise"></i> 重置
                                         </button>
                                         <button type="button" class="btn btn-success ms-2" onclick="exportStatistics()">
-                                            <i class="fas fa-download"></i> 导出
+                                            <i class="bi bi-download"></i> 导出
                                         </button>
                                     </div>
                                 </div>
@@ -250,7 +250,7 @@
                                     </td>
                                     <td>
                                         <button class="btn btn-sm btn-info" onclick="viewDetails('{{ item.name }}', '{{ request.args.get('dimension', 'department') }}')">
-                                            <i class="fas fa-eye"></i> 详情
+                                            <i class="bi bi-eye"></i> 详情
                                         </button>
                                     </td>
                                 </tr>
@@ -628,7 +628,7 @@ function createCurrentWeekLeave() {
         .catch(error => window.appFeedback(error.message || '请假发起失败'))
         .finally(() => {
             btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-check me-1"></i> 为当前教学周请假';
+            btn.innerHTML = '<i class="bi bi-check2 me-1"></i> 为当前教学周请假';
         });
 }
 

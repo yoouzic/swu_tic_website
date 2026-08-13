@@ -9,7 +9,7 @@
         <div class="col-12">
             <div class="page-header">
                 <div class="page-header__heading">
-                    <h1><i class="bi bi-building-gear"></i> 部门与人员</h1>
+                    <h1><i class="bi bi-building"></i> 部门与人员</h1>
                     <p>管理部门、小组、信息员与人员流动记录。</p>
                 </div>
                 <div class="page-header__actions">
@@ -17,26 +17,30 @@
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDepartmentModal">
                         <i class="bi bi-plus-circle"></i> 添加部门
                     </button>
-                    {% endif %}
-                    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addGroupModal">
+                    {% else %}
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addGroupModal">
                         <i class="bi bi-plus-circle"></i> 添加小组
                     </button>
-                    {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
-                    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addUserModal">
-                        <i class="bi bi-plus-circle"></i> 添加用户
-                    </button>
                     {% endif %}
-                    <button type="button" class="btn btn-outline-secondary" onclick="openPersonnelMovementModal()">
-                        <i class="bi bi-clock-history"></i> 人员流动记录
-                    </button>
-                    {% if manage_permission == '超级管理员' %}
-                    <a href="#contacts-import" class="btn btn-outline-primary">
-                        <i class="bi bi-upload"></i> 通讯录导入
-                    </a>
-                    <a href="#contacts-export" class="btn btn-outline-secondary">
-                        <i class="bi bi-download"></i> 通讯录导出
-                    </a>
-                    {% endif %}
+                    <div class="dropdown page-header__overflow">
+                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="peopleMoreActions" data-bs-toggle="dropdown" aria-expanded="false">
+                            更多操作
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="peopleMoreActions">
+                            {% if manage_permission == '超级管理员' %}
+                            <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#addGroupModal"><i class="bi bi-people" aria-hidden="true"></i>添加小组</button></li>
+                            {% endif %}
+                            {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
+                            <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#addUserModal"><i class="bi bi-person-plus" aria-hidden="true"></i>添加用户</button></li>
+                            {% endif %}
+                            <li><button type="button" class="dropdown-item" onclick="openPersonnelMovementModal()"><i class="bi bi-clock-history" aria-hidden="true"></i>人员流动记录</button></li>
+                            {% if manage_permission == '超级管理员' %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a href="#contacts-import" class="dropdown-item"><i class="bi bi-upload" aria-hidden="true"></i>通讯录导入</a></li>
+                            <li><a href="#contacts-export" class="dropdown-item"><i class="bi bi-download" aria-hidden="true"></i>通讯录导出</a></li>
+                            {% endif %}
+                        </ul>
+                    </div>
                 </div>
             </div>
             <div class="card mb-3">
@@ -467,7 +471,7 @@
                 <div class="modal-body">
                     <!-- 错误提示容器 -->
                     <div id="addUserErrorContainer" class="alert alert-danger d-none" role="alert">
-                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <i class="bi bi-exclamation-triangle me-2"></i>
                         <span id="addUserErrorMessage"></span>
                         <button type="button" class="btn-close float-end" onclick="hideAddUserError()"></button>
                     </div>
@@ -868,6 +872,22 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+document.addEventListener('show.bs.dropdown', function(event) {
+    const memberMenu = event.target.closest?.('.group-user-row__menu');
+    const userList = memberMenu?.closest('.user-list');
+    if (userList) {
+        userList.classList.add('user-list--menu-open');
+    }
+});
+
+document.addEventListener('hidden.bs.dropdown', function(event) {
+    const memberMenu = event.target.closest?.('.group-user-row__menu');
+    const userList = memberMenu?.closest('.user-list');
+    if (userList) {
+        userList.classList.remove('user-list--menu-open');
+    }
+});
+
 function showMoveMembersModal(type) {
     currentMoveType = type;
     const modalTitle = document.getElementById('moveMembersTitle');
@@ -1034,6 +1054,11 @@ function renderDepartments(departments) {
     }
     container.innerHTML = departments.map(dept => {
         const isVirtualDepartment = dept.is_virtual || dept.id === null;
+        const departmentKey = dept.id === null ? 'virtual' : dept.id;
+        const isEmptyDepartment = Number(dept.total_users || 0) === 0;
+        const hasLocatorQuery = Boolean(document.getElementById('departmentLocatorInput')?.value.trim());
+        const departmentExpanded = (!isEmptyDepartment || hasLocatorQuery) ? 'true' : 'false';
+        const departmentBodyState = departmentExpanded === 'true' ? 'show' : '';
         const buttonsHtml = isVirtualDepartment ? '' : `
             <div class="department-card__actions">
                 <button class="btn btn-sm btn-outline-primary" onclick="editDepartment(${dept.id})">
@@ -1048,7 +1073,7 @@ function renderDepartments(departments) {
         `;
 
         return `
-        <div class="col-12 mb-4 department-card">
+        <div class="col-12 mb-2 department-card${isEmptyDepartment ? ' department-card--empty' : ''}">
             <div class="card shadow-sm">
                 <div class="card-header bg-light department-card__header">
                     <h5 class="mb-0 text-primary department-card__title">
@@ -1056,8 +1081,14 @@ function renderDepartments(departments) {
                         <span class="badge bg-secondary ms-2" style="font-size: 0.8rem;">${dept.groups.length} 个小组</span>
                         <span class="badge bg-info text-dark ms-1" style="font-size: 0.8rem;">${dept.total_users || '0'} 名用户</span>
                     </h5>
-                    ${buttonsHtml}
+                    <div class="department-card__controls">
+                        <button class="btn btn-sm btn-outline-secondary department-card__toggle" type="button" data-bs-toggle="collapse" data-bs-target="#departmentBody${departmentKey}" aria-expanded="${departmentExpanded}" aria-controls="departmentBody${departmentKey}">
+                            ${isEmptyDepartment ? '查看空部门' : '收起详情'} <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                        </button>
+                        ${buttonsHtml}
+                    </div>
                 </div>
+                <div class="collapse department-card__body ${departmentBodyState}" id="departmentBody${departmentKey}">
                 <div class="card-body">
                     <div class="mb-3">
                         ${dept.description ? `<p class="text-muted mb-1"><small>${dept.description}</small></p>` : ''}
@@ -1107,6 +1138,7 @@ function renderDepartments(departments) {
                     <div class="row">
                         ${dept.groups.map(group => createGroupCard(group)).join('')}
                     </div>
+                </div>
                 </div>
             </div>
         </div>
@@ -1173,21 +1205,38 @@ function createGroupCard(group) {
                                 {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
                                 <div class="group-user-row__actions">
                                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="viewUser(${user.id})" title="查看">
-                                        <i class="bi bi-eye"></i> 查看
+                                        <i class="bi bi-eye" aria-hidden="true"></i> 查看
                                     </button>
-                                    <button class="btn btn-sm btn-outline-secondary" onclick="editUser(${user.id})" title="编辑">
-                                        <i class="bi bi-pencil"></i> 编辑
-                                    </button>
-                                    ${user.role !== '超级管理员' ? `
-                                    <button class="btn btn-sm btn-outline-danger" onclick="departUser(${user.id}, '${user.name}')" title="离任">
-                                        <i class="bi bi-person-dash"></i> 离任
-                                    </button>
-                                    ` : ''}
-                                    {% if manage_permission == '超级管理员' %}
-                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${user.id}, '${user.name}')" title="删除">
-                                        <i class="bi bi-trash"></i> 删除
-                                    </button>
-                                    {% endif %}
+                                    <div class="dropdown group-user-row__menu">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                                id="userActions${user.id}" data-bs-toggle="dropdown" aria-expanded="false"
+                                                aria-label="更多用户操作：${user.name}">
+                                            更多
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userActions${user.id}">
+                                            <li>
+                                                <button type="button" class="dropdown-item" onclick="editUser(${user.id})">
+                                                    <i class="bi bi-pencil" aria-hidden="true"></i> 编辑
+                                                </button>
+                                            </li>
+                                            ${user.role !== '超级管理员' ? `
+                                            <li><hr class="dropdown-divider"></li>
+                                            <li>
+                                                <button type="button" class="dropdown-item text-danger" onclick="departUser(${user.id}, '${user.name}')">
+                                                    <i class="bi bi-person-dash" aria-hidden="true"></i> 离任
+                                                </button>
+                                            </li>
+                                            ` : ''}
+                                            {% if manage_permission == '超级管理员' %}
+                                            ${user.role === '超级管理员' ? '<li><hr class="dropdown-divider"></li>' : ''}
+                                            <li>
+                                                <button type="button" class="dropdown-item text-danger" onclick="deleteUser(${user.id}, '${user.name}')">
+                                                    <i class="bi bi-trash" aria-hidden="true"></i> 删除
+                                                </button>
+                                            </li>
+                                            {% endif %}
+                                        </ul>
+                                    </div>
                                 </div>
                                 {% endif %}
                             </div>
@@ -2412,6 +2461,11 @@ function initContactsExport() {
 .user-list {
     max-height: 200px;
     overflow-y: auto;
+}
+
+.user-list.user-list--menu-open {
+    max-height: none;
+    overflow: visible;
 }
 
 .card-header h6 {

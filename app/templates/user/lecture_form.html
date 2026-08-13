@@ -108,7 +108,7 @@
         <div class="col-md-10">
             <div class="card">
                 <div class="section-heading">
-                    <h2 class="h5 mb-0"><i class="fas fa-edit"></i> 听课表单</h2>
+                    <h2 class="h5 mb-0"><i class="bi bi-pencil"></i> 听课表单</h2>
                 </div>
                 <div class="card-body">
                     <div id="draftSaveStatus" class="draft-save-status" role="status" aria-live="polite">尚未保存</div>
@@ -407,10 +407,10 @@
 
                         <div class="form-actions">
                             <button type="submit" class="btn btn-primary btn-lg me-3">
-                                <i class="fas fa-save"></i> 提交表单
+                                <i class="bi bi-save"></i> 提交表单
                             </button>
                             <button type="reset" class="btn btn-secondary btn-lg">
-                                <i class="fas fa-undo"></i> 重置表单
+                                <i class="bi bi-arrow-counterclockwise"></i> 重置表单
                             </button>
                         </div>
                     </form>
@@ -851,7 +851,7 @@ document.getElementById('lectureForm').addEventListener('submit', function(e) {
     const submitBtn = this.querySelector('button[type="submit"]');
     if (submitBtn) {
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 提交中...';
+        submitBtn.innerHTML = '<i class="bi bi-arrow-repeat icon-spin me-1"></i> 提交中...';
     }
 });
 

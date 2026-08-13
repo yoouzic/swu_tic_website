@@ -7,7 +7,7 @@
     <div class="row">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h3><i class="fas fa-list"></i> 我的听课表单</h3>
+                <h3><i class="bi bi-list-ul"></i> 我的听课表单</h3>
                 <a href="{{ url_for('user.submit_form') }}" class="btn btn-primary">
                     <i class="bi bi-plus-circle"></i> 填写新表单
                 </a>
@@ -36,7 +36,7 @@
                             <label class="form-label">&nbsp;</label>
                             <div class="d-grid">
                                 <button type="submit" class="btn btn-outline-primary">
-                                    <i class="fas fa-search"></i> 搜索
+                                    <i class="bi bi-search"></i> 搜索
                                 </button>
                             </div>
                         </div>
@@ -162,8 +162,8 @@
                                     <td>
                                         <span class="badge bg-info">{{ versions|length }}</span>
                                         {% if versions|length > 1 %}
-                                        <button type="button" class="btn btn-outline-info ml-2" onclick="toggleVersions('{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}')" title="展开/收起版本">
-                                            <i class="fas fa-chevron-down me-1" id="chevron-{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}"></i> 展开/收起版本
+                                        <button type="button" class="btn btn-outline-info ms-2" onclick="toggleVersions('{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}')" title="展开/收起版本">
+                                            <i class="bi bi-chevron-down me-1" id="chevron-{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}"></i> 展开/收起版本
                                         </button>
                                         {% endif %}
                                     </td>
@@ -171,14 +171,14 @@
                                     <td>
                                         <div class="btn-group">
                                             <a href="{{ url_for('admin.get_form_detail', form_id=latest_form.id) }}" class="btn btn-info" title="查看最新版本">
-                                                <i class="fas fa-eye me-1"></i> 查看最新版本
+                                                <i class="bi bi-eye me-1"></i> 查看最新版本
                                             </a>
                                             <button class="btn btn-secondary" disabled title="导出功能暂未开放">
-                                                <i class="fas fa-download me-1"></i> 导出暂未开放
+                                                <i class="bi bi-download me-1"></i> 导出暂未开放
                                             </button>
                                             {% if versions|length == 1 and latest_form.status == '待审核' %}
                                             <button class="btn btn-danger" onclick="deleteForm({{ latest_form.id }})" title="删除">
-                                                <i class="fas fa-trash-alt me-1"></i> 删除
+                                                <i class="bi bi-trash me-1"></i> 删除
                                             </button>
                                             {% endif %}
                                         </div>
@@ -236,12 +236,12 @@
                                                                     <div class="btn-group btn-group-sm">
                                                                         <a href="{{ url_for('admin.get_form_detail', form_id=version.id) }}" 
                                                                            class="btn btn-outline-info" title="查看此版本">
-                                                                            <i class="fas fa-eye me-1"></i> 查看此版本
+                                                                            <i class="bi bi-eye me-1"></i> 查看此版本
                                                                         </a>
                                                                         {% if version.status in [None, '草稿'] or (version.status == '已驳回' and loop.first) %}
                                                                         <a href="{{ url_for('user.edit_form', form_id=version.id) }}" 
                                                                            class="btn btn-outline-warning" title="编辑此版本">
-                                                                            <i class="fas fa-edit me-1"></i> 编辑此版本
+                                                                            <i class="bi bi-pencil me-1"></i> 编辑此版本
                                                                         </a>
                                                                         {% endif %}
                                                                     </div>
@@ -307,11 +307,11 @@
             </div>
             {% else %}
             <div class="text-center py-5">
-                <i class="fas fa-clipboard-list fa-3x text-muted mb-3"></i>
+                <i class="bi bi-clipboard-data fs-1 text-muted mb-3"></i>
                 <h5 class="text-muted">暂无听课表单</h5>
                 <p class="text-muted">您还没有提交过听课表单</p>
                 <a href="{{ url_for('user.submit_form') }}" class="btn btn-primary">
-                    <i class="fas fa-plus"></i> 创建第一个表单
+                    <i class="bi bi-plus"></i> 创建第一个表单
                 </a>
             </div>
             {% endif %}
@@ -455,12 +455,12 @@ function toggleVersions(uniqueId) {
     
     if (versionRow.style.display === 'none' || versionRow.style.display === '') {
         versionRow.style.display = 'table-row';
-        chevron.classList.remove('fa-chevron-down');
-        chevron.classList.add('fa-chevron-up');
+        chevron.classList.remove('bi-chevron-down');
+        chevron.classList.add('bi-chevron-up');
     } else {
         versionRow.style.display = 'none';
-        chevron.classList.remove('fa-chevron-up');
-        chevron.classList.add('fa-chevron-down');
+        chevron.classList.remove('bi-chevron-up');
+        chevron.classList.add('bi-chevron-down');
     }
 }
 

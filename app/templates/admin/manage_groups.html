@@ -18,7 +18,7 @@
             </div>
 
             <!-- 小组列表 -->
-            <div class="row">
+            <div class="row" id="groupsList">
                 {% if groups %}
                     {% for group in groups %}
                     <div class="col-md-6 col-lg-4 mb-4">
@@ -423,22 +423,49 @@ function editGroup(id) {
         });
 }
 
+async function refreshGroupList() {
+    const response = await fetch(window.location.href, {
+        credentials: 'same-origin'
+    });
+    if (!response.ok) {
+        throw new Error(`小组列表刷新失败：HTTP ${response.status}`);
+    }
+
+    const html = await response.text();
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    const current = document.getElementById('groupsList');
+    const next = parsed.getElementById('groupsList');
+    if (!current || !next) {
+        throw new Error('小组列表刷新失败：响应缺少 groupsList');
+    }
+
+    current.replaceWith(document.importNode(next, true));
+}
+
 function disbandGroup(id, name) {
-    showPasswordConfirm(`确定要解散小组"${name}"吗？该小组用户会转入“未分配小组”。`, (password) => {
-        fetch(`/admin/api/groups/${id}/disband`, { 
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password: password })
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showAlert(data.message, 'success');
-                    setTimeout(() => location.reload(), 1500);
-                } else {
-                    showAlert(data.message, 'error');
-                }
+    showPasswordConfirm(`确定要解散小组"${name}"吗？该小组用户会转入“未分配小组”。`, async (password) => {
+        try {
+            const response = await fetch(`/admin/api/groups/${id}/disband`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: password })
             });
+            const data = await response.json();
+            if (data.success) {
+                showAlert(data.message, 'success');
+                try {
+                    await refreshGroupList();
+                } catch (refreshError) {
+                    console.error('Group list refresh failed:', refreshError);
+                    showAlert('操作已完成，但列表刷新失败，请重试。', 'warning');
+                }
+            } else {
+                showAlert(data.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            showAlert('操作失败', 'error');
+        }
     });
 }
 
@@ -458,33 +485,37 @@ function bindFormEvents() {
     });
 }
 
-function submitForm(url, formData, modalId, method = 'POST') {
+async function submitForm(url, formData, modalId, method = 'POST') {
     const jsonData = {};
     for (let [key, value] of formData.entries()) {
         jsonData[key] = value;
     }
-    
-    fetch(url, {
-        method: method,
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(jsonData)
-    })
-    .then(response => response.json())
-    .then(data => {
+
+    try {
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(jsonData)
+        });
+        const data = await response.json();
         if (data.success) {
             showAlert(data.message, 'success');
             bootstrap.Modal.getInstance(document.getElementById(modalId)).hide();
-            setTimeout(() => location.reload(), 1500);
+            try {
+                await refreshGroupList();
+            } catch (refreshError) {
+                console.error('Group list refresh failed:', refreshError);
+                showAlert('操作已完成，但列表刷新失败，请重试。', 'warning');
+            }
         } else {
             showAlert(data.message, 'error');
         }
-    })
-    .catch(error => {
+    } catch (error) {
         console.error('Error:', error);
         showAlert('操作失败', 'error');
-    });
+    }
 }
 
 function showPasswordConfirm(message, callback) {
@@ -511,7 +542,8 @@ function showPasswordConfirm(message, callback) {
 }
 
 function showAlert(message, type) {
-    const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+    const alertClass = type === 'success' ? 'alert-success' :
+        type === 'warning' ? 'alert-warning' : 'alert-danger';
     const alertHtml = `
         <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
             ${message}

@@ -48,8 +48,8 @@ class StatisticsDesignMigrationTests(unittest.TestCase):
             with self.subTest(endpoint=endpoint):
                 self.assertIn(endpoint, self.template)
 
-        self.assertIn("secondary_actions", self.template)
-        self.assertIn("secondary_actions=[]", self.template)
+        self.assertIn('class="statistics-subnav"', self.template)
+        self.assertNotIn("secondary_actions=", self.top_section)
         for outline_class in (
             "btn-outline-success",
             "btn-outline-primary",

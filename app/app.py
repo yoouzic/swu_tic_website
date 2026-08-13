@@ -147,6 +147,17 @@ def inject_app_context():
     current_endpoint = request.endpoint or ''
     app_navigation = build_navigation(user, current_endpoint, review_permission, manage_permission)
     is_information_officer = user.role == '信息员'
+    contextual_search_endpoints = {
+        'admin.manage_departments',
+        'admin.course_management',
+        'admin.course_feedback_management',
+        'admin.statistics',
+        'admin.review_forms',
+        'admin.view_forms',
+        'user.listening_registration',
+        'user.course_feedback_management',
+        'user.my_forms',
+    }
     return {
         'current_user': user,
         'app_navigation': app_navigation,
@@ -154,6 +165,7 @@ def inject_app_context():
         'page_label': resolve_page_label(app_navigation, current_endpoint),
         'app_search_endpoint': 'user.my_forms' if is_information_officer else 'admin.view_forms',
         'app_search_label': '搜索课程、教师或地点' if is_information_officer else '搜索听课人、教师或课程',
+        'show_app_search': current_endpoint not in contextual_search_endpoints,
     }
 
 # 创建上传目录

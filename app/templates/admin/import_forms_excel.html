@@ -8,7 +8,7 @@
         <div class="col-12 d-flex justify-content-between align-items-center">
             <h3 class="mb-0">Excel导入表单</h3>
             <a href="{{ url_for('admin.view_forms') }}" class="btn btn-outline-secondary">
-                <i class="fas fa-arrow-left"></i> 返回查看表单
+                <i class="bi bi-arrow-left"></i> 返回查看表单
             </a>
         </div>
     </div>
@@ -20,7 +20,7 @@
                 <div class="card-body">
                     <div class="mb-3">
                         <a class="btn btn-outline-primary" href="{{ url_for('admin.download_forms_import_template') }}">
-                            <i class="fas fa-download"></i> 下载导入模板
+                            <i class="bi bi-download"></i> 下载导入模板
                         </a>
                     </div>
                     <div class="mb-3">
@@ -28,10 +28,10 @@
                     </div>
                     <div class="mb-3">
                         <button class="btn btn-primary" id="btnImport">
-                            <i class="fas fa-file-import"></i> 上传并导入
+                            <i class="bi bi-file-earmark-arrow-down"></i> 上传并导入
                         </button>
-                        <button class="btn btn-outline-info ml-2" id="btnPreview">
-                            <i class="fas fa-search"></i> 导入预览
+                        <button class="btn btn-outline-info ms-2" id="btnPreview">
+                            <i class="bi bi-search"></i> 导入预览
                         </button>
                     </div>
                     <div id="previewResult" style="display:none;" class="mb-3"></div>
@@ -90,7 +90,7 @@ function renderImportResult(data) {
         html += `
             <hr>
             <a class="btn btn-success btn-sm" href="${escapeHtml(data.export_url)}">
-                <i class="fas fa-download"></i> 下载本次导入表单完整数据
+                <i class="bi bi-download"></i> 下载本次导入表单完整数据
             </a>
         `;
     }
@@ -163,7 +163,7 @@ function importForms() {
     fd.append('file', selectedFile);
     const btn = document.getElementById('btnImport');
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 导入中...';
+    btn.innerHTML = '<i class="bi bi-arrow-repeat icon-spin"></i> 导入中...';
 
     fetch('/admin/api/forms/import', {
         method: 'POST',
@@ -181,7 +181,7 @@ function importForms() {
     })
     .finally(() => {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-file-import"></i> 上传并导入';
+        btn.innerHTML = '<i class="bi bi-file-earmark-arrow-down"></i> 上传并导入';
     });
 }
 
@@ -192,7 +192,7 @@ function previewForms() {
     fd.append('file', selectedFile);
     const btn = document.getElementById('btnPreview');
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 预览中...';
+    btn.innerHTML = '<i class="bi bi-arrow-repeat icon-spin"></i> 预览中...';
     fetch('/admin/api/forms/import/preview', {
         method: 'POST',
         body: fd
@@ -206,7 +206,7 @@ function previewForms() {
     })
     .finally(() => {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-search"></i> 导入预览';
+        btn.innerHTML = '<i class="bi bi-search"></i> 导入预览';
     });
 }
 

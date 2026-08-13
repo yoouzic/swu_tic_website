@@ -53,6 +53,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    document.querySelectorAll('.page-header__overflow').forEach((menu) => {
+        const toggle = menu.querySelector('[data-bs-toggle="dropdown"]');
+        menu.addEventListener('hidden.bs.dropdown', () => {
+            toggle.focus();
+        });
+    });
+
     const confirmDialog = document.getElementById('appConfirmDialog');
     if (confirmDialog && window.bootstrap) {
         const modal = bootstrap.Modal.getOrCreateInstance(confirmDialog);

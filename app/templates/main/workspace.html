@@ -12,7 +12,7 @@
     <div class="workspace-grid">
         <section class="workspace-panel"><div class="workspace-panel__header"><h2>优先处理</h2></div>
             {% if workspace.tasks %}{% for task in workspace.tasks %}<article class="workspace-task"><div><h3>{{ task.label }}</h3><p>{{ task.description }}</p></div><a class="btn btn-outline-primary" href="{{ url_for(task.endpoint) }}">继续处理</a></article>{% endfor %}
-            {% else %}{{ empty_state('当前没有待办', '可以从右侧快捷入口开始新的工作。') }}{% endif %}
+            {% else %}{{ empty_state('当前没有待办', '可以从快捷入口开始新的工作。', compact=true) }}{% endif %}
         </section>
         <section class="workspace-panel"><div class="workspace-panel__header"><h2>快捷发起</h2></div><div class="workspace-launch-list">{% for action in workspace.quick_actions %}<a href="{{ url_for(action.endpoint) }}"><span>{{ action.label }}</span><i class="bi bi-chevron-right" aria-hidden="true"></i></a>{% endfor %}</div></section>
     </div>

@@ -37,13 +37,12 @@ class CoursePageHeaderMigrationTests(unittest.TestCase):
             '{% if is_course_management %}',
             'data-bs-toggle="modal"',
             'data-bs-target="#columnSettingsModal"',
-            'id="batchBanBtn"',
-            'disabled',
+            'id="courseMoreActions"',
+            'class="dropdown page-header__overflow"',
             "url_for('admin.download_banned_teacher_import_template')",
             'onclick="openBanTeacherImportModal()"',
             "url_for('admin.registration_statistics')",
             '列设置',
-            '批量禁听',
             '下载禁听教师模板',
             '导入禁听教师',
             '听课登记统计',
@@ -52,8 +51,11 @@ class CoursePageHeaderMigrationTests(unittest.TestCase):
             with self.subTest(snippet=snippet):
                 self.assertIn(snippet, self.header)
 
-        self.assertEqual(self.header.count('class="btn btn-outline-secondary"'), 4)
-        self.assertEqual(self.header.count('class="btn btn-primary"'), 1)
+        self.assertNotIn('id="batchBanBtn"', self.header)
+        self.assertEqual(self.header.count('class="dropdown page-header__overflow"'), 1)
+        self.assertIn('id="courseBatchToolbar"', self.template)
+        self.assertIn('id="batchBanBtn" disabled', self.template)
+        self.assertIn('批量操作仅影响当前选择。', self.template)
 
     def test_header_removes_legacy_layout_and_decorative_action_colors(self):
         self.assertNotIn('d-flex justify-content-between align-items-center mb-4', self.header)

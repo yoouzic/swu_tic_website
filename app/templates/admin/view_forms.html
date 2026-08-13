@@ -6,27 +6,19 @@
 <div class="container-fluid">
     <div class="row">
         <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">
-                        <i class="fas fa-list mr-2"></i>
-                        表单列表
-                    </h3>
-                    <div class="card-tools">
-                        {% if user.role == '超级管理员' %}
-                        <a class="btn btn-primary btn-sm mr-2" href="{{ url_for('admin.import_forms_excel_page') }}">
-                            <i class="fas fa-file-import"></i> 导入表单
-                        </a>
-                        {% endif %}
-                        <button class="btn btn-success btn-sm mr-2" data-bs-toggle="modal" data-bs-target="#exportModal">
-                            <i class="fas fa-file-excel"></i> 导出表单
-                        </button>
-                        <span class="badge bg-info text-dark">
-                            共 {{ forms.total }} 条记录
-                        </span>
-                    </div>
+            <div class="page-header">
+                <div class="page-header__heading">
+                    <h1><i class="bi bi-list-ul me-2"></i>表单列表</h1>
+                    <p>搜索、查看并导出听课表单，共 {{ forms.total }} 条记录。</p>
                 </div>
-                
+                <div class="page-header__actions">
+                    {% if user.role == '超级管理员' %}
+                    <a class="btn btn-outline-secondary" href="{{ url_for('admin.import_forms_excel_page') }}"><i class="bi bi-file-earmark-arrow-down"></i> 导入表单</a>
+                    {% endif %}
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#exportModal"><i class="bi bi-file-earmark-excel"></i> 导出表单</button>
+                </div>
+            </div>
+            <div class="card">
                 <div class="card-body">
                     <!-- 搜索框 -->
                     <div class="row mb-3">
@@ -46,14 +38,14 @@
                         </div>
                         <div class="col-md-2">
                             <button class="btn btn-primary" onclick="searchForms()">
-                                <i class="fas fa-search"></i> 搜索
+                                <i class="bi bi-search"></i> 搜索
                             </button>
                         </div>
                     </div>
 
                     <!-- 表格 -->
                     <div class="table-responsive">
-                        <table class="table table-bordered table-striped">
+                        <table class="table table-bordered table-striped form-list-table">
                             <thead>
                                 <tr>
                                     <th>表单ID</th>
@@ -72,17 +64,17 @@
                                 {% set latest_form = form_group['latest_form'] %}
                                 {% set versions = form_group['versions'] %}
                                 <tr>
-                                    <td>
+                                    <td data-label="表单ID">
                                         <strong>{{ latest_form.unique_id or ('单独-' + latest_form.id|string) }}</strong>
                                         {% if versions|length > 1 %}
                                         <br><small class="text-muted">共{{ versions|length }}个版本</small>
                                         {% endif %}
                                     </td>
-                                    <td>{{ latest_form.listener_name }}</td>
-                                    <td>{{ latest_form.teacher_name }}</td>
-                                    <td>{{ latest_form.course_title[:30] }}{% if latest_form.course_title|length > 30 %}...{% endif %}</td>
-                                    <td>{{ latest_form.lecture_date if latest_form.lecture_date else '-' }}</td>
-                                    <td>
+                                    <td data-label="听课人">{{ latest_form.listener_name }}</td>
+                                    <td data-label="授课教师">{{ latest_form.teacher_name }}</td>
+                                    <td data-label="课程名称">{{ latest_form.course_title[:30] }}{% if latest_form.course_title|length > 30 %}...{% endif %}</td>
+                                    <td data-label="听课日期">{{ latest_form.lecture_date if latest_form.lecture_date else '-' }}</td>
+                                    <td data-label="当前状态">
                                         {% if latest_form.status == '待审核' %}
                                             <span class="badge bg-warning text-dark">{{ latest_form.status }}</span>
                                         {% elif latest_form.status == '已审核' or latest_form.status == '部门已审核' or latest_form.status == '中心已审核' %}
@@ -93,19 +85,19 @@
                                             <span class="badge bg-secondary text-white">{{ latest_form.status }}</span>
                                         {% endif %}
                                     </td>
-                                    <td>
+                                    <td data-label="版本数">
                                         <span class="badge bg-info text-dark">{{ versions|length }}</span>
                                         {% if versions|length > 1 %}
-                                        <button class="btn btn-outline-info ml-1" onclick="toggleVersions('{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}')" title="展开/收起版本">
-                                            <i class="fas fa-chevron-down me-1" id="chevron-{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}"></i> 展开/收起版本
+                                        <button class="btn btn-outline-info ms-1" onclick="toggleVersions('{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}')" title="展开/收起版本">
+                                            <i class="bi bi-chevron-down me-1" id="chevron-{{ latest_form.unique_id or ('single_' + latest_form.id|string) }}"></i> 展开/收起版本
                                         </button>
                                         {% endif %}
                                     </td>
-                                    <td>{{ (latest_form.updated_at or latest_form.created_at).strftime('%Y-%m-%d %H:%M') if (latest_form.updated_at or latest_form.created_at) else '-' }}</td>
-                                    <td>
+                                    <td data-label="最后更新">{{ (latest_form.updated_at or latest_form.created_at).strftime('%Y-%m-%d %H:%M') if (latest_form.updated_at or latest_form.created_at) else '-' }}</td>
+                                    <td data-label="操作">
                                         <div class="btn-group">
                                             <button class="btn btn-info" onclick="viewFormDetail({{ latest_form.id }})" title="查看最新版本">
-                                                <i class="fas fa-eye"></i> 查看最新版本
+                                                <i class="bi bi-eye"></i> 查看最新版本
                                             </button>
                                         </div>
                                     </td>
@@ -172,7 +164,7 @@
                                                                 </td>
                                                                 <td>
                                                                     <button class="btn btn-outline-info" onclick="viewFormDetail({{ version.id }})" title="查看此版本">
-                                                                        <i class="fas fa-eye me-1"></i> 查看此版本
+                                                                        <i class="bi bi-eye me-1"></i> 查看此版本
                                                                     </button>
                                                                 </td>
                                                             </tr>
@@ -272,43 +264,43 @@
                     <!-- 导出模式 -->
                     <div class="form-group">
                         <label>导出模式</label>
-                        <div class="custom-control custom-radio">
-                            <input type="radio" id="exportModeStandard" name="export_mode" value="standard" class="custom-control-input" checked onchange="handleExportModeChange()">
-                            <label class="custom-control-label" for="exportModeStandard">规范 Excel 文件</label>
+                        <div class="form-check">
+                            <input type="radio" id="exportModeStandard" name="export_mode" value="standard" class="form-check-input" checked onchange="handleExportModeChange()">
+                            <label class="form-check-label" for="exportModeStandard">规范 Excel 文件</label>
                         </div>
-                        <div class="custom-control custom-radio">
-                            <input type="radio" id="exportModeAllData" name="export_mode" value="all_data" class="custom-control-input" onchange="handleExportModeChange()">
-                            <label class="custom-control-label" for="exportModeAllData">数据库全部字段</label>
+                        <div class="form-check">
+                            <input type="radio" id="exportModeAllData" name="export_mode" value="all_data" class="form-check-input" onchange="handleExportModeChange()">
+                            <label class="form-check-label" for="exportModeAllData">数据库全部字段</label>
                         </div>
                     </div>
 
                     <!-- 导出范围 -->
                     <div class="form-group">
                         <label>导出范围</label>
-                        <div class="custom-control custom-radio">
-                            <input type="radio" id="scopeLatest" name="scope" value="latest" class="custom-control-input" checked onchange="handleExportScopeChange()">
-                            <label class="custom-control-label" for="scopeLatest">导出最新 (上次导出后新增的)</label>
+                        <div class="form-check">
+                            <input type="radio" id="scopeLatest" name="scope" value="latest" class="form-check-input" checked onchange="handleExportScopeChange()">
+                            <label class="form-check-label" for="scopeLatest">导出最新 (上次导出后新增的)</label>
                         </div>
-                        <div class="custom-control custom-radio">
-                            <input type="radio" id="scopeSelected" name="scope" value="selected" class="custom-control-input" onchange="handleExportScopeChange()">
-                            <label class="custom-control-label" for="scopeSelected">选择导出表单</label>
+                        <div class="form-check">
+                            <input type="radio" id="scopeSelected" name="scope" value="selected" class="form-check-input" onchange="handleExportScopeChange()">
+                            <label class="form-check-label" for="scopeSelected">选择导出表单</label>
                         </div>
-                        <div class="custom-control custom-radio">
-                            <input type="radio" id="scopeAll" name="scope" value="all" class="custom-control-input" onchange="handleExportScopeChange()">
-                            <label class="custom-control-label" for="scopeAll">导出所有</label>
+                        <div class="form-check">
+                            <input type="radio" id="scopeAll" name="scope" value="all" class="form-check-input" onchange="handleExportScopeChange()">
+                            <label class="form-check-label" for="scopeAll">导出所有</label>
                         </div>
                     </div>
 
                     <!-- 排序方式 -->
                     <div class="form-group">
                         <label>排序方式</label>
-                        <div class="custom-control custom-radio">
-                            <input type="radio" id="sortTime" name="sort_by" value="time" class="custom-control-input" checked>
-                            <label class="custom-control-label" for="sortTime">按听课时间排序</label>
+                        <div class="form-check">
+                            <input type="radio" id="sortTime" name="sort_by" value="time" class="form-check-input" checked>
+                            <label class="form-check-label" for="sortTime">按听课时间排序</label>
                         </div>
-                        <div class="custom-control custom-radio">
-                            <input type="radio" id="sortCourse" name="sort_by" value="course" class="custom-control-input">
-                            <label class="custom-control-label" for="sortCourse">按课程排序 (学院-教师-课程)</label>
+                        <div class="form-check">
+                            <input type="radio" id="sortCourse" name="sort_by" value="course" class="form-check-input">
+                            <label class="form-check-label" for="sortCourse">按课程排序 (学院-教师-课程)</label>
                         </div>
                     </div>
 
@@ -317,27 +309,27 @@
                         <label>状态筛选 (可多选)</label>
                         <div class="row">
                             <div class="col-md-6">
-                                <div class="custom-control custom-checkbox">
-                                    <input type="checkbox" class="custom-control-input status-checkbox" id="statusCenter" value="中心已审核" checked>
-                                    <label class="custom-control-label" for="statusCenter">中心已审核</label>
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input status-checkbox" id="statusCenter" value="中心已审核" checked>
+                                    <label class="form-check-label" for="statusCenter">中心已审核</label>
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <div class="custom-control custom-checkbox">
-                                    <input type="checkbox" class="custom-control-input status-checkbox" id="statusDept" value="部门已审核" checked>
-                                    <label class="custom-control-label" for="statusDept">部门已审核</label>
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input status-checkbox" id="statusDept" value="部门已审核" checked>
+                                    <label class="form-check-label" for="statusDept">部门已审核</label>
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <div class="custom-control custom-checkbox">
-                                    <input type="checkbox" class="custom-control-input status-checkbox" id="statusPending" value="待审核">
-                                    <label class="custom-control-label" for="statusPending">待审核</label>
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input status-checkbox" id="statusPending" value="待审核">
+                                    <label class="form-check-label" for="statusPending">待审核</label>
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <div class="custom-control custom-checkbox">
-                                    <input type="checkbox" class="custom-control-input status-checkbox" id="statusRejected" value="已驳回">
-                                    <label class="custom-control-label" for="statusRejected">已驳回</label>
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input status-checkbox" id="statusRejected" value="已驳回">
+                                    <label class="form-check-label" for="statusRejected">已驳回</label>
                                 </div>
                             </div>
                         </div>
@@ -356,16 +348,16 @@
 
                     <!-- 预检信息显示区域 -->
                     <div id="exportCheckResult" class="alert alert-info" style="display: none;">
-                        <i class="fas fa-spinner fa-spin"></i> 正在检查数据...
+                        <i class="bi bi-arrow-repeat icon-spin"></i> 正在检查数据...
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-info" onclick="checkExportData()">
-                    <i class="fas fa-calculator"></i> 检查数量
+                    <i class="bi bi-calculator"></i> 检查数量
                 </button>
                 <button type="button" class="btn btn-primary" id="btnConfirmExport" disabled onclick="executeExport()">
-                    <i class="fas fa-file-export"></i> 确认导出
+                    <i class="bi bi-file-earmark-arrow-up"></i> 确认导出
                 </button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
             </div>
@@ -418,7 +410,7 @@ function checkExportData() {
     const resultDiv = document.getElementById('exportCheckResult');
     resultDiv.style.display = 'block';
     resultDiv.className = 'alert alert-info';
-    resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在检查数据...';
+    resultDiv.innerHTML = '<i class="bi bi-arrow-repeat icon-spin"></i> 正在检查数据...';
 
     fetch('/admin/api/forms/export/check', {
         method: 'POST',
@@ -543,12 +535,12 @@ function toggleVersions(uniqueId) {
     
     if (versionRow.style.display === 'none' || versionRow.style.display === '') {
         versionRow.style.display = 'table-row';
-        chevron.classList.remove('fa-chevron-down');
-        chevron.classList.add('fa-chevron-up');
+        chevron.classList.remove('bi-chevron-down');
+        chevron.classList.add('bi-chevron-up');
     } else {
         versionRow.style.display = 'none';
-        chevron.classList.remove('fa-chevron-up');
-        chevron.classList.add('fa-chevron-down');
+        chevron.classList.remove('bi-chevron-up');
+        chevron.classList.add('bi-chevron-down');
     }
 }
 </script>

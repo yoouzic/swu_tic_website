@@ -129,7 +129,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="formDetailContent">
-                <div class="text-center py-4"><i class="fas fa-spinner fa-spin"></i> 正在加载...</div>
+                <div class="text-center py-4"><i class="bi bi-arrow-repeat icon-spin"></i> 正在加载...</div>
             </div>
         </div>
     </div>
@@ -349,10 +349,10 @@ function toggleVersions(collapseId, chevronId) {
     if (!row) return;
     if (row.style.display === 'none' || !row.style.display) {
         row.style.display = 'table-row';
-        if (icon) icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
+        if (icon) icon.classList.replace('bi-chevron-down', 'bi-chevron-up');
     } else {
         row.style.display = 'none';
-        if (icon) icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+        if (icon) icon.classList.replace('bi-chevron-up', 'bi-chevron-down');
     }
 }
 
@@ -363,7 +363,7 @@ function viewForm(formId) {
         modal = new bootstrap.Modal(modalEl);
     }
     modal.show();
-    document.getElementById('formDetailContent').innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin"></i> 正在加载...</div>';
+    document.getElementById('formDetailContent').innerHTML = '<div class="text-center py-4"><i class="bi bi-arrow-repeat icon-spin"></i> 正在加载...</div>';
     fetch(`/admin/form/${formId}?format=json`)
         .then(response => response.json())
         .then(data => {
@@ -438,13 +438,13 @@ function viewDetail(userId) {
                                 <span class="badge bg-info text-dark">${forms.length}</span>
                                 ${forms.length > 1 ? `
                                     <button class="btn btn-outline-info btn-sm ms-1" onclick="toggleVersions('${collapseId}', '${chevronId}')">
-                                        <i class="fas fa-chevron-down me-1" id="${chevronId}"></i> 展开/收起版本
+                                        <i class="bi bi-chevron-down me-1" id="${chevronId}"></i> 展开/收起版本
                                     </button>
                                 ` : ''}
                             </td>
                             <td>
                                 <button class="btn btn-info btn-sm" onclick="viewForm(${latest.id})">
-                                    <i class="fas fa-eye me-1"></i> 查看最新版本
+                                    <i class="bi bi-eye me-1"></i> 查看最新版本
                                 </button>
                             </td>
                         </tr>
@@ -481,7 +481,7 @@ function viewDetail(userId) {
                                                                 <td><span title="${escapeHtml(version.review_comment || '')}">${escapeHtml(version.review_comment || '-')}</span></td>
                                                                 <td>
                                                                     <button class="btn btn-outline-info btn-sm" onclick="viewForm(${version.id})">
-                                                                        <i class="fas fa-eye me-1"></i> 查看此版本
+                                                                        <i class="bi bi-eye me-1"></i> 查看此版本
                                                                     </button>
                                                                 </td>
                                                             </tr>

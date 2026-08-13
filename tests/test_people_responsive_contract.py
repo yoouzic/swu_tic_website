@@ -37,6 +37,46 @@ class PeopleResponsiveContractTest(unittest.TestCase):
         self.assertIn('.group-user-row { grid-template-columns: 1fr; }', mobile)
         self.assertIn('.group-user-row__actions { justify-content: flex-start; }', mobile)
 
+    def test_member_actions_keep_view_visible_and_move_admin_actions_into_menu(self):
+        start = self.template.index('<div class="group-user-row__actions">')
+        end = self.template.index("                        `).join('')}", start)
+        actions = self.template[start:end]
+
+        self.assertIn('onclick="viewUser(${user.id})"', actions)
+        self.assertIn('class="dropdown group-user-row__menu"', actions)
+        self.assertIn('id="userActions${user.id}"', actions)
+        self.assertIn('aria-label="更多用户操作：${user.name}"', actions)
+        self.assertIn('class="dropdown-menu dropdown-menu-end"', actions)
+        self.assertIn('class="dropdown-item" onclick="editUser(${user.id})"', actions)
+        self.assertIn('class="dropdown-item text-danger" onclick="departUser(', actions)
+        self.assertIn('class="dropdown-item text-danger" onclick="deleteUser(', actions)
+        self.assertIn('class="dropdown-divider"', actions)
+
+        self.assertNotIn(
+            'class="btn btn-sm btn-outline-secondary" onclick="editUser(',
+            actions,
+        )
+        self.assertNotIn(
+            'class="btn btn-sm btn-outline-danger" onclick="departUser(',
+            actions,
+        )
+        self.assertNotIn(
+            'class="btn btn-sm btn-outline-danger" onclick="deleteUser(',
+            actions,
+        )
+
+    def test_member_action_menu_temporarily_releases_list_overflow(self):
+        for marker in (
+            "show.bs.dropdown",
+            "hidden.bs.dropdown",
+            "user-list--menu-open",
+            ".group-user-row__menu",
+            ".user-list.user-list--menu-open",
+            "overflow: visible",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, self.template)
+
 
 if __name__ == '__main__':
     unittest.main()
