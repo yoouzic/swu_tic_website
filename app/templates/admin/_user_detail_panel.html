@@ -1,7 +1,9 @@
 <div class="user-detail-panel">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="member-detail-heading">
         <div>
-            <h3 class="mb-1">个人信息查看</h3>
+{% if not is_fragment|default(false) %}
+            <h3 class="mb-1">成员详情</h3>
+{% endif %}
             <div class="text-muted">{{ target_user.name }}（{{ target_user.number }}）</div>
         </div>
 {% if not is_fragment|default(false) %}
@@ -9,27 +11,29 @@
 {% endif %}
     </div>
 
-    <div class="row">
-        <div class="col-md-4">
-            <div class="card shadow mb-4">
-                <div class="card-header bg-primary text-white text-center">
+    <div class="member-detail-layout">
+        <aside class="member-detail-sidebar">
+            <section class="member-detail-section member-detail-identity">
+                <div class="member-detail-section__header text-center">
                     <h5 class="mb-0"><i class="bi bi-person-circle"></i> 个人信息</h5>
                 </div>
-                <div class="card-body text-center">
-                    <div class="mb-3">
+                <div class="member-detail-section__body text-center">
+                    <div class="member-detail-identity__avatar">
                         <i class="bi bi-person-circle text-primary" style="font-size: 4rem;"></i>
                     </div>
-                    <h5 class="card-title">{{ target_user.name }}</h5>
-                    <p class="text-muted">{{ target_user.role }}</p>
-                    <p class="text-muted">{{ target_user.department }} - {{ target_user.group or '未分配小组' }}</p>
+                    <div class="member-detail-identity__text">
+                        <h5 class="card-title">{{ target_user.name }}</h5>
+                        <p class="text-muted">{{ target_user.role }}</p>
+                        <p class="text-muted mb-0">{{ target_user.department }} - {{ target_user.group or '未分配小组' }}</p>
+                    </div>
                 </div>
-            </div>
+            </section>
 
-            <div class="card shadow">
-                <div class="card-header bg-info text-white">
+            <section class="member-detail-section">
+                <div class="member-detail-section__header">
                     <h6 class="mb-0"><i class="bi bi-info-circle"></i> 详细信息</h6>
                 </div>
-                <div class="card-body">
+                <div class="member-detail-section__body">
                     <table class="table table-borderless table-sm mb-0">
                         <tr><td><strong>姓名</strong></td><td>{{ target_user.name }}</td></tr>
                         <tr><td><strong>编号</strong></td><td>{{ target_user.number }}</td></tr>
@@ -46,26 +50,26 @@
                         <tr><td><strong>小组</strong></td><td>{{ target_user.group or '未分配' }}</td></tr>
                     </table>
                 </div>
-            </div>
-        </div>
+            </section>
+        </aside>
 
-        <div class="col-md-8">
-            <div class="card mb-4">
-                <div class="card-body">
-                    <form method="GET" class="row g-3">
-                        <div class="col-md-3">
+        <div class="member-detail-main">
+            <section class="member-detail-section member-detail-filter-section">
+                <div class="member-detail-section__body">
+                    <form method="GET" class="member-detail-filters" data-member-detail-filter>
+                        <div class="member-detail-filter member-detail-filter--date-from">
                             <label for="date_from" class="form-label">开始日期</label>
                             <input type="date" class="form-control" id="date_from" name="date_from" value="{{ date_from }}">
                         </div>
-                        <div class="col-md-3">
+                        <div class="member-detail-filter member-detail-filter--date-to">
                             <label for="date_to" class="form-label">结束日期</label>
                             <input type="date" class="form-control" id="date_to" name="date_to" value="{{ date_to }}">
                         </div>
-                        <div class="col-md-4">
+                        <div class="member-detail-filter member-detail-filter--search">
                             <label for="search" class="form-label">搜索</label>
                             <input type="text" class="form-control" id="search" name="search" value="{{ search }}" placeholder="课程名称、教师姓名、地点、登记内容">
                         </div>
-                        <div class="col-md-2">
+                        <div class="member-detail-filter member-detail-filter--action">
                             <label class="form-label">&nbsp;</label>
                             <div class="d-grid">
                                 <button type="submit" class="btn btn-outline-primary">筛选</button>
@@ -73,100 +77,90 @@
                         </div>
                     </form>
                 </div>
-            </div>
+            </section>
 
             {% if stats %}
-            <div class="card shadow mb-4">
-                <div class="card-header bg-secondary text-white">
+            <section class="member-detail-section">
+                <div class="member-detail-section__header">
                     <h6 class="mb-0"><i class="bi bi-bar-chart"></i> 听课填表统计</h6>
                 </div>
-                <div class="card-body">
-                    <h6 class="text-primary border-bottom pb-2 mb-3">当前教学周（第 {{ stats.current_week }} 周）</h6>
-                    <div class="row text-center mb-4">
-                        <div class="col-md-4">
+                <div class="member-detail-section__body">
+                    <h6 class="member-detail-subheading">{{ stats.current_week_label }}</h6>
+                    <div class="member-detail-metrics member-detail-metrics--three">
+                        <div class="member-detail-metric">
                             <div class="border-end">
                                 <h4 class="text-primary">{{ stats.week_submitted }}</h4>
                                 <small class="text-muted">已交表单</small>
                             </div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="member-detail-metric">
                             <div class="border-end">
                                 <h4 class="text-success">{{ stats.week_approved }}</h4>
                                 <small class="text-muted">审核通过</small>
                             </div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="member-detail-metric">
                             <h4 class="text-warning">{{ stats.week_reward }}</h4>
                             <small class="text-muted">奖励表数量</small>
                         </div>
                     </div>
 
-                    <h6 class="text-info border-bottom pb-2 mb-3">历史累计</h6>
-                    <div class="row text-center">
-                        <div class="col-md-3">
+                    <h6 class="member-detail-subheading">历史累计</h6>
+                    <div class="member-detail-metrics member-detail-metrics--four">
+                        <div class="member-detail-metric">
                             <div class="border-end">
                                 <h4 class="text-dark">{{ stats.total_submitted }}</h4>
                                 <small class="text-muted">总提交</small>
                             </div>
                         </div>
-                        <div class="col-md-3">
+                        <div class="member-detail-metric">
                             <div class="border-end">
                                 <h4 class="text-success">{{ stats.total_approved }}</h4>
                                 <small class="text-muted">总通过</small>
                             </div>
                         </div>
-                        <div class="col-md-3">
+                        <div class="member-detail-metric">
                             <div class="border-end">
                                 <h4 class="text-warning">{{ stats.total_reward }}</h4>
                                 <small class="text-muted">总奖励</small>
                             </div>
                         </div>
-                        <div class="col-md-3">
+                        <div class="member-detail-metric">
                             <h4 class="text-secondary">{{ stats.days_since_last }}</h4>
                             <small class="text-muted">距上次交表天数</small>
                         </div>
                     </div>
 
-                    <h6 class="text-success border-bottom pb-2 mt-4 mb-3">审核通过表单反馈</h6>
-                    <div class="row text-center">
-                        <div class="col-md-6">
+                    <h6 class="member-detail-subheading">审核通过表单反馈</h6>
+                    <div class="member-detail-metrics member-detail-metrics--two">
+                        <div class="member-detail-metric">
                             <div class="border-end">
                                 <h4 class="text-primary">{{ '%.1f'|format(stats.average_feedback_chars or 0) }}</h4>
                                 <small class="text-muted">平均反馈字数</small>
                             </div>
                         </div>
-                        <div class="col-md-6">
+                        <div class="member-detail-metric">
                             <h4 class="text-info">{{ stats.total_feedback_chars or 0 }}</h4>
                             <small class="text-muted">总反馈字数</small>
                         </div>
                     </div>
                 </div>
-            </div>
+            </section>
 
-            <div class="card shadow mb-4">
-                <div class="card-header bg-warning text-dark">
+            <section class="member-detail-section">
+                <div class="member-detail-section__header">
                     <h6 class="mb-0"><i class="bi bi-award"></i> 个人评价</h6>
                 </div>
-                <div class="card-body">
-                    <div class="row align-items-center text-center">
-                        <div class="col-md-6 border-end">
-                            <h3 class="mb-1 text-danger">-{{ '%.2f'|format(stats.total_deduction or 0) }}</h3>
+                <div class="member-detail-section__body">
+                    <div class="member-detail-rating">
+                        <div class="member-detail-rating__score">
+                            <h3 class="mb-1 text-danger">{{ stats.deduction_display }}</h3>
                             <small class="text-muted">个人累计扣分</small>
                         </div>
-                        <div class="col-md-6">
-                            {% if stats.percentile <= 0.2 %}
-                            <div class="alert alert-danger mb-0 py-2">
-                                <strong>需要继续努力</strong>
+                        <div class="member-detail-rating__label">
+                            <div class="member-detail-rating__value{% if not stats.has_evaluation_sample %} is-empty{% endif %}">
+                                <strong>{{ stats.rating_label }}</strong>
                             </div>
-                            {% elif stats.percentile <= 0.7 %}
-                            <div class="alert alert-warning mb-0 py-2">
-                                <strong>表现良好</strong>
-                            </div>
-                            {% else %}
-                            <div class="alert alert-success mb-0 py-2">
-                                <strong>行为很好</strong>
-                            </div>
-                            {% endif %}
                             <small class="text-muted d-block mt-2">综合表现评级</small>
                         </div>
                     </div>
@@ -178,10 +172,10 @@
                             </h6>
                             {% if stats.assessment_items %}
                             <div class="btn-group btn-group-sm" role="group" aria-label="考评项排序">
-                                <button type="button" class="btn btn-warning active assessment-sort-btn" data-sort="score">
+                                <button type="button" class="btn btn-primary active assessment-sort-btn" data-sort="score">
                                     按扣分
                                 </button>
-                                <button type="button" class="btn btn-outline-warning assessment-sort-btn" data-sort="time">
+                                <button type="button" class="btn btn-outline-secondary assessment-sort-btn" data-sort="time">
                                     按时间
                                 </button>
                             </div>
@@ -223,7 +217,7 @@
                         </div>
                         {% if stats.assessment_items|length > 5 %}
                         <div class="text-center mt-3">
-                            <button type="button" class="btn btn-outline-warning btn-sm" id="toggleAssessmentItems">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="toggleAssessmentItems">
                                 查看所有考评项
                             </button>
                         </div>
@@ -235,15 +229,15 @@
                         {% endif %}
                     </div>
                 </div>
-            </div>
+            </section>
             {% endif %}
 
-            <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
+            <section class="member-detail-section">
+                <div class="member-detail-section__header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="bi bi-journal-check"></i> 听课登记记录</h5>
                     <small class="text-muted">筛选条件与表单统计共用</small>
                 </div>
-                <div class="card-body">
+                <div class="member-detail-section__body">
                     {% if my_reservations %}
                     <div class="table-responsive">
                         <table class="table table-hover align-middle">
@@ -285,13 +279,13 @@
                     <div class="text-muted">暂无听课登记记录</div>
                     {% endif %}
                 </div>
-            </div>
+            </section>
 
-            <div class="card">
-                <div class="card-header">
+            <section class="member-detail-section">
+                <div class="member-detail-section__header">
                     <h5 class="mb-0"><i class="bi bi-list-ul"></i> 表单统计</h5>
                 </div>
-                <div class="card-body">
+                <div class="member-detail-section__body">
                     {% if forms %}
                     <div class="table-responsive">
                         <table class="table table-hover">
@@ -399,7 +393,7 @@
                     <div class="text-center py-4 text-muted">暂无表单记录</div>
                     {% endif %}
                 </div>
-            </div>
+            </section>
         </div>
     </div>
 </div>

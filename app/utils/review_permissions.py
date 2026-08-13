@@ -7,6 +7,31 @@ from flask import session
 from ..models import User, Permission, RolePermission, db, Group, Department
 from .user_status import active_user_filter, is_user_active, UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME
 
+
+_REVIEW_PERMISSION_PRESENTATION = {
+    '审表_小组': {
+        'permission_label': '小组级审核',
+        'scope_label': '审核范围：本小组',
+    },
+    '审表_部门': {
+        'permission_label': '部门级审核',
+        'scope_label': '审核范围：本部门',
+    },
+    '审表_中心': {
+        'permission_label': '中心级审核',
+        'scope_label': '审核范围：全中心',
+    },
+}
+
+
+def get_review_permission_presentation(permission):
+    """Return user-facing copy without exposing internal permission keys."""
+    presentation = _REVIEW_PERMISSION_PRESENTATION.get(permission, {
+        'permission_label': '无审核权限',
+        'scope_label': '审核范围：不可用',
+    })
+    return dict(presentation)
+
 def get_user_review_permission(user_id):
     """
     获取用户的审核权限

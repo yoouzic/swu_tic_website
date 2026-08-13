@@ -4,6 +4,7 @@ from ..models import User, db
 from functools import wraps
 from ..utils.password_audit import record_password_audit
 from ..utils.user_status import is_user_active
+from ..utils.permission_feedback import forbidden_json, flash_forbidden, resolve_permission_resource
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -55,9 +56,10 @@ def role_required(role):
             
             # 其他用户需要匹配指定角色
             if user.role != role:
+                resource = resolve_permission_resource()
                 if is_api_request:
-                    return jsonify({'success': False, 'message': '权限不足'}), 403
-                flash('权限不足', 'error')
+                    return forbidden_json(resource)
+                flash_forbidden(resource)
                 return redirect(url_for('main.index'))
             return f(*args, **kwargs)
         return decorated_function

@@ -579,7 +579,7 @@
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="userStudentId" class="form-label">学号 <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="userStudentId" name="student_id" required>
+                                <input type="text" class="form-control" id="userStudentId" name="student_id" autocomplete="username" required>
                             </div>
                         </div>
                     </div>
@@ -603,7 +603,7 @@
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="userPassword" class="form-label">密码 <span class="text-danger">*</span></label>
-                                <input type="password" class="form-control" id="userPassword" name="password" required>
+                                <input type="password" class="form-control" id="userPassword" name="password" autocomplete="new-password" required>
                                 <div class="form-text">留空将自动生成随机密码</div>
                             </div>
                         </div>
@@ -724,7 +724,7 @@
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="editUserStudentId" class="form-label">学号 <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="editUserStudentId" name="student_id" required>
+                                <input type="text" class="form-control" id="editUserStudentId" name="student_id" autocomplete="username" required>
                             </div>
                         </div>
                     </div>
@@ -802,20 +802,23 @@
                 <h5 class="modal-title" id="confirmActionTitle">确认操作</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
+            <form id="confirmDeleteForm">
             <div class="modal-body">
                 <div class="alert alert-warning">
                     <i class="bi bi-exclamation-triangle"></i> 
                     <span id="deleteMessage">此操作不可撤销，确定要删除吗？</span>
                 </div>
                 <div class="mb-3">
+                    <input type="text" class="visually-hidden" id="deleteUsername" name="username" autocomplete="username" value="{{ session.get('user_name', '') }}" tabindex="-1" aria-hidden="true">
                     <label for="deletePassword" class="form-label">请输入您的登录密码以确认：</label>
-                    <input type="password" class="form-control" id="deletePassword" placeholder="输入密码">
+                    <input type="password" class="form-control" id="deletePassword" name="password" autocomplete="current-password" placeholder="输入密码">
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                 <button type="button" class="btn btn-danger" id="confirmDeleteBtn">确认</button>
             </div>
+            </form>
         </div>
     </div>
 </div>
@@ -1384,7 +1387,18 @@ function viewUser(userId) {
     }
     body.dataset.userId = String(userId);
     body.innerHTML = userDetailSkeleton();
-    fetch(`/admin/users/${encodeURIComponent(userId)}/view?format=fragment`)
+    loadUserDetailFragment(userId, new URLSearchParams({format: 'fragment'}), true);
+}
+
+function loadUserDetailFragment(userId, params, shouldOpenDrawer = false) {
+    const drawerEl = document.getElementById('userDetailDrawer');
+    const body = document.getElementById('userDetailDrawerBody');
+    if (!drawerEl || !body) {
+        return;
+    }
+    body.dataset.userId = String(userId);
+    body.innerHTML = userDetailSkeleton();
+    fetch(`/admin/users/${encodeURIComponent(userId)}/view?${params.toString()}`)
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
@@ -1393,7 +1407,9 @@ function viewUser(userId) {
         })
         .then(html => {
             body.innerHTML = html;
-            bootstrap.Offcanvas.getOrCreateInstance(drawerEl).show();
+            if (shouldOpenDrawer) {
+                bootstrap.Offcanvas.getOrCreateInstance(drawerEl).show();
+            }
         })
         .catch(error => {
             console.error('Error:', error);
@@ -1403,9 +1419,27 @@ function viewUser(userId) {
                     <button type="button" class="btn btn-sm btn-outline-danger mt-3" data-user-detail-retry data-user-id="${String(userId)}">重试</button>
                 </div>
             `;
-            bootstrap.Offcanvas.getOrCreateInstance(drawerEl).show();
+            if (shouldOpenDrawer) {
+                bootstrap.Offcanvas.getOrCreateInstance(drawerEl).show();
+            }
         });
 }
+
+document.addEventListener('submit', function(event) {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.matches('[data-member-detail-filter]')) {
+        return;
+    }
+    event.preventDefault();
+    const body = document.getElementById('userDetailDrawerBody');
+    const userId = body?.dataset.userId;
+    if (!userId) {
+        return;
+    }
+    const params = new URLSearchParams(new FormData(form));
+    params.set('format', 'fragment');
+    loadUserDetailFragment(userId, params);
+});
 
 document.addEventListener('click', function(event) {
     const retryButton = event.target.closest('[data-user-detail-retry]');
