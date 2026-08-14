@@ -72,7 +72,12 @@
                     </div>
 
                     <details class="review-setup" id="reviewQueueSetup" open>
-                        <summary><span>队列范围与筛选</span><small class="text-muted">时间、状态、成员范围</small></summary>
+                        <summary>
+                            <span class="review-setup__summary-copy">
+                                <span>队列范围与筛选</span>
+                                <small>时间、状态、成员范围</small>
+                            </span>
+                        </summary>
                         <div class="review-setup__body">
                     <!-- 筛选条件 -->
                     <div class="row mb-4 review-filter-row">
@@ -200,12 +205,12 @@
                     </div>
                 </div>
 
-                <!-- 无权限提示 -->
+                <!-- 审核不可用提示 -->
                 <div class="card-body text-center" id="noPermissionAlert" style="display: none;">
                     <div class="alert alert-warning">
                         <i class="bi bi-exclamation-triangle fs-2 mb-3"></i>
-                        <h4>您不具有审表权限</h4>
-                        <p>如有疑问，请联系管理员</p>
+                        <h4>无法打开“表单审核”</h4>
+                        <p>当前账号没有该功能权限。</p>
                     </div>
                 </div>
             </div>
@@ -794,10 +799,10 @@ function checkPermission() {
                     loadUserStructure();
                 }
             } else {
-                document.getElementById('permissionBadge').textContent = '无审核权限';
+                document.getElementById('permissionBadge').textContent = '无法打开“表单审核”';
                 document.getElementById('permissionBadge').className = 'badge bg-danger text-white';
                 document.getElementById('noPermissionAlert').style.display = 'block';
-                setReviewQueueFeedback(data.message || '您不具有审表权限。', 'error');
+                setReviewQueueFeedback(data.message || '无法打开“表单审核”：当前账号没有该功能权限。', 'error');
             }
         })
         .catch(error => {
@@ -1231,6 +1236,8 @@ function loadForms() {
         .then(data => {
             if (data.success) {
                 const formGroups = mergeLockedFormGroups(data.forms || []);
+                const reviewWorkspace = document.getElementById('reviewWorkspace');
+                reviewWorkspace.classList.toggle('is-queue-ready', formGroups.length > 0);
                 renderFormsList(formGroups);
                 document.getElementById('formsListArea').style.display = 'block';
                 const reviewQueueSetup = document.getElementById('reviewQueueSetup');
@@ -1515,7 +1522,7 @@ function reviewForm(formId) {
             if (data.success) {
                 const form = data.form;
                 if (form.can_review !== true) {
-                    showPermissionWarning(`您无权限审核处于"${form.status}"状态的表单`);
+                    showPermissionWarning('无法审核“表单”：当前账号没有审核该表单的权限。');
                     return;
                 }
                 if (typeof openFullReview === 'function') {

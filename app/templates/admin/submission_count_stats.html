@@ -46,8 +46,6 @@
                 <button class="btn btn-outline-secondary" id="btnExportStats">导出 Excel</button>
                 <button class="btn btn-outline-secondary" id="btnSaveSnapshot">保存历史</button>
                 <button class="btn btn-outline-secondary" id="btnLoadSnapshot">加载历史</button>
-                <button class="btn btn-outline-secondary" id="btnSelectAll">全选用户</button>
-                <button class="btn btn-outline-secondary" id="btnClearAll">清空选择</button>
             </div>
         </div>
     </section>
@@ -64,8 +62,16 @@
                 <p>选择需要纳入排名和计数的成员。</p>
             </div>
             <div class="activity-panel__body">
-                <label class="form-label" for="userSearchInput">搜索范围用户</label>
-                <input type="text" id="userSearchInput" class="form-control" placeholder="搜索部门/小组/姓名/编号">
+                <div class="scope-selection-toolbar">
+                    <div class="scope-selection-toolbar__search">
+                        <label class="form-label" for="userSearchInput">搜索范围用户</label>
+                        <input type="text" id="userSearchInput" class="form-control" placeholder="搜索部门/小组/姓名/编号">
+                    </div>
+                    <div class="scope-selection-toolbar__actions">
+                        <button class="btn btn-sm btn-outline-secondary" id="btnSelectAll">全选用户</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="btnClearAll">清空选择</button>
+                    </div>
+                </div>
                 <div id="userStructure" class="statistics-scope-list mt-2"></div>
             </div>
         </section>

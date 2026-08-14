@@ -10,6 +10,7 @@ from flask import Blueprint, current_app, g, jsonify, request, url_for
 from sqlalchemy import func
 
 from app.models import LectureForm, User, db
+from app.utils.permission_feedback import build_forbidden_message
 from app.utils.user_status import active_user_filter
 
 from .contracts import BatchStatus, DatasetStatus, ReviewCategory, ReviewMode, ScheduleCoverage
@@ -649,7 +650,18 @@ def _load_batch_or_404(batch_id):
     if batch is None:
         return None, (jsonify({'success': False, 'code': 'batch_not_found', 'message': '批次不存在'}), 404)
     if not is_center_reviewer(g.automation_user.id):
-        return None, (jsonify({'success': False, 'code': 'forbidden', 'message': '需要审表_中心权限'}), 403)
+        return None, (
+            jsonify({
+                'success': False,
+                'code': 'forbidden',
+                'message': build_forbidden_message(
+                    '自动审核批次',
+                    '当前账号没有中心级审核权限。',
+                    action='查看',
+                ),
+            }),
+            403,
+        )
     return batch, None
 
 
@@ -737,7 +749,15 @@ def get_form_assessment(form_id):
         return jsonify({'success': False, 'code': 'form_not_found', 'message': '表单不存在'}), 404
     latest = _latest_form(form)
     if not _form_is_reviewable(latest, g.automation_user.id):
-        return jsonify({'success': False, 'code': 'forbidden', 'message': '您没有权限查看此表单'}), 403
+        return jsonify({
+            'success': False,
+            'code': 'forbidden',
+            'message': build_forbidden_message(
+                '自动审核表单',
+                '当前账号没有查看该表单的权限。',
+                action='查看',
+            ),
+        }), 403
     summary = latest_assessment_summaries([latest.id]).get(latest.id)
     return jsonify({'success': True, 'assessment': summary})
 
@@ -749,13 +769,29 @@ def get_assessment(assessment_id):
     if assessment is None:
         return jsonify({'success': False, 'code': 'assessment_not_found', 'message': '审核结果不存在'}), 404
     if not _assessment_accessible(assessment, g.automation_user.id):
-        return jsonify({'success': False, 'code': 'forbidden', 'message': '您没有权限查看此审核结果'}), 403
+        return jsonify({
+            'success': False,
+            'code': 'forbidden',
+            'message': build_forbidden_message(
+                '自动审核结果',
+                '当前账号没有查看该审核结果的权限。',
+                action='查看',
+            ),
+        }), 403
     return jsonify({'success': True, 'assessment': _assessment_detail_payload(assessment)})
 
 
 def _compat_user_error(user_id):
     if not is_center_reviewer(user_id):
-        return jsonify({'success': False, 'code': 'forbidden', 'message': '需要审表_中心权限'}), 403
+        return jsonify({
+            'success': False,
+            'code': 'forbidden',
+            'message': build_forbidden_message(
+                '自动审核',
+                '当前账号没有中心级审核权限。',
+                action='操作',
+            ),
+        }), 403
     return None
 
 

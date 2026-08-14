@@ -29,7 +29,7 @@
     <section class="review-form-surface">
                 <div class="review-form-surface__header">
                     <div>
-                        <h1><i class="bi bi-pencil me-2" aria-hidden="true"></i>表单审核</h1>
+                        <h1><i class="bi bi-pencil me-2" aria-hidden="true"></i><span id="reviewObjectTitle">正在加载审核对象</span></h1>
                         <p>核对原始记录、必要修改和审核意见后，再执行审核动作。</p>
                     </div>
                     <div class="review-form-surface__tools">
@@ -366,14 +366,14 @@
 
                         <!-- 操作按钮 -->
                         <div class="review-form-actions">
-                                <button type="button" class="btn btn-primary" onclick="submitReview()">
-                                    <i class="bi bi-check2"></i> 提交审核
+                                <button type="button" class="btn btn-outline-secondary" onclick="resetForm()">
+                                    <i class="bi bi-arrow-counterclockwise"></i> 重置表单
                                 </button>
                                 <button type="button" class="btn btn-outline-danger" onclick="rejectReview(event)">
                                     <i class="bi bi-x-lg"></i> 驳回
                                 </button>
-                                <button type="button" class="btn btn-outline-secondary" onclick="resetForm()">
-                                    <i class="bi bi-arrow-counterclockwise"></i> 重置表单
+                                <button type="button" class="btn btn-primary" onclick="submitReview()">
+                                    <i class="bi bi-check2"></i> 提交审核
                                 </button>
                         </div>
                     </form>
@@ -510,6 +510,7 @@ let originalFormData = {};
 let currentFormData = {};
 let formId = null;
 let userPermission = null;
+let userPermissionLabel = null;
 let existingScoreData = [];
 let reviewDraftTimer = null;
 let reviewDraftInterval = null;
@@ -569,7 +570,12 @@ function loadFormData() {
             if (data.success) {
                 originalFormData = data.form;
                 userPermission = data.permission;
+                userPermissionLabel = data.permission_label;
                 existingScoreData = Array.isArray(data.score_data) ? data.score_data : [];
+                const courseTitle = String(data.form.course_title || '').trim();
+                document.getElementById('reviewObjectTitle').textContent = courseTitle
+                    ? `审核《${courseTitle}》听课表`
+                    : `审核表单 #${formId}`;
                 populateForm(data.form);
                 document.getElementById('statusBadge').textContent = `当前状态：${data.form.status}`;
                 document.getElementById('statusBadge').className = `badge ${getStatusClass(data.form.status)}`;
@@ -1046,7 +1052,7 @@ function submitReview() {
     const changes = detectChanges();
     
     // 准备确认信息
-    document.getElementById('confirmPermission').textContent = userPermission;
+    document.getElementById('confirmPermission').textContent = userPermissionLabel || '审核权限';
     
     // 确定审核后状态
     let newStatus = '';

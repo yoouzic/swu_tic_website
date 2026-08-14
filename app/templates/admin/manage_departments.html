@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}部门管理 - 西南大学听课信息中心{% endblock %}
+{% block body_class %}people-management-page{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -2560,25 +2561,25 @@ function initContactsExport() {
 </script>
 
 <style>
-.user-list {
+.people-management-page .user-list {
     max-height: 200px;
     overflow-y: auto;
 }
 
-.user-list.user-list--menu-open {
+.people-management-page .user-list.user-list--menu-open {
     max-height: none;
     overflow: visible;
 }
 
-.card-header h6 {
+.people-management-page .card-header h6 {
     font-size: 0.9rem;
 }
 
-.card-body .small {
+.people-management-page .card-body .small {
     font-size: 0.8rem;
 }
 
-.badge {
+.people-management-page .badge {
     font-size: 0.7rem;
 }
 </style>
