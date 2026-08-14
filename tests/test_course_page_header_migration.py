@@ -19,7 +19,7 @@ class CoursePageHeaderMigrationTests(unittest.TestCase):
     def test_header_uses_canonical_regions_and_mode_aware_copy(self):
         self.assertIn('class="page-header"', self.header)
         self.assertIn('class="page-header__heading"', self.header)
-        self.assertIn('class="page-header__actions"', self.header)
+        self.assertRegex(self.header, r'class="[^"]*\bpage-header__actions\b[^"]*"')
         self.assertLess(
             self.header.index('page-header__heading'),
             self.header.index('page-header__actions'),
@@ -66,6 +66,13 @@ class CoursePageHeaderMigrationTests(unittest.TestCase):
         ):
             with self.subTest(decorative_class=decorative_class):
                 self.assertNotIn(decorative_class, self.header)
+
+    def test_mobile_management_actions_share_one_scoped_row(self):
+        self.assertIn('class="page-header__actions course-page-actions"', self.header)
+
+        css = Path('app/static/css/style.css').read_text(encoding='utf-8')
+        self.assertIn('.course-page-actions > .btn,.course-page-actions > .dropdown', css)
+        self.assertIn('.course-page-actions .dropdown-toggle', css)
 
 
 if __name__ == "__main__":

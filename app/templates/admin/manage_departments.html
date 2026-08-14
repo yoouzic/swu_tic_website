@@ -1101,9 +1101,14 @@ function renderDepartments(departments) {
                     <i class="bi bi-pencil"></i> 编辑
                 </button>
                 {% if manage_permission == '超级管理员' %}
-                <button class="btn btn-sm btn-outline-danger" type="button" data-department-action="disband" data-department-id="${Number(dept.id)}">
-                    <i class="bi bi-box-arrow-right"></i> 解散
-                </button>
+                <div class="dropdown department-card__menu">
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="departmentActions${departmentKey}" data-bs-toggle="dropdown" aria-expanded="false" aria-label="更多部门操作：${escapePeopleHtml(dept.name)}">
+                        更多
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="departmentActions${departmentKey}">
+                        <li><button class="dropdown-item text-danger" type="button" data-department-action="disband" data-department-id="${Number(dept.id)}"><i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>解散部门</button></li>
+                    </ul>
+                </div>
                 {% endif %}
             </div>
         `;
@@ -1224,13 +1229,18 @@ function createGroupCard(group) {
     const isUnassigned = group.id === null || group.is_virtual;
     const buttonsHtml = isUnassigned ? '' : `
         <div class="group-card__actions">
-            <button class="btn btn-sm btn-outline-secondary" onclick="editGroup(${group.id})" title="编辑">
+            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="editGroup(${group.id})" title="编辑">
                 <i class="bi bi-pencil"></i> 编辑
             </button>
             {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
-            <button class="btn btn-sm btn-outline-danger" onclick="disbandGroup(${group.id}, '${group.name}')" title="解散">
-                <i class="bi bi-box-arrow-right"></i> 解散
-            </button>
+            <div class="dropdown group-card__menu">
+                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="groupActions${group.id}" data-bs-toggle="dropdown" aria-expanded="false" aria-label="更多小组操作：${escapePeopleHtml(group.name)}">
+                    更多
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="groupActions${group.id}">
+                    <li><button class="dropdown-item text-danger" type="button" onclick="disbandGroup(${group.id}, '${group.name}')"><i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>解散小组</button></li>
+                </ul>
+            </div>
             {% endif %}
         </div>
     `;

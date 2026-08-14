@@ -109,7 +109,7 @@ class UIConsistencyStaticContractTest(unittest.TestCase):
             'onclick="showMoveMembersModal(\'group\')"': 'btn-outline-secondary',
             'onclick="showPermissionModal()"': 'btn-outline-secondary',
             'data-department-action="edit"': 'btn-outline-secondary',
-            'data-department-action="disband"': 'btn-outline-danger',
+            'data-department-action="disband"': 'text-danger',
         }
         for marker, expected_class in review_actions.items():
             with self.subTest(template='review', marker=marker):
@@ -203,6 +203,40 @@ class UIConsistencyStaticContractTest(unittest.TestCase):
         ):
             with self.subTest(decorative_surface=decorative_surface):
                 self.assertNotIn(decorative_surface, renderer)
+
+    def test_review_statistics_range_separates_label_and_date_tokens(self):
+        start = self.review.index('function renderStatistics(')
+        end = self.review.index('function renderUserList(', start)
+        renderer = self.review[start:end]
+
+        self.assertIn('review-statistics-range__label', renderer)
+        self.assertIn('review-statistics-range__value', renderer)
+        self.assertIn('review-statistics-range__date', renderer)
+        self.assertNotIn('当前统计范围：${rangeText}', renderer)
+
+    def test_people_disband_actions_live_in_accessible_more_menus(self):
+        department_start = self.people.index('const standardButtonsHtml')
+        department_end = self.people.index('const emptyButtonsHtml', department_start)
+        department_actions = self.people[department_start:department_end]
+        self.assertIn('dropdown department-card__menu', department_actions)
+        self.assertIn('dropdown-item text-danger', department_actions)
+        self.assertIn('data-department-action="disband"', department_actions)
+        self.assertNotIn('btn-outline-danger', department_actions)
+
+        group_start = self.people.index(
+            'const buttonsHtml',
+            self.people.index('function createGroupCard'),
+        )
+        group_end = self.people.index('return `', group_start)
+        group_actions = self.people[group_start:group_end]
+        self.assertIn('dropdown group-card__menu', group_actions)
+        self.assertIn('dropdown-item text-danger', group_actions)
+        self.assertIn('onclick="disbandGroup(', group_actions)
+        self.assertNotIn('btn-outline-danger', group_actions)
+
+        self.assertIn('function disbandDepartment(id, name)', self.people)
+        self.assertIn('function disbandGroup(id, name)', self.people)
+        self.assertIn('body: JSON.stringify({ password: password })', self.people)
 
     def test_permission_feedback_has_no_context_free_literals_in_core_routes(self):
         self.assertNotIn("flash('权限不足'", self.auth)
