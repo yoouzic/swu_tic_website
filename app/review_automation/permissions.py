@@ -5,6 +5,7 @@ from functools import wraps
 from flask import g, jsonify, session
 
 from app.models import User, db
+from app.utils.permission_feedback import build_forbidden_message
 from app.utils.review_permissions import get_reviewable_users, get_user_review_permission
 from app.utils.user_status import is_user_active
 
@@ -46,7 +47,15 @@ def require_super_admin(view):
     def wrapped(*args, **kwargs):
         user = g.automation_user
         if user.role != '超级管理员':
-            return _error('仅超级管理员可以管理自动审核配置', 'forbidden', 403)
+            return _error(
+                build_forbidden_message(
+                    '自动审核配置',
+                    '当前账号没有管理自动审核配置的权限。',
+                    action='管理',
+                ),
+                'forbidden',
+                403,
+            )
         return view(*args, **kwargs)
 
     return wrapped
@@ -60,7 +69,15 @@ def require_automation_staff(view):
     def wrapped(*args, **kwargs):
         user = g.automation_user
         if user.role != '超级管理员' and not is_center_reviewer(user.id):
-            return _error('需要自动审核工作人员权限', 'forbidden', 403)
+            return _error(
+                build_forbidden_message(
+                    '自动审核',
+                    '当前账号没有自动审核工作人员权限。',
+                    action='操作',
+                ),
+                'forbidden',
+                403,
+            )
         return view(*args, **kwargs)
 
     return wrapped
@@ -74,7 +91,15 @@ def require_center_reviewer(view):
     def wrapped(*args, **kwargs):
         user = g.automation_user
         if get_user_review_permission(user.id) != '审表_中心':
-            return _error('需要审表_中心权限', 'forbidden', 403)
+            return _error(
+                build_forbidden_message(
+                    '自动审核',
+                    '当前账号没有中心级审核权限。',
+                    action='操作',
+                ),
+                'forbidden',
+                403,
+            )
         return view(*args, **kwargs)
 
     return wrapped

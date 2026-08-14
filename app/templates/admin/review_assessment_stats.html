@@ -6,11 +6,7 @@
 
 {% block content %}
 <div class="container-fluid">
-    {% if can_manual_assessment_import %}
-    {{ page_header('审表考评统计', '按时间与人员范围核对部门、个人扣分和考评明细。', secondary_actions=[{'label': '下载考评导入模板', 'href': '/admin/api/review/assessment/import/template'}]) }}
-    {% else %}
     {{ page_header('审表考评统计', '按时间与人员范围核对部门、个人扣分和考评明细。') }}
-    {% endif %}
     {{ statistics_nav('review') }}
 
     <div class="statistics-tool-grid{% if not can_manual_assessment_import %} statistics-tool-grid--single{% endif %}">
@@ -33,16 +29,17 @@
                 <div class="statistics-filter-actions mt-3">
                     <button class="btn btn-primary" id="btnLoadStats">查询统计</button>
                     <button class="btn btn-outline-secondary" id="btnExportStats">导出 Excel</button>
-                    <button class="btn btn-outline-secondary" id="btnSelectAll">全选用户</button>
-                    <button class="btn btn-outline-secondary" id="btnClearAll">清空选择</button>
                 </div>
             </div>
         </section>
         {% if can_manual_assessment_import %}
         <section class="activity-panel">
-            <div class="activity-panel__header">
-                <h2>手动导入考评</h2>
-                <p>上传表格后先预览，再确认写入。</p>
+            <div class="activity-panel__header activity-panel__header--split">
+                <div>
+                    <h2>手动导入考评</h2>
+                    <p>上传表格后先预览，再确认写入。</p>
+                </div>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.download_manual_assessment_template') }}">下载考评导入模板</a>
             </div>
             <div class="activity-panel__body">
                 <label class="form-label" for="importFile">考评文件</label>
@@ -60,8 +57,16 @@
                 <p>可按部门、小组、姓名或编号缩小范围。</p>
             </div>
             <div class="activity-panel__body">
-                <label class="form-label" for="userSearchInput">搜索范围用户</label>
-                <input type="text" id="userSearchInput" class="form-control" placeholder="搜索部门/小组/姓名/编号">
+                <div class="scope-selection-toolbar">
+                    <div class="scope-selection-toolbar__search">
+                        <label class="form-label" for="userSearchInput">搜索范围用户</label>
+                        <input type="text" id="userSearchInput" class="form-control" placeholder="搜索部门/小组/姓名/编号">
+                    </div>
+                    <div class="scope-selection-toolbar__actions">
+                        <button class="btn btn-sm btn-outline-secondary" id="btnSelectAll">全选用户</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="btnClearAll">清空选择</button>
+                    </div>
+                </div>
                 <div id="userStructure" class="statistics-scope-list mt-2"></div>
             </div>
         </section>

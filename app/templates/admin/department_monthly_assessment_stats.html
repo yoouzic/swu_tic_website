@@ -35,8 +35,6 @@
                 <button class="btn btn-outline-secondary" id="btnExportStats">导出 Excel</button>
                 <button class="btn btn-outline-secondary" id="btnSaveSnapshot">保存历史</button>
                 <button class="btn btn-outline-secondary" id="btnLoadSnapshot">加载历史</button>
-                <button class="btn btn-outline-secondary" id="btnSelectAllDepartments">全选部门</button>
-                <button class="btn btn-outline-secondary" id="btnClearDepartments">清空选择</button>
             </div>
             <div class="mt-3" id="monthInfoAlert"></div>
         </div>
@@ -47,8 +45,16 @@
         <section class="activity-panel">
             <div class="activity-panel__header"><h2>部门范围</h2><p>搜索并选择需要比较的部门。</p></div>
             <div class="activity-panel__body">
-                <label class="form-label" for="departmentSearchInput">搜索部门</label>
-                <input type="text" id="departmentSearchInput" class="form-control" placeholder="搜索部门">
+                <div class="scope-selection-toolbar">
+                    <div class="scope-selection-toolbar__search">
+                        <label class="form-label" for="departmentSearchInput">搜索部门</label>
+                        <input type="text" id="departmentSearchInput" class="form-control" placeholder="搜索部门">
+                    </div>
+                    <div class="scope-selection-toolbar__actions">
+                        <button class="btn btn-sm btn-outline-secondary" id="btnSelectAllDepartments">全选部门</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="btnClearDepartments">清空选择</button>
+                    </div>
+                </div>
                 <div id="departmentList" class="statistics-scope-list mt-2"></div>
             </div>
         </section>

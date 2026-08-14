@@ -13,7 +13,12 @@ from ..utils.review_permissions import (
     get_next_status_after_review,
     get_review_permission_presentation,
 )
-from ..utils.permission_feedback import build_forbidden_payload, forbidden_json, flash_forbidden
+from ..utils.permission_feedback import (
+    build_forbidden_message,
+    build_forbidden_payload,
+    forbidden_json,
+    flash_forbidden,
+)
 from ..utils.manage_permissions import (
     get_user_manage_permission,
     check_manage_permission
@@ -410,7 +415,14 @@ def _load_review_forms_for_operation(form_ids):
     if missing_ids:
         return None, jsonify({'success': False, 'message': f'以下表单不存在：{missing_ids[:5]}'}), 404
     if unauthorized_ids:
-        return None, jsonify({'success': False, 'message': f'您无权操作以下表单：{unauthorized_ids[:5]}'}), 403
+        return None, jsonify({
+            'success': False,
+            'message': build_forbidden_message(
+                '表单审核',
+                '当前账号没有操作所选表单的权限。',
+                action='操作',
+            ),
+        }), 403
     return ordered_forms, None, None
 
 
@@ -473,7 +485,14 @@ def review_form_draft(form_id):
         user_id = session['user_id']
         permission = get_user_review_permission(user_id)
         if not permission:
-            return jsonify({'success': False, 'message': '您不具有审表权限，如有疑问，请联系管理员'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '表单审核',
+                    '当前账号没有审核权限。',
+                    action='操作',
+                ),
+            }), 403
 
         form = LectureForm.query.get_or_404(form_id)
         reviewable_user_ids = get_reviewable_users(user_id)
@@ -2027,7 +2046,7 @@ def review_forms():
     # 检查用户权限
     permission = get_user_review_permission(session['user_id'])
     if not permission:
-        flash('您不具有审表权限，如有疑问，请联系管理员', 'error')
+        flash_forbidden('表单审核')
         return redirect(url_for('admin.admin_dashboard'))
     
     # 直接返回模板，让前端JavaScript处理数据加载
@@ -2058,7 +2077,14 @@ def reject_form_review(form_id):
         # 允许所有管理员驳回，或者检查审表权限
         user = User.query.get(session['user_id'])
         if user.role not in ['管理员', '超级管理员'] and not get_user_review_permission(user.id):
-             return jsonify({'success': False, 'message': '您无权驳回表单'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '表单审核',
+                     '当前账号没有驳回表单的权限。',
+                     action='驳回',
+                 ),
+             }), 403
 
         original_form = LectureForm.query.get_or_404(form_id)
         
@@ -2168,7 +2194,14 @@ def submit_review(form_id):
         # 检查用户权限
         permission = get_user_review_permission(session['user_id'])
         if not permission:
-            return jsonify({'success': False, 'message': '您没有审核权限'})
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '表单审核',
+                    '当前账号没有审核表单的权限。',
+                    action='审核',
+                ),
+            })
         
         # 获取原表单
         original_form = LectureForm.query.filter_by(id=form_id).first()
@@ -2177,7 +2210,14 @@ def submit_review(form_id):
         
         # 检查是否可以审核该状态的表单
         if not can_review_status(session['user_id'], original_form.status):
-            return jsonify({'success': False, 'message': f'您无权审核状态为"{original_form.status}"的表单'})
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '表单审核',
+                    '当前账号没有审核该表单的权限。',
+                    action='审核',
+                ),
+            })
         
         # 获取表单数据
         # 兼容 JSON 格式（前端使用 fetch JSON 提交）和 Form 格式
@@ -2362,7 +2402,7 @@ def review_form_page(form_id):
     # 检查用户权限
     permission = get_user_review_permission(session['user_id'])
     if not permission:
-        flash('您不具有审表权限，如有疑问，请联系管理员', 'error')
+        flash_forbidden('表单审核')
         return redirect(url_for('main.index'))
     
     return render_template(
@@ -2450,7 +2490,14 @@ def batch_auto_check():
     """Legacy adapter for the additive evidence-only batch API."""
     permission = get_user_review_permission(session['user_id'])
     if permission != '审表_中心':
-        return jsonify({'success': False, 'message': '您无权限执行一键自动审核'}), 403
+        return jsonify({
+            'success': False,
+            'message': build_forbidden_message(
+                '自动审核',
+                '当前账号没有执行自动审核的权限。',
+                action='执行',
+            ),
+        }), 403
     from ..review_automation.routes import create_batch_response
 
     return create_batch_response(
@@ -2464,7 +2511,14 @@ def batch_auto_check_preview():
     """Legacy adapter for the evidence-only batch preview."""
     permission = get_user_review_permission(session['user_id'])
     if permission != '审表_中心':
-        return jsonify({'success': False, 'message': '您无权限查看自动审核预览'}), 403
+        return jsonify({
+            'success': False,
+            'message': build_forbidden_message(
+                '自动审核预览',
+                '当前账号没有查看自动审核预览的权限。',
+                action='查看',
+            ),
+        }), 403
     from ..review_automation.routes import preview_batch_response
 
     return preview_batch_response(
@@ -2478,7 +2532,14 @@ def get_auto_check_status():
     """Legacy status adapter backed by the newest evidence-only batch."""
     permission = get_user_review_permission(session['user_id'])
     if permission != '审表_中心':
-        return jsonify({'success': False, 'message': '您无权限查看自动审核任务状态'}), 403
+        return jsonify({
+            'success': False,
+            'message': build_forbidden_message(
+                '自动审核任务状态',
+                '当前账号没有查看自动审核任务状态的权限。',
+                action='查看',
+            ),
+        }), 403
     from ..review_automation.routes import status_batch_response
 
     return status_batch_response(
@@ -2536,7 +2597,14 @@ def get_user_structure_api():
                 'permission': manage_permission,
                 'structure': groups
             })
-        return jsonify({'success': False, 'message': '您不具有查看范围用户的权限'}), 403
+        return jsonify({
+            'success': False,
+            'message': build_forbidden_message(
+                '审核范围用户',
+                '当前账号没有查看审核范围用户的权限。',
+                action='查看',
+            ),
+        }), 403
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -2547,7 +2615,14 @@ def get_review_statistics():
     try:
         permission = get_user_review_permission(session['user_id'])
         if not permission:
-            return jsonify({'success': False, 'message': '您不具有审表权限'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '审表考评统计',
+                    '当前账号没有查看审核统计的权限。',
+                    action='查看',
+                ),
+            }), 403
 
         start_date_str = request.args.get('start_date')
         end_date_str = request.args.get('end_date')
@@ -2658,7 +2733,14 @@ def get_forms_for_review():
         
         permission = get_user_review_permission(session['user_id'])
         if not permission:
-            return jsonify({'success': False, 'message': '您不具有审表权限，如有疑问，请联系管理员'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '表单审核',
+                    '当前账号没有审核权限。',
+                    action='打开',
+                ),
+            }), 403
         
         # 获取查询参数
         start_date = request.args.get('start_date')
@@ -2800,7 +2882,14 @@ def get_form_for_review(form_id):
         
         permission = get_user_review_permission(session['user_id'])
         if not permission:
-            return jsonify({'success': False, 'message': '您不具有审表权限，如有疑问，请联系管理员'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '表单审核',
+                    '当前账号没有审核权限。',
+                    action='打开',
+                ),
+            }), 403
         
         form = LectureForm.query.get_or_404(form_id)
         
@@ -2878,6 +2967,7 @@ def get_form_for_review(form_id):
             'automation': automation,
             'automation_evidence_url': form_data['automation_evidence_url'],
             'permission': permission,
+            'permission_label': get_review_permission_presentation(permission)['permission_label'],
             'score_data': score_data
         })
     except Exception as e:
@@ -2989,7 +3079,14 @@ def submit_form_review(form_id):
         
         permission = get_user_review_permission(session['user_id'])
         if not permission:
-            return jsonify({'success': False, 'message': '您不具有审表权限，如有疑问，请联系管理员'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '表单审核',
+                    '当前账号没有审核权限。',
+                    action='审核',
+                ),
+            }), 403
         
         original_form = LectureForm.query.get_or_404(form_id)
         
@@ -3001,7 +3098,14 @@ def submit_form_review(form_id):
         
         # 检查是否可以审核此状态的表单
         if not can_review_status(session['user_id'], original_form.status):
-            return jsonify({'success': False, 'message': f'您无权限审核处于"{original_form.status}"状态的表单'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '表单审核',
+                    '当前账号没有审核该表单的权限。',
+                    action='审核',
+                ),
+            }), 403
         
         data = request.get_json()
         review_comment = data.get('review_comment', '')
@@ -4791,7 +4895,14 @@ def get_departments():
     manage_permission = get_user_manage_permission(user.id)
     
     if not manage_permission:
-        return jsonify({'success': False, 'message': '无权访问'}), 403
+        return jsonify({
+            'success': False,
+            'message': build_forbidden_message(
+                '人员与部门',
+                '当前账号没有查看部门的权限。',
+                action='查看',
+            ),
+        }), 403
         
     try:
         # 确定要查询的部门范围
@@ -4932,7 +5043,14 @@ def add_department():
         manage_permission = get_user_manage_permission(user.id)
         
         if manage_permission != '超级管理员':
-             return jsonify({'success': False, 'message': '只有超级管理员可以添加部门'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '人员与部门',
+                     '当前账号没有添加部门的权限。',
+                     action='添加',
+                 ),
+             }), 403
              
         data = request.get_json()
         name = data.get('name', '').strip()
@@ -4995,14 +5113,28 @@ def get_department(dept_id):
         manage_permission = get_user_manage_permission(user.id)
         
         if not manage_permission:
-             return jsonify({'success': False, 'message': '无权查看部门信息'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '人员与部门',
+                     '当前账号没有查看部门信息的权限。',
+                     action='查看',
+                 ),
+             }), 403
              
         dept = Department.query.get_or_404(dept_id)
         
         # 权限检查
         if manage_permission != '超级管理员':
             if dept.name != user.department:
-                 return jsonify({'success': False, 'message': '无权查看其他部门信息'}), 403
+                 return jsonify({
+                     'success': False,
+                     'message': build_forbidden_message(
+                         '人员与部门',
+                         '当前账号没有查看该部门信息的权限。',
+                         action='查看',
+                     ),
+                 }), 403
         
         return jsonify({'success': True, 'data': {
             'id': dept.id,
@@ -5023,14 +5155,28 @@ def update_department(dept_id):
         manage_permission = get_user_manage_permission(user.id)
         
         if not manage_permission:
-             return jsonify({'success': False, 'message': '无权修改部门信息'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '人员与部门',
+                     '当前账号没有修改部门信息的权限。',
+                     action='修改',
+                 ),
+             }), 403
              
         dept = Department.query.get_or_404(dept_id)
         
         # 权限检查
         if manage_permission != '超级管理员':
             if dept.name != user.department:
-                 return jsonify({'success': False, 'message': '无权修改其他部门信息'}), 403
+                 return jsonify({
+                     'success': False,
+                     'message': build_forbidden_message(
+                         '人员与部门',
+                         '当前账号没有修改该部门信息的权限。',
+                         action='修改',
+                     ),
+                 }), 403
         
         data = request.get_json()
         
@@ -5046,7 +5192,14 @@ def update_department(dept_id):
         # 检查是否尝试修改部门名称
         if new_name != old_name:
             if manage_permission != '超级管理员':
-                return jsonify({'success': False, 'message': '无权修改部门名称'}), 403
+                return jsonify({
+                    'success': False,
+                    'message': build_forbidden_message(
+                        '人员与部门',
+                        '当前账号没有修改部门名称的权限。',
+                        action='修改',
+                    ),
+                }), 403
                 
             existing_dept = Department.query.filter_by(name=new_name).first()
             if existing_dept:
@@ -5171,7 +5324,14 @@ def get_groups_by_department():
         manage_permission = get_user_manage_permission(user.id)
         
         if not manage_permission:
-             return jsonify({'success': False, 'message': '无权查看小组'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '小组管理',
+                     '当前账号没有查看小组的权限。',
+                     action='查看',
+                 ),
+             }), 403
              
         department = request.args.get('department')
         
@@ -5186,7 +5346,14 @@ def get_groups_by_department():
             # 即使前端没传department参数，也只返回本部门的
             # 如果前端传了其他部门，则返回空或报错
             if department and department != user.department:
-                return jsonify({'success': False, 'message': '无权查看其他部门的小组'}), 403
+                return jsonify({
+                    'success': False,
+                    'message': build_forbidden_message(
+                        '小组管理',
+                        '当前账号没有查看该小组的权限。',
+                        action='查看',
+                    ),
+                }), 403
             groups = Group.query.filter_by(department=user.department).all()
         elif manage_permission == '管理部门小组':
             # 只能查看本小组
@@ -5220,7 +5387,14 @@ def add_group():
         manage_permission = get_user_manage_permission(user.id)
         
         if not manage_permission:
-            return jsonify({'success': False, 'message': '无权添加小组'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '小组管理',
+                    '当前账号没有添加小组的权限。',
+                    action='添加',
+                ),
+            }), 403
             
         data = request.get_json()
         name = data.get('name', '').strip()
@@ -5238,7 +5412,14 @@ def add_group():
         # 权限检查
         if manage_permission != '超级管理员':
             if department != user.department:
-                return jsonify({'success': False, 'message': '只能在自己的部门添加小组'}), 403
+                return jsonify({
+                    'success': False,
+                    'message': build_forbidden_message(
+                        '小组管理',
+                        '当前账号没有在当前管理范围内添加小组的权限。',
+                        action='添加',
+                    ),
+                }), 403
         
         # 检查部门是否存在
         dept = Department.query.filter_by(name=department).first()
@@ -5312,19 +5493,40 @@ def get_group(group_id):
         manage_permission = get_user_manage_permission(user.id)
         
         if not manage_permission:
-             return jsonify({'success': False, 'message': '无权查看小组信息'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '小组管理',
+                     '当前账号没有查看小组信息的权限。',
+                     action='查看',
+                 ),
+             }), 403
              
         group = Group.query.get_or_404(group_id)
         
         # 权限检查
         if manage_permission != '超级管理员':
             if group.department != user.department:
-                 return jsonify({'success': False, 'message': '无权查看其他部门的小组'}), 403
+                 return jsonify({
+                     'success': False,
+                     'message': build_forbidden_message(
+                         '小组管理',
+                         '当前账号没有查看该小组的权限。',
+                         action='查看',
+                     ),
+                 }), 403
             
             if manage_permission == '管理部门小组':
                 # 假设user.group存储的是小组名称
                 if group.name != user.group:
-                     return jsonify({'success': False, 'message': '无权查看其他小组'}), 403
+                     return jsonify({
+                         'success': False,
+                         'message': build_forbidden_message(
+                             '小组管理',
+                             '当前账号没有查看该小组的权限。',
+                             action='查看',
+                         ),
+                     }), 403
         
         return jsonify({'success': True, 'data': {
             'id': group.id,
@@ -5347,7 +5549,14 @@ def update_group(group_id):
         manage_permission = get_user_manage_permission(user.id)
         
         if not manage_permission:
-             return jsonify({'success': False, 'message': '无权修改小组'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '小组管理',
+                     '当前账号没有修改小组的权限。',
+                     action='修改',
+                 ),
+             }), 403
              
         group = Group.query.get_or_404(group_id)
         
@@ -5355,11 +5564,25 @@ def update_group(group_id):
         if manage_permission != '超级管理员':
             if manage_permission == '管理部门':
                 if group.department != user.department:
-                     return jsonify({'success': False, 'message': '无权修改其他部门的小组'}), 403
+                     return jsonify({
+                         'success': False,
+                         'message': build_forbidden_message(
+                             '小组管理',
+                             '当前账号没有修改该小组的权限。',
+                             action='修改',
+                         ),
+                     }), 403
             elif manage_permission == '管理部门小组':
                 # 假设user.group存储的是小组名称
                 if group.name != user.group or group.department != user.department:
-                     return jsonify({'success': False, 'message': '无权修改其他小组'}), 403
+                     return jsonify({
+                         'success': False,
+                         'message': build_forbidden_message(
+                             '小组管理',
+                             '当前账号没有修改该小组的权限。',
+                             action='修改',
+                         ),
+                     }), 403
         
         data = request.get_json()
         
@@ -5381,7 +5604,14 @@ def update_group(group_id):
         # 检查部门变更权限
         if manage_permission != '超级管理员':
             if department != group.department:
-                 return jsonify({'success': False, 'message': '无权更改小组所属部门'}), 403
+                return jsonify({
+                    'success': False,
+                    'message': build_forbidden_message(
+                        '小组管理',
+                        '当前账号没有修改小组归属的权限。',
+                        action='修改',
+                    ),
+                }), 403
         
         # 检查部门是否存在
         dept = Department.query.filter_by(name=department).first()
@@ -5459,7 +5689,14 @@ def disband_group(group_id):
         manage_permission = get_user_manage_permission(user.id)
         
         if not manage_permission:
-             return jsonify({'success': False, 'message': '无权解散小组'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '小组管理',
+                     '当前账号没有解散小组的权限。',
+                     action='解散',
+                 ),
+             }), 403
               
         group = Group.query.get_or_404(group_id)
         
@@ -5467,9 +5704,23 @@ def disband_group(group_id):
         if manage_permission != '超级管理员':
             if manage_permission == '管理部门':
                 if group.department != user.department:
-                     return jsonify({'success': False, 'message': '无权解散其他部门的小组'}), 403
+                     return jsonify({
+                         'success': False,
+                         'message': build_forbidden_message(
+                             '小组管理',
+                             '当前账号没有解散该小组的权限。',
+                             action='解散',
+                         ),
+                     }), 403
             else:
-                 return jsonify({'success': False, 'message': '无权解散小组'}), 403
+                return jsonify({
+                    'success': False,
+                    'message': build_forbidden_message(
+                        '小组管理',
+                        '当前账号没有解散小组的权限。',
+                        action='解散',
+                    ),
+                }), 403
          
         # 验证密码
         data = request.get_json() or {}
@@ -5526,7 +5777,14 @@ def move_members_to_group(group_id):
         manage_permission = get_user_manage_permission(user.id)
         
         if not manage_permission:
-             return jsonify({'success': False, 'message': '无权操作'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '小组成员管理',
+                     '当前账号没有操作小组成员的权限。',
+                     action='操作',
+                 ),
+             }), 403
              
         group = Group.query.get_or_404(group_id)
         
@@ -5534,11 +5792,25 @@ def move_members_to_group(group_id):
         if manage_permission != '超级管理员':
             if manage_permission == '管理部门':
                 if group.department != user.department:
-                     return jsonify({'success': False, 'message': '无权操作其他部门的小组'}), 403
+                     return jsonify({
+                         'success': False,
+                         'message': build_forbidden_message(
+                             '小组成员管理',
+                             '当前账号没有操作该小组成员的权限。',
+                             action='操作',
+                         ),
+                     }), 403
             elif manage_permission == '管理部门小组':
                 # 假设user.group存储的是小组名称
                 if group.name != user.group or group.department != user.department:
-                     return jsonify({'success': False, 'message': '无权操作其他小组'}), 403
+                     return jsonify({
+                         'success': False,
+                         'message': build_forbidden_message(
+                             '小组成员管理',
+                             '当前账号没有操作该小组成员的权限。',
+                             action='操作',
+                         ),
+                     }), 403
         
         data = request.get_json()
         user_ids = data.get('user_ids', [])
@@ -5618,7 +5890,14 @@ def get_users():
         manage_permission = get_user_manage_permission(current_user.id)
         
         if not manage_permission:
-            return jsonify({'success': False, 'message': '无权查看用户'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '人员与部门',
+                    '当前账号没有查看人员的权限。',
+                    action='查看',
+                ),
+            }), 403
             
         department = request.args.get('department')
         
@@ -5658,7 +5937,14 @@ def add_user():
         
         # 只有超级管理员和具有"管理部门"权限的管理员可以添加用户
         if manage_permission != '超级管理员' and manage_permission != '管理部门':
-             return jsonify({'success': False, 'message': '无权添加用户'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '人员与部门',
+                     '当前账号没有添加人员的权限。',
+                     action='添加',
+                 ),
+             }), 403
         
         data = request.get_json()
         
@@ -5678,10 +5964,24 @@ def add_user():
         # 权限检查：非超级管理员只能添加本部门用户
         if manage_permission != '超级管理员':
             if department != current_user.department:
-                return jsonify({'success': False, 'message': '只能添加本部门的用户'}), 403
+                return jsonify({
+                    'success': False,
+                    'message': build_forbidden_message(
+                        '人员与部门',
+                        '当前账号没有在当前管理范围内添加人员的权限。',
+                        action='添加',
+                    ),
+                }), 403
             # 非超级管理员不能添加超级管理员
             if role == '超级管理员':
-                return jsonify({'success': False, 'message': '无权创建超级管理员'}), 403
+                return jsonify({
+                    'success': False,
+                    'message': build_forbidden_message(
+                        '人员与部门',
+                        '当前账号没有创建该人员的权限。',
+                        action='添加',
+                    ),
+                }), 403
         
         # 检查所有必填字段
         required_fields = {
@@ -5814,7 +6114,14 @@ def get_user(user_id):
         
         # 检查权限
         if not manage_permission:
-            return jsonify({'success': False, 'message': '无权查看用户'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '人员与部门',
+                    '当前账号没有查看人员的权限。',
+                    action='查看',
+                ),
+            }), 403
             
         user = User.query.get_or_404(user_id)
         if not is_user_active(user):
@@ -5823,11 +6130,25 @@ def get_user(user_id):
         # 权限范围检查
         if manage_permission != '超级管理员':
             if user.department != current_user.department:
-                return jsonify({'success': False, 'message': '无权查看其他部门的用户'}), 403
+                return jsonify({
+                    'success': False,
+                    'message': build_forbidden_message(
+                        '人员与部门',
+                        '当前账号没有查看该人员的权限。',
+                        action='查看',
+                    ),
+                }), 403
             if manage_permission == '管理部门小组':
                 # 假设user.group存储的是小组名称
                 if user.group != current_user.group:
-                    return jsonify({'success': False, 'message': '无权查看其他小组的用户'}), 403
+                    return jsonify({
+                        'success': False,
+                        'message': build_forbidden_message(
+                            '人员与部门',
+                            '当前账号没有查看该人员的权限。',
+                            action='查看',
+                        ),
+                    }), 403
         
         return jsonify({'success': True, 'data': _serialize_user_basic(user)})
     except Exception as e:
@@ -5840,14 +6161,28 @@ def delete_form(form_id):
     try:
         permission = get_user_review_permission(session['user_id'])
         if not permission:
-            return jsonify({'success': False, 'message': '您不具有审表权限'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '表单审核',
+                    '当前账号没有审核权限。',
+                    action='删除',
+                ),
+            }), 403
 
         form_to_delete = LectureForm.query.get_or_404(form_id)
 
         reviewable_user_ids = get_reviewable_users(session['user_id'])
         form_user = _active_user_query().filter_by(number=form_to_delete.listener_number).first()
         if not form_user or form_user.id not in reviewable_user_ids:
-            return jsonify({'success': False, 'message': '您无权删除该表单'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '表单',
+                    '当前账号没有删除该表单的权限。',
+                    action='删除',
+                ),
+            }), 403
 
         registration_id = form_to_delete.registration_id
         score_record = ScoreRecord.query.filter_by(form_id=form_id).first()
@@ -5877,7 +6212,14 @@ def delete_form_group(group_id):
     try:
         permission = get_user_review_permission(session['user_id'])
         if not permission:
-            return jsonify({'success': False, 'message': '您不具有审表权限'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '表单审核',
+                    '当前账号没有审核权限。',
+                    action='删除',
+                ),
+            }), 403
 
         group_forms = LectureForm.query.filter(
             db.or_(LectureForm.unique_id == group_id, LectureForm.id == group_id)
@@ -5889,7 +6231,14 @@ def delete_form_group(group_id):
         for form in group_forms:
             form_user = _active_user_query().filter_by(number=form.listener_number).first()
             if not form_user or form_user.id not in reviewable_user_ids:
-                return jsonify({'success': False, 'message': '您无权删除该表单组'}), 403
+                return jsonify({
+                    'success': False,
+                    'message': build_forbidden_message(
+                        '表单组',
+                        '当前账号没有删除该表单组的权限。',
+                        action='删除',
+                    ),
+                }), 403
 
         form_ids = [form.id for form in group_forms]
         registration_ids = list({form.registration_id for form in group_forms if form.registration_id})
@@ -5931,7 +6280,14 @@ def update_user(user_id):
         # 只有超级管理员和具有"管理部门"权限的管理员可以修改用户信息
         # "管理部门小组"权限不能修改用户信息
         if manage_permission != '超级管理员' and manage_permission != '管理部门':
-             return jsonify({'success': False, 'message': '无权修改用户信息'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '人员与部门',
+                     '当前账号没有修改人员信息的权限。',
+                     action='修改',
+                 ),
+             }), 403
              
         user = User.query.get_or_404(user_id)
         if not is_user_active(user):
@@ -5939,11 +6295,25 @@ def update_user(user_id):
         
         # 如果不是超级管理员，只能修改本部门用户
         if manage_permission != '超级管理员' and user.department != current_user.department:
-             return jsonify({'success': False, 'message': '只能修改本部门用户'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '人员与部门',
+                     '当前账号没有修改该人员的权限。',
+                     action='修改',
+                 ),
+             }), 403
              
         # "管理部门"权限不能修改超级管理员的信息
         if manage_permission != '超级管理员' and user.role == '超级管理员':
-             return jsonify({'success': False, 'message': '无法修改超级管理员的信息'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '人员与部门',
+                     '当前账号没有修改该人员信息的权限。',
+                     action='修改',
+                 ),
+             }), 403
              
         data = request.get_json()
         before_snapshot = _snapshot_user_for_movement(user)
@@ -5978,9 +6348,23 @@ def update_user(user_id):
                 if field in data and data[field]:
                     # 如果尝试修改且值确实改变了
                     if field == 'department' and data[field] != user.department:
-                         return jsonify({'success': False, 'message': '无权修改用户部门'}), 403
+                         return jsonify({
+                             'success': False,
+                             'message': build_forbidden_message(
+                                 '人员与部门',
+                                 '当前账号没有修改人员部门的权限。',
+                                 action='修改',
+                             ),
+                         }), 403
                     elif field == 'role' and data[field] != user.role:
-                         return jsonify({'success': False, 'message': '无权修改用户角色'}), 403
+                         return jsonify({
+                             'success': False,
+                             'message': build_forbidden_message(
+                                 '人员与部门',
+                                 '当前账号没有修改人员角色的权限。',
+                                 action='修改',
+                             ),
+                         }), 403
                     # 其他字段暂不严格限制报错，只是忽略
         else:
             # 超级管理员可以修改所有字段
@@ -6116,7 +6500,14 @@ def depart_user(user_id):
         manage_permission = get_user_manage_permission(current_user.id)
 
         if manage_permission != '超级管理员' and manage_permission != '管理部门':
-            return jsonify({'success': False, 'message': '无权办理用户离任'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '人员与部门',
+                    '当前账号没有办理人员离任的权限。',
+                    action='办理离任',
+                ),
+            }), 403
 
         user_to_depart = User.query.get_or_404(user_id)
         if user_to_depart.id == current_user.id:
@@ -6124,7 +6515,14 @@ def depart_user(user_id):
         if user_to_depart.role == '超级管理员':
             return jsonify({'success': False, 'message': '超级管理员不能办理离任，请先调整角色或使用超级管理员删除'}), 400
         if manage_permission != '超级管理员' and user_to_depart.department != current_user.department:
-            return jsonify({'success': False, 'message': '只能办理本部门用户离任'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '人员与部门',
+                    '当前账号没有办理该人员离任的权限。',
+                    action='办理离任',
+                ),
+            }), 403
 
         data = request.get_json() or {}
         password = data.get('password')
@@ -6187,7 +6585,14 @@ def delete_user(user_id):
         
         # 只有超级管理员保留物理删除用户的能力
         if manage_permission != '超级管理员':
-             return jsonify({'success': False, 'message': '无权删除用户，请使用离任操作'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '人员与部门',
+                     '当前账号没有直接删除人员的权限，请使用离任流程。',
+                     action='删除',
+                 ),
+             }), 403
              
         user_to_delete = User.query.get_or_404(user_id)
         
@@ -6239,7 +6644,14 @@ def list_personnel_movement_records():
         current_user = User.query.get(session['user_id'])
         manage_permission = get_user_manage_permission(current_user.id)
         if not manage_permission:
-            return jsonify({'success': False, 'message': '无权查看人员流动记录'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '人员流动记录',
+                    '当前账号没有查看人员流动记录的权限。',
+                    action='查看',
+                ),
+            }), 403
 
         query = PersonnelMovementRecord.query
         if manage_permission != '超级管理员':
@@ -6317,7 +6729,14 @@ def get_user_permissions(user_id):
         # 只有超级管理员和具有"管理部门"权限的管理员可以查看权限
         # "管理部门小组"权限不能管理用户权限
         if manage_permission != '超级管理员' and manage_permission != '管理部门':
-             return jsonify({'success': False, 'message': '无权查看权限'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '权限管理',
+                     '当前账号没有查看权限配置的权限。',
+                     action='查看',
+                 ),
+             }), 403
              
         user = User.query.get_or_404(user_id)
         if not is_user_active(user):
@@ -6325,7 +6744,14 @@ def get_user_permissions(user_id):
         
         # 如果不是超级管理员，只能查看本部门用户的权限
         if manage_permission != '超级管理员' and user.department != current_user.department:
-             return jsonify({'success': False, 'message': '只能查看本部门用户的权限'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '权限管理',
+                     '当前账号没有查看该人员权限配置的权限。',
+                     action='查看',
+                 ),
+             }), 403
         
         # 获取所有权限
         all_permissions = Permission.query.all()
@@ -6372,7 +6798,14 @@ def update_user_permissions(user_id):
         
         # 只有超级管理员和具有"管理部门"权限的管理员可以修改权限
         if manage_permission != '超级管理员' and manage_permission != '管理部门':
-             return jsonify({'success': False, 'message': '无权修改权限'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '权限管理',
+                     '当前账号没有修改权限配置的权限。',
+                     action='修改',
+                 ),
+             }), 403
              
         user = User.query.get_or_404(user_id)
         if not is_user_active(user):
@@ -6380,11 +6813,25 @@ def update_user_permissions(user_id):
         
         # 如果不是超级管理员，只能修改本部门用户的权限
         if manage_permission != '超级管理员' and user.department != current_user.department:
-             return jsonify({'success': False, 'message': '只能修改本部门用户的权限'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '权限管理',
+                     '当前账号没有修改该人员权限配置的权限。',
+                     action='修改',
+                 ),
+             }), 403
              
         # "管理部门"权限不能修改超级管理员的权限
         if manage_permission != '超级管理员' and user.role == '超级管理员':
-             return jsonify({'success': False, 'message': '无法修改超级管理员的权限'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '权限管理',
+                     '当前账号没有修改该人员权限配置的权限。',
+                     action='修改',
+                 ),
+             }), 403
         
         data = request.get_json()
         permission_ids = data.get('permission_ids', [])
@@ -6718,7 +7165,14 @@ def _get_snapshot_record_or_404(snapshot_id, snapshot_type, current_user_id):
     if not record:
         return None, jsonify({'success': False, 'message': '历史记录不存在'}), 404
     if get_user_manage_permission(current_user_id) != '超级管理员' and record.created_by != current_user_id:
-        return None, jsonify({'success': False, 'message': '无权访问该历史记录'}), 403
+        return None, jsonify({
+            'success': False,
+            'message': build_forbidden_message(
+                '统计历史记录',
+                '当前账号没有访问该历史记录的权限。',
+                action='查看',
+            ),
+        }), 403
     return record, None, None
 
 
@@ -6944,7 +7398,14 @@ def create_current_week_leave():
     user_id = data.get('user_id')
     target_users = _resolve_department_leave_users(session['user_id'], [str(user_id)])
     if not target_users:
-        return jsonify({'success': False, 'message': '无权限操作该成员'}), 403
+        return jsonify({
+            'success': False,
+            'message': build_forbidden_message(
+                '成员请假设置',
+                '当前账号没有操作成员请假设置的权限。',
+                action='操作',
+            ),
+        }), 403
     target_user = target_users[0]
 
     existing = AssessmentOverride.query.filter(
@@ -8142,7 +8603,14 @@ def get_submission_reward_detail(user_id):
 
     users = _resolve_assessment_users(session['user_id'], [str(user_id)])
     if not users:
-        return jsonify({'success': False, 'message': '无权限查看该用户'}), 403
+        return jsonify({
+            'success': False,
+            'message': build_forbidden_message(
+                '审表考评统计',
+                '当前账号没有查看统计成员明细的权限。',
+                action='查看',
+            ),
+        }), 403
     reward_settings, reward_err = _get_teaching_reward_settings()
     if reward_err:
         return jsonify({'success': False, 'message': reward_err}), 400
@@ -8192,7 +8660,14 @@ def get_submission_count_detail(user_id):
 
     users = _resolve_assessment_users(session['user_id'], [str(user_id)])
     if not users:
-        return jsonify({'success': False, 'message': '无权限查看该用户'}), 403
+        return jsonify({
+            'success': False,
+            'message': build_forbidden_message(
+                '交表数量统计',
+                '当前账号没有查看统计成员明细的权限。',
+                action='查看',
+            ),
+        }), 403
     time_filter_type = _normalize_review_form_time_filter(request.args.get('time_filter_type'))
     user = users[0]
     if not user.number:
@@ -8573,7 +9048,14 @@ def get_review_assessment_detail(user_id):
 
     users = _resolve_assessment_users(session['user_id'], [str(user_id)])
     if not users:
-        return jsonify({'success': False, 'message': '无权限查看该用户'}), 403
+        return jsonify({
+            'success': False,
+            'message': build_forbidden_message(
+                '审表考评统计',
+                '当前账号没有查看统计成员明细的权限。',
+                action='查看',
+            ),
+        }), 403
     user = users[0]
 
     entries = []
@@ -9099,7 +9581,14 @@ def auto_check_form():
         # 检查权限
         permission = get_user_review_permission(session['user_id'])
         if not permission:
-             return jsonify({'success': False, 'message': '您不具有审表权限'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '审表考评统计',
+                     '当前账号没有查看审核统计的权限。',
+                     action='查看',
+                 ),
+             }), 403
 
         form_data = request.get_json()
         
@@ -9515,7 +10004,14 @@ def get_reference_data():
         # 检查权限
         permission = get_user_review_permission(session['user_id'])
         if not permission:
-             return jsonify({'success': False, 'message': '您不具有审表权限'}), 403
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '考评规则设置',
+                     '当前账号没有查看考评规则的权限。',
+                     action='查看',
+                 ),
+             }), 403
 
         form_data = request.get_json()
         
@@ -9638,7 +10134,14 @@ def create_assessment_override():
     accessible_users = _resolve_assessment_users(session['user_id'], [str(uid) for uid in user_ids])
     accessible_ids = {u.id for u in accessible_users}
     if not accessible_ids:
-        return jsonify({'success': False, 'message': '无权限操作所选成员'}), 403
+        return jsonify({
+            'success': False,
+            'message': build_forbidden_message(
+                '考评规则设置',
+                '当前账号没有操作所选成员规则的权限。',
+                action='操作',
+            ),
+        }), 403
 
     created_count = 0
     skipped_count = 0
@@ -9694,7 +10197,14 @@ def delete_assessment_override(override_id):
     if manage_permission != '超级管理员':
         accessible_users = _resolve_assessment_users(session['user_id'], [str(record.user_id)])
         if not accessible_users:
-            return jsonify({'success': False, 'message': '无权限删除该规则'}), 403
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '考评规则设置',
+                    '当前账号没有删除该规则的权限。',
+                    action='删除',
+                ),
+            }), 403
     db.session.delete(record)
     db.session.commit()
     return jsonify({'success': True, 'message': '规则已删除'})

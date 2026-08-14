@@ -60,6 +60,33 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    document.querySelectorAll('[data-statistics-subnav]').forEach((nav) => {
+        const frame = nav.closest('[data-statistics-subnav-frame]');
+        const active = nav.querySelector('[aria-current="page"]');
+        const syncEdges = () => {
+            if (!frame) return;
+            const maxScroll = Math.max(0, nav.scrollWidth - nav.clientWidth);
+            frame.classList.toggle('statistics-subnav-frame--overflowing', maxScroll > 1);
+            frame.classList.toggle('statistics-subnav-frame--at-start', nav.scrollLeft <= 1);
+            frame.classList.toggle('statistics-subnav-frame--at-end', nav.scrollLeft >= maxScroll - 1);
+        };
+        const revealActive = () => {
+            active?.scrollIntoView({ block: 'nearest', inline: 'center' });
+            if (active) {
+                const maxScroll = Math.max(0, nav.scrollWidth - nav.clientWidth);
+                const targetLeft = active.offsetLeft - ((nav.clientWidth - active.clientWidth) / 2);
+                nav.scrollTo({ left: Math.max(0, Math.min(maxScroll, targetLeft)), behavior: 'auto' });
+            }
+            requestAnimationFrame(syncEdges);
+        };
+        requestAnimationFrame(revealActive);
+        window.addEventListener('load', revealActive, { once: true });
+        if (document.fonts?.ready) document.fonts.ready.then(revealActive);
+        window.setTimeout(revealActive, 250);
+        nav.addEventListener('scroll', syncEdges, { passive: true });
+        window.addEventListener('resize', revealActive);
+    });
+
     const confirmDialog = document.getElementById('appConfirmDialog');
     if (confirmDialog && window.bootstrap) {
         const modal = bootstrap.Modal.getOrCreateInstance(confirmDialog);

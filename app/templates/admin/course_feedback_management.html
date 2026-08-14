@@ -4,6 +4,7 @@
 {% set current_page_title = page_title|default('课程管理' if is_course_management else '听课登记') %}
 
 {% block title %}{{ current_page_title }} - 西南大学听课信息中心{% endblock %}
+{% block body_class %}course-feedback-page{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -2829,39 +2830,39 @@ function showAlert(message, type) {
 </script>
 
 <style>
-.table th {
+.course-feedback-page .table th {
     background-color: #f8f9fa;
     border-top: none;
     font-weight: 600;
 }
 
-.table-active {
+.course-feedback-page .table-active {
     background-color: rgb(155 73 60 / .1);
 }
 
-.btn-group-sm > .btn, .btn-sm {
+.course-feedback-page .btn-group-sm > .btn, .course-feedback-page .btn-sm {
     padding: 0.25rem 0.5rem;
     font-size: 0.875rem;
 }
 
-.list-group-item-action:hover {
+.course-feedback-page .list-group-item-action:hover {
     background-color: #f8f9fa;
 }
 
-.modal-xl {
+.course-feedback-page .modal-xl {
     max-width: 1200px;
 }
 
-.form-check-input:checked {
+.course-feedback-page .form-check-input:checked {
     background-color: var(--color-accent);
     border-color: var(--color-accent);
 }
 
-.pagination .page-link {
+.course-feedback-page .pagination .page-link {
     color: var(--color-accent-strong);
 }
 
-.pagination .page-item.active .page-link {
+.course-feedback-page .pagination .page-item.active .page-link {
     background-color: var(--color-accent);
     border-color: var(--color-accent);
 }
@@ -2930,7 +2931,7 @@ function showAlert(message, type) {
     color: #495057;
 }
 
-.badge {
+.course-feedback-page .badge {
     font-size: 0.7em;
 }
 
@@ -2963,24 +2964,24 @@ function showAlert(message, type) {
     padding: 0.125rem 0.25rem;
 }
 
-th .dropdown-toggle::after {
+.course-feedback-page th .dropdown-toggle::after {
     display: none;
 }
 
-th .btn-link {
+.course-feedback-page th .btn-link {
     text-decoration: none !important;
 }
 
-th .btn-link:hover {
+.course-feedback-page th .btn-link:hover {
     color: var(--color-accent-strong) !important;
 }
 
-.card-header {
+.course-feedback-page .card-header {
     background-color: #f8f9fa;
     border-bottom: 1px solid #dee2e6;
 }
 
-.text-decoration-none:hover {
+.course-feedback-page .text-decoration-none:hover {
     text-decoration: underline !important;
 }
 
@@ -3033,7 +3034,7 @@ th .btn-link:hover {
     background-color: #e8eaed;
 }
 
-.user-list {
+.course-feedback-page .user-list {
     padding: 8px 12px;
 }
 
