@@ -106,6 +106,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    document.addEventListener('click', (event) => {
+        const close = event.target.closest('[data-app-message-dismiss]');
+        if (close) close.closest('.app-message')?.remove();
+    });
+
     window.appFeedback = (text, variant = 'info') => {
         const container = document.querySelector('.app-messages') || (() => {
             const created = document.createElement('div');
@@ -122,9 +127,9 @@ document.addEventListener('DOMContentLoaded', () => {
         content.textContent = text;
         const close = document.createElement('button');
         close.type = 'button';
+        close.setAttribute('data-app-message-dismiss', '');
         close.setAttribute('aria-label', '关闭');
         close.innerHTML = '<i class="bi bi-x-lg" aria-hidden="true"></i>';
-        close.addEventListener('click', () => item.remove());
         item.append(content, close);
         container.appendChild(item);
         return item;

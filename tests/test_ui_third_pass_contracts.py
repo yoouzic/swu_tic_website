@@ -73,7 +73,8 @@ class ThirdPassUIContractTests(unittest.TestCase):
         self.assertIn('aria-live="polite"', self.review)
 
     def test_statistics_has_complete_subnav_metric_layout_and_data_states(self):
-        self.assertIn('aria-current="page"', self.statistics)
+        subnav = Path('app/templates/partials/_statistics_nav.html').read_text(encoding='utf-8')
+        self.assertIn('aria-current="page"', subnav)
         self.assertIn('statistics-metrics', self.statistics)
         self.assertIn('visualization_state', self.statistics)
         self.assertIn("visualization_state='NO_DATA'", self.admin)

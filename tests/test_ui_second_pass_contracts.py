@@ -52,7 +52,7 @@ class UISecondPassContractTests(unittest.TestCase):
         self.assertIn('courseBatchToolbar.hidden = selectedCourses.size === 0', self.course)
 
     def test_statistics_starts_with_metrics_and_uses_module_navigation(self):
-        self.assertIn('class="statistics-subnav"', self.statistics)
+        self.assertIn("statistics_nav('overview', can_access_extended_stats)", self.statistics)
         self.assertLess(
             self.statistics.index('aria-label="统计概览"'),
             self.statistics.index('id="leaveManagement"'),

@@ -54,7 +54,7 @@ NAVIGATION = (
                 'label': '课程与登记',
                 'endpoint': 'admin.course_feedback_management',
                 'icon': 'bi-calendar-week',
-                'roles': ('管理员', '超级管理员'),
+                'roles': ('超级管理员',),
                 'active_endpoints': (
                     'admin.course_management',
                     'admin.course_feedback_management',

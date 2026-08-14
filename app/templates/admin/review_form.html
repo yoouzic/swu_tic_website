@@ -26,36 +26,30 @@
             </div>
         </div>
     </div>
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">
-                        <i class="bi bi-pencil me-2"></i>
-                        表单审核
-                    </h3>
-                    <div class="card-tools">
-                        <button type="button" class="btn btn-sm btn-primary me-2" onclick="showReferenceData()">
-                            <i class="bi bi-search"></i> 查看参考数据
+    <section class="review-form-surface">
+                <div class="review-form-surface__header">
+                    <div>
+                        <h1><i class="bi bi-pencil me-2" aria-hidden="true"></i>表单审核</h1>
+                        <p>核对原始记录、必要修改和审核意见后，再执行审核动作。</p>
+                    </div>
+                    <div class="review-form-surface__tools">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="referenceDrawerTrigger" aria-controls="referenceDataDrawer" aria-expanded="false" onclick="showReferenceData(event.currentTarget)">
+                            <i class="bi bi-search" aria-hidden="true"></i> 查看参考数据
                         </button>
                         <span class="badge bg-info text-dark" id="statusBadge">加载中...</span>
                     </div>
                 </div>
                 
-                <div class="card-body" id="reviewFormContent" style="display: none;">
+                <div class="review-form-surface__body" id="reviewFormContent" style="display: none;">
                     <form id="reviewForm">
                         <input type="hidden" id="formId" name="form_id">
                         
                         <!-- 基本信息 -->
-                        <div class="row mb-4">
-                            <div class="col-md-12">
-                                <div class="card">
-                                    <div class="card-header">
-                                        <h5 class="card-title mb-0">
-                                            <i class="bi bi-info-circle me-2"></i>基本信息
-                                        </h5>
+                        <section class="review-form-section">
+                                    <div class="review-form-section__header">
+                                        <h2><i class="bi bi-info-circle me-2" aria-hidden="true"></i>基本信息</h2>
                                     </div>
-                                    <div class="card-body">
+                                    <div class="review-form-section__body">
                                         <div class="row">
                                             <div class="col-md-6">
                                                 <div class="mb-3">
@@ -73,20 +67,14 @@
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
+                        </section>
 
                         <!-- 听课信息 -->
-                        <div class="row mb-4">
-                            <div class="col-md-12">
-                                <div class="card">
-                                    <div class="card-header">
-                                        <h5 class="card-title mb-0">
-                                            <i class="bi bi-calendar3 me-2"></i>听课信息
-                                        </h5>
+                        <section class="review-form-section">
+                                    <div class="review-form-section__header">
+                                        <h2><i class="bi bi-calendar3 me-2" aria-hidden="true"></i>听课信息</h2>
                                     </div>
-                                    <div class="card-body">
+                                    <div class="review-form-section__body">
                                         <div class="row">
                                             <div class="col-md-4">
                                                 <div class="mb-3">
@@ -162,20 +150,14 @@
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
+                        </section>
 
                         <!-- 课程信息 -->
-                        <div class="row mb-4">
-                            <div class="col-md-12">
-                                <div class="card">
-                                    <div class="card-header">
-                                        <h5 class="card-title mb-0">
-                                            <i class="bi bi-person-video3 me-2"></i>课程信息
-                                        </h5>
+                        <section class="review-form-section">
+                                    <div class="review-form-section__header">
+                                        <h2><i class="bi bi-person-video3 me-2" aria-hidden="true"></i>课程信息</h2>
                                     </div>
-                                    <div class="card-body">
+                                    <div class="review-form-section__body">
                                         <div class="row">
                                             <div class="col-md-6">
                                                 <div class="mb-3">
@@ -207,20 +189,14 @@
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
+                        </section>
 
                         <!-- 课堂评价 -->
-                        <div class="row mb-4">
-                            <div class="col-md-12">
-                                <div class="card">
-                                    <div class="card-header">
-                                        <h5 class="card-title mb-0">
-                                            <i class="bi bi-star me-2"></i>课堂评价
-                                        </h5>
+                        <section class="review-form-section">
+                                    <div class="review-form-section__header">
+                                        <h2><i class="bi bi-star me-2" aria-hidden="true"></i>课堂评价</h2>
                                     </div>
-                                    <div class="card-body">
+                                    <div class="review-form-section__body">
                                         <div class="row">
                                             <div class="col-md-6">
                                                 <div class="mb-3">
@@ -298,20 +274,14 @@
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
+                        </section>
 
                         <!-- 反馈信息 -->
-                        <div class="row mb-4">
-                            <div class="col-md-12">
-                                <div class="card">
-                                    <div class="card-header">
-                                        <h5 class="card-title mb-0">
-                                            <i class="bi bi-chat-left-text me-2"></i>反馈信息
-                                        </h5>
+                        <section class="review-form-section">
+                                    <div class="review-form-section__header">
+                                        <h2><i class="bi bi-chat-left-text me-2" aria-hidden="true"></i>反馈信息</h2>
                                     </div>
-                                    <div class="card-body">
+                                    <div class="review-form-section__body">
                                         <div class="row">
                                             <div class="col-md-6">
                                                 <div class="mb-3">
@@ -329,20 +299,14 @@
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
+                        </section>
 
                         <!-- 签名信息 -->
-                        <div class="row mb-4">
-                            <div class="col-md-12">
-                                <div class="card">
-                                    <div class="card-header">
-                                        <h5 class="card-title mb-0">
-                                            <i class="bi bi-pen me-2"></i>签名信息
-                                        </h5>
+                        <section class="review-form-section">
+                                    <div class="review-form-section__header">
+                                        <h2><i class="bi bi-pen me-2" aria-hidden="true"></i>签名信息</h2>
                                     </div>
-                                    <div class="card-body">
+                                    <div class="review-form-section__body">
                                         <div class="row">
                                             <div class="col-md-3">
                                                 <div class="mb-3">
@@ -372,21 +336,15 @@
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
+                        </section>
 
                         <!-- 审核信息 -->
-                        <div class="row mb-4">
-                            <div class="col-md-12">
-                                <div class="card border-warning">
-                                    <div class="card-header bg-warning">
-                                        <h5 class="card-title mb-0">
-                                            <i class="bi bi-clipboard-check me-2"></i>审核信息
-                                        </h5>
+                        <section class="review-form-section review-form-section--decision">
+                                    <div class="review-form-section__header">
+                                        <h2><i class="bi bi-clipboard-check me-2" aria-hidden="true"></i>审核信息</h2>
                                     </div>
-                                    <div class="card-body">
-                                        <div class="form-group">
+                                    <div class="review-form-section__body">
+                                        <div class="mb-0">
                                             <label for="reviewComment">审核意见：</label>
                                             <textarea class="form-control" id="reviewComment" name="review_comment" rows="4" 
                                                       placeholder='请填写您的审核意见，如果不修改表格内容可直接提交，审核意见将默认显示为"无"'></textarea>
@@ -404,29 +362,25 @@
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
+                        </section>
 
                         <!-- 操作按钮 -->
-                        <div class="row">
-                            <div class="col-md-12 text-center">
-                                <button type="button" class="btn btn-success btn-lg me-3" onclick="submitReview()">
+                        <div class="review-form-actions">
+                                <button type="button" class="btn btn-primary" onclick="submitReview()">
                                     <i class="bi bi-check2"></i> 提交审核
                                 </button>
-                                <button type="button" class="btn btn-danger btn-lg me-3" onclick="rejectReview(event)">
+                                <button type="button" class="btn btn-outline-danger" onclick="rejectReview(event)">
                                     <i class="bi bi-x-lg"></i> 驳回
                                 </button>
-                                <button type="button" class="btn btn-secondary btn-lg me-3" onclick="resetForm()">
+                                <button type="button" class="btn btn-outline-secondary" onclick="resetForm()">
                                     <i class="bi bi-arrow-counterclockwise"></i> 重置表单
                                 </button>
-                            </div>
                         </div>
                     </form>
                 </div>
 
                 <!-- 加载中提示 -->
-                <div class="card-body text-center" id="loadingAlert">
+                <div class="review-form-loading text-center" id="loadingAlert">
                     <div class="spinner-border text-primary" role="status">
                         <span class="visually-hidden">加载中...</span>
                     </div>
@@ -434,26 +388,24 @@
                 </div>
 
                 <!-- 错误提示 -->
-                <div class="card-body text-center" id="errorAlert" style="display: none;">
+                <div class="review-form-loading text-center" id="errorAlert" style="display: none;">
                     <div class="alert alert-danger">
                         <i class="bi bi-exclamation-triangle fs-2 mb-3"></i>
                         <h4>加载失败</h4>
                         <p id="errorMessage">表单数据加载失败，请稍后重试</p>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
+    </section>
 </div>
 
 <!-- 提交确认模态框 -->
 <div class="modal fade" id="submitConfirmModal" tabindex="-1" aria-labelledby="submitConfirmTitle" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header bg-success">
-                <h4 class="modal-title" id="submitConfirmTitle">
+            <div class="modal-header">
+                <h2 class="modal-title fs-5" id="submitConfirmTitle">
                     <i class="bi bi-check2"></i> 确认提交审核
-                </h4>
+                </h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
@@ -464,19 +416,19 @@
                 </div>
                 
                 <!-- 评分区域 -->
-                <div id="scoringSection" style="display: none; margin-top: 20px;">
+                <div id="scoringSection" class="review-scoring-section" style="display: none;">
                     <hr>
                     <h5><i class="bi bi-star-half me-2"></i>信息员评分</h5>
                     <div class="alert alert-info small">
                         <i class="bi bi-info-circle"></i> 针对修改项进行扣分，未填写则不扣分。
                     </div>
-                    <table class="table table-sm table-bordered" id="scoringTable">
-                        <thead class="thead-light">
+                    <table class="table review-scoring-table" id="scoringTable">
+                        <thead>
                             <tr>
-                                <th style="width: 40%">评分原因</th>
-                                <th style="width: 25%">部门扣分</th>
-                                <th style="width: 25%">个人扣分</th>
-                                <th style="width: 10%">操作</th>
+                                <th>评分原因</th>
+                                <th>部门扣分</th>
+                                <th>个人扣分</th>
+                                <th>操作</th>
                             </tr>
                         </thead>
                         <tbody id="scoringTableBody">
@@ -490,7 +442,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-success" id="confirmSubmitBtn" onclick="confirmSubmit()">确认提交</button>
+                <button type="button" class="btn btn-primary" id="confirmSubmitBtn" onclick="confirmSubmit()">确认提交</button>
             </div>
         </div>
     </div>
@@ -515,20 +467,18 @@
 </div>
 
 <!-- 参考数据侧边抽屉 -->
-<div class="reference-drawer" id="referenceDataDrawer" aria-hidden="true">
-    <button type="button" class="reference-drawer-handle" onclick="toggleReferenceDrawer()" aria-label="展开或折叠参考数据">
+<div class="reference-drawer" id="referenceDataDrawer" role="complementary" aria-label="参考数据" aria-hidden="true">
+    <button type="button" class="reference-drawer-handle" id="referenceDrawerHandle" aria-controls="referenceDataDrawer" aria-expanded="false" onclick="toggleReferenceDrawer(event.currentTarget)" aria-label="展开或折叠参考数据">
         <i class="bi bi-chevron-left" id="referenceDrawerToggleIcon"></i>
     </button>
     <div class="reference-drawer-panel">
-        <div class="reference-drawer-header" onclick="toggleReferenceDrawerCollapse()">
-            <div>
-                <h4 class="mb-0">参考数据</h4>
-                <small class="text-muted">按当前表单内容查询</small>
-            </div>
-        </div>
+        <button type="button" class="reference-drawer-header" id="referenceDrawerHeaderToggle" aria-controls="referenceDataDrawer" aria-expanded="true" onclick="toggleReferenceDrawerCollapse(event.currentTarget)">
+            <span><strong>参考数据</strong><small>按当前表单内容查询</small></span>
+            <i class="bi bi-chevron-right" aria-hidden="true"></i>
+        </button>
         <div class="reference-drawer-body">
             <section class="reference-section">
-                <button type="button" class="reference-section-header" onclick="toggleReferenceSection('scheduleReferenceSection')">
+                <button type="button" class="reference-section-header" aria-controls="scheduleReferenceSection" aria-expanded="true" onclick="toggleReferenceSection('scheduleReferenceSection', event.currentTarget)">
                     <span><i class="bi bi-calendar3 me-2"></i> 全校课表</span>
                     <span>
                         <span class="badge bg-primary text-white" id="scheduleCount">0</span>
@@ -540,7 +490,7 @@
                 </div>
             </section>
             <section class="reference-section">
-                <button type="button" class="reference-section-header" onclick="toggleReferenceSection('contactsReferenceSection')">
+                <button type="button" class="reference-section-header" aria-controls="contactsReferenceSection" aria-expanded="true" onclick="toggleReferenceSection('contactsReferenceSection', event.currentTarget)">
                     <span><i class="bi bi-journal-bookmark me-2"></i> 通讯录</span>
                     <span>
                         <span class="badge bg-primary text-white" id="contactsCount">0</span>
@@ -555,142 +505,6 @@
     </div>
 </div>
 
-<style>
-.reference-drawer {
-    position: fixed;
-    top: 0;
-    right: 0;
-    width: min(560px, 92vw);
-    height: 100vh;
-    z-index: 1060;
-    transform: translateX(calc(100% + 56px));
-    transition: transform 0.22s ease;
-}
-
-.reference-drawer.is-open {
-    transform: translateX(0);
-}
-
-.reference-drawer.is-collapsed {
-    transform: translateX(calc(100% - 46px));
-}
-
-.reference-drawer-handle {
-    position: absolute;
-    top: 96px;
-    left: -44px;
-    width: 44px;
-    height: 88px;
-    border: 1px solid #ced4da;
-    border-right: 0;
-    background: #fff;
-    color: var(--color-accent);
-    border-radius: 8px 0 0 8px;
-    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.12);
-}
-
-.reference-drawer-panel {
-    height: 100%;
-    background: #fff;
-    border-left: 1px solid #dee2e6;
-    box-shadow: -0.75rem 0 1.5rem rgba(0, 0, 0, 0.14);
-    display: flex;
-    flex-direction: column;
-}
-
-.reference-drawer-header {
-    padding: 16px 18px;
-    border-bottom: 1px solid #dee2e6;
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    cursor: pointer;
-}
-
-.reference-drawer-body {
-    padding: 14px;
-    overflow-y: auto;
-}
-
-.reference-section {
-    border: 1px solid #dee2e6;
-    border-radius: 6px;
-    margin-bottom: 12px;
-    overflow: hidden;
-}
-
-.reference-section-header {
-    width: 100%;
-    border: 0;
-    background: #f8f9fa;
-    padding: 12px 14px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-weight: 600;
-}
-
-.reference-section-body {
-    padding: 12px;
-}
-
-.reference-section.is-collapsed .reference-section-body {
-    display: none;
-}
-
-.reference-section.is-collapsed .reference-section-header .bi-chevron-up {
-    transform: rotate(180deg);
-}
-
-.reference-result-item {
-    border: 1px solid #e9ecef;
-    border-radius: 6px;
-    padding: 12px;
-    margin-bottom: 10px;
-    background: #fff;
-}
-
-.reference-result-title {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    align-items: flex-start;
-    margin-bottom: 8px;
-}
-
-.reference-result-title strong {
-    line-height: 1.35;
-}
-
-.reference-result-meta {
-    margin: 0;
-}
-
-.reference-result-meta div {
-    display: grid;
-    grid-template-columns: 72px minmax(0, 1fr);
-    gap: 10px;
-    margin-bottom: 6px;
-}
-
-.reference-result-meta dt {
-    color: #6c757d;
-    font-weight: 600;
-}
-
-.reference-result-meta dd {
-    margin: 0;
-    min-width: 0;
-    overflow-wrap: anywhere;
-}
-
-@media (max-width: 576px) {
-    .reference-drawer {
-        width: calc(100vw - 24px);
-    }
-}
-</style>
-
 <script>
 let originalFormData = {};
 let currentFormData = {};
@@ -700,6 +514,7 @@ let existingScoreData = [];
 let reviewDraftTimer = null;
 let reviewDraftInterval = null;
 let reviewDraftRestoring = false;
+let referenceDrawerReturnFocus = null;
 
 function getReviewReturnUrl() {
     const link = document.querySelector('[data-review-return]');
@@ -735,6 +550,14 @@ document.addEventListener('DOMContentLoaded', function() {
         loadFormData();
     } else {
         showError('无效的表单ID');
+    }
+});
+
+document.addEventListener('keydown', function(event) {
+    const drawer = document.getElementById('referenceDataDrawer');
+    if (event.key === 'Escape' && drawer && drawer.classList.contains('is-open')) {
+        event.preventDefault();
+        closeReferenceDrawer();
     }
 });
 
@@ -1309,14 +1132,14 @@ function addScoringRow(reason='', deptScore='', persScore='', isAuto=false) {
     const reasonInput = `<input type="text" class="form-control form-control-sm score-reason" value="${reason}" placeholder="评分原因">`;
     const deptInput = `<input type="number" step="0.5" min="0" class="form-control form-control-sm score-dept" value="${deptScore}" placeholder="0">`;
     const persInput = `<input type="number" step="0.5" min="0" class="form-control form-control-sm score-pers" value="${persScore}" placeholder="0">`;
-    const deleteBtn = `<button type="button" class="btn btn-xs btn-outline-danger" onclick="this.closest('tr').remove(); scheduleReviewFormDraftSave()" title="删除">删除</button>`;
+    const deleteBtn = `<button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove(); scheduleReviewFormDraftSave()" title="删除">删除</button>`;
     const autoFlag = `<input type="hidden" class="score-auto" value="${isAuto}">`;
 
     row.innerHTML = `
-        <td>${reasonInput}${autoFlag}</td>
-        <td>${deptInput}</td>
-        <td>${persInput}</td>
-        <td class="text-center">${deleteBtn}</td>
+        <td data-label="评分原因">${reasonInput}${autoFlag}</td>
+        <td data-label="部门扣分">${deptInput}</td>
+        <td data-label="个人扣分">${persInput}</td>
+        <td data-label="操作" class="text-center">${deleteBtn}</td>
     `;
     tbody.appendChild(row);
     scheduleReviewFormDraftSave();
@@ -1511,9 +1334,9 @@ function getStatusClass(status) {
 }
 
 // 显示参考数据
-function showReferenceData() {
+function showReferenceData(trigger) {
     const formData = collectFormData();
-    openReferenceDrawer();
+    openReferenceDrawer(trigger);
     document.getElementById('scheduleResults').innerHTML = '<div class="text-center"><i class="bi bi-arrow-repeat icon-spin"></i> 正在搜索...</div>';
     document.getElementById('contactsResults').innerHTML = '<div class="text-center"><i class="bi bi-arrow-repeat icon-spin"></i> 正在搜索...</div>';
     document.getElementById('scheduleCount').textContent = '0';
@@ -1548,51 +1371,63 @@ function showReferenceData() {
     });
 }
 
-function openReferenceDrawer() {
+function setReferenceDrawerState(isOpen) {
     const drawer = document.getElementById('referenceDataDrawer');
     if (!drawer) return;
-    drawer.classList.add('is-open');
-    drawer.classList.remove('is-collapsed');
-    drawer.setAttribute('aria-hidden', 'false');
+    drawer.classList.toggle('is-open', isOpen);
+    drawer.setAttribute('aria-hidden', String(!isOpen));
+    ['referenceDrawerTrigger', 'referenceDrawerHandle'].forEach(id => {
+        const control = document.getElementById(id);
+        if (control) control.setAttribute('aria-expanded', String(isOpen));
+    });
+    const headerToggle = document.getElementById('referenceDrawerHeaderToggle');
+    if (headerToggle) headerToggle.setAttribute('aria-expanded', String(isOpen));
     updateReferenceDrawerIcon();
 }
 
-function toggleReferenceDrawer() {
+function openReferenceDrawer(trigger) {
     const drawer = document.getElementById('referenceDataDrawer');
     if (!drawer) return;
-    if (!drawer.classList.contains('is-open')) {
-        openReferenceDrawer();
-        return;
-    }
-    drawer.classList.toggle('is-collapsed');
-    updateReferenceDrawerIcon();
+    referenceDrawerReturnFocus = trigger || document.activeElement;
+    setReferenceDrawerState(true);
+    window.requestAnimationFrame(() => {
+        document.getElementById('referenceDrawerHeaderToggle')?.focus();
+    });
 }
 
-function toggleReferenceDrawerCollapse() {
+function closeReferenceDrawer(restoreFocus = true) {
+    setReferenceDrawerState(false);
+    if (restoreFocus && referenceDrawerReturnFocus && typeof referenceDrawerReturnFocus.focus === 'function') {
+        referenceDrawerReturnFocus.focus();
+    }
+}
+
+function toggleReferenceDrawer(trigger) {
     const drawer = document.getElementById('referenceDataDrawer');
     if (!drawer) return;
-    if (!drawer.classList.contains('is-open')) {
-        openReferenceDrawer();
-        return;
-    }
-    drawer.classList.toggle('is-collapsed');
-    updateReferenceDrawerIcon();
+    if (drawer.classList.contains('is-open')) closeReferenceDrawer();
+    else openReferenceDrawer(trigger);
+}
+
+function toggleReferenceDrawerCollapse(trigger) {
+    toggleReferenceDrawer(trigger);
 }
 
 function updateReferenceDrawerIcon() {
     const drawer = document.getElementById('referenceDataDrawer');
     const toggleIcon = document.getElementById('referenceDrawerToggleIcon');
     if (!drawer || !toggleIcon) return;
-    const collapsed = drawer.classList.contains('is-collapsed') || !drawer.classList.contains('is-open');
-    toggleIcon.className = collapsed ? 'bi bi-chevron-left' : 'bi bi-chevron-right';
+    const isOpen = drawer.classList.contains('is-open');
+    toggleIcon.className = isOpen ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
 }
 
-function toggleReferenceSection(sectionId) {
+function toggleReferenceSection(sectionId, trigger) {
     const body = document.getElementById(sectionId);
     if (!body) return;
     const section = body.closest('.reference-section');
     if (section) {
         section.classList.toggle('is-collapsed');
+        if (trigger) trigger.setAttribute('aria-expanded', String(!section.classList.contains('is-collapsed')));
     }
 }
 

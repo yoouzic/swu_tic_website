@@ -34,20 +34,20 @@
         <div class="activity-panel__body p-0">
             {% if my_reservations %}
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
+                <table class="table table-hover align-middle mb-0 form-list-table responsive-record-table">
                     <thead><tr><th>登记时间</th><th>课程</th><th>教师</th><th>计划说明</th><th>绑定状态</th><th>操作</th></tr></thead>
                     <tbody id="reservationsTableBody">
                     {% for item in my_reservations %}
                         <tr data-reservation-row="{{ item.id }}">
-                            <td>{{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '-' }}</td>
-                            <td><strong>{{ item.course_name }}</strong><small class="d-block text-muted">{{ item.course_code }}-{{ item.selection_code }}</small></td>
-                            <td>{{ item.teacher_name }}<small class="d-block text-muted">{{ item.class_time or '-' }}</small></td>
-                            <td class="record-description"><span data-reservation-description="{{ item.id }}">{{ item.listening_info or '-' }}</span></td>
-                            <td>
+                            <td data-label="登记时间">{{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '-' }}</td>
+                            <td data-label="课程"><strong>{{ item.course_name }}</strong><small class="d-block text-muted">{{ item.course_code }}-{{ item.selection_code }}</small></td>
+                            <td data-label="教师">{{ item.teacher_name }}<small class="d-block text-muted">{{ item.class_time or '-' }}</small></td>
+                            <td data-label="计划说明" class="record-description"><span data-reservation-description="{{ item.id }}">{{ item.listening_info or '-' }}</span></td>
+                            <td data-label="绑定状态">
                                 {% if item.is_bound %}<span class="badge bg-secondary">已绑定反馈表 ({{ item.bind_count }})</span>
                                 {% else %}<span class="badge bg-success">未绑定</span>{% endif %}
                             </td>
-                            <td>
+                            <td data-label="操作">
                                 <div class="btn-group btn-group-sm">
                                     <button type="button" class="btn btn-outline-secondary" data-reservation-id="{{ item.id }}" data-listening-info="{{ (item.listening_info or '')|e }}" onclick="editReservation(this.dataset.reservationId, this.dataset.listeningInfo)"{% if not item.can_edit %} disabled{% endif %}>修改</button>
                                     <button type="button" class="btn btn-outline-danger" onclick="deleteReservation({{ item.id }})"{% if not item.can_delete %} disabled{% endif %}>删除</button>
@@ -74,7 +74,7 @@
         <div class="activity-panel__body p-0">
         {% if forms %}
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
+                <table class="table table-hover align-middle mb-0 form-list-table responsive-record-table">
                     <thead><tr><th>表单ID</th><th>听课日期</th><th>课程名称</th><th>授课教师</th><th>听课地点</th><th>当前状态</th><th>版本数</th><th>最后更新</th><th>操作</th></tr></thead>
                     <tbody>
                     {% for form_group in forms %}
@@ -82,23 +82,23 @@
                         {% set versions = form_group['versions'] %}
                         {% set version_key = latest_form.unique_id or ('single_' + latest_form.id|string) %}
                         <tr data-form-row="{{ latest_form.id }}" data-form-key="{{ version_key|e }}">
-                            <td><strong>{{ latest_form.unique_id or ('单独-' + latest_form.id|string) }}</strong>{% if versions|length > 1 %}<small class="d-block text-muted">共{{ versions|length }}个版本</small>{% endif %}</td>
-                            <td>{{ latest_form.lecture_date }}</td>
-                            <td><strong>{{ latest_form.course_title }}</strong><small class="d-block text-muted">{{ latest_form.class_period }}</small></td>
-                            <td>{{ latest_form.teacher_name }}<small class="d-block text-muted">{{ latest_form.teacher_college }}</small></td>
-                            <td>{{ latest_form.lecture_location }}</td>
-                            <td>
+                            <td data-label="表单ID"><strong>{{ latest_form.unique_id or ('单独-' + latest_form.id|string) }}</strong>{% if versions|length > 1 %}<small class="d-block text-muted">共{{ versions|length }}个版本</small>{% endif %}</td>
+                            <td data-label="听课日期">{{ latest_form.lecture_date }}</td>
+                            <td data-label="课程名称"><strong>{{ latest_form.course_title }}</strong><small class="d-block text-muted">{{ latest_form.class_period }}</small></td>
+                            <td data-label="授课教师">{{ latest_form.teacher_name }}<small class="d-block text-muted">{{ latest_form.teacher_college }}</small></td>
+                            <td data-label="听课地点">{{ latest_form.lecture_location }}</td>
+                            <td data-label="当前状态">
                                 {% if latest_form.status == '待审核' %}<span class="badge bg-warning text-dark">{{ latest_form.status }}</span>
                                 {% elif latest_form.status in ['已审核', '部门已审核', '中心已审核'] %}<span class="badge bg-success">{{ latest_form.status }}</span>
                                 {% elif latest_form.status == '已驳回' %}<span class="badge bg-danger">{{ latest_form.status }}</span>
                                 {% else %}<span class="badge bg-secondary">{{ latest_form.status or '草稿' }}</span>{% endif %}
                             </td>
-                            <td>
+                            <td data-label="版本数">
                                 <span class="badge bg-secondary">{{ versions|length }}</span>
                                 {% if versions|length > 1 %}<button type="button" class="btn btn-sm btn-link" data-version-key="{{ version_key|e }}" onclick="toggleVersions(this.dataset.versionKey)">展开/收起</button>{% endif %}
                             </td>
-                            <td>{{ (latest_form.updated_at or latest_form.created_at).strftime('%Y-%m-%d %H:%M') if (latest_form.updated_at or latest_form.created_at) else '-' }}</td>
-                            <td>
+                            <td data-label="最后更新">{{ (latest_form.updated_at or latest_form.created_at).strftime('%Y-%m-%d %H:%M') if (latest_form.updated_at or latest_form.created_at) else '-' }}</td>
+                            <td data-label="操作">
                                 <div class="btn-group btn-group-sm">
                                     <a href="{{ url_for('admin.get_form_detail', form_id=latest_form.id) }}" class="btn btn-outline-secondary">查看</a>
                                     {% if versions|length == 1 and latest_form.status == '待审核' %}<button type="button" class="btn btn-outline-danger" onclick="deleteForm({{ latest_form.id }})">删除</button>{% endif %}

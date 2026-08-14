@@ -1181,7 +1181,7 @@ function renderDepartments(departments) {
                                     </table>
                                     ${dept.member_deductions && dept.member_deductions.length > 5 ? `
                                         <div class="text-center mt-1">
-                                            <button class="btn btn-xs btn-outline-secondary" onclick="toggleExtendedRows(${dept.id}, this)">
+                                            <button class="btn btn-sm btn-outline-secondary" onclick="toggleExtendedRows(${dept.id}, this)">
                                                 查看全部
                                             </button>
                                         </div>
@@ -2560,13 +2560,6 @@ function initContactsExport() {
 </script>
 
 <style>
-.btn-xs {
-    padding: 0.125rem 0.25rem;
-    font-size: 0.75rem;
-    line-height: 1.2;
-    border-radius: 0.2rem;
-}
-
 .user-list {
     max-height: 200px;
     overflow-y: auto;

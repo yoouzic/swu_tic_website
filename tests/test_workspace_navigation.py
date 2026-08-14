@@ -33,6 +33,16 @@ class WorkspaceNavigationTest(unittest.TestCase):
         active = [item for group in groups for item in group['items'] if item['active']]
         self.assertEqual([item['label'] for item in active], ['表单审核'])
 
+    def test_manager_does_not_see_super_admin_only_course_entry(self):
+        groups = build_navigation(
+            self.user('管理员'),
+            'main.index',
+            review_permission='审表_部门',
+            manage_permission='管理部门',
+        )
+        endpoints = [item['endpoint'] for group in groups for item in group['items']]
+        self.assertNotIn('admin.course_feedback_management', endpoints)
+
     def test_super_admin_sees_global_modules(self):
         groups = build_navigation(self.user('超级管理员'), 'admin.system_management')
         labels = self.labels(groups)
