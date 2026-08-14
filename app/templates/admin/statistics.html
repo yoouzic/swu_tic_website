@@ -1,20 +1,14 @@
 {% extends "base.html" %}
 {% from "partials/_page_header.html" import page_header %}
 {% from "partials/_metric.html" import metric %}
+{% from "partials/_statistics_nav.html" import statistics_nav %}
 
 {% block title %}统计分析 - 管理员面板{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
     {{ page_header('统计分析', '先查看核心指标与趋势，再按需进入专项统计或请假管理。') }}
-    <nav class="statistics-subnav" aria-label="统计模块">
-        <a href="{{ url_for('admin.statistics') }}" aria-current="page">综合统计</a>
-        {% if can_access_extended_stats %}
-        <a href="{{ url_for('admin.submission_count_stats') }}">交表数量</a>
-        <a href="{{ url_for('admin.review_assessment_stats') }}">审表考评</a>
-        <a href="{{ url_for('admin.department_monthly_assessment_stats') }}">部门月度考评</a>
-        {% endif %}
-    </nav>
+    {{ statistics_nav('overview', can_access_extended_stats) }}
 
     <!-- 统计概览必须先于低频管理模块。 -->
     <section class="metric-grid statistics-metrics mb-4" aria-label="统计概览">
@@ -739,6 +733,7 @@ function resetFilters() {
     document.querySelector('select[name="department"]').value = '';
     document.querySelector('select[name="status"]').value = '';
     document.querySelector('select[name="dimension"]').value = 'department';
+    document.getElementById('filterForm').requestSubmit();
 }
 
 function appendStatisticsCell(row, value) {

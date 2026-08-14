@@ -1,82 +1,71 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
+{% from "partials/_statistics_nav.html" import statistics_nav %}
 
 {% block title %}部门月度考评统计 - 管理员面板{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-3">
-        <div class="col-12 d-flex justify-content-between align-items-center">
-            <h3 class="mb-0">部门月度考评统计</h3>
-            <div>
-                <button class="btn btn-outline-secondary me-2" id="btnMonthSettings">
-                    <i class="bi bi-calendar-week"></i> 教学月设置
-                </button>
-                <a href="{{ url_for('admin.assessment_exemption_settings') }}" class="btn btn-outline-info">
-                    <i class="bi bi-person-badge"></i> 考核对象与指标设定
-                </a>
-            </div>
-        </div>
+    {{ page_header('部门月度考评统计', '按教学月和部门范围核对考评结果；自动结果必须经过人工复核。', secondary_actions=[{'label': '考核对象与指标设定', 'href': url_for('admin.assessment_exemption_settings')}]) }}
+    {{ statistics_nav('department') }}
+
+    <div class="statistics-page-actions mb-3">
+        <button class="btn btn-outline-secondary" id="btnMonthSettings">
+            <i class="bi bi-calendar-week" aria-hidden="true"></i> 教学月设置
+        </button>
     </div>
 
     <div class="alert alert-warning">
         考评情况为系统根据当前考评规则和数据自动给出，不代表真实考评情况，请认真核实，建议核实无误后保存或导出数据。
     </div>
 
-    <div class="row mb-3">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">筛选条件</div>
-                <div class="card-body">
-                    <div class="row g-3 align-items-end">
-                        <div class="col-md-3">
-                            <label class="form-label">开始时间</label>
-                            <input type="date" id="startDate" class="form-control">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">结束时间</label>
-                            <input type="date" id="endDate" class="form-control">
-                        </div>
-                        <div class="col-md-6">
-                            <button class="btn btn-primary me-2" id="btnLoadStats">查询统计</button>
-                            <button class="btn btn-outline-success me-2" id="btnExportStats">导出Excel</button>
-                            <button class="btn btn-outline-primary me-2" id="btnSaveSnapshot">保存历史</button>
-                            <button class="btn btn-outline-secondary me-2" id="btnLoadSnapshot">加载历史</button>
-                            <button class="btn btn-outline-secondary me-2" id="btnSelectAllDepartments">全选部门</button>
-                            <button class="btn btn-outline-secondary" id="btnClearDepartments">清空选择</button>
-                        </div>
-                    </div>
-                    <div class="mt-3" id="monthInfoAlert"></div>
-                </div>
-            </div>
+    <div class="statistics-tool-grid statistics-tool-grid--single">
+    <section class="activity-panel">
+        <div class="activity-panel__header">
+            <h2>筛选条件</h2>
+            <p>选择日期区间和部门后生成月度考评。</p>
         </div>
+        <div class="activity-panel__body">
+            <div class="statistics-filter-grid">
+                <div><label class="form-label" for="startDate">开始时间</label><input type="date" id="startDate" class="form-control"></div>
+                <div><label class="form-label" for="endDate">结束时间</label><input type="date" id="endDate" class="form-control"></div>
+            </div>
+            <div class="statistics-filter-actions mt-3">
+                <button class="btn btn-primary" id="btnLoadStats">查询统计</button>
+                <button class="btn btn-outline-secondary" id="btnExportStats">导出 Excel</button>
+                <button class="btn btn-outline-secondary" id="btnSaveSnapshot">保存历史</button>
+                <button class="btn btn-outline-secondary" id="btnLoadSnapshot">加载历史</button>
+                <button class="btn btn-outline-secondary" id="btnSelectAllDepartments">全选部门</button>
+                <button class="btn btn-outline-secondary" id="btnClearDepartments">清空选择</button>
+            </div>
+            <div class="mt-3" id="monthInfoAlert"></div>
+        </div>
+    </section>
     </div>
 
-    <div class="row">
-        <div class="col-md-3">
-            <div class="card">
-                <div class="card-header">部门范围</div>
-                <div class="card-body">
-                    <input type="text" id="departmentSearchInput" class="form-control mb-2" placeholder="搜索部门">
-                    <div id="departmentList" style="max-height: 600px; overflow-y: auto;"></div>
-                </div>
+    <div class="statistics-workspace-grid statistics-workspace-grid--narrow mt-3">
+        <section class="activity-panel">
+            <div class="activity-panel__header"><h2>部门范围</h2><p>搜索并选择需要比较的部门。</p></div>
+            <div class="activity-panel__body">
+                <label class="form-label" for="departmentSearchInput">搜索部门</label>
+                <input type="text" id="departmentSearchInput" class="form-control" placeholder="搜索部门">
+                <div id="departmentList" class="statistics-scope-list mt-2"></div>
             </div>
-        </div>
-        <div class="col-md-9">
-            <div class="card">
-                <div class="card-header">统计结果</div>
-                <div class="card-body" id="resultBody">
-                    <div class="text-center text-muted py-5">请先选择时间与部门范围后查询</div>
-                </div>
+        </section>
+        <section class="activity-panel">
+            <div class="activity-panel__header"><h2>统计结果</h2><p>自动计算结果仅作为人工复核依据。</p></div>
+            <div class="activity-panel__body" id="resultBody">
+                <div class="text-center text-muted py-5">请先选择时间与部门范围后查询</div>
             </div>
-        </div>
+        </section>
     </div>
 </div>
 
-<div class="modal fade" id="snapshotModal" tabindex="-1">
+<div class="modal fade" id="snapshotModal" tabindex="-1" aria-labelledby="snapshotTitle" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">月度考评历史记录</h5>
+                <h5 class="modal-title" id="snapshotTitle">月度考评历史记录</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body" id="snapshotModalBody">
@@ -87,11 +76,11 @@
 </div>
 
 <!-- 教学月设置模态框 -->
-<div class="modal fade" id="monthSettingsModal" tabindex="-1">
+<div class="modal fade" id="monthSettingsModal" tabindex="-1" aria-labelledby="monthSettingsTitle" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">教学月设置</h5>
+                <h5 class="modal-title" id="monthSettingsTitle">教学月设置</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">

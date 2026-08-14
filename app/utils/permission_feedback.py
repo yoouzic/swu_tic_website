@@ -29,24 +29,24 @@ def resolve_permission_resource(endpoint=None):
     return '当前功能'
 
 
-def build_forbidden_message(resource, reason='当前账号没有该功能权限。'):
-    return f'无法打开“{resource}”：{reason}'
+def build_forbidden_message(resource, reason='当前账号没有该功能权限。', action='打开'):
+    return f'无法{action}“{resource}”：{reason}'
 
 
-def build_forbidden_payload(resource, reason='当前账号没有该功能权限。'):
+def build_forbidden_payload(resource, reason='当前账号没有该功能权限。', action='打开'):
     return {
         'success': False,
         'code': 'FORBIDDEN',
         'resource': resource,
-        'message': build_forbidden_message(resource, reason),
+        'message': build_forbidden_message(resource, reason, action),
     }
 
 
-def forbidden_json(resource, reason='当前账号没有该功能权限。'):
-    return jsonify(build_forbidden_payload(resource, reason)), 403
+def forbidden_json(resource, reason='当前账号没有该功能权限。', action='打开'):
+    return jsonify(build_forbidden_payload(resource, reason, action)), 403
 
 
-def flash_forbidden(resource, reason='当前账号没有该功能权限。'):
-    message = build_forbidden_message(resource, reason)
+def flash_forbidden(resource, reason='当前账号没有该功能权限。', action='打开'):
+    message = build_forbidden_message(resource, reason, action)
     flash(message, 'error')
     return message

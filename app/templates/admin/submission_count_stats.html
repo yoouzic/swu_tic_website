@@ -1,103 +1,94 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
+{% from "partials/_statistics_nav.html" import statistics_nav %}
 
 {% block title %}交表数量统计 - 管理员面板{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-3">
-        <div class="col-12 d-flex justify-content-between align-items-center">
-            <h3 class="mb-0">交表数量统计</h3>
-        </div>
-    </div>
+    {{ page_header('交表数量统计', '按人员范围核对逻辑表单组、奖励表和明细。') }}
+    {{ statistics_nav('submission') }}
 
-    <div class="row mb-3">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">筛选条件</div>
-                <div class="card-body">
-                    <div class="row g-3 align-items-end">
-                        <div class="col-md-3">
-                            <label class="form-label">开始时间</label>
-                            <input type="date" id="startDate" class="form-control">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">结束时间</label>
-                            <input type="date" id="endDate" class="form-control">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">时间条件</label>
-                            <select id="timeFilterType" class="form-select">
-                                <option value="created">表单创建时间</option>
-                                <option value="lecture">听课时间</option>
-                                <option value="updated">表单更新时间</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <button class="btn btn-primary me-2" id="btnLoadStats">查询统计</button>
-                            <button class="btn btn-outline-success me-2" id="btnExportStats">导出Excel</button>
-                            <button class="btn btn-outline-primary me-2" id="btnSaveSnapshot">保存历史</button>
-                            <button class="btn btn-outline-secondary me-2" id="btnLoadSnapshot">加载历史</button>
-                            <button class="btn btn-outline-secondary me-2" id="btnSelectAll">全选用户</button>
-                            <button class="btn btn-outline-secondary" id="btnClearAll">清空选择</button>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">排序方式</label>
-                            <select id="sortBy" class="form-select">
-                                <option value="submission">按交表数量倒序</option>
-                                <option value="reward">按奖励表数量倒序</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="text-muted mt-2">时间条件仅影响“交表数量”的统计范围；奖励表周次默认按表单组最新版本的听课时间计算，若标签中定义了“教学周修正（第x周）”，则直接按定义的教学周计算。</div>
+    <div class="statistics-tool-grid statistics-tool-grid--single">
+    <section class="activity-panel">
+        <div class="activity-panel__header">
+            <h2>筛选条件</h2>
+            <p>时间条件只影响交表数量；奖励表周次按最新版本听课时间或教学周修正计算。</p>
+        </div>
+        <div class="activity-panel__body">
+            <div class="statistics-filter-grid statistics-filter-grid--four">
+                <div>
+                    <label class="form-label" for="startDate">开始时间</label>
+                    <input type="date" id="startDate" class="form-control">
+                </div>
+                <div>
+                    <label class="form-label" for="endDate">结束时间</label>
+                    <input type="date" id="endDate" class="form-control">
+                </div>
+                <div>
+                    <label class="form-label" for="timeFilterType">时间条件</label>
+                    <select id="timeFilterType" class="form-select">
+                        <option value="created">表单创建时间</option>
+                        <option value="lecture">听课时间</option>
+                        <option value="updated">表单更新时间</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label" for="sortBy">排序方式</label>
+                    <select id="sortBy" class="form-select">
+                        <option value="submission">按交表数量倒序</option>
+                        <option value="reward">按奖励表数量倒序</option>
+                    </select>
                 </div>
             </div>
+            <div class="statistics-filter-actions mt-3">
+                <button class="btn btn-primary" id="btnLoadStats">查询统计</button>
+                <button class="btn btn-outline-secondary" id="btnExportStats">导出 Excel</button>
+                <button class="btn btn-outline-secondary" id="btnSaveSnapshot">保存历史</button>
+                <button class="btn btn-outline-secondary" id="btnLoadSnapshot">加载历史</button>
+                <button class="btn btn-outline-secondary" id="btnSelectAll">全选用户</button>
+                <button class="btn btn-outline-secondary" id="btnClearAll">清空选择</button>
+            </div>
         </div>
+    </section>
     </div>
 
     <div class="alert alert-warning">
         奖励表情况为系统根据当前奖励表规则和数据自动给出，不代表真实考评情况，请认真核实，建议核实无误后保存或导出数据。
     </div>
 
-    <div class="row">
-        <div class="col-md-4">
-            <div class="card">
-                <div class="card-header">范围用户</div>
-                <div class="card-body">
-                    <input type="text" id="userSearchInput" class="form-control mb-2" placeholder="搜索部门/小组/姓名/编号">
-                    <div id="userStructure" style="max-height: 600px; overflow-y: auto;"></div>
-                </div>
+    <div class="statistics-workspace-grid">
+        <section class="activity-panel">
+            <div class="activity-panel__header">
+                <h2>范围用户</h2>
+                <p>选择需要纳入排名和计数的成员。</p>
             </div>
-        </div>
-        <div class="col-md-8">
-            <div class="card">
-                <div class="card-header">统计结果</div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-bordered table-striped">
-                            <thead>
-                                <tr>
-                                    <th>排名</th>
-                                    <th>姓名</th>
-                                    <th>编号</th>
-                                    <th>部门</th>
-                                    <th>小组</th>
-                                    <th>交表数量（表单组）</th>
-                                    <th>奖励表</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody id="statsBody">
-                                <tr><td colspan="8" class="text-center text-muted">请先选择时间与用户范围后查询</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+            <div class="activity-panel__body">
+                <label class="form-label" for="userSearchInput">搜索范围用户</label>
+                <input type="text" id="userSearchInput" class="form-control" placeholder="搜索部门/小组/姓名/编号">
+                <div id="userStructure" class="statistics-scope-list mt-2"></div>
             </div>
-        </div>
+        </section>
+        <section class="activity-panel">
+            <div class="activity-panel__header"><h2>统计结果</h2><p>逻辑表单组与奖励表分列展示。</p></div>
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped">
+                    <thead>
+                        <tr>
+                            <th>排名</th><th>姓名</th><th>编号</th><th>部门</th><th>小组</th>
+                            <th>交表数量（表单组）</th><th>奖励表</th><th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statsBody">
+                        <tr><td colspan="8" class="text-center text-muted py-4">请先选择时间与用户范围后查询</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
     </div>
 </div>
 
-<div class="modal fade" id="detailModal" tabindex="-1">
+<div class="modal fade" id="detailModal" tabindex="-1" aria-labelledby="detailTitle" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
@@ -109,7 +100,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="rewardDetailModal" tabindex="-1">
+<div class="modal fade" id="rewardDetailModal" tabindex="-1" aria-labelledby="rewardDetailTitle" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -121,11 +112,11 @@
     </div>
 </div>
 
-<div class="modal fade" id="formDetailModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="formDetailModal" tabindex="-1" aria-labelledby="formDetailTitle" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">表单详情</h5>
+                <h5 class="modal-title" id="formDetailTitle">表单详情</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body" id="formDetailContent">
@@ -135,11 +126,11 @@
     </div>
 </div>
 
-<div class="modal fade" id="snapshotModal" tabindex="-1">
+<div class="modal fade" id="snapshotModal" tabindex="-1" aria-labelledby="snapshotTitle" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">奖励表历史记录</h5>
+                <h5 class="modal-title" id="snapshotTitle">奖励表历史记录</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body" id="snapshotModalBody">

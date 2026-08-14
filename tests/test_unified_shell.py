@@ -133,7 +133,9 @@ class UnifiedShellTest(unittest.TestCase):
         css = Path('app/static/css/style.css').read_text(encoding='utf-8')
         self.assertNotIn('id="mainContent"', template)
         self.assertIn('review-filter-row', template)
-        self.assertIn('.review-filter-row .row > .col-md-2', css)
+        self.assertIn('class="review-filter-grid"', template)
+        self.assertIn('container-name: review-filters', css)
+        self.assertIn('@container review-filters', css)
 
     def test_successful_inline_actions_do_not_reload_the_document(self):
         dashboard = Path('app/templates/admin/dashboard.html').read_text(encoding='utf-8')

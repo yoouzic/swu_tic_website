@@ -262,7 +262,7 @@
             <div class="modal-body">
                 <form id="exportForm">
                     <!-- 导出模式 -->
-                    <div class="form-group">
+                    <div class="mb-3">
                         <label>导出模式</label>
                         <div class="form-check">
                             <input type="radio" id="exportModeStandard" name="export_mode" value="standard" class="form-check-input" checked onchange="handleExportModeChange()">
@@ -275,7 +275,7 @@
                     </div>
 
                     <!-- 导出范围 -->
-                    <div class="form-group">
+                    <div class="mb-3">
                         <label>导出范围</label>
                         <div class="form-check">
                             <input type="radio" id="scopeLatest" name="scope" value="latest" class="form-check-input" checked onchange="handleExportScopeChange()">
@@ -292,7 +292,7 @@
                     </div>
 
                     <!-- 排序方式 -->
-                    <div class="form-group">
+                    <div class="mb-3">
                         <label>排序方式</label>
                         <div class="form-check">
                             <input type="radio" id="sortTime" name="sort_by" value="time" class="form-check-input" checked>
@@ -305,7 +305,7 @@
                     </div>
 
                     <!-- 状态筛选 -->
-                    <div class="form-group">
+                    <div class="mb-3">
                         <label>状态筛选 (可多选)</label>
                         <div class="row">
                             <div class="col-md-6">
@@ -336,12 +336,12 @@
                     </div>
 
                     <!-- 文件名设置 -->
-                    <div class="form-group" id="exportFilenameGroup">
+                    <div class="mb-3" id="exportFilenameGroup">
                         <label>文件名标题 (可选)</label>
                         <input type="text" class="form-control" name="filename_title" placeholder="默认：未命名">
                         <small class="form-text text-muted">最终文件名：学生教学信息中心听课反馈表汇总-[标题] [日期].xlsx</small>
                     </div>
-                    <div class="form-group" id="exportAllDataFilenameHint" style="display: none;">
+                    <div class="mb-3" id="exportAllDataFilenameHint" style="display: none;">
                         <label>文件名</label>
                         <div class="form-control-plaintext text-muted">听课反馈表-[日期].xlsx</div>
                     </div>

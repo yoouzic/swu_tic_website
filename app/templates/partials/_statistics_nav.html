@@ -1,0 +1,10 @@
+{% macro statistics_nav(active='overview', show_extended=true) -%}
+<nav class="statistics-subnav" aria-label="统计模块">
+    <a href="{{ url_for('admin.statistics') }}"{% if active == 'overview' %} aria-current="page"{% endif %}>综合统计</a>
+    {% if show_extended %}
+    <a href="{{ url_for('admin.submission_count_stats') }}"{% if active == 'submission' %} aria-current="page"{% endif %}>交表数量</a>
+    <a href="{{ url_for('admin.review_assessment_stats') }}"{% if active == 'review' %} aria-current="page"{% endif %}>审表考评</a>
+    <a href="{{ url_for('admin.department_monthly_assessment_stats') }}"{% if active == 'department' %} aria-current="page"{% endif %}>部门月度考评</a>
+    {% endif %}
+</nav>
+{%- endmacro %}

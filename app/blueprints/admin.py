@@ -479,7 +479,7 @@ def review_form_draft(form_id):
         reviewable_user_ids = get_reviewable_users(user_id)
         form_user = _active_user_query().filter_by(number=form.listener_number).first()
         if not form_user or form_user.id not in reviewable_user_ids:
-            return jsonify({'success': False, 'message': '您没有权限审核此表单'}), 403
+            return forbidden_json('表单审核', '该表单不在当前审核范围内。', action='审核')
 
         if request.method == 'GET':
             draft = load_review_form_draft(user_id, form_id)
@@ -1301,7 +1301,7 @@ def manage_departments():
     manage_permission = get_user_manage_permission(user.id)
     
     if not manage_permission:
-        flash('您没有权限访问此页面', 'danger')
+        flash_forbidden('人员与部门')
         if user.role == '管理员':
             return redirect(url_for('admin.admin_dashboard'))
         else:
@@ -1317,7 +1317,7 @@ def view_managed_user(user_id):
     current_user = User.query.get(session['user_id'])
     manage_permission = get_user_manage_permission(current_user.id)
     if not manage_permission:
-        flash('您没有权限查看该用户', 'error')
+        flash_forbidden('成员资料', '该成员不在当前管理范围内。', action='查看')
         return redirect(url_for('admin.manage_departments'))
 
     target_user = User.query.get_or_404(user_id)
@@ -1325,7 +1325,7 @@ def view_managed_user(user_id):
         flash('该用户已离任', 'error')
         return redirect(url_for('admin.manage_departments'))
     if not _can_view_managed_user(current_user, target_user, manage_permission):
-        flash('您没有权限查看该用户', 'error')
+        flash_forbidden('成员资料', '该成员不在当前管理范围内。', action='查看')
         return redirect(url_for('admin.manage_departments'))
 
     search = request.args.get('search', '').strip()
@@ -1655,7 +1655,7 @@ def manage_groups():
     
     # 检查用户是否有管理权限（管理部门或管理部门小组）
     if not manage_permission and manage_permission != '超级管理员':
-         flash('您没有权限访问此页面', 'danger')
+         flash_forbidden('部门与小组')
          return redirect(url_for('admin.admin_dashboard'))
     
     # 确定要管理的小组范围
@@ -2077,7 +2077,7 @@ def reject_form_review(form_id):
         if user.role != '超级管理员':
             if not form_user or form_user.id not in reviewable_user_ids:
                 if not get_user_review_permission(user.id):
-                     return jsonify({'success': False, 'message': '您没有权限操作此表单'}), 403
+                     return forbidden_json('表单审核', '该表单不在当前审核范围内。', action='操作')
 
         data = request.get_json()
         reason = data.get('reason', '')
@@ -2395,9 +2395,9 @@ def get_form_detail(form_id):
                 
         if not has_permission:
             if request.args.get('format') != 'json':
-                flash('您没有权限查看此表单', 'error')
+                flash_forbidden('表单详情', '该表单不在当前账号的可见范围内。', action='查看')
                 return redirect(url_for('main.index'))
-            return jsonify({'success': False, 'message': '您没有权限查看此表单'})
+            return forbidden_json('表单详情', '该表单不在当前账号的可见范围内。', action='查看')
             
         # 渲染表单详情模板
         reviewer_display_mode = get_reviewer_display_mode()
@@ -2808,7 +2808,7 @@ def get_form_for_review(form_id):
         reviewable_user_ids = get_reviewable_users(session['user_id'])
         form_user = _active_user_query().filter_by(number=form.listener_number).first()
         if not form_user or form_user.id not in reviewable_user_ids:
-            return jsonify({'success': False, 'message': '您没有权限审核此表单'}), 403
+            return forbidden_json('表单审核', '该表单不在当前审核范围内。', action='审核')
         
         # 构建表单数据
         reviewer_display_mode = get_reviewer_display_mode()
@@ -2997,7 +2997,7 @@ def submit_form_review(form_id):
         reviewable_user_ids = get_reviewable_users(session['user_id'])
         form_user = _active_user_query().filter_by(number=original_form.listener_number).first()
         if not form_user or form_user.id not in reviewable_user_ids:
-            return jsonify({'success': False, 'message': '您没有权限审核此表单'}), 403
+            return forbidden_json('表单审核', '该表单不在当前审核范围内。', action='审核')
         
         # 检查是否可以审核此状态的表单
         if not can_review_status(session['user_id'], original_form.status):

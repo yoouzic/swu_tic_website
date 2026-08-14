@@ -84,19 +84,19 @@
                                     </h5>
                                 </div>
                                 <div class="card-body">
-                                    <div class="row">
+                                    <div class="review-filter-grid">
                                         <!-- 时间范围 -->
-                                        <div class="col-md-2">
+                                        <div class="review-filter-field">
                                             <label for="startDate">开始时间：</label>
                                             <input type="date" class="form-control" id="startDate">
                                         </div>
-                                        <div class="col-md-2">
+                                        <div class="review-filter-field">
                                             <label for="endDate">结束时间：</label>
                                             <input type="date" class="form-control" id="endDate">
                                         </div>
-                                        <div class="col-md-2">
+                                        <div class="review-filter-field">
                                             <label for="timeFilterType">时间条件：</label>
-                                            <select class="form-control" id="timeFilterType" style="color: black;">
+                                            <select class="form-select" id="timeFilterType">
                                                 <option value="created">表单创建时间</option>
                                                 <option value="lecture">听课时间</option>
                                                 <option value="updated">表单更新时间</option>
@@ -104,9 +104,9 @@
                                         </div>
                                         
                                         <!-- 表单状态 -->
-                                        <div class="col-md-2">
+                                        <div class="review-filter-field">
                                             <label for="statusFilter">表单状态：</label>
-                                            <select class="form-control" id="statusFilter" style="color: black;">
+                                            <select class="form-select" id="statusFilter">
                                                 <option value="">全部状态</option>
                                                 <option value="待审核">待审核</option>
                                                 <option value="部门已审核">部门已审核</option>
@@ -114,9 +114,9 @@
                                                 <option value="已驳回">已驳回</option>
                                             </select>
                                         </div>
-                                        <div class="col-md-2">
+                                        <div class="review-filter-field">
                                             <label for="riskFilter">自动化分类：</label>
-                                            <select class="form-control" id="riskFilter" style="color: black;">
+                                            <select class="form-select" id="riskFilter">
                                                 <option value="">全部分类</option>
                                                 <option value="无明显风险">无明显风险</option>
                                                 <option value="建议复核">建议复核</option>
@@ -126,19 +126,16 @@
                                         </div>
                                         
                                         <!-- 搜索按钮 -->
-                                        <div class="col-md-4">
-                                            <label>&nbsp;</label>
-                                            <div>
-                                                <button class="btn btn-primary" onclick="loadUserStructure()">
+                                        <div class="review-filter-actions">
+                                                <button type="button" class="btn btn-primary" onclick="loadUserStructure()">
                                                     <i class="bi bi-search"></i> 查询表单
                                                 </button>
-                                                <button class="btn btn-outline-secondary ms-2" onclick="showStatistics()">
+                                                <button type="button" class="btn btn-outline-secondary" onclick="showStatistics()">
                                                     <i class="bi bi-pie-chart"></i> 查看统计
                                                 </button>
-                                                <button class="btn btn-outline-secondary ms-2" onclick="resetFilters()">
+                                                <button type="button" class="btn btn-outline-secondary" onclick="resetFilters()">
                                                     <i class="bi bi-arrow-counterclockwise"></i> 重置
                                                 </button>
-                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -233,11 +230,11 @@
 </div>
 
 <!-- 统计详情模态框 -->
-<div class="modal fade" id="statisticsModal" tabindex="-1">
+<div class="modal fade" id="statisticsModal" tabindex="-1" aria-labelledby="statisticsModalTitle" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-pie-chart me-2"></i>表单提交统计</h5>
+                <h5 class="modal-title" id="statisticsModalTitle"><i class="bi bi-pie-chart me-2"></i>表单提交统计</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body" id="statisticsContent">
@@ -527,11 +524,11 @@ function getStatusBadgeClass(status) {
 </div>
 
 <!-- 表单详情模态框 -->
-<div class="modal fade" id="formDetailModal" tabindex="-1" role="dialog">
+<div class="modal fade" id="formDetailModal" tabindex="-1" role="dialog" aria-labelledby="formDetailModalTitle" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-fullscreen-md-down" role="document">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">表单详情</h5>
+                <h5 class="modal-title" id="formDetailModalTitle">表单详情</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" id="formDetailContent">
@@ -545,11 +542,11 @@ function getStatusBadgeClass(status) {
 </div>
 
 <!-- 导出已选择表单模态框 -->
-<div class="modal fade" id="selectedFormsExportModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="selectedFormsExportModal" tabindex="-1" aria-labelledby="selectedFormsExportTitle" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-file-earmark-excel me-2"></i>导出已选择表单</h5>
+                <h5 class="modal-title" id="selectedFormsExportTitle"><i class="bi bi-file-earmark-excel me-2"></i>导出已选择表单</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
@@ -612,12 +609,12 @@ function getStatusBadgeClass(status) {
                         </div>
                     </fieldset>
 
-                    <div class="form-group" id="selectedExportFilenameGroup">
+                    <div class="mb-3" id="selectedExportFilenameGroup">
                         <label>文件名标题 (可选)</label>
                         <input type="text" class="form-control" name="filename_title" placeholder="默认：未命名">
                         <small class="form-text text-muted">最终文件名：学生教学信息中心听课反馈表汇总-[标题] [日期].xlsx</small>
                     </div>
-                    <div class="form-group" id="selectedExportAllDataFilenameHint" style="display: none;">
+                    <div class="mb-3" id="selectedExportAllDataFilenameHint" style="display: none;">
                         <label>文件名</label>
                         <div class="form-control-plaintext text-muted">听课反馈表-[日期].xlsx</div>
                     </div>
@@ -640,11 +637,11 @@ function getStatusBadgeClass(status) {
     </div>
 </div>
 
-<div class="modal fade" id="formTagDefinitionModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="formTagDefinitionModal" tabindex="-1" aria-labelledby="formTagDefinitionTitle" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-tags me-2"></i>定义表单标签</h5>
+                <h5 class="modal-title" id="formTagDefinitionTitle"><i class="bi bi-tags me-2"></i>定义表单标签</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">

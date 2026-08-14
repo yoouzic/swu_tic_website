@@ -40,15 +40,22 @@ class StatisticsDesignMigrationTests(unittest.TestCase):
                 self.assertIn(variable, self.template)
 
     def test_statistics_preserves_extended_routes_and_removes_decorative_top_buttons(self):
+        subnav = Path("app/templates/partials/_statistics_nav.html").read_text(
+            encoding="utf-8"
+        )
         for endpoint in (
             "admin.submission_count_stats",
             "admin.review_assessment_stats",
             "admin.department_monthly_assessment_stats",
         ):
             with self.subTest(endpoint=endpoint):
-                self.assertIn(endpoint, self.template)
+                self.assertIn(endpoint, subnav)
 
-        self.assertIn('class="statistics-subnav"', self.template)
+        self.assertIn(
+            '{% from "partials/_statistics_nav.html" import statistics_nav %}',
+            self.template,
+        )
+        self.assertIn("statistics_nav('overview', can_access_extended_stats)", self.template)
         self.assertNotIn("secondary_actions=", self.top_section)
         for outline_class in (
             "btn-outline-success",

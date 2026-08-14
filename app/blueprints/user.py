@@ -13,6 +13,7 @@ from ..utils.course_registration_limits import (
     parse_listening_week_no,
     validate_course_weekly_registration_limit,
 )
+from ..utils.permission_feedback import forbidden_json, flash_forbidden
 import hashlib
 import json
 import re
@@ -669,7 +670,7 @@ def delete_form(form_id):
     form = LectureForm.query.get_or_404(form_id)
 
     if form.listener_number != user.number:
-        return jsonify({'success': False, 'message': '您无权删除该表单'}), 403
+        return forbidden_json('我的表单', '只能删除自己提交的表单。', action='删除')
 
     unique_id = form.unique_id or form.id
     group_forms = LectureForm.query.filter(
@@ -885,7 +886,7 @@ def edit_form(form_id):
     
     # 只能编辑自己的表单
     if form.listener_number != user.number:
-        flash('您没有权限编辑此表单', 'error')
+        flash_forbidden('我的表单', '只能编辑自己提交的表单。', action='编辑')
         return redirect(url_for('user.my_forms'))
     
     # 构建表单数据字典

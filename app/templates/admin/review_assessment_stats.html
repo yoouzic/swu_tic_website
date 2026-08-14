@@ -1,100 +1,100 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
+{% from "partials/_statistics_nav.html" import statistics_nav %}
 
 {% block title %}审表考评统计 - 管理员面板{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-3">
-        <div class="col-12 d-flex justify-content-between align-items-center">
-            <h3 class="mb-0">审表考评统计</h3>
-            {% if can_manual_assessment_import %}
-            <div class="d-flex gap-2">
-                <a class="btn btn-outline-secondary" href="/admin/api/review/assessment/import/template">下载考评导入模板</a>
-            </div>
-            {% endif %}
-        </div>
-    </div>
+    {% if can_manual_assessment_import %}
+    {{ page_header('审表考评统计', '按时间与人员范围核对部门、个人扣分和考评明细。', secondary_actions=[{'label': '下载考评导入模板', 'href': '/admin/api/review/assessment/import/template'}]) }}
+    {% else %}
+    {{ page_header('审表考评统计', '按时间与人员范围核对部门、个人扣分和考评明细。') }}
+    {% endif %}
+    {{ statistics_nav('review') }}
 
-    <div class="row mb-3">
-        <div class="col-md-8">
-            <div class="card">
-                <div class="card-header">筛选条件</div>
-                <div class="card-body">
-                    <div class="row g-3 align-items-end">
-                        <div class="col-md-3">
-                            <label class="form-label">开始时间</label>
-                            <input type="date" id="startDate" class="form-control">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">结束时间</label>
-                            <input type="date" id="endDate" class="form-control">
-                        </div>
-                        <div class="col-md-6">
-                            <button class="btn btn-primary me-2" id="btnLoadStats">查询统计</button>
-                            <button class="btn btn-outline-success me-2" id="btnExportStats">导出Excel</button>
-                            <button class="btn btn-outline-secondary me-2" id="btnSelectAll">全选用户</button>
-                            <button class="btn btn-outline-secondary" id="btnClearAll">清空选择</button>
-                        </div>
+    <div class="statistics-tool-grid{% if not can_manual_assessment_import %} statistics-tool-grid--single{% endif %}">
+        <section class="activity-panel">
+            <div class="activity-panel__header">
+                <h2>筛选条件</h2>
+                <p>设置考评区间，再选择需要纳入统计的成员。</p>
+            </div>
+            <div class="activity-panel__body">
+                <div class="statistics-filter-grid">
+                    <div>
+                        <label class="form-label" for="startDate">开始时间</label>
+                        <input type="date" id="startDate" class="form-control">
+                    </div>
+                    <div>
+                        <label class="form-label" for="endDate">结束时间</label>
+                        <input type="date" id="endDate" class="form-control">
                     </div>
                 </div>
+                <div class="statistics-filter-actions mt-3">
+                    <button class="btn btn-primary" id="btnLoadStats">查询统计</button>
+                    <button class="btn btn-outline-secondary" id="btnExportStats">导出 Excel</button>
+                    <button class="btn btn-outline-secondary" id="btnSelectAll">全选用户</button>
+                    <button class="btn btn-outline-secondary" id="btnClearAll">清空选择</button>
+                </div>
             </div>
-        </div>
+        </section>
         {% if can_manual_assessment_import %}
-        <div class="col-md-4">
-            <div class="card">
-                <div class="card-header">手动导入考评</div>
-                <div class="card-body">
-                    <div class="mb-2">
-                        <input type="file" id="importFile" class="form-control" accept=".xls,.xlsx">
-                    </div>
-                    <button class="btn btn-success w-100" id="btnImport">上传并预览</button>
-                </div>
+        <section class="activity-panel">
+            <div class="activity-panel__header">
+                <h2>手动导入考评</h2>
+                <p>上传表格后先预览，再确认写入。</p>
             </div>
-        </div>
+            <div class="activity-panel__body">
+                <label class="form-label" for="importFile">考评文件</label>
+                <input type="file" id="importFile" class="form-control" accept=".xls,.xlsx">
+                <button class="btn btn-outline-secondary w-100 mt-3" id="btnImport">上传并预览</button>
+            </div>
+        </section>
         {% endif %}
     </div>
 
-    <div class="row">
-        <div class="col-md-4">
-            <div class="card">
-                <div class="card-header">范围用户</div>
-                <div class="card-body">
-                    <input type="text" id="userSearchInput" class="form-control mb-2" placeholder="搜索部门/小组/姓名/编号">
-                    <div id="userStructure" style="max-height: 600px; overflow-y: auto;"></div>
-                </div>
+    <div class="statistics-workspace-grid mt-3">
+        <section class="activity-panel">
+            <div class="activity-panel__header">
+                <h2>范围用户</h2>
+                <p>可按部门、小组、姓名或编号缩小范围。</p>
             </div>
-        </div>
-        <div class="col-md-8">
-            <div class="card">
-                <div class="card-header">统计结果</div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-bordered table-striped">
-                            <thead>
-                                <tr>
-                                    <th>排名</th>
-                                    <th>姓名</th>
-                                    <th>编号</th>
-                                    <th>部门</th>
-                                    <th>小组</th>
-                                    <th>部门扣分</th>
-                                    <th>个人扣分</th>
-                                    <th>总个人扣分</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody id="statsBody">
-                                <tr><td colspan="9" class="text-center text-muted">请先选择时间与用户范围后查询</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+            <div class="activity-panel__body">
+                <label class="form-label" for="userSearchInput">搜索范围用户</label>
+                <input type="text" id="userSearchInput" class="form-control" placeholder="搜索部门/小组/姓名/编号">
+                <div id="userStructure" class="statistics-scope-list mt-2"></div>
             </div>
-        </div>
+        </section>
+        <section class="activity-panel">
+            <div class="activity-panel__header">
+                <h2>统计结果</h2>
+                <p>数值 0 表示有效结果；无记录时才显示空状态。</p>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped">
+                    <thead>
+                        <tr>
+                            <th>排名</th>
+                            <th>姓名</th>
+                            <th>编号</th>
+                            <th>部门</th>
+                            <th>小组</th>
+                            <th>部门扣分</th>
+                            <th>个人扣分</th>
+                            <th>总个人扣分</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statsBody">
+                        <tr><td colspan="9" class="text-center text-muted py-4">请先选择时间与用户范围后查询</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
     </div>
 </div>
 
-<div class="modal fade" id="detailModal" tabindex="-1">
+<div class="modal fade" id="detailModal" tabindex="-1" aria-labelledby="detailTitle" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
@@ -106,11 +106,11 @@
     </div>
 </div>
 
-<div class="modal fade" id="importPreviewModal" tabindex="-1">
+<div class="modal fade" id="importPreviewModal" tabindex="-1" aria-labelledby="importPreviewTitle" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">导入预览</h5>
+                <h5 class="modal-title" id="importPreviewTitle">导入预览</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
@@ -119,7 +119,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
-                <button type="button" class="btn btn-success" id="btnConfirmImportPreview">确认导入</button>
+                <button type="button" class="btn btn-primary" id="btnConfirmImportPreview">确认导入</button>
             </div>
         </div>
     </div>

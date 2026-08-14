@@ -1,22 +1,20 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 
 {% block title %}听课登记统计 - 西南大学听课信息中心{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2 class="mb-0"><i class="bi bi-bar-chart"></i> 听课登记统计</h2>
-        <a href="{{ url_for('admin.course_management') }}" class="btn btn-outline-secondary">返回课程管理</a>
-    </div>
-    <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <span>按教师统计</span>
+    {{ page_header('听课登记统计', '从课程管理下钻，按教师和课程核对听课登记次数。', action_label='返回课程管理', action_href=url_for('admin.course_management')) }}
+    <section class="activity-panel">
+        <div class="activity-panel__header activity-panel__header--split">
+            <div><h2>按教师统计</h2><p>展开教师可查看课程明细，并继续管理禁听范围。</p></div>
             <button type="button" class="btn btn-sm btn-outline-primary" onclick="loadRegistrationStats()">刷新</button>
         </div>
-        <div class="card-body">
+        <div class="activity-panel__body">
             <div id="registrationStatsContainer" class="table-responsive"></div>
         </div>
-    </div>
+    </section>
 </div>
 
 <div class="modal fade" id="userSelectionModal" tabindex="-1">
