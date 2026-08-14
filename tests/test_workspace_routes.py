@@ -64,7 +64,7 @@ class WorkspaceRouteTest(unittest.TestCase):
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'data-workspace-role="manager"', response.data)
-        self.assertIn('处理审核'.encode('utf-8'), response.data)
+        self.assertIn('查看审核队列'.encode('utf-8'), response.data)
         self.assertIn('placeholder="搜索听课人、教师或课程"'.encode('utf-8'), response.data)
 
     def test_legacy_dashboards_redirect_to_root(self):

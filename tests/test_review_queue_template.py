@@ -45,6 +45,11 @@ class ReviewQueueTemplateTest(unittest.TestCase):
         self.assertIn('id="reviewFormContent"', template)
         self.assertIn("getElementById('reviewFormContent')", template)
 
+    def test_review_page_title_distinguishes_queue_from_app_context(self):
+        template = Path('app/templates/admin/review_forms.html').read_text(encoding='utf-8')
+        self.assertIn('审核队列', template)
+        self.assertNotIn('表单审核管理', template)
+
     def test_reject_action_uses_the_clicked_button_context(self):
         template = Path('app/templates/admin/review_form.html').read_text(encoding='utf-8')
         self.assertIn('event.currentTarget', template)

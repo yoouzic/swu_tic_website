@@ -11,7 +11,7 @@
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="bi bi-clipboard-check me-2"></i>
-                        表单审核管理
+                        审核队列
                     </h3>
                     <div class="card-tools">
                         <span class="badge bg-info text-dark" id="permissionBadge">检查权限中...</span>
@@ -391,13 +391,21 @@ function showStatistics() {
 }
 
 function renderStatistics(stats, rangeInfo) {
-    const rangeText = rangeInfo
-        ? `${rangeInfo.start_date} 至 ${rangeInfo.end_date}`
-        : '时间范围获取失败';
+    const rangeValue = rangeInfo
+        ? `<span class="review-statistics-range__value">
+            <time class="review-statistics-range__date" datetime="${rangeInfo.start_date}">${rangeInfo.start_date}</time>
+            <span aria-hidden="true">—</span>
+            <time class="review-statistics-range__date" datetime="${rangeInfo.end_date}">${rangeInfo.end_date}</time>
+        </span>`
+        : '<span class="review-statistics-range__value">时间范围获取失败</span>';
 
     let html = `
         <div class="review-statistics-range">
-            <i class="bi bi-calendar3 me-2"></i>当前统计范围：${rangeText}
+            <span class="review-statistics-range__label">
+                <i class="bi bi-calendar3" aria-hidden="true"></i>
+                当前统计范围
+            </span>
+            ${rangeValue}
         </div>
         <div class="review-statistics-grid">
             <section class="review-statistics-card">

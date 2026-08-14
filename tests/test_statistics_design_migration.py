@@ -66,6 +66,21 @@ class StatisticsDesignMigrationTests(unittest.TestCase):
                     rf"metric\([^\n]*tone=['\"]{re.escape(tone)}['\"]",
                 )
 
+    def test_filter_actions_use_a_scoped_group_without_spacing_utilities(self):
+        start = self.template.index('<span class="form-label d-block">操作</span>')
+        end = self.template.index('</div>\n                            </div>', start)
+        actions = self.template[start:end]
+
+        self.assertIn('class="statistics-filter-actions"', actions)
+        self.assertNotIn(' ms-2', actions)
+        self.assertIn('class="col-12"', self.template[:start])
+
+        css = Path('app/static/css/style.css').read_text(encoding='utf-8')
+        css_start = css.index('.statistics-filter-actions {')
+        scoped_css = css[css_start:css_start + 240]
+        self.assertIn('display: flex', scoped_css)
+        self.assertIn('gap: var(--space-2)', scoped_css)
+
 
 if __name__ == "__main__":
     unittest.main()

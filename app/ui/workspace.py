@@ -77,12 +77,20 @@ def build_workspace(user, snapshot):
         }
 
     if user.role == '管理员':
+        has_pending_forms = snapshot.pending_forms > 0
         return {
             'role': user.role,
             'role_slug': 'manager',
-            'title': f'上午好，{user.name}',
-            'summary': f'先处理 {snapshot.pending_forms} 份待审核表单，再查看部门提交情况。',
-            'primary_action': {'label': '处理审核', 'endpoint': 'admin.review_forms'},
+            'title': f'你好，{user.name}',
+            'summary': (
+                f'先处理 {snapshot.pending_forms} 份待审核表单，再查看部门提交情况。'
+                if has_pending_forms
+                else '当前没有待审核表单，可以查看部门提交情况。'
+            ),
+            'primary_action': {
+                'label': '处理审核' if has_pending_forms else '查看审核队列',
+                'endpoint': 'admin.review_forms',
+            },
             'metrics': [
                 {'label': '待审核', 'value': snapshot.pending_forms},
                 {'label': '部门成员', 'value': snapshot.department_users},
@@ -95,6 +103,7 @@ def build_workspace(user, snapshot):
             ],
         }
 
+    has_pending_forms = snapshot.pending_forms > 0
     tasks = _build_review_tasks(snapshot.pending_forms)
     if snapshot.failed_jobs:
         tasks.append({
@@ -105,9 +114,16 @@ def build_workspace(user, snapshot):
     return {
         'role': user.role,
         'role_slug': 'super-admin',
-        'title': f'上午好，{user.name}',
-        'summary': f'全局共有 {snapshot.pending_forms} 份表单等待处理。',
-        'primary_action': {'label': '处理审核', 'endpoint': 'admin.review_forms'},
+        'title': f'你好，{user.name}',
+        'summary': (
+            f'全局共有 {snapshot.pending_forms} 份待审核表单，请优先完成审核。'
+            if has_pending_forms
+            else '当前没有待审核表单，可以查看全局提交情况。'
+        ),
+        'primary_action': {
+            'label': '处理审核' if has_pending_forms else '查看审核队列',
+            'endpoint': 'admin.review_forms',
+        },
         'metrics': [
             {'label': '待审核', 'value': snapshot.pending_forms},
             {'label': '活跃成员', 'value': snapshot.total_users},
