@@ -77,6 +77,7 @@ def login():
         if user and not is_user_active(user):
             flash('账号已离任或不可用，请联系管理员', 'error')
         elif user and check_password_hash(user.password_hash, password):
+            session.clear()
             session['user_id'] = user.id
             session['user_role'] = user.role
             session['user_name'] = user.name
@@ -87,9 +88,9 @@ def login():
     
     return render_template('auth/login.html')
 
-@auth_bp.route('/logout')
+@auth_bp.route('/logout', methods=['POST'])
 def logout():
-    """用户登出"""
+    """用户登出（仅 POST，受 CSRF 保护）"""
     session.clear()
     flash('已成功登出', 'info')
     return redirect(url_for('main.index'))

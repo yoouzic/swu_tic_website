@@ -231,7 +231,7 @@ class UIConsistencyStaticContractTest(unittest.TestCase):
         group_actions = self.people[group_start:group_end]
         self.assertIn('dropdown group-card__menu', group_actions)
         self.assertIn('dropdown-item text-danger', group_actions)
-        self.assertIn('onclick="disbandGroup(', group_actions)
+        self.assertIn('data-group-action="disband"', group_actions)
         self.assertNotIn('btn-outline-danger', group_actions)
 
         self.assertIn('function disbandDepartment(id, name)', self.people)

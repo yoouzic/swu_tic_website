@@ -465,6 +465,12 @@ function toggleVersions(uniqueId) {
 }
 
 // 自动设置日期范围
+function myFormsLocalDateString(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
 document.addEventListener('DOMContentLoaded', function() {
     const dateFrom = document.getElementById('date_from');
     const dateTo = document.getElementById('date_to');
@@ -473,8 +479,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const today = new Date();
         const oneMonthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
         
-        dateFrom.value = oneMonthAgo.toISOString().split('T')[0];
-        dateTo.value = today.toISOString().split('T')[0];
+        dateFrom.value = myFormsLocalDateString(oneMonthAgo);
+        dateTo.value = myFormsLocalDateString(today);
     }
 });
 </script>

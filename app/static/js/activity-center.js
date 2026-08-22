@@ -637,13 +637,19 @@
             reservationDeleteButton.addEventListener('click', confirmDeleteReservation);
         }
 
+        const localDateString = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
         const dateFrom = document.getElementById('date_from');
         const dateTo = document.getElementById('date_to');
         if (dateFrom && dateTo && !dateFrom.value && !dateTo.value) {
             const today = new Date();
             const oneMonthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
-            dateFrom.value = oneMonthAgo.toISOString().split('T')[0];
-            dateTo.value = today.toISOString().split('T')[0];
+            dateFrom.value = localDateString(oneMonthAgo);
+            dateTo.value = localDateString(today);
         }
     }
 

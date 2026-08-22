@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
-from ..models import User, db, Course, ListeningBan, CourseRegistration as Reservation, Teacher, LectureForm, LectureFormDraft
+from ..models import SystemSetting, User, db, Course, ListeningBan, CourseRegistration as Reservation, Teacher, LectureForm, LectureFormDraft
 from .auth import login_required
 from ..utils.user_status import active_user_filter
 from datetime import datetime, timedelta
@@ -722,46 +722,48 @@ def submit_form():
         registration_id = request.form.get('registration_id')
         audit_tag = '需要人工审核' # 默认需要人工审核
         
-        # 如果选择了已登记课程，进行自动审核判断
+        # 如果选择了已登记课程，先做服务端归属验证，再进行自动审核判断
+        registration = None
         if registration_id:
-            try:
-                registration = Reservation.query.get(registration_id)
-                if registration:
-                    # 获取原始课程信息
-                    course = Course.query.filter_by(
-                        course_code=registration.course_code, 
-                        selection_code=registration.selection_code
-                    ).first()
-                    
-                    if course:
-                        # 比较关键字段差异
-                        # 1. 课程名称
-                        s1 = difflib.SequenceMatcher(None, course.course_name, request.form['course_title'])
-                        ratio_title = s1.ratio()
-                        
-                        # 2. 教师姓名
-                        teacher_name_orig = course.teacher.name if course.teacher else ''
-                        s2 = difflib.SequenceMatcher(None, teacher_name_orig, request.form['teacher_name'])
-                        ratio_teacher = s2.ratio()
-                        
-                        # 3. 上课地点
-                        s3 = difflib.SequenceMatcher(None, str(course.class_location or ''), request.form['lecture_location'])
-                        ratio_location = s3.ratio()
-                        
-                        # 综合判断：如果关键信息相似度较高，则无需人工审核
-                        # 设定阈值为0.6（允许少量修改）
-                        if ratio_title > 0.6 and ratio_teacher > 0.6 and ratio_location > 0.6:
-                            audit_tag = '无需人工审核'
-                        else:
-                            audit_tag = '需要人工审核' # 修改较大
-                            
-                        # 标记登记记录为已使用
-                        registration.is_used = True
-                        db.session.add(registration)
-            except Exception as e:
-                # 发生错误时保守处理
-                audit_tag = '需要人工审核'
-                print(f"Error checking registration: {e}")
+            registration = Reservation.query.get(registration_id)
+            if registration is None:
+                flash('所选听课登记不存在或已被删除，请刷新后重试。', 'error')
+                return render_template('user/lecture_form.html', user=user), 400
+            if registration.user_id != user.id:
+                flash('无权使用该听课登记。', 'error')
+                return render_template('user/lecture_form.html', user=user), 403
+
+            # 获取原始课程信息
+            course = Course.query.filter_by(
+                course_code=registration.course_code,
+                selection_code=registration.selection_code
+            ).first()
+
+            if course:
+                # 比较关键字段差异
+                # 1. 课程名称
+                s1 = difflib.SequenceMatcher(None, course.course_name, request.form['course_title'])
+                ratio_title = s1.ratio()
+
+                # 2. 教师姓名
+                teacher_name_orig = course.teacher.name if course.teacher else ''
+                s2 = difflib.SequenceMatcher(None, teacher_name_orig, request.form['teacher_name'])
+                ratio_teacher = s2.ratio()
+
+                # 3. 上课地点
+                s3 = difflib.SequenceMatcher(None, str(course.class_location or ''), request.form['lecture_location'])
+                ratio_location = s3.ratio()
+
+                # 综合判断：如果关键信息相似度较高，则无需人工审核
+                # 设定阈值为0.6（允许少量修改）
+                if ratio_title > 0.6 and ratio_teacher > 0.6 and ratio_location > 0.6:
+                    audit_tag = '无需人工审核'
+                else:
+                    audit_tag = '需要人工审核' # 修改较大
+
+                # 标记登记记录为已使用
+                registration.is_used = True
+                db.session.add(registration)
 
         teaching_method = request.form['teaching_method']
         courseware_quality = request.form['courseware_quality']
@@ -934,7 +936,7 @@ def edit_form(form_id):
     #     form_data['suggestions'] = parts[0]
     #     form_data['remarks'] = parts[1] if len(parts) > 1 else ''
     
-    return render_template('user/lecture_form.html', user=user, form_data_json=json.dumps(form_data), form=form)
+    return render_template('user/lecture_form.html', user=user, form_data=form_data, form=form)
 
 @user_bp.route('/success/<int:form_id>')
 @login_required
@@ -971,10 +973,12 @@ def listening_registration():
     if active_tab not in {'registration', 'records'}:
         active_tab = 'registration'
     records = _build_activity_records(user, request.args)
+    semester_configured = bool((SystemSetting.get('teaching_first_week_monday') or '').strip())
     return render_template(
         'user/activity_center.html',
         user=user,
         active_tab=active_tab,
+        semester_configured=semester_configured,
         **records,
     )
 
@@ -1121,6 +1125,14 @@ def api_create_reservation():
                 'message': '请填写完整的登记信息'
             }), 400
         
+        # 后端独立确认教学周期已配置，未配置时拒绝登记。
+        semester_configured = bool((SystemSetting.get('teaching_first_week_monday') or '').strip())
+        if not semester_configured:
+            return jsonify({
+                'success': False,
+                'message': '请联系管理员在 系统设置 → 教学制度 配置学期起始周后再登记。'
+            }), 400
+
         # 验证听课时间是否在未来
         is_valid_time, time_error = validate_listening_time(listening_info)
         if not is_valid_time:

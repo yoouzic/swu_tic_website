@@ -161,4 +161,52 @@ document.addEventListener('DOMContentLoaded', () => {
         container.appendChild(item);
         return item;
     };
+
+    // Same-origin CSRF token injection for HTML forms, fetch and jQuery AJAX.
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
+    const isUnsafeMethod = (method) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(method || '').toUpperCase());
+    const isSameOrigin = (url) => {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (error) {
+            return false;
+        }
+    };
+
+    if (csrfToken) {
+        document.querySelectorAll('form').forEach((form) => {
+            const method = String(form.getAttribute('method') || 'get').toLowerCase();
+            if (method === 'post' && !form.querySelector('input[name="csrf_token"]')) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'csrf_token';
+                input.value = csrfToken;
+                form.appendChild(input);
+            }
+        });
+
+        const originalFetch = window.fetch;
+        window.fetch = function (input, init) {
+            const nextInit = init ? { ...init } : {};
+            const method = nextInit.method || (input && input.method) || 'GET';
+            const url = typeof input === 'string' ? input : (input && input.url) || '';
+            if (isUnsafeMethod(method) && isSameOrigin(url)) {
+                const headers = new Headers(nextInit.headers || {});
+                headers.set('X-CSRFToken', csrfToken);
+                nextInit.headers = headers;
+            }
+            return originalFetch.call(this, input, nextInit);
+        };
+
+        if (window.jQuery) {
+            window.jQuery.ajaxSetup({
+                beforeSend(xhr, settings) {
+                    if (isUnsafeMethod(settings.type) && isSameOrigin(settings.url)) {
+                        xhr.setRequestHeader('X-CSRFToken', csrfToken);
+                    }
+                },
+            });
+        }
+    }
 });

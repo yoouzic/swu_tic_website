@@ -42,14 +42,14 @@ class PeopleResponsiveContractTest(unittest.TestCase):
         end = self.template.index("                        `).join('')}", start)
         actions = self.template[start:end]
 
-        self.assertIn('onclick="viewUser(${user.id})"', actions)
+        self.assertIn('data-user-action="view" data-user-id="${user.id}"', actions)
         self.assertIn('class="dropdown group-user-row__menu"', actions)
         self.assertIn('id="userActions${user.id}"', actions)
-        self.assertIn('aria-label="更多用户操作：${user.name}"', actions)
+        self.assertIn('aria-label="更多用户操作：${escapePeopleHtml(user.name)}"', actions)
         self.assertIn('class="dropdown-menu dropdown-menu-end"', actions)
-        self.assertIn('class="dropdown-item" onclick="editUser(${user.id})"', actions)
-        self.assertIn('class="dropdown-item text-danger" onclick="departUser(', actions)
-        self.assertIn('class="dropdown-item text-danger" onclick="deleteUser(', actions)
+        self.assertIn('data-user-action="edit" data-user-id="${user.id}"', actions)
+        self.assertIn('data-user-action="depart" data-user-id="${user.id}"', actions)
+        self.assertIn('data-user-action="delete" data-user-id="${user.id}"', actions)
         self.assertIn('class="dropdown-divider"', actions)
 
         self.assertNotIn(

@@ -120,8 +120,16 @@ def get_reviewable_users(user_id):
         return [u.id for u in users if u.id != user_id]
     
     elif permission == '审表_小组':
-        # 可以审核同小组信息员和管理员的表单，但不能审核自己
-        users = User.query.filter(User.role.in_(['信息员', '管理员']), User.group_id == user.group_id, active_user_filter()).all()
+        # 可以审核同小组信息员和管理员的表单，但不能审核自己。
+        # 当前审核员自身无 group_id 时按 fail-closed 返回空，避免 SQL NULL 匹配跨部门未分组用户。
+        if user.group_id is None:
+            return []
+        users = User.query.filter(
+            User.role.in_(['信息员', '管理员']),
+            User.group_id == user.group_id,
+            User.department == user.department,
+            active_user_filter(),
+        ).all()
         return [u.id for u in users if u.id != user_id]
     
     return []
@@ -250,9 +258,16 @@ def get_user_structure_for_review(user_id):
         return groups
     
     elif permission == '审表_小组':
-        # 小组权限：返回用户数组
+        # 小组权限：返回用户数组。自身 group_id 缺失时 fail-closed。
         current_user = User.query.get(user_id)
-        users = User.query.filter(User.role.in_(['信息员', '管理员']), User.group_id == current_user.group_id, active_user_filter()).all()
+        if current_user.group_id is None:
+            return []
+        users = User.query.filter(
+            User.role.in_(['信息员', '管理员']),
+            User.group_id == current_user.group_id,
+            User.department == current_user.department,
+            active_user_filter(),
+        ).all()
         result = []
         
         for user in users:

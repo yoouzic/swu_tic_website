@@ -1005,9 +1005,9 @@ function renderMemberSelection(users, type, targetId) {
         item.style.cursor = 'pointer';
         
         item.innerHTML = `
-            <input class="form-check-input flex-shrink-0" type="checkbox" value="${user.id}" name="selected_users">
+            <input class="form-check-input flex-shrink-0" type="checkbox" value="${escapePeopleHtml(user.id)}" name="selected_users">
             <span>
-                ${user.name} <small class="text-muted">(${user.department}${user.group_id ? ' - ' + (user.group || '小组' + user.group_id) : ''})</small>
+                ${escapePeopleHtml(user.name)} <small class="text-muted">(${escapePeopleHtml(user.department)}${user.group_id ? ' - ' + escapePeopleHtml(user.group || ('小组' + user.group_id)) : ''})</small>
             </span>
         `;
         listGroup.appendChild(item);
@@ -1134,9 +1134,9 @@ function renderDepartments(departments) {
             <div class="card shadow-sm">
                 <div class="card-header bg-light department-card__header">
                     <h5 class="mb-0 text-primary department-card__title">
-                        <i class="bi bi-building"></i> ${dept.name}
-                        <span class="badge bg-secondary ms-2" style="font-size: 0.8rem;">${dept.groups.length} 个小组</span>
-                        <span class="badge bg-info text-dark ms-1" style="font-size: 0.8rem;">${dept.total_users || '0'} 名用户</span>
+                        <i class="bi bi-building"></i> ${escapePeopleHtml(dept.name)}
+                        <span class="badge bg-secondary ms-2" style="font-size: 0.8rem;">${escapePeopleHtml(dept.groups.length)} 个小组</span>
+                        <span class="badge bg-info text-dark ms-1" style="font-size: 0.8rem;">${escapePeopleHtml(dept.total_users || '0')} 名用户</span>
                     </h5>
                     <div class="department-card__controls">
                         <button class="btn btn-sm btn-outline-secondary department-card__toggle" type="button" data-bs-toggle="collapse" data-bs-target="#departmentBody${departmentKey}" aria-expanded="${departmentExpanded}" aria-controls="departmentBody${departmentKey}">
@@ -1148,8 +1148,8 @@ function renderDepartments(departments) {
                 <div class="collapse department-card__body ${departmentBodyState}" id="departmentBody${departmentKey}">
                 <div class="card-body">
                     <div class="mb-3">
-                        ${dept.description ? `<p class="text-muted mb-1"><small>${dept.description}</small></p>` : ''}
-                        ${dept.head ? `<p class="mb-0"><strong>负责人：</strong>${dept.head}</p>` : ''}
+                        ${dept.description ? `<p class="text-muted mb-1"><small>${escapePeopleHtml(dept.description)}</small></p>` : ''}
+                        ${dept.head ? `<p class="mb-0"><strong>负责人：</strong>${escapePeopleHtml(dept.head)}</p>` : ''}
                         
                         <!-- 部门评价概览 -->
                         <div class="mt-2 p-2 bg-light rounded border">
@@ -1172,8 +1172,8 @@ function renderDepartments(departments) {
                                             ${dept.member_deductions && dept.member_deductions.length > 0 ? 
                                                 dept.member_deductions.map((m, idx) => `
                                                     <tr class="${idx >= 5 ? 'd-none extended-row-' + dept.id : ''}">
-                                                        <td>${m.name}</td>
-                                                        <td class="text-end text-danger">-${m.score}</td>
+                                                        <td>${escapePeopleHtml(m.name)}</td>
+                                                        <td class="text-end text-danger">-${escapePeopleHtml(m.score)}</td>
                                                     </tr>
                                                 `).join('') 
                                                 : '<tr><td colspan="2" class="text-center text-muted small">暂无扣分记录</td></tr>'
@@ -1230,7 +1230,7 @@ function createGroupCard(group) {
     const isUnassigned = group.id === null || group.is_virtual;
     const buttonsHtml = isUnassigned ? '' : `
         <div class="group-card__actions">
-            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="editGroup(${group.id})" title="编辑">
+            <button class="btn btn-sm btn-outline-secondary" type="button" data-group-action="edit" data-group-id="${group.id}" title="编辑">
                 <i class="bi bi-pencil"></i> 编辑
             </button>
             {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
@@ -1239,7 +1239,7 @@ function createGroupCard(group) {
                     更多
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="groupActions${group.id}">
-                    <li><button class="dropdown-item text-danger" type="button" onclick="disbandGroup(${group.id}, '${group.name}')"><i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>解散小组</button></li>
+                    <li><button class="dropdown-item text-danger" type="button" data-group-action="disband" data-group-id="${group.id}" data-group-name="${escapePeopleHtml(group.name)}"><i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>解散小组</button></li>
                 </ul>
             </div>
             {% endif %}
@@ -1251,40 +1251,40 @@ function createGroupCard(group) {
             <div class="card border-secondary">
                 <div class="card-header group-card__header py-2">
                     <h6 class="mb-0">
-                        <i class="bi bi-people"></i> ${group.name}
-                        <span class="badge bg-secondary ms-1">${group.member_count}${group.max_members === '无限制' ? '' : '/' + group.max_members}</span>
+                        <i class="bi bi-people"></i> ${escapePeopleHtml(group.name)}
+                        <span class="badge bg-secondary ms-1">${escapePeopleHtml(group.member_count)}${group.max_members === '无限制' ? '' : '/' + escapePeopleHtml(group.max_members)}</span>
                     </h6>
                     ${buttonsHtml}
                 </div>
                 <div class="card-body py-2">
-                    ${group.description ? `<p class="small text-muted mb-2">${group.description}</p>` : ''}
-                    ${group.leader ? `<p class="small mb-2"><strong>组长：</strong>${group.leader}</p>` : ''}
+                    ${group.description ? `<p class="small text-muted mb-2">${escapePeopleHtml(group.description)}</p>` : ''}
+                    ${group.leader ? `<p class="small mb-2"><strong>组长：</strong>${escapePeopleHtml(group.leader)}</p>` : ''}
                     
                     <div class="user-list">
                         ${group.members.map(user => `
                             <div class="group-user-row mb-1">
-                                <span class="small group-user-row__identity">${user.name} (${user.role})</span>
+                                <span class="small group-user-row__identity">${escapePeopleHtml(user.name)} (${escapePeopleHtml(user.role)})</span>
                                 {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
                                 <div class="group-user-row__actions">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="viewUser(${user.id})" title="查看">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-user-action="view" data-user-id="${user.id}" title="查看">
                                         <i class="bi bi-eye" aria-hidden="true"></i> 查看
                                     </button>
                                     <div class="dropdown group-user-row__menu">
                                         <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
                                                 id="userActions${user.id}" data-bs-toggle="dropdown" aria-expanded="false"
-                                                aria-label="更多用户操作：${user.name}">
+                                                aria-label="更多用户操作：${escapePeopleHtml(user.name)}">
                                             更多
                                         </button>
                                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userActions${user.id}">
                                             <li>
-                                                <button type="button" class="dropdown-item" onclick="editUser(${user.id})">
+                                                <button type="button" class="dropdown-item" data-user-action="edit" data-user-id="${user.id}">
                                                     <i class="bi bi-pencil" aria-hidden="true"></i> 编辑
                                                 </button>
                                             </li>
                                             ${user.role !== '超级管理员' ? `
                                             <li><hr class="dropdown-divider"></li>
                                             <li>
-                                                <button type="button" class="dropdown-item text-danger" onclick="departUser(${user.id}, '${user.name}')">
+                                                <button type="button" class="dropdown-item text-danger" data-user-action="depart" data-user-id="${user.id}" data-user-name="${escapePeopleHtml(user.name)}">
                                                     <i class="bi bi-person-dash" aria-hidden="true"></i> 离任
                                                 </button>
                                             </li>
@@ -1292,7 +1292,7 @@ function createGroupCard(group) {
                                             {% if manage_permission == '超级管理员' %}
                                             ${user.role === '超级管理员' ? '<li><hr class="dropdown-divider"></li>' : ''}
                                             <li>
-                                                <button type="button" class="dropdown-item text-danger" onclick="deleteUser(${user.id}, '${user.name}')">
+                                                <button type="button" class="dropdown-item text-danger" data-user-action="delete" data-user-id="${user.id}" data-user-name="${escapePeopleHtml(user.name)}">
                                                     <i class="bi bi-trash" aria-hidden="true"></i> 删除
                                                 </button>
                                             </li>
@@ -1473,6 +1473,47 @@ document.addEventListener('click', function(event) {
             const department = allDepartmentsData.find(item => Number(item.id) === departmentId);
             disbandDepartment(departmentId, department?.name || '该部门');
         }
+        return;
+    }
+
+    const groupAction = event.target.closest('[data-group-action]');
+    if (groupAction) {
+        const groupId = Number(groupAction.dataset.groupId);
+        if (!Number.isInteger(groupId)) {
+            return;
+        }
+        if (groupAction.dataset.groupAction === 'edit') {
+            editGroup(groupId);
+            return;
+        }
+        if (groupAction.dataset.groupAction === 'disband') {
+            disbandGroup(groupId, groupAction.dataset.groupName || '该小组');
+        }
+        return;
+    }
+
+    const userAction = event.target.closest('[data-user-action]');
+    if (userAction) {
+        const userId = Number(userAction.dataset.userId);
+        if (!Number.isInteger(userId)) {
+            return;
+        }
+        const userName = userAction.dataset.userName || '该用户';
+        switch (userAction.dataset.userAction) {
+            case 'view':
+                viewUser(userId);
+                break;
+            case 'edit':
+                editUser(userId);
+                break;
+            case 'depart':
+                departUser(userId, userName);
+                break;
+            case 'delete':
+                deleteUser(userId, userName);
+                break;
+        }
+        return;
     }
 });
 
@@ -1852,21 +1893,21 @@ function renderPersonnelMovementRecords(records) {
                 <tbody>
                     ${safeRecords.map(record => `
                         <tr>
-                            <td>${record.created_at || '-'}</td>
-                            <td>${record.action_type || '-'}</td>
-                            <td>${record.target_user_name || '-'}${record.target_user_number ? ` (${record.target_user_number})` : ''}</td>
-                            <td>${record.department_name || '-'} / ${record.group_name || '未分配小组'}</td>
-                            <td>${record.summary || '-'}</td>
+                            <td>${escapePeopleHtml(record.created_at || '-')}</td>
+                            <td>${escapePeopleHtml(record.action_type || '-')}</td>
+                            <td>${escapePeopleHtml(record.target_user_name || '-')}${record.target_user_number ? ` (${escapePeopleHtml(record.target_user_number)})` : ''}</td>
+                            <td>${escapePeopleHtml(record.department_name || '-')} / ${escapePeopleHtml(record.group_name || '未分配小组')}</td>
+                            <td>${escapePeopleHtml(record.summary || '-')}</td>
                             <td>
                                 ${(record.details || []).length > 0 ? `
                                     <ul class="mb-0 ps-3">
                                         ${(record.details || []).map(item => `
-                                            <li>${item.label || item.field || '-'}：${item.before || '空'} → ${item.after || '空'}</li>
+                                            <li>${escapePeopleHtml(item.label || item.field || '-')}：${escapePeopleHtml(item.before || '空')} → ${escapePeopleHtml(item.after || '空')}</li>
                                         `).join('')}
                                     </ul>
                                 ` : '<span class="text-muted">无</span>'}
                             </td>
-                            <td>${record.operator_name || '-'}${record.operator_number ? ` (${record.operator_number})` : ''}</td>
+                            <td>${escapePeopleHtml(record.operator_name || '-')}${record.operator_number ? ` (${escapePeopleHtml(record.operator_number)})` : ''}</td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -2256,11 +2297,11 @@ function renderPermissions(permissions, userPermissions) {
         const div = document.createElement('div');
         div.className = 'form-check mb-2';
         div.innerHTML = `
-            <input class="form-check-input" type="checkbox" value="${permission.id}" 
+            <input class="form-check-input" type="checkbox" value="${escapePeopleHtml(permission.id)}"
                    id="perm_${permission.id}" ${isChecked ? 'checked' : ''}>
             <label class="form-check-label" for="perm_${permission.id}">
-                <strong>${permission.name}</strong>
-                ${permission.description ? `<br><small class="text-muted">${permission.description}</small>` : ''}
+                <strong>${escapePeopleHtml(permission.name)}</strong>
+                ${permission.description ? `<br><small class="text-muted">${escapePeopleHtml(permission.description)}</small>` : ''}
             </label>
         `;
         container.appendChild(div);
@@ -2525,33 +2566,59 @@ function initContactsExport() {
                 return;
             }
             const jobId = data.job_id;
-            // 轮询进度
-            const timer = setInterval(()=>{
-                fetch(`/admin/api/export/progress/${jobId}`).then(r=>r.json()).then(pg=>{
-                    if (!pg.success) return;
-                    const p = pg.progress;
-                    progressBar.style.width = `${p.percent||0}%`;
-                    progressText.textContent = p.message || '';
-                    if (p.status === 'completed') {
-                        clearInterval(timer);
-                        result.style.display='block';
-                        result.replaceChildren();
-                        const successBox = document.createElement('div');
-                        successBox.className = 'alert alert-success';
-                        const successMessage = document.createElement('p');
-                        successMessage.textContent = `导出完成，共 ${data.total} 条记录`;
-                        successBox.appendChild(successMessage);
-                        if (typeof p.download_url === 'string' && p.download_url.startsWith('/')) {
-                            const downloadLink = document.createElement('a');
-                            downloadLink.href = p.download_url;
-                            downloadLink.className = 'btn btn-primary btn-sm mt-2';
-                            downloadLink.textContent = '下载文件';
-                            successBox.appendChild(downloadLink);
+            // 轮询进度：所有终态、API 失败、网络异常和超时都必须清理 timer。
+            let timer = null;
+            let pollCount = 0;
+            const stopTimer = () => {
+                if (timer) {
+                    clearInterval(timer);
+                    timer = null;
+                }
+            };
+            const markFailed = (message) => {
+                stopTimer();
+                progressText.textContent = message;
+                setPeopleManagementFeedback(message, 'error');
+            };
+            timer = setInterval(() => {
+                pollCount += 1;
+                if (pollCount > 120) {
+                    markFailed('导出超时，请稍后重试。');
+                    return;
+                }
+                fetch(`/admin/api/export/progress/${jobId}`)
+                    .then(r => r.json())
+                    .then(pg => {
+                        if (!pg.success || !pg.progress) {
+                            markFailed('导出失败。');
+                            return;
                         }
-                        result.appendChild(successBox);
-                        setPeopleManagementFeedback('通讯录导出完成。', 'success');
-                    }
-                });
+                        const p = pg.progress;
+                        progressBar.style.width = `${p.percent || 0}%`;
+                        progressText.textContent = p.message || '';
+                        if (p.status === 'completed') {
+                            stopTimer();
+                            result.style.display = 'block';
+                            result.replaceChildren();
+                            const successBox = document.createElement('div');
+                            successBox.className = 'alert alert-success';
+                            const successMessage = document.createElement('p');
+                            successMessage.textContent = `导出完成，共 ${data.total} 条记录`;
+                            successBox.appendChild(successMessage);
+                            if (typeof p.download_url === 'string' && p.download_url.startsWith('/')) {
+                                const downloadLink = document.createElement('a');
+                                downloadLink.href = p.download_url;
+                                downloadLink.className = 'btn btn-primary btn-sm mt-2';
+                                downloadLink.textContent = '下载文件';
+                                successBox.appendChild(downloadLink);
+                            }
+                            result.appendChild(successBox);
+                            setPeopleManagementFeedback('通讯录导出完成。', 'success');
+                        } else if (p.status === 'failed' || p.status === 'cancelled') {
+                            markFailed('导出失败。');
+                        }
+                    })
+                    .catch(() => markFailed('导出失败，请检查网络连接。'));
             }, 1000);
         }).catch(err=>{
             setPeopleManagementFeedback(`导出失败：${err.message}`, 'error');

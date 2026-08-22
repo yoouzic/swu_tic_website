@@ -194,7 +194,7 @@
                                 <ul class="pagination justify-content-center">
                                     {% if forms.has_prev %}
                                     <li class="page-item">
-                                        <a class="page-link" href="{{ url_for('admin.view_forms', page=forms.prev_num) }}">上一页</a>
+                                        <a class="page-link" href="{{ page_url(forms.prev_num) }}">上一页</a>
                                     </li>
                                     {% endif %}
                                     
@@ -202,7 +202,7 @@
                                         {% if page_num %}
                                             {% if page_num != forms.page %}
                                             <li class="page-item">
-                                                <a class="page-link" href="{{ url_for('admin.view_forms', page=page_num) }}">{{ page_num }}</a>
+                                                <a class="page-link" href="{{ page_url(page_num) }}">{{ page_num }}</a>
                                             </li>
                                             {% else %}
                                             <li class="page-item active">
@@ -218,7 +218,7 @@
                                     
                                     {% if forms.has_next %}
                                     <li class="page-item">
-                                        <a class="page-link" href="{{ url_for('admin.view_forms', page=forms.next_num) }}">下一页</a>
+                                        <a class="page-link" href="{{ page_url(forms.next_num) }}">下一页</a>
                                     </li>
                                     {% endif %}
                                 </ul>

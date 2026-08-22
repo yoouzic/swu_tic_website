@@ -30,6 +30,7 @@
     let initialized = false;
     let pendingBatchPayload = null;
     let batchPollTimer = null;
+    let activeBatchId = null;
 
     const text = (value, fallback = '—') => {
         if (value === null || value === undefined || value === '') return fallback;
@@ -119,30 +120,43 @@
         }
     };
 
+    const clearBatchPollTimer = () => {
+        if (batchPollTimer) {
+            window.clearInterval(batchPollTimer);
+            batchPollTimer = null;
+        }
+    };
+
     const pollAutomationBatch = async (batchId) => {
         if (!batchId) return;
+        // 新批次启动时停止旧批次 timer，并隔离旧批次的 closure。
+        clearBatchPollTimer();
+        activeBatchId = batchId;
         const terminalStatuses = new Set(['completed', 'completed_with_errors', 'failed', 'cancelled']);
         const poll = async () => {
+            if (activeBatchId !== batchId) return true;
             try {
                 const payload = await jsonRequest(`/admin/api/automation/batches/${encodeURIComponent(batchId)}`);
                 const batch = payload.batch || payload;
                 renderBatchProgress(batch);
                 if (terminalStatuses.has(batch.status)) {
-                    if (batchPollTimer) window.clearInterval(batchPollTimer);
-                    batchPollTimer = null;
+                    if (activeBatchId === batchId) activeBatchId = null;
+                    clearBatchPollTimer();
                     setFeedback(`自动审核批次已结束：${text(batch.status)}`, batch.status === 'completed' ? 'success' : 'warning');
                     return true;
                 }
             } catch (error) {
-                if (batchPollTimer) window.clearInterval(batchPollTimer);
-                batchPollTimer = null;
+                if (activeBatchId === batchId) activeBatchId = null;
+                clearBatchPollTimer();
                 setFeedback(error.message, 'danger');
                 return true;
             }
             return false;
         };
         const finished = await poll();
-        if (!finished && !batchPollTimer) batchPollTimer = window.setInterval(poll, 2000);
+        if (!finished && activeBatchId === batchId && !batchPollTimer) {
+            batchPollTimer = window.setInterval(poll, 2000);
+        }
     };
 
     const previewBatch = async () => {

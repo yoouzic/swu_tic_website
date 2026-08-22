@@ -810,11 +810,11 @@ function displayChanges(changes) {
     let html = '<strong>修改的字段：</strong><ul>';
     
     changes.forEach(change => {
-        html += `<li><strong>${change.label}：</strong>`;
+        html += `<li><strong>${escapeHtml(change.label)}：</strong>`;
         if (change.original) {
-            html += `从"${change.original}"修改为"${change.current}"`;
+            html += `从"${escapeHtml(change.original)}"修改为"${escapeHtml(change.current)}"`;
         } else {
-            html += `新增内容"${change.current}"`;
+            html += `新增内容"${escapeHtml(change.current)}"`;
         }
         html += '</li>';
     });
@@ -1038,10 +1038,31 @@ function submitReview() {
         // 注意：不包含 'suggestions'，因为它不是必填项
     ];
     
+    const requiredFieldLabels = {
+        'listener_name': '听课人姓名',
+        'listener_number': '听课人工号',
+        'lecture_date': '听课日期',
+        'start_period': '开始节次',
+        'end_period': '结束节次',
+        'lecture_location': '听课地点',
+        'teacher_name': '授课教师',
+        'teacher_college': '教师所属学院',
+        'course_title': '课程标题',
+        'student_grade_class': '专业年级',
+        'abnormal_situation': '异常情况反映',
+        'teaching_method': '主要教学方法',
+        'classroom_discipline': '管理课堂纪律',
+        'classroom_atmosphere': '调动课堂气氛',
+        'courseware_quality': '课件制作质量',
+        'overall_effect': '整体教学效果',
+        'quality_case': '优质案例推荐',
+        'course_feedback': '课程反馈',
+    };
     for (const fieldId of requiredFields) {
         const element = document.getElementById(fieldId);
         if (!element || !element.value.trim()) {
-            const label = element ? element.previousElementSibling.textContent.replace('：', '').replace(' *', '') : fieldId;
+            const label = requiredFieldLabels[fieldId]
+                || (element?.closest('.row, .mb-3')?.querySelector('label')?.textContent || fieldId);
             setReviewFormFeedback(`请填写${label}`);
             if (element) element.focus();
             return;
@@ -1068,11 +1089,11 @@ function submitReview() {
     if (changes.length > 0) {
         let html = '<p><strong>检测到的修改：</strong></p><ul>';
         changes.forEach(change => {
-            html += `<li><strong>${change.label}：</strong>`;
+            html += `<li><strong>${escapeHtml(change.label)}：</strong>`;
             if (change.original) {
-                html += `从"${change.original}"修改为"${change.current}"`;
+                html += `从"${escapeHtml(change.original)}"修改为"${escapeHtml(change.current)}"`;
             } else {
-                html += `新增内容"${change.current}"`;
+                html += `新增内容"${escapeHtml(change.current)}"`;
             }
             html += '</li>';
         });
@@ -1135,11 +1156,11 @@ function addScoringRow(reason='', deptScore='', persScore='', isAuto=false) {
     const tbody = document.getElementById('scoringTableBody');
     const row = document.createElement('tr');
     
-    const reasonInput = `<input type="text" class="form-control form-control-sm score-reason" value="${reason}" placeholder="评分原因">`;
-    const deptInput = `<input type="number" step="0.5" min="0" class="form-control form-control-sm score-dept" value="${deptScore}" placeholder="0">`;
-    const persInput = `<input type="number" step="0.5" min="0" class="form-control form-control-sm score-pers" value="${persScore}" placeholder="0">`;
+    const reasonInput = `<input type="text" class="form-control form-control-sm score-reason" value="${escapeHtml(reason)}" placeholder="评分原因">`;
+    const deptInput = `<input type="number" step="0.5" min="0" class="form-control form-control-sm score-dept" value="${escapeHtml(deptScore)}" placeholder="0">`;
+    const persInput = `<input type="number" step="0.5" min="0" class="form-control form-control-sm score-pers" value="${escapeHtml(persScore)}" placeholder="0">`;
     const deleteBtn = `<button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove(); scheduleReviewFormDraftSave()" title="删除">删除</button>`;
-    const autoFlag = `<input type="hidden" class="score-auto" value="${isAuto}">`;
+    const autoFlag = `<input type="hidden" class="score-auto" value="${escapeHtml(isAuto)}">`;
 
     row.innerHTML = `
         <td data-label="评分原因">${reasonInput}${autoFlag}</td>
