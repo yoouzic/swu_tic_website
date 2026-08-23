@@ -197,8 +197,9 @@ class UIFinalConvergenceContractTests(unittest.TestCase):
         helper = (ROOT / "app" / "utils" / "permission_feedback.py").read_text(
             encoding="utf-8"
         )
-        admin = (ROOT / "app" / "blueprints" / "admin.py").read_text(
-            encoding="utf-8"
+        admin = "\n".join(
+            p.read_text(encoding="utf-8")
+            for p in sorted((ROOT / "app" / "blueprints" / "admin").glob("*.py"))
         )
         user = (ROOT / "app" / "blueprints" / "user.py").read_text(
             encoding="utf-8"

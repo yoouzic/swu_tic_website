@@ -4,7 +4,11 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ADMIN = (ROOT / "app" / "blueprints" / "admin.py").read_text(encoding="utf-8")
+ADMIN_PACKAGE = ROOT / "app" / "blueprints" / "admin"
+ADMIN = "\n".join(
+    p.read_text(encoding="utf-8")
+    for p in sorted(ADMIN_PACKAGE.glob("*.py"))
+)
 AUTOMATION_PERMISSIONS = (
     ROOT / "app" / "review_automation" / "permissions.py"
 ).read_text(encoding="utf-8")

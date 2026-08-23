@@ -13,7 +13,7 @@ STYLE_SHEET = Path('app/static/css/style.css')
 REVIEW_QUEUE_TEMPLATE = Path('app/templates/admin/review_forms.html')
 AUTO_RESULTS_TEMPLATE = Path('app/templates/admin/auto_review_results.html')
 STATISTICS_TEMPLATE = Path('app/templates/admin/statistics.html')
-ADMIN_BLUEPRINT = Path('app/blueprints/admin.py')
+ADMIN_BLUEPRINT = Path('app/blueprints/admin/statistics.py')
 
 
 class AutomationSettingsTemplateTest(unittest.TestCase):
