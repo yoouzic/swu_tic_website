@@ -682,6 +682,61 @@ class AutoReviewEngine:
         }
         return {'summary': summary, 'results': results}
 
+
+    def check_text_errors(self, text: str, enable_typos_check: bool = True) -> List[str]:
+        """
+        简单的语病和错别字检测
+        :param text: 待检测文本
+        :param enable_typos_check: 是否启用 pycorrector 错别字检测（资源消耗较大）
+        """
+        issues = []
+        if not text:
+            return issues
+            
+        # 1. 检查重复字 (如 "的", "了" 等虚词重复)
+        repeated = re.findall(r'([\u4e00-\u9fa5])\1', text)
+        for char in repeated:
+            if char in '的地得了着过':
+                issues.append(f'可能存在重复字："{char}{char}"')
+                
+        # 2. 使用 pycorrector 进行错别字检测
+        if enable_typos_check and not self._pycorrector_runtime_disabled:
+            try:
+                correct_func = None
+                if pycorrector:
+                    top_level_correct = getattr(pycorrector, 'correct', None)
+                    if callable(top_level_correct):
+                        correct_func = top_level_correct
+                    else:
+                        corrector_cls = getattr(pycorrector, 'Corrector', None)
+                        if callable(corrector_cls):
+                            corrector_instance = corrector_cls()
+                            instance_correct = getattr(corrector_instance, 'correct', None)
+                            if callable(instance_correct):
+                                correct_func = instance_correct
+                if callable(correct_func):
+                    _, detail = correct_func(text)
+                    for wrong, right, begin, end in detail:
+                        issues.append(f'疑似错别字："{wrong}" 应为 "{right}"')
+                elif not self._pycorrector_unavailable_logged:
+                    current_app.logger.warning("pycorrector.correct 不可用，已跳过错别字检测")
+                    self._pycorrector_unavailable_logged = True
+            except Exception as e:
+                err_msg = str(e)
+                err_lower = err_msg.lower()
+                if 'kenlm' in err_lower or 'dependencies are not fully installed' in err_lower or 'statistical language model' in err_lower:
+                    self._pycorrector_runtime_disabled = True
+                    if not self._pycorrector_unavailable_logged:
+                        current_app.logger.warning(f"pycorrector 依赖不完整，已跳过错别字检测: {err_msg}")
+                        self._pycorrector_unavailable_logged = True
+                else:
+                    current_app.logger.error(f"错别字检测失败: {e}")
+                
+        # 3. 检查标点符号 (中文文本中使用英文标点)
+        if re.search(r'[\u4e00-\u9fa5],[^0-9]', text): # 中文后跟英文逗号且非数字
+            issues.append('中文文本中可能使用了英文逗号')
+            
+        return issues
     def batch_review_db_forms(
         self,
         form_ids: List[int],
