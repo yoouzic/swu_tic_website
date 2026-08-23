@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from unittest import mock
 
 from app.app import app
 from app.models import SystemSetting, db
@@ -153,6 +154,12 @@ class LegacyReviewCompatTests(unittest.TestCase):
         self.assertEqual(engine._compute_week_from_date(date(2025, 9, 1)), 1)
         self.assertEqual(engine._compute_week_from_date(date(2025, 9, 8)), 2)
         self.assertEqual(engine.semester_monday, date(2025, 9, 1))
+
+    def test_construction_no_longer_reads_feedback_excel(self):
+        self._set_canonical('2026-09-07', week_start='0', total_weeks='20')
+        with mock.patch('app.utils.auto_review._read_excel', return_value=None) as read_excel:
+            AutoReviewEngine()
+        self.assertEqual(read_excel.call_count, 1)
 
 
 if __name__ == '__main__':

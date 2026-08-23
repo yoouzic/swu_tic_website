@@ -31,10 +31,8 @@ from .user_status import active_user_filter, is_user_active
 
 
 DEFAULT_SCHEDULE_PATH = env_path('AUTO_REVIEW_DEFAULT_SCHEDULE_PATH', os.path.join('data', 'storage', 'templates', 'auto_review', '2025-2026-1课表.xlsx'))
-DEFAULT_FEEDBACK_PATH = env_path('AUTO_REVIEW_DEFAULT_FEEDBACK_PATH', os.path.join('data', 'storage', 'templates', 'auto_review', '办公部第7周反馈表-自动审表版.xlsx'))
 SETTING_KEY_SEMESTER_MONDAY = 'semester_first_monday'
 SETTING_KEY_SCHEDULE_PATH = 'auto_review_schedule_path'
-SETTING_KEY_FEEDBACK_PATH = 'auto_review_feedback_path'
 
 # 有效学院列表（根据审核要求）
 VALID_COLLEGES = [
@@ -99,21 +97,15 @@ def _read_excel(path: str, sheet_name: Any = 0) -> Optional[pd.DataFrame]:
 class AutoReviewEngine:
     def __init__(self,
                  schedule_path: Optional[str] = None,
-                 semester_monday: Optional[str] = None,
-                 feedback_path: Optional[str] = None):
+                 semester_monday: Optional[str] = None):
         # 读取系统设置中的上传路径，否则使用默认文件
         schedule_config = SystemSetting.get(SETTING_KEY_SCHEDULE_PATH)
-        feedback_config = SystemSetting.get(SETTING_KEY_FEEDBACK_PATH)
         self.schedule_path = schedule_path or schedule_config or DEFAULT_SCHEDULE_PATH
-        self.feedback_path = feedback_path or feedback_config or DEFAULT_FEEDBACK_PATH
         if not _exists(self.schedule_path) and _exists(DEFAULT_SCHEDULE_PATH):
             self.schedule_path = DEFAULT_SCHEDULE_PATH
-        if not _exists(self.feedback_path) and _exists(DEFAULT_FEEDBACK_PATH):
-            self.feedback_path = DEFAULT_FEEDBACK_PATH
         
         # 读取文件
         self.schedule_df = _read_excel(self.schedule_path)
-        self.feedback_df = _read_excel(self.feedback_path, sheet_name='反馈表')
         
         self._explicit_semester_monday = semester_monday or None
         self.semester_monday_str = semester_monday or resolve_legacy_semester_monday()
@@ -334,15 +326,6 @@ class AutoReviewEngine:
             current_app.logger.error(f"课表匹配失败: {e}")
         
         return None, []
-
-    def files_status(self) -> Dict[str, Any]:
-        return {
-            'schedule_path': self.schedule_path,
-            'feedback_path': self.feedback_path,
-            'schedule_exists': self.schedule_df is not None,
-            'feedback_exists': self.feedback_df is not None,
-            'semester_monday': self.semester_monday_str,
-        }
 
     def _compute_week_from_date(self, d: datetime.date) -> Optional[int]:
         if self._explicit_semester_monday:
@@ -686,91 +669,6 @@ class AutoReviewEngine:
             )
         }
 
-    def review_feedback(self, path: Optional[str] = None) -> Dict[str, Any]:
-        """审核反馈表文件"""
-        df = _read_excel(path, sheet_name='反馈表') if path else self.feedback_df
-        if df is None:
-            return {'summary': {'total': 0, 'passed': 0, 'failed': 0}, 'results': []}
-        
-        results = []
-        
-        # 更精确的列名映射表（基于实际数据分析）
-        colmap = {
-            'id': ['序号', '编号', 'ID', '西南大学学生教学质量监控信息（意见）处理笺'],
-            'listener_name': ['听课人姓名+学院', '听课人', '听课人姓名', 'Unnamed: 1'],
-            'reviewer_id': ['听课人(填写编号)', '编号', 'Unnamed: 2'],
-            'teacher_name': ['授课教师(谨防错别字)', '教师', '教师姓名', '授课教师', 'Unnamed: 7'],
-            'teacher_college': ['教师所属学院(对照全校课表填写)', '教师学院', '学院', 'Unnamed: 8'],
-            'course_title': ['课程(总标题)', '课程', '课程名', '课程名称', 'Unnamed: 9'],
-            'lecture_date': ['听课时间(如:2023/10/19星期四)', '听课时间', '上课时间', '日期', 'Unnamed: 4'],
-            'class_period': ['第几节(如:第1-3节)', '节次', '上课节次', '听课节次', 'Unnamed: 5'],
-            'lecture_location': ['听课地点(如:32-302)', '地点', '上课地点', '教室', 'Unnamed: 6'],
-            'class_composition': ['专业年级(如:2018级植物生产类05、06班)', '专业年级', 'Unnamed: 10'],
-            'teaching_method': ['主要教学方法', 'Unnamed: 12'],
-            'classroom_discipline': ['管理课堂纪律', '课堂纪律', 'Unnamed: 13'],
-            'classroom_atmosphere': ['调动课堂气氛', '课堂气氛', 'Unnamed: 14'],
-            'courseware_quality': ['课件制作质量', '课件质量', 'Unnamed: 15'],
-            'overall_effect': ['整体教学效果', 'Unnamed: 16'],
-            'quality_case': ['优质案例推荐', '是否推荐优质案例', 'Unnamed: 17'],
-            'course_feedback': ['课程反馈(优点,五十字以上,评价的内容实在且有针对性,结尾不需要句号)', '课程反馈', 'Unnamed: 18'],
-            'suggestions': ['不足及建议(根据事实,没有则填"无")', '不足及建议', '建议', 'Unnamed: 19'],
-            'contact_phone': ['联系电话', 'Unnamed: 22']
-        }
-        
-        def take(row: pd.Series, keys: List[str]) -> str:
-            for k in keys:
-                if k in row.index:
-                    v = row.get(k)
-                    if pd.isna(v):
-                        continue
-                    s = str(v).strip()
-                    if s and s.lower() != 'nan':
-                        return s
-            return ''
-        
-        # 跳过标题行（第一行通常是列名）
-        start_row = 1 if len(df) > 1 else 0
-        
-        for idx, r in df.iloc[start_row:].iterrows():
-            # 跳过空行
-            if r.isna().all():
-                continue
-                
-            class FeedbackForm:
-                pass
-            
-            f = FeedbackForm()
-            setattr(f, 'id', take(r, colmap['id']) or str(idx + 1))
-            setattr(f, 'listener_name', take(r, colmap['listener_name']))
-            setattr(f, 'reviewer_id', take(r, colmap['reviewer_id']))
-            setattr(f, 'teacher_name', take(r, colmap['teacher_name']))
-            setattr(f, 'teacher_college', take(r, colmap['teacher_college']))
-            setattr(f, 'course_title', take(r, colmap['course_title']))
-            setattr(f, 'lecture_date', take(r, colmap['lecture_date']))
-            setattr(f, 'class_period', take(r, colmap['class_period']))
-            setattr(f, 'lecture_location', take(r, colmap['lecture_location']))
-            setattr(f, 'class_composition', take(r, colmap['class_composition']))
-            setattr(f, 'teaching_method', take(r, colmap['teaching_method']))
-            setattr(f, 'classroom_discipline', take(r, colmap['classroom_discipline']))
-            setattr(f, 'classroom_atmosphere', take(r, colmap['classroom_atmosphere']))
-            setattr(f, 'courseware_quality', take(r, colmap['courseware_quality']))
-            setattr(f, 'overall_effect', take(r, colmap['overall_effect']))
-            setattr(f, 'quality_case', take(r, colmap['quality_case']))
-            setattr(f, 'course_feedback', take(r, colmap['course_feedback']))
-            setattr(f, 'suggestions', take(r, colmap['suggestions']))
-            setattr(f, 'contact_phone', take(r, colmap['contact_phone']))
-            
-            # 只处理有实际内容的行
-            if getattr(f, 'listener_name') or getattr(f, 'teacher_name') or getattr(f, 'course_title'):
-                results.append(self.review_any(f))
-        
-        summary = {
-            'total': len(results),
-            'passed': sum(1 for r in results if r['passed']),
-            'failed': sum(1 for r in results if not r['passed']),
-        }
-        return {'summary': summary, 'results': results}
-
     def run(self, status_filter: Optional[str] = '待审核') -> Dict[str, Any]:
         """运行自动审核"""
         forms = LectureForm.query.filter_by(status=status_filter).all()
@@ -783,97 +681,6 @@ class AutoReviewEngine:
             'failed': sum(1 for r in results if not r['passed']),
         }
         return {'summary': summary, 'results': results}
-
-    def export_report(self, data: Dict[str, Any]) -> Optional[str]:
-        """导出审核报告"""
-        try:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f'auto_review_report_{timestamp}.xlsx'
-            reports_dir = env_path('AUTO_REVIEW_REPORT_DIR', os.path.join('data', 'storage', 'exports', 'auto_review'))
-            os.makedirs(reports_dir, exist_ok=True)
-            filepath = os.path.join(reports_dir, filename)
-            
-            # 准备导出数据
-            export_data = []
-            for result in data.get('results', []):
-                ri = result.get('reviewer_info') or {}
-                rid = ri.get('id') or result.get('reviewer_id', '')
-                export_data.append({
-                    '信息员编号': rid,
-                    '听课人': result.get('listener', ''),
-                    '教师': result.get('teacher', ''),
-                    '课程': result.get('course', ''),
-                    '是否通过': '通过' if result.get('passed') else '不通过',
-                    '问题数': len(result.get('issues', [])),
-                    '问题详情': '; '.join(result.get('issues', [])),
-                    '修正建议': '; '.join(result.get('fixes', [])),
-                    '备注': result.get('notes', '')  # 添加备注列
-                })
-            
-            df = pd.DataFrame(export_data)
-            # 明确列顺序，确保首列为“信息员编号”
-            columns = ['信息员编号', '听课人', '教师', '课程', '是否通过', '问题数', '问题详情', '修正建议', '备注']
-            df = df[columns]
-            df.to_excel(filepath, index=False)
-            return filepath
-        except Exception as e:
-            current_app.logger.error(f"导出报告失败: {e}")
-            return None
-
-    def check_text_errors(self, text: str, enable_typos_check: bool = True) -> List[str]:
-        """
-        简单的语病和错别字检测
-        :param text: 待检测文本
-        :param enable_typos_check: 是否启用 pycorrector 错别字检测（资源消耗较大）
-        """
-        issues = []
-        if not text:
-            return issues
-            
-        # 1. 检查重复字 (如 "的", "了" 等虚词重复)
-        repeated = re.findall(r'([\u4e00-\u9fa5])\1', text)
-        for char in repeated:
-            if char in '的地得了着过':
-                issues.append(f'可能存在重复字："{char}{char}"')
-                
-        # 2. 使用 pycorrector 进行错别字检测
-        if enable_typos_check and not self._pycorrector_runtime_disabled:
-            try:
-                correct_func = None
-                if pycorrector:
-                    top_level_correct = getattr(pycorrector, 'correct', None)
-                    if callable(top_level_correct):
-                        correct_func = top_level_correct
-                    else:
-                        corrector_cls = getattr(pycorrector, 'Corrector', None)
-                        if callable(corrector_cls):
-                            corrector_instance = corrector_cls()
-                            instance_correct = getattr(corrector_instance, 'correct', None)
-                            if callable(instance_correct):
-                                correct_func = instance_correct
-                if callable(correct_func):
-                    _, detail = correct_func(text)
-                    for wrong, right, begin, end in detail:
-                        issues.append(f'疑似错别字："{wrong}" 应为 "{right}"')
-                elif not self._pycorrector_unavailable_logged:
-                    current_app.logger.warning("pycorrector.correct 不可用，已跳过错别字检测")
-                    self._pycorrector_unavailable_logged = True
-            except Exception as e:
-                err_msg = str(e)
-                err_lower = err_msg.lower()
-                if 'kenlm' in err_lower or 'dependencies are not fully installed' in err_lower or 'statistical language model' in err_lower:
-                    self._pycorrector_runtime_disabled = True
-                    if not self._pycorrector_unavailable_logged:
-                        current_app.logger.warning(f"pycorrector 依赖不完整，已跳过错别字检测: {err_msg}")
-                        self._pycorrector_unavailable_logged = True
-                else:
-                    current_app.logger.error(f"错别字检测失败: {e}")
-                
-        # 3. 检查标点符号 (中文文本中使用英文标点)
-        if re.search(r'[\u4e00-\u9fa5],[^0-9]', text): # 中文后跟英文逗号且非数字
-            issues.append('中文文本中可能使用了英文逗号')
-            
-        return issues
 
     def batch_review_db_forms(
         self,
