@@ -8,6 +8,7 @@ from pathlib import Path
 SERVICE_FILES = (
     Path('app/services/review_domain.py'),
     Path('app/services/review_mutation.py'),
+    Path('app/services/form_bindings.py'),
 )
 
 FORBIDDEN_IMPORT_PREFIXES = (

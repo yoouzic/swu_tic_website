@@ -14,6 +14,7 @@ from app.utils.password_audit import record_password_audit
 from app.utils.audit_tags import parse_audit_tag
 from app.utils.leave_management import parse_lecture_date_value
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, is_user_active
+from app.services.form_bindings import get_registration_logical_form_counts
 from werkzeug.security import generate_password_hash, check_password_hash
 import json
 from . import admin_bp
@@ -341,13 +342,16 @@ def _build_user_reservations(user, search='', date_from='', date_to=''):
     registrations = query.order_by(CourseRegistration.created_at.desc()).all()
     reservations = []
     normalized_search = (search or '').strip().lower()
+    logical_bind_counts = get_registration_logical_form_counts(
+        [registration.id for registration in registrations]
+    )
 
     for registration in registrations:
         course = Course.query.filter_by(
             course_code=registration.course_code,
             selection_code=registration.selection_code
         ).first()
-        bind_count = LectureForm.query.filter_by(registration_id=registration.id).count()
+        bind_count = logical_bind_counts.get(registration.id, 0)
         item = {
             'id': registration.id,
             'course_code': registration.course_code,

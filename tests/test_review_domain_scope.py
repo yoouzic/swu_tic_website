@@ -407,6 +407,44 @@ class ReviewScopeRouteLegacyTests(_ScopeTestBase):
         self.assertTrue(can_review[form_high.id])
         self.assertFalse(can_review[form_low.id])
 
+    def test_submit_form_review_effective_lecture_date_change_is_audited(self):
+        form = self._form(self.info_same.number, status='待审核')
+        form.lecture_date = '原始日期'
+        db.session.commit()
+        self._login(self.dept_manager)
+        response = self.client.post(
+            f'/admin/api/review/form/{form.id}',
+            json={
+                'form_data': {'lecture_date_display': '新日期'},
+                'review_comment': '',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body['success'])
+        new_version = form.get_latest_version()
+        self.assertEqual(new_version.lecture_date, '新日期')
+        self.assertIn('听课时间', new_version.review_comment or '')
+
+    def test_submit_form_review_effective_class_period_change_is_audited(self):
+        form = self._form(self.info_same.number, status='待审核')
+        form.class_period = '第1-2节'
+        db.session.commit()
+        self._login(self.dept_manager)
+        response = self.client.post(
+            f'/admin/api/review/form/{form.id}',
+            json={
+                'form_data': {'start_period': '3', 'end_period': '4'},
+                'review_comment': '',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body['success'])
+        new_version = form.get_latest_version()
+        self.assertEqual(new_version.class_period, '第3-4节')
+        self.assertIn('第几节', new_version.review_comment or '')
+
 
 if __name__ == '__main__':
     unittest.main()

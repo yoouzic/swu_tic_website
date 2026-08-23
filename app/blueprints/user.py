@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from ..models import SystemSetting, User, db, Course, ListeningBan, CourseRegistration as Reservation, Teacher, LectureForm, LectureFormDraft
 from .auth import login_required
 from ..utils.user_status import active_user_filter
+from app.services.form_bindings import get_registration_logical_form_counts
 from datetime import datetime, timedelta
 from sqlalchemy import and_, func
 from ..utils.time_validator import validate_listening_time, TimeValidator
@@ -627,13 +628,16 @@ def _build_activity_records(user, request_args):
     )
 
     registrations = Reservation.query.filter_by(user_id=user.id).order_by(Reservation.created_at.desc()).all()
+    logical_bind_counts = get_registration_logical_form_counts(
+        [reservation.id for reservation in registrations]
+    )
     my_reservations = []
     for reservation in registrations:
         course = Course.query.filter_by(
             course_code=reservation.course_code,
             selection_code=reservation.selection_code,
         ).first()
-        bind_count = LectureForm.query.filter_by(registration_id=reservation.id).count()
+        bind_count = logical_bind_counts.get(reservation.id, 0)
         is_bound = bind_count > 0
         my_reservations.append({
             'id': reservation.id,
@@ -1077,9 +1081,12 @@ def api_course_registration_history():
             selection_code=selection_code
         ).order_by(Reservation.created_at.desc()).limit(limit).all()
         
+        logical_bind_counts = get_registration_logical_form_counts(
+            [r.id for r in registrations]
+        )
         data = []
         for r in registrations:
-            bind_count = db.session.query(func.count()).select_from(LectureForm).filter_by(registration_id=r.id).scalar() or 0
+            bind_count = logical_bind_counts.get(r.id, 0)
             teaching_week = parse_listening_week_no(r.listening_info)
             registrant = r.user
             user_name = registrant.name if registrant else '未知用户'
@@ -1270,10 +1277,13 @@ def api_my_reservations():
         user_id = session['user_id']
         
         reservations = Reservation.query.filter_by(user_id=user_id).order_by(Reservation.created_at.desc()).all()
+        logical_bind_counts = get_registration_logical_form_counts(
+            [r.id for r in reservations]
+        )
         
         result = []
         for r in reservations:
-            bind_count = db.session.query(func.count()).select_from(LectureForm).filter_by(registration_id=r.id).scalar() or 0
+            bind_count = logical_bind_counts.get(r.id, 0)
             is_bound = bind_count > 0
             # 获取课程组信息
             courses = Course.query.filter_by(

@@ -1298,17 +1298,23 @@ def submit_form_review(form_id):
             field: form_data.get(field, original_value)
             for field, original_value in original_data.items()
         }
+
+        # 先计算最终写入值，再用最终写入值做修改审计。
+        lecture_date = form_data.get('lecture_date_display') or form_data.get('lecture_date', original_form.lecture_date)
+        class_period = form_data.get('class_period') or f"第{form_data.get('start_period', '')}-{form_data.get('end_period', '')}节" if form_data.get('start_period') else form_data.get('class_period', original_form.class_period)
+        course_changes_raw = (form_data.get('course_changes') or '').strip()
+        resolved_course_changes = course_changes_raw or original_form.course_changes or '无'
+
+        effective_candidates = dict(candidate_values)
+        effective_candidates['lecture_date'] = lecture_date
+        effective_candidates['class_period'] = class_period
+        effective_candidates['course_changes'] = resolved_course_changes
+
         modified_fields = collect_modified_fields(
             original_form,
-            candidate_values,
+            effective_candidates,
             REVIEW_EDITABLE_FIELD_LABELS,
         )
-        
-        # 处理听课时间（优先使用带星期几的显示格式）
-        lecture_date = form_data.get('lecture_date_display') or form_data.get('lecture_date', original_form.lecture_date)
-        
-        # 处理节次（优先使用自动补全的格式）
-        class_period = form_data.get('class_period') or f"第{form_data.get('start_period', '')}-{form_data.get('end_period', '')}节" if form_data.get('start_period') else form_data.get('class_period', original_form.class_period)
         
         new_status = get_next_status_after_review(session['user_id'])
         unique_id = original_form.unique_id or original_form.id
@@ -1355,8 +1361,7 @@ def submit_form_review(form_id):
 
         target_form.listener_name = form_data.get('listener_name', original_form.listener_name)
         target_form.listener_number = original_form.listener_number
-        course_changes_raw = (form_data.get('course_changes') or '').strip()
-        target_form.course_changes = course_changes_raw or original_form.course_changes or '无'
+        target_form.course_changes = resolved_course_changes
         target_form.lecture_date = lecture_date
         target_form.class_period = class_period
         target_form.lecture_location = form_data.get('lecture_location', original_form.lecture_location)

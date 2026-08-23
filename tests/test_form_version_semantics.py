@@ -15,6 +15,7 @@ from app.models import (
     LectureForm,
     Permission,
     RolePermission,
+    ScoreRecord,
     User,
     db,
 )
@@ -319,6 +320,41 @@ class FormVersionRouteTests(unittest.TestCase):
         new_version = original.get_latest_version()
         self.assertNotEqual(new_version.id, original.id)
         self.assertEqual(new_version.registration_id, registration.id)
+
+    def test_submit_review_invalid_score_swallows_and_commits(self):
+        original = self._form(100, None, self.info.number, status='待审核')
+        db.session.commit()
+        self._login(self.dept_manager)
+        payload = self._submit_review_payload(original)
+        payload['score_data'] = [
+            {'reason': 'x', 'department_score': 'abc', 'personal_score': 0}
+        ]
+        response = self.client.post(
+            f'/admin/api/review/submit/{original.id}',
+            json=payload,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['success'])
+        self.assertIsNone(ScoreRecord.query.filter_by(
+            form_id=original.get_latest_version().id).first())
+
+    def test_submit_form_review_invalid_score_rolls_back_500(self):
+        original = self._form(100, None, self.info.number, status='待审核')
+        db.session.commit()
+        self._login(self.dept_manager)
+        response = self.client.post(
+            f'/admin/api/review/form/{original.id}',
+            json={
+                'form_data': {},
+                'review_comment': '',
+                'score_data': [
+                    {'reason': 'x', 'department_score': 'abc', 'personal_score': 0}
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 500)
+        self.assertFalse(response.get_json()['success'])
+        self.assertEqual(original.get_latest_version().id, original.id)
 
 
 if __name__ == '__main__':
