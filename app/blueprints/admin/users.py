@@ -11,8 +11,6 @@ from app.utils.review_permissions import get_user_review_permission
 from app.utils.permission_feedback import build_forbidden_message, flash_forbidden
 from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.password_audit import record_password_audit
-from app.utils.audit_tags import parse_audit_tag
-from app.utils.leave_management import parse_lecture_date_value
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, is_user_active
 from app.services.form_bindings import get_registration_logical_form_counts
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -42,34 +40,19 @@ def _build_user_profile_stats(user):
     if not user or user.role not in ['信息员', '管理员', '超级管理员']:
         return stats
 
-    first_week_setting = SystemSetting.query.filter_by(key='teaching_first_week_monday').first()
-    if first_week_setting and first_week_setting.value:
-        try:
-            first_week_date = datetime.strptime(first_week_setting.value, '%Y-%m-%d').date()
-        except ValueError:
-            first_week_date = None
-    else:
-        first_week_date = None
+    from app.services.teaching_calendar_settings import load_teaching_calendar_config
+    from app.services.teaching_calendar import (
+        teaching_term_end,
+        teaching_term_start,
+        teaching_week_number,
+    )
+    from app.services.form_week_semantics import effective_form_week
 
-    week_start_day_setting = SystemSetting.query.filter_by(key='teaching_week_start_day').first()
-    try:
-        week_start_day = int(week_start_day_setting.value) if week_start_day_setting and week_start_day_setting.value else 0
-    except (TypeError, ValueError):
-        week_start_day = 0
-    if week_start_day < 0 or week_start_day > 6:
-        week_start_day = 0
+    calendar_config, _calendar_error = load_teaching_calendar_config()
 
     required_submission_setting = SystemSetting.query.filter_by(key='teaching_required_submission').first()
     required_submission = int(required_submission_setting.value) if required_submission_setting and required_submission_setting.value else 1
     required_listening = required_submission
-
-    total_weeks_setting = SystemSetting.query.filter_by(key='teaching_total_weeks').first()
-    try:
-        total_weeks = int(total_weeks_setting.value) if total_weeks_setting and total_weeks_setting.value else 20
-    except (TypeError, ValueError):
-        total_weeks = 20
-    if total_weeks < 1 or total_weeks > 52:
-        total_weeks = 20
 
     check_dept_setting = SystemSetting.query.filter_by(key='teaching_check_dept_review').first()
     check_dept = check_dept_setting.value == 'true' if check_dept_setting else False
@@ -77,28 +60,18 @@ def _build_user_profile_stats(user):
     check_center_setting = SystemSetting.query.filter_by(key='teaching_check_center_review').first()
     check_center = check_center_setting.value == 'true' if check_center_setting else False
 
-    def get_week_num(date_obj):
-        if not first_week_date or not date_obj:
-            return -1
-        current_date = date_obj.date() if isinstance(date_obj, datetime) else date_obj
-        days_to_subtract = (first_week_date.weekday() - week_start_day) % 7
-        actual_start_date = first_week_date - timedelta(days=days_to_subtract)
-        diff = (current_date - actual_start_date).days
-        if diff < 0:
-            return -1
-        week_no = (diff // 7) + 1
-        if week_no > total_weeks:
-            return -1
-        return week_no
-
     def get_form_group_week_num(versions):
         if not versions:
             return -1
         latest_version = versions[-1]
-        parsed_tag = parse_audit_tag(latest_version.audit_tag)
-        if parsed_tag.get('week_correction_week_no') is not None:
-            return parsed_tag['week_correction_week_no']
-        return get_week_num(parse_lecture_date_value(latest_version.lecture_date))
+        if calendar_config is None:
+            return -1
+        week_no = effective_form_week(
+            latest_version.lecture_date,
+            latest_version.audit_tag,
+            calendar_config,
+        )
+        return week_no if week_no is not None else -1
 
     def count_feedback_chars(form):
         if not form:
@@ -108,13 +81,12 @@ def _build_user_profile_stats(user):
 
     current_week_num = None
     current_week_label = '当前不在教学周内'
-    if first_week_date:
+    if calendar_config is not None:
         today = datetime.now().date()
-        days_to_subtract = (first_week_date.weekday() - week_start_day) % 7
-        term_start = first_week_date - timedelta(days=days_to_subtract)
-        term_end = term_start + timedelta(days=total_weeks * 7)
-        resolved_week_num = get_week_num(today)
-        if resolved_week_num > 0:
+        term_start = teaching_term_start(calendar_config)
+        term_end = teaching_term_end(calendar_config)
+        resolved_week_num = teaching_week_number(today, calendar_config)
+        if resolved_week_num is not None:
             current_week_num = resolved_week_num
             current_week_label = f'当前教学周（第 {resolved_week_num} 周）'
         elif today < term_start:

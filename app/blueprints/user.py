@@ -9,8 +9,8 @@ from app.services.form_bindings import (
 from datetime import datetime, timedelta
 from sqlalchemy import and_, func
 from ..utils.time_validator import validate_listening_time, TimeValidator
-from ..utils.audit_tags import build_audit_tag, build_week_correction_tag, parse_audit_tag
-from ..utils.leave_management import append_leave_system_note, get_pending_leave_makeup, parse_lecture_date_value, record_leave_makeup_form
+from ..utils.audit_tags import build_audit_tag, build_week_correction_tag
+from ..utils.leave_management import append_leave_system_note, get_pending_leave_makeup, record_leave_makeup_form
 from ..utils.profile_settings import PROFILE_EDITABLE_FIELD_KEYS, get_profile_editable_fields
 from ..utils.course_registration_limits import (
     get_current_teaching_week_no,
@@ -141,89 +141,34 @@ def profile():
         # === 听课填表统计 ===
         
         # 1. 获取听课制度设置
-        first_week_str = SystemSetting.query.filter_by(key='teaching_first_week_monday').first()
-        # 增加对空字符串的判断，防止 strptime 报错
-        if first_week_str and first_week_str.value:
-            try:
-                first_week_date = datetime.strptime(first_week_str.value, '%Y-%m-%d').date()
-            except ValueError:
-                first_week_date = None
-        else:
-            first_week_date = None
-        
-        # 获取周起始日设置 (0=周一, ..., 6=周日)
-        week_start_day_setting = SystemSetting.query.filter_by(key='teaching_week_start_day').first()
-        try:
-            week_start_day = int(week_start_day_setting.value) if week_start_day_setting and week_start_day_setting.value else 0
-        except (TypeError, ValueError):
-            week_start_day = 0
-        if week_start_day < 0 or week_start_day > 6:
-            week_start_day = 0
-        
+        from app.services.teaching_calendar_settings import load_teaching_calendar_config
+        from app.services.teaching_calendar import teaching_week_number
+        from app.services.form_week_semantics import effective_form_week
+
+        calendar_config, _calendar_error = load_teaching_calendar_config()
+
         required_submission = int(SystemSetting.query.filter_by(key='teaching_required_submission').first().value) if SystemSetting.query.filter_by(key='teaching_required_submission').first() else 1
         # 每周需听表单数量与需交表单数量一致
         required_listening = required_submission
 
-        total_weeks_setting = SystemSetting.query.filter_by(key='teaching_total_weeks').first()
-        try:
-            total_weeks = int(total_weeks_setting.value) if total_weeks_setting and total_weeks_setting.value else 20
-        except (TypeError, ValueError):
-            total_weeks = 20
-        if total_weeks < 1 or total_weeks > 52:
-            total_weeks = 20
-        
         check_dept = SystemSetting.query.filter_by(key='teaching_check_dept_review').first()
         check_dept = check_dept.value == 'true' if check_dept else False
-        
+
         check_center = SystemSetting.query.filter_by(key='teaching_check_center_review').first()
         check_center = check_center.value == 'true' if check_center else False
-        
-        # 辅助：计算某个日期的周次（考虑自定义起始日）
-        def get_week_num(date_obj):
-            if not first_week_date or not date_obj:
-                return -1
-            if isinstance(date_obj, datetime):
-                d = date_obj.date()
-            else:
-                d = date_obj
-                
-            # 算法：
-            # 1. 计算日期d与第一周起始日first_week_date的天数差
-            # 2. 如果自定义起始日不是周一，first_week_date (通常是周一) 需要调整吗？
-            #    假设 first_week_date 仍然代表第一周的"基准周一"，
-            #    但如果用户选了周六开始，那第一周应该从 first_week_date 所在的那个周六开始？还是上一个周六？
-            #    通常教务系统的逻辑是：first_week_date 是第一周的周一。
-            #    如果 week_start_day 是周六 (5)，意味着第一周是从 (first_week_date - 2天) 开始的。
-            #    如果 week_start_day 是周一 (0)，意味着第一周是从 first_week_date 开始的。
-            #    通用公式：调整后的第一周起始日 = first_week_date - (first_week_date.weekday() - week_start_day) % 7 天？
-            #    不，应该是 first_week_date 所在周的起始日。
-            #    如果 first_week_date 是 2023-09-04 (周一)
-            #    若 start=0(周一)，start_date = 09-04
-            #    若 start=5(周六)，start_date = 09-02 (上周六)
-            #    若 start=6(周日)，start_date = 09-03 (上周日)
-            
-            # 计算第一周的实际起始日期
-            # first_week_date.weekday() 返回 0(周一) 到 6(周日)
-            # 我们想要找到 <= first_week_date 的最近一个 week_start_day
-            days_to_subtract = (first_week_date.weekday() - week_start_day) % 7
-            actual_start_date = first_week_date - timedelta(days=days_to_subtract)
-            
-            diff = (d - actual_start_date).days
-            if diff < 0:
-                return -1
-            week_no = (diff // 7) + 1
-            if week_no > total_weeks:
-                return -1
-            return week_no
 
         def get_form_group_week_num(versions):
             if not versions:
                 return -1
             latest_version = versions[-1]
-            parsed_tag = parse_audit_tag(latest_version.audit_tag)
-            if parsed_tag.get('week_correction_week_no') is not None:
-                return parsed_tag['week_correction_week_no']
-            return get_week_num(parse_lecture_date_value(latest_version.lecture_date))
+            if calendar_config is None:
+                return -1
+            week_no = effective_form_week(
+                latest_version.lecture_date,
+                latest_version.audit_tag,
+                calendar_config,
+            )
+            return week_no if week_no is not None else -1
 
         def count_feedback_chars(form):
             if not form:
@@ -233,9 +178,10 @@ def profile():
 
         # 计算当前教学周
         current_week_num = 0
-        if first_week_date:
+        if calendar_config is not None:
             today = datetime.now().date()
-            current_week_num = get_week_num(today)
+            resolved = teaching_week_number(today, calendar_config)
+            current_week_num = resolved if resolved is not None else -1
         
         # 2. 获取用户所有表单并按 unique_id 分组
         all_forms = LectureForm.query.filter_by(listener_number=user.number).order_by(LectureForm.created_at).all()

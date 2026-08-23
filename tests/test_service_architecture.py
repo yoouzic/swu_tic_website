@@ -14,6 +14,7 @@ SERVICE_FILES = (
 
 TEACHING_CALENDAR_FILE = Path('app/services/teaching_calendar.py')
 TEACHING_CALENDAR_SETTINGS_FILE = Path('app/services/teaching_calendar_settings.py')
+FORM_WEEK_SEMANTICS_FILE = Path('app/services/form_week_semantics.py')
 
 FORBIDDEN_IMPORT_PREFIXES = (
     'flask',
@@ -173,6 +174,33 @@ class ServiceArchitectureTests(unittest.TestCase):
         self.assertIn('teaching_week_number', functions)
         self.assertIn('date_for_teaching_weekday', functions)
         self.assertIn('parse_lecture_date', functions)
+
+    def test_form_week_semantics_has_no_model_blueprint_or_flask_dependency(self):
+        tree = ast.parse(FORM_WEEK_SEMANTICS_FILE.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.name
+                    self.assertFalse(
+                        name.startswith('flask') or name.startswith('app.models') or name.startswith('app.blueprints') or name.startswith('sqlalchemy'),
+                        f'{FORM_WEEK_SEMANTICS_FILE.name} imports forbidden module: {name}',
+                    )
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ''
+                self.assertFalse(
+                    module.startswith('flask') or module.startswith('app.models') or module.startswith('app.blueprints') or module.startswith('sqlalchemy'),
+                    f'{FORM_WEEK_SEMANTICS_FILE.name} imports forbidden module: {module}',
+                )
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                self.assertNotIn(node.id, {'request', 'session', 'jsonify', 'db', 'LectureForm', 'flash'})
+
+    def test_form_week_semantics_exposes_effective_api(self):
+        tree = ast.parse(FORM_WEEK_SEMANTICS_FILE.read_text(encoding='utf-8'))
+        functions = {
+            n.name for n in tree.body
+            if isinstance(n, ast.FunctionDef)
+        }
+        self.assertIn('effective_form_week', functions)
 
 
 if __name__ == '__main__':

@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 from app.blueprints.auth import login_required, role_required
 from app.utils.permission_feedback import build_forbidden_message, forbidden_json, flash_forbidden
 from app.utils.manage_permissions import get_user_manage_permission
-from app.utils.audit_tags import LATE_TAG_LATE, parse_audit_tag
 from app.utils.leave_management import ASSESSMENT_EXEMPT_OVERRIDE_TYPES, LEAVE_OVERRIDE_TYPE
 from app.utils.user_status import UNASSIGNED_GROUP_NAME
 import pandas as pd
@@ -17,7 +16,7 @@ from openpyxl.styles import Font
 from io import BytesIO
 import json
 from . import admin_bp
-from .shared import _build_review_form_filter_datetime, _get_accessible_department_users, _latest_form_groups_for_users, _normalize_review_form_time_filter, _parse_lecture_date_value, _resolve_assessment_users, _to_int_or_none, allowed_file, get_reviewer_display_mode
+from .shared import _build_review_form_filter_datetime, _get_accessible_department_users, _latest_form_groups_for_users, _normalize_review_form_time_filter, _resolve_assessment_users, _to_int_or_none, allowed_file, get_reviewer_display_mode
 
 
 SNAPSHOT_TYPE_DEPARTMENT_MONTHLY = 'department_monthly_assessment'
@@ -233,36 +232,29 @@ def _assessment_latest_forms_in_range(listener_numbers, start_date, end_date):
 
 
 def _get_teaching_reward_settings():
-    first_week_raw = SystemSetting.get('teaching_first_week_monday')
-    if not first_week_raw:
+    from app.services.teaching_calendar_settings import (
+        INVALID_FIRST_WEEK,
+        MISSING_FIRST_WEEK,
+        load_teaching_calendar_config,
+    )
+    config, error = load_teaching_calendar_config()
+    if error == MISSING_FIRST_WEEK:
         return None, '请先在制度设置中配置第一周起始日期'
-    try:
-        first_week_date = datetime.strptime(first_week_raw, '%Y-%m-%d').date()
-    except Exception:
+    if error == INVALID_FIRST_WEEK:
         return None, '制度设置中的第一周起始日期格式错误'
-    try:
-        week_start_day = int(SystemSetting.get('teaching_week_start_day', '0') or 0)
-    except Exception:
-        week_start_day = 0
-    if week_start_day < 0 or week_start_day > 6:
-        week_start_day = 0
+    if config is None:
+        return None, '请先在制度设置中配置第一周起始日期'
     try:
         required_submission = int(SystemSetting.get('teaching_required_submission', '1') or 1)
     except Exception:
         required_submission = 1
     if required_submission < 0:
         required_submission = 0
-    try:
-        total_weeks = int(SystemSetting.get('teaching_total_weeks', '20') or 20)
-    except Exception:
-        total_weeks = 20
-    if total_weeks < 1 or total_weeks > 52:
-        total_weeks = 20
     return {
-        'first_week_date': first_week_date,
-        'week_start_day': week_start_day,
+        'first_week_date': config.first_week_date,
+        'week_start_day': config.week_start_day,
         'required_submission': required_submission,
-        'total_weeks': total_weeks
+        'total_weeks': config.total_weeks
     }, None
 
 
@@ -372,23 +364,14 @@ def _get_teaching_term_start(first_week_date, week_start_day):
 def _get_form_effective_week_no(form, reward_settings):
     if not form:
         return None
-    parsed_tag = parse_audit_tag(form.audit_tag)
-    if parsed_tag.get('week_correction_week_no') is not None:
-        return parsed_tag['week_correction_week_no']
-    lecture_date = _parse_lecture_date_value(form.lecture_date)
-    week_no = _get_teaching_week_no(
-        lecture_date,
-        reward_settings['first_week_date'],
-        reward_settings['week_start_day'],
-        reward_settings.get('total_weeks'),
+    from app.services.form_week_semantics import effective_form_week
+    from app.services.teaching_calendar import TeachingCalendarConfig
+    config = TeachingCalendarConfig(
+        first_week_date=reward_settings['first_week_date'],
+        week_start_day=reward_settings['week_start_day'],
+        total_weeks=reward_settings.get('total_weeks', 52),
     )
-    if week_no is None:
-        return None
-    if parsed_tag.get('legacy_late_tag') == LATE_TAG_LATE:
-        week_no -= 1
-    if week_no < 1:
-        return None
-    return week_no
+    return effective_form_week(form.lecture_date, form.audit_tag, config)
 
 
 def _build_teaching_month_templates(reward_window, reward_settings):

@@ -14,7 +14,6 @@ from unittest.mock import patch
 
 from app.app import app
 from app.models import SystemSetting, db
-from app.utils.audit_tags import parse_audit_tag
 from app.utils.leave_management import (
     get_form_effective_week_no,
     get_teaching_settings,
@@ -48,34 +47,6 @@ def _teaching_start(first_week_date=FIRST_WEEK_DATE, week_start_day=5):
     )
 
 
-def _user_profile_local_week(date_obj, first_week_date=FIRST_WEEK_DATE, week_start_day=5):
-    """Exact replica of user.profile / admin.users local get_week_num."""
-    if not first_week_date or not date_obj:
-        return -1
-    if isinstance(date_obj, datetime):
-        current_date = date_obj.date()
-    else:
-        current_date = date_obj
-    actual_start = _teaching_start(first_week_date, week_start_day)
-    diff = (current_date - actual_start).days
-    if diff < 0:
-        return -1
-    return (diff // 7) + 1
-
-
-def _user_profile_local_form_effective(form, settings=None):
-    """Exact replica of user.profile / admin.users get_form_group_week_num."""
-    settings = settings or DEFAULT_SETTINGS
-    parsed_tag = parse_audit_tag(form.audit_tag)
-    if parsed_tag.get('week_correction_week_no') is not None:
-        return parsed_tag['week_correction_week_no']
-    return _user_profile_local_week(
-        parse_lecture_date_value(form.lecture_date),
-        settings['first_week_date'],
-        settings['week_start_day'],
-    )
-
-
 def _form(lecture_date='2026-09-07', audit_tag=''):
     return SimpleNamespace(lecture_date=lecture_date, audit_tag=audit_tag)
 
@@ -95,11 +66,16 @@ class TimeValidatorWeekdayOffsetCharacterizationTests(unittest.TestCase):
     """Pins the corrected Phase 2B-P1 TimeValidator weekday-offset behavior."""
 
     def _target(self, week_start_day):
-        with patch.object(
-            TimeValidator,
-            'get_teaching_calendar_settings',
-            return_value=(datetime(2026, 9, 7), week_start_day),
-        ), patch.object(TimeValidator, '_get_total_weeks', return_value=20):
+        from app.services.teaching_calendar import TeachingCalendarConfig
+        config = TeachingCalendarConfig(
+            first_week_date=date(2026, 9, 7),
+            week_start_day=week_start_day,
+            total_weeks=20,
+        )
+        with patch(
+            'app.services.teaching_calendar_settings.load_teaching_calendar_config',
+            return_value=(config, None),
+        ):
             return TimeValidator.calculate_target_date(1, 1)
 
     def test_week1_monday_with_monday_start_is_correct(self):
@@ -149,13 +125,8 @@ class WeekNumberEquivalenceTests(unittest.TestCase):
                 assessment_result = _get_teaching_week_no(
                     target, FIRST_WEEK_DATE, DEFAULT_SETTINGS['week_start_day']
                 )
-                user_local_result = _user_profile_local_week(target)
                 self.assertEqual(leave_result, expected)
                 self.assertEqual(assessment_result, expected)
-                if expected is None:
-                    self.assertEqual(user_local_result, -1)
-                else:
-                    self.assertEqual(user_local_result, expected)
 
     def test_course_registration_limits_boundaries(self):
         teaching_start = _teaching_start()
@@ -196,11 +167,16 @@ class WeekNumberEquivalenceTests(unittest.TestCase):
 
 class TotalWeeksBoundaryTests(unittest.TestCase):
     def test_time_validator_rejects_week_after_total(self):
-        with patch.object(
-            TimeValidator,
-            'get_teaching_calendar_settings',
-            return_value=(datetime(2026, 9, 7), 0),
-        ), patch('app.models.SystemSetting.get', return_value='20'):
+        from app.services.teaching_calendar import TeachingCalendarConfig
+        config = TeachingCalendarConfig(
+            first_week_date=date(2026, 9, 7),
+            week_start_day=0,
+            total_weeks=20,
+        )
+        with patch(
+            'app.services.teaching_calendar_settings.load_teaching_calendar_config',
+            return_value=(config, None),
+        ):
             self.assertEqual(
                 TimeValidator.calculate_target_date(20, 1),
                 datetime(2027, 1, 18),
@@ -310,12 +286,6 @@ class EffectiveWeekSemanticsTests(unittest.TestCase):
         form = _form(lecture_date='2026-09-12', audit_tag='需要人工审核;晚交')
         self.assertEqual(get_form_effective_week_no(form, DEFAULT_SETTINGS), 1)
         self.assertEqual(_get_form_effective_week_no(form, DEFAULT_SETTINGS), 1)
-
-    def test_user_local_differs_for_legacy_late(self):
-        form = _form(lecture_date='2026-09-12', audit_tag='需要人工审核;晚交')
-        self.assertEqual(_user_profile_local_form_effective(form), 2)
-        # The canonical helpers subtract one for legacy 晚交.
-        self.assertEqual(get_form_effective_week_no(form, DEFAULT_SETTINGS), 1)
 
     def test_before_term_returns_none_canonical(self):
         form = _form(lecture_date='2026-09-04')

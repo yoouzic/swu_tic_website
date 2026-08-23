@@ -25,35 +25,11 @@ class TimeValidator:
 
     @classmethod
     def get_teaching_calendar_settings(cls) -> Tuple[Optional[datetime], int]:
-        from ..models import SystemSetting
-        first_week_setting = SystemSetting.query.filter_by(key='teaching_first_week_monday').first()
-        week_start_setting = SystemSetting.query.filter_by(key='teaching_week_start_day').first()
-
-        first_week = None
-        if first_week_setting and first_week_setting.value:
-            try:
-                first_week = datetime.strptime(first_week_setting.value, '%Y-%m-%d')
-            except (TypeError, ValueError):
-                first_week = None
-
-        week_start_day = 0
-        if week_start_setting and week_start_setting.value is not None:
-            try:
-                parsed = int(week_start_setting.value)
-            except (TypeError, ValueError):
-                parsed = 0
-            week_start_day = parsed if 0 <= parsed <= 6 else 0
-        return first_week, week_start_day
-
-    @classmethod
-    def _get_total_weeks(cls) -> int:
-        from ..models import SystemSetting
-        try:
-            raw = SystemSetting.get('teaching_total_weeks', '20') or 20
-            parsed = int(raw)
-        except (TypeError, ValueError):
-            return 20
-        return parsed if 1 <= parsed <= 52 else 20
+        from ..services.teaching_calendar_settings import load_teaching_calendar_config
+        config, error = load_teaching_calendar_config()
+        if error is not None or config is None:
+            return None, 0
+        return datetime.combine(config.first_week_date, datetime.min.time()), config.week_start_day
     
     @classmethod
     def parse_chinese_number(cls, chinese_str: str) -> Optional[int]:
@@ -140,16 +116,11 @@ class TimeValidator:
         """
         try:
             from ..services.teaching_calendar import TeachingCalendarConfig, date_for_teaching_weekday
+            from ..services.teaching_calendar_settings import load_teaching_calendar_config
             if not semester_start:
-                semester_start, week_start_day = cls.get_teaching_calendar_settings()
-                total_weeks = cls._get_total_weeks()
-                if not semester_start:
+                config, error = load_teaching_calendar_config()
+                if error is not None or config is None:
                     return None
-                config = TeachingCalendarConfig(
-                    first_week_date=semester_start,
-                    week_start_day=week_start_day,
-                    total_weeks=total_weeks,
-                )
             else:
                 # Explicit semester_start is treated as the reference Monday and
                 # keeps the legacy Monday-only behavior.  A conservative maximum

@@ -16,16 +16,6 @@ from app.services.teaching_calendar import (
 
 MISSING_FIRST_WEEK = 'MISSING_FIRST_WEEK'
 INVALID_FIRST_WEEK = 'INVALID_FIRST_WEEK'
-INVALID_WEEK_START = 'INVALID_WEEK_START'
-INVALID_TOTAL_WEEKS = 'INVALID_TOTAL_WEEKS'
-
-
-class TeachingCalendarSettingsError(ValueError):
-    """Raised when teaching settings cannot be loaded or normalized."""
-
-    def __init__(self, code: str):
-        self.code = code
-        super().__init__(code)
 
 
 def load_teaching_calendar_config() -> Tuple[Optional[TeachingCalendarConfig], Optional[str]]:
