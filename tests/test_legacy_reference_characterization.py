@@ -156,6 +156,29 @@ class LegacyReferenceCharacterizationTests(unittest.TestCase):
         self.assertEqual(matches[0]['id'], '123456')
         self.assertEqual(matches[0]['match_type'], 'id')
 
+    def test_id_whitespace_does_not_change_legacy_exact_match(self):
+        result = self.engine.search_reference_data({'listener_number': ' 1001 '})
+        self.assertEqual(result['contact_matches'], [])
+
+    def test_name_only_left_parenthesis_in_reference_data_keeps_legacy_extraction(self):
+        result = self.engine.search_reference_data({'listener_name': '张三（计算机学院'})
+        matches = result['contact_matches']
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]['match_type'], 'name')
+        self.assertNotIn('similarity', matches[0])
+
+    def test_find_reviewer_by_name_only_left_parenthesis_is_not_exact(self):
+        match = self.engine._find_reviewer_by_name('张三（计算机学院')
+        self.assertIsNone(match)
+
+    def test_duplicate_name_exact_winner_is_lowest_user_id(self):
+        self._add_user('2001', '重复名', '测试部A', '', '学院A', '13100000001')
+        self._add_user('2002', '重复名', '测试部B', '', '学院B', '13200000002')
+        result = self.engine.search_reference_data({'listener_name': '重复名'})
+        matches = result['contact_matches']
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]['id'], '2001')
+
     def test_fuzzy_contact_by_name_contract(self):
         result = self.engine.search_reference_data({'listener_name': '欧阳修文正凯旋'})
         matches = result['contact_matches']
@@ -262,6 +285,91 @@ class LegacyReferenceCharacterizationTests(unittest.TestCase):
         matches = result['schedule_matches']
         self.assertGreater(len(matches), 0)
         self.assertTrue(all('course_name' in m['match_type'] for m in matches))
+
+    def test_teacher_college_is_not_used_for_candidate_selection(self):
+        result = self.engine.search_reference_data({
+            'teacher_name': '张三',
+            'teacher_college': '错误学院',
+            'course_title': '数据结构',
+        })
+        matches = result['schedule_matches']
+        self.assertGreater(len(matches), 0)
+        self.assertEqual(matches[0]['teacher_name'], '张三')
+
+    def test_time_refinement_success_appends_with_time(self):
+        result = self.engine.search_reference_data({
+            'teacher_name': '张三',
+            'teacher_college': '计算机与信息科学学院、软件学院',
+            'course_title': '数据结构',
+            'lecture_date': '2026/09/09星期三',
+            'class_period': '第3-4节',
+        })
+        match = result['schedule_matches'][0]
+        self.assertIn('_with_time', match['match_type'])
+
+    def test_location_refinement_success_appends_with_location(self):
+        result = self.engine.search_reference_data({
+            'teacher_name': '张三',
+            'course_title': '数据结构',
+            'lecture_location': '32-302',
+        })
+        match = result['schedule_matches'][0]
+        self.assertIn('_with_location', match['match_type'])
+
+    def test_location_refinement_failure_keeps_previous_candidates(self):
+        result = self.engine.search_reference_data({
+            'teacher_name': '张三',
+            'course_title': '数据结构',
+            'lecture_location': '99-999',
+        })
+        match = result['schedule_matches'][0]
+        self.assertNotIn('_with_location', match['match_type'])
+
+    def test_class_refinement_success_appends_with_class(self):
+        result = self.engine.search_reference_data({
+            'teacher_name': '张三',
+            'course_title': '数据结构',
+            'student_grade_class': '2023级计算机1班',
+        })
+        match = result['schedule_matches'][0]
+        self.assertIn('_with_class', match['match_type'])
+
+    def test_class_refinement_failure_keeps_previous_candidates(self):
+        result = self.engine.search_reference_data({
+            'teacher_name': '张三',
+            'course_title': '数据结构',
+            'student_grade_class': '不存在的班级',
+        })
+        match = result['schedule_matches'][0]
+        self.assertNotIn('_with_class', match['match_type'])
+
+    def test_combined_refinement_suffix_order_is_frozen(self):
+        result = self.engine.search_reference_data({
+            'teacher_name': '张三',
+            'teacher_college': '计算机与信息科学学院、软件学院',
+            'course_title': '数据结构',
+            'lecture_date': '2026/09/09星期三',
+            'class_period': '第3-4节',
+            'lecture_location': '32-302',
+            'student_grade_class': '2023级计算机1班',
+        })
+        match = result['schedule_matches'][0]
+        self.assertEqual(
+            match['match_type'],
+            'exact_with_time_with_location_with_class',
+        )
+
+    def test_start_week_is_payload_only_not_candidate_filter(self):
+        result = self.engine.search_reference_data({
+            'teacher_name': '张三',
+            'course_title': '数据结构',
+        })
+        match = result['schedule_matches'][0]
+        self.assertIn('start_week', match)
+        self.assertEqual(match['start_week'], '1')
+
+    def test_location_normalization_removes_room_zero_padding(self):
+        self.assertEqual(self.engine._normalize_location('33-0201'), '33-201')
 
 
 if __name__ == '__main__':

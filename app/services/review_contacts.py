@@ -40,7 +40,7 @@ def find_reviewer_by_id(reviewer_id: str) -> Optional[dict]:
         return None
     user = (
         User.query
-        .filter(User.number == str(reviewer_id).strip())
+        .filter(User.number == str(reviewer_id))
         .filter(active_user_filter())
         .order_by(User.id.asc())
         .first()
@@ -58,7 +58,7 @@ def find_reviewer_by_name(name: str, fuzzy: bool = True) -> Optional[dict]:
     if not name:
         return None
     clean_name = name
-    if '（' in name:
+    if '（' in name and '）' in name:
         clean_name = name.split('（')[0].strip()
 
     exact_user = (
