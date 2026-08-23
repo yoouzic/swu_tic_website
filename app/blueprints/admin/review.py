@@ -6,7 +6,7 @@ from flask import render_template, request, redirect, url_for, flash, session, j
 from app.models import User, Group, LectureForm, CourseRegistration, db, SystemSetting, ScoreRecord, ScoreItem
 from datetime import datetime, timedelta
 from app.utils.auto_review import AutoReviewEngine
-from app.blueprints.auth import login_required, role_required
+from app.security import login_required, role_required
 from app.utils.review_permissions import get_user_review_permission, can_review_status, get_user_structure_for_review, get_reviewable_users, get_next_status_after_review, get_review_permission_presentation
 from app.utils.permission_feedback import build_forbidden_message, forbidden_json, flash_forbidden
 from app.utils.manage_permissions import get_user_manage_permission

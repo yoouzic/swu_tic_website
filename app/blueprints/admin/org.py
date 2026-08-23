@@ -5,7 +5,7 @@
 from flask import render_template, request, redirect, url_for, session, jsonify
 from app.models import User, Department, Group, LectureForm, db, ScoreRecord
 from sqlalchemy import func
-from app.blueprints.auth import role_required
+from app.security import role_required
 from app.utils.permission_feedback import build_forbidden_message, flash_forbidden
 from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, is_user_active

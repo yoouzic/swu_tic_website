@@ -5,7 +5,7 @@
 from flask import render_template, request, redirect, url_for, session, jsonify, send_file, current_app
 from app.models import User, Teacher, Venue, Course, ListeningBan, CourseRegistration, db, SystemSetting
 from sqlalchemy import func
-from app.blueprints.auth import login_required, role_required
+from app.security import login_required, role_required
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, is_user_active
 import pandas as pd
 import openpyxl

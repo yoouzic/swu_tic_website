@@ -5,7 +5,7 @@
 from flask import request, redirect, url_for, flash, session, jsonify, send_file
 from app.models import User, Department, Group, db
 from datetime import datetime
-from app.blueprints.auth import role_required
+from app.security import role_required
 from app.utils.password_audit import record_password_audit
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME
 from app.utils.env_config import env_path

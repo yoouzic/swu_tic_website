@@ -5,7 +5,7 @@
 from flask import render_template, request, redirect, url_for, session, jsonify, send_file
 from app.models import User, LectureForm, db, SystemSetting, ScoreRecord, ScoreItem, StatisticsSnapshot, AssessmentOverride
 from datetime import datetime, timedelta
-from app.blueprints.auth import login_required, role_required
+from app.security import login_required, role_required
 from app.utils.permission_feedback import build_forbidden_message, forbidden_json, flash_forbidden
 from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.leave_management import ASSESSMENT_EXEMPT_OVERRIDE_TYPES, LEAVE_OVERRIDE_TYPE

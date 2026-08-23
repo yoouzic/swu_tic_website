@@ -6,7 +6,7 @@ from flask import render_template, request, redirect, url_for, session, jsonify,
 from app.models import User, Department, Group, LectureForm, Teacher, Venue, Course, ListeningBan, db, SystemSetting
 from datetime import datetime
 from app.utils.auto_review import AutoReviewEngine, SETTING_KEY_SEMESTER_MONDAY, SETTING_KEY_SCHEDULE_PATH, SETTING_KEY_CONTACTS_PATH, SETTING_KEY_FEEDBACK_PATH
-from app.blueprints.auth import role_required
+from app.security import role_required
 from app.utils.profile_settings import PROFILE_EDITABLE_FIELD_OPTIONS, SETTING_KEY_PROFILE_EDITABLE_FIELDS, get_profile_editable_fields, normalize_profile_editable_fields
 from app.utils.course_registration_limits import SETTING_KEY_COURSE_WEEKLY_LIMIT_COUNT, SETTING_KEY_COURSE_WEEKLY_LIMIT_ENABLED, get_course_weekly_limit_settings, normalize_course_weekly_limit_count
 from app.utils.env_config import env_path

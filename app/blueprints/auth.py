@@ -1,69 +1,11 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from werkzeug.security import check_password_hash
 from ..models import User, db
-from functools import wraps
 from ..utils.password_audit import record_password_audit
 from ..utils.user_status import is_user_active
-from ..utils.permission_feedback import forbidden_json, flash_forbidden, resolve_permission_resource
+from app.security import login_required, role_required
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
-
-def login_required(f):
-    """登录验证装饰器"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            flash('请先登录', 'warning')
-            return redirect(url_for('auth.login'))
-        user = User.query.get(session['user_id'])
-        if not user or not is_user_active(user):
-            session.clear()
-            flash('账号已离任或不可用，请联系管理员', 'warning')
-            return redirect(url_for('auth.login'))
-        return f(*args, **kwargs)
-    return decorated_function
-
-def role_required(role):
-    """角色权限验证装饰器"""
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            # 检查是否是API请求
-            is_api_request = request.path.startswith('/admin/api/')
-            
-            if 'user_id' not in session:
-                if is_api_request:
-                    return jsonify({'success': False, 'message': '请先登录'}), 401
-                flash('请先登录', 'warning')
-                return redirect(url_for('auth.login'))
-            
-            user = User.query.get(session['user_id'])
-            if not user:
-                if is_api_request:
-                    return jsonify({'success': False, 'message': '用户不存在'}), 403
-                flash('用户不存在', 'error')
-                return redirect(url_for('main.index'))
-            if not is_user_active(user):
-                session.clear()
-                if is_api_request:
-                    return jsonify({'success': False, 'message': '账号已离任或不可用'}), 403
-                flash('账号已离任或不可用，请联系管理员', 'warning')
-                return redirect(url_for('auth.login'))
-            
-            # 超级管理员可以访问所有功能
-            if user.role == '超级管理员':
-                return f(*args, **kwargs)
-            
-            # 其他用户需要匹配指定角色
-            if user.role != role:
-                resource = resolve_permission_resource()
-                if is_api_request:
-                    return forbidden_json(resource)
-                flash_forbidden(resource)
-                return redirect(url_for('main.index'))
-            return f(*args, **kwargs)
-        return decorated_function
-    return decorator
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():

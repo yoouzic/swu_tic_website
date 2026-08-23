@@ -4,7 +4,7 @@
 
 from flask import request, session, jsonify
 from app.models import User, db, AssessmentOverride
-from app.blueprints.auth import login_required
+from app.security import login_required
 from app.utils.permission_feedback import build_forbidden_message, build_forbidden_payload, forbidden_json
 from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.leave_management import LEAVE_OVERRIDE_TYPE, build_leave_status_payload, get_current_teaching_week as get_leave_current_teaching_week, get_form_effective_week_no as get_leave_form_effective_week_no, get_leave_makeup_forms, get_teaching_settings as get_leave_teaching_settings, set_leave_makeup_forms

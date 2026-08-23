@@ -5,7 +5,7 @@
 from flask import render_template, request, redirect, url_for, flash, session, jsonify, send_file
 from app.models import User, LectureForm, db, SystemSetting
 from datetime import datetime
-from app.blueprints.auth import login_required, role_required
+from app.security import login_required, role_required
 from app.utils.audit_tags import REVIEW_TAG_REQUIRED, validate_audit_tag
 from app.utils.user_status import active_user_filter
 import pandas as pd

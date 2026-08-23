@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from ..models import SystemSetting, User, db, Course, ListeningBan, CourseRegistration as Reservation, Teacher, LectureForm, LectureFormDraft
-from .auth import login_required
+from app.security import login_required
 from ..utils.user_status import active_user_filter
 from app.services.form_bindings import (
     get_registration_logical_form_counts,

@@ -5,7 +5,7 @@
 from flask import render_template, request, session, jsonify, send_file
 from app.models import User, LectureForm, db
 from datetime import datetime
-from app.blueprints.auth import role_required
+from app.security import role_required
 from app.utils.review_permissions import get_user_review_permission
 from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.user_status import active_user_filter

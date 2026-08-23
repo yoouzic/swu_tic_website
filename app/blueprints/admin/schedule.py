@@ -4,7 +4,7 @@
 
 from flask import request, jsonify
 from app.models import Teacher, Venue, Course, db
-from app.blueprints.auth import role_required
+from app.security import role_required
 from app.utils.env_config import env_path
 import pandas as pd
 import os

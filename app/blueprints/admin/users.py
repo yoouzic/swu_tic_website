@@ -6,7 +6,7 @@ from flask import render_template, request, redirect, url_for, flash, session, j
 from app.models import User, Department, Group, LectureForm, Permission, RolePermission, Course, CourseRegistration, db, SystemSetting, ScoreRecord, ScoreItem, PersonnelMovementRecord
 from sqlalchemy import func
 from datetime import datetime, timedelta
-from app.blueprints.auth import role_required
+from app.security import role_required
 from app.utils.review_permissions import get_user_review_permission
 from app.utils.permission_feedback import build_forbidden_message, flash_forbidden
 from app.utils.manage_permissions import get_user_manage_permission
