@@ -6,6 +6,7 @@ from flask import render_template, request, redirect, url_for, flash, session, j
 from app.models import User, LectureForm, db, SystemSetting
 from datetime import datetime
 from app.security import login_required, role_required
+from app.services.workbook import workbook_response
 from app.utils.audit_tags import REVIEW_TAG_REQUIRED, validate_audit_tag
 from app.utils.user_status import active_user_filter
 import pandas as pd
@@ -436,15 +437,7 @@ def download_forms_import_template():
     for col_idx in range(1, len(FORM_IMPORT_TEMPLATE_HEADERS) + 1):
         ws.cell(row=1, column=col_idx).font = Font(bold=True)
         ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 20
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return send_file(
-        output,
-        as_attachment=True,
-        download_name='听课表单导入模板.xlsx',
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
+    return workbook_response(wb, '听课表单导入模板.xlsx')
 
 
 @admin_bp.route('/api/forms/import', methods=['POST'])
@@ -639,16 +632,8 @@ def export_imported_forms_excel():
     for col_idx in range(1, len(headers) + 1):
         ws.cell(row=1, column=col_idx).font = Font(bold=True)
         ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 20
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
     filename = f'导入表单明细_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
-    return send_file(
-        output,
-        as_attachment=True,
-        download_name=filename,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
+    return workbook_response(wb, filename)
 
 
 @admin_bp.route('/export_forms')

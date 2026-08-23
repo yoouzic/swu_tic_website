@@ -2,15 +2,15 @@
 # Phase 1 mechanical split from app/blueprints/admin.py
 # Module: courses
 
-from flask import render_template, request, redirect, url_for, session, jsonify, send_file, current_app
+from flask import render_template, request, redirect, url_for, session, jsonify, current_app
 from app.models import User, Teacher, Venue, Course, ListeningBan, CourseRegistration, db, SystemSetting
 from sqlalchemy import func
 from app.security import login_required, role_required
+from app.services.workbook import workbook_response
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, is_user_active
 import pandas as pd
 import openpyxl
 from openpyxl.styles import Font, Alignment
-from io import BytesIO
 import json
 from collections import defaultdict
 from . import admin_bp
@@ -708,15 +708,7 @@ def download_banned_teacher_import_template():
     worksheet['A1'].font = Font(bold=True)
     worksheet['A1'].alignment = Alignment(horizontal='center')
 
-    stream = BytesIO()
-    workbook.save(stream)
-    stream.seek(0)
-    return send_file(
-        stream,
-        as_attachment=True,
-        download_name='禁听教师导入模板.xlsx',
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
+    return workbook_response(workbook, '禁听教师导入模板.xlsx')
 
 
 @admin_bp.route('/api/banned_teachers/import/preview', methods=['POST'])

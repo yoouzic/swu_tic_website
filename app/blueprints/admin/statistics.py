@@ -2,16 +2,16 @@
 # Phase 1 mechanical split from app/blueprints/admin.py
 # Module: statistics
 
-from flask import render_template, request, session, jsonify, send_file
+from flask import render_template, request, session, jsonify
 from app.models import User, LectureForm, db
 from datetime import datetime
 from app.security import role_required
+from app.services.workbook import workbook_response
 from app.utils.review_permissions import get_user_review_permission
 from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.user_status import active_user_filter
 import openpyxl
 from openpyxl.styles import Font
-from io import BytesIO
 import json
 from . import admin_bp
 from .shared import _active_user_query, _get_accessible_department_users
@@ -262,16 +262,8 @@ def export_statistics():
             32,
         )
 
-    output = BytesIO()
-    workbook.save(output)
-    output.seek(0)
     filename = f'统计分析_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
-    return send_file(
-        output,
-        as_attachment=True,
-        download_name=filename,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    )
+    return workbook_response(workbook, filename)
 
 
 @admin_bp.route('/api/statistics_data')

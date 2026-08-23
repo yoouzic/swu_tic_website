@@ -2,10 +2,11 @@
 # Phase 1 mechanical split from app/blueprints/admin.py
 # Module: assessment_stats
 
-from flask import render_template, request, redirect, url_for, session, jsonify, send_file
+from flask import render_template, request, redirect, url_for, session, jsonify
 from app.models import User, LectureForm, db, SystemSetting, ScoreRecord, ScoreItem, StatisticsSnapshot, AssessmentOverride
 from datetime import datetime, timedelta
 from app.security import login_required, role_required
+from app.services.workbook import autosize_worksheet, build_export_filename, workbook_response
 from app.utils.permission_feedback import build_forbidden_message, forbidden_json, flash_forbidden
 from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.leave_management import ASSESSMENT_EXEMPT_OVERRIDE_TYPES, LEAVE_OVERRIDE_TYPE
@@ -13,7 +14,6 @@ from app.utils.user_status import UNASSIGNED_GROUP_NAME
 import pandas as pd
 import openpyxl
 from openpyxl.styles import Font
-from io import BytesIO
 import json
 from . import admin_bp
 from .shared import _build_review_form_filter_datetime, _get_accessible_department_users, _latest_form_groups_for_users, _normalize_review_form_time_filter, _resolve_assessment_users, _to_int_or_none, allowed_file, get_reviewer_display_mode
@@ -563,42 +563,6 @@ def _build_review_assessment_rows(users, start_date, end_date):
     return rows
 
 
-def _build_export_filename(filename_title, default_title):
-    title = (filename_title or '').strip() or default_title
-    invalid_chars = '<>:"/\\|?*'
-    for char in invalid_chars:
-        title = title.replace(char, '_')
-    title = title.strip().strip('.')
-    if not title:
-        title = default_title
-    if not title.lower().endswith('.xlsx'):
-        title = f'{title}.xlsx'
-    return title
-
-
-def _autosize_worksheet(ws, min_width=12, max_width=40):
-    for column_cells in ws.columns:
-        max_length = 0
-        column_letter = column_cells[0].column_letter
-        for cell in column_cells:
-            value = '' if cell.value is None else str(cell.value)
-            if len(value) > max_length:
-                max_length = len(value)
-        ws.column_dimensions[column_letter].width = max(min_width, min(max_length + 2, max_width))
-
-
-def _workbook_response(wb, filename):
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return send_file(
-        output,
-        as_attachment=True,
-        download_name=filename,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
-
-
 def _build_reward_week_templates(reward_window, required_submission):
     templates = []
     if not reward_window.get('has_full_weeks') or not reward_window.get('window_start'):
@@ -1035,8 +999,8 @@ def _build_submission_snapshot_workbook(payload):
     for cell in detail_ws[1]:
         cell.font = Font(bold=True)
 
-    _autosize_worksheet(ws)
-    _autosize_worksheet(detail_ws)
+    autosize_worksheet(ws)
+    autosize_worksheet(detail_ws)
     return wb
 
 
@@ -1092,8 +1056,8 @@ def _build_department_monthly_workbook(payload):
     for cell in detail_ws[1]:
         cell.font = Font(bold=True)
 
-    _autosize_worksheet(summary_ws)
-    _autosize_worksheet(detail_ws, max_width=60)
+    autosize_worksheet(summary_ws)
+    autosize_worksheet(detail_ws, max_width=60)
     return wb
 
 
@@ -1169,8 +1133,8 @@ def export_submission_count_stats():
     wb = _build_submission_snapshot_workbook(payload)
 
     default_title = f'{start_date_str}至{end_date_str}交表统计'
-    filename = _build_export_filename(request.args.get('filename_title'), default_title)
-    return _workbook_response(wb, filename)
+    filename = build_export_filename(request.args.get('filename_title'), default_title)
+    return workbook_response(wb, filename)
 
 
 @admin_bp.route('/api/review/submission-count/reward-detail/<int:user_id>', methods=['GET'])
@@ -1418,8 +1382,8 @@ def export_submission_count_snapshot(snapshot_id):
         return error_response, status_code
     _, payload_data = _load_snapshot_payload(record)
     wb = _build_submission_snapshot_workbook(payload_data)
-    filename = _build_export_filename(request.args.get('filename_title'), record.title)
-    return _workbook_response(wb, filename)
+    filename = build_export_filename(request.args.get('filename_title'), record.title)
+    return workbook_response(wb, filename)
 
 
 @admin_bp.route('/api/review/department-monthly-assessment/stats', methods=['GET'])
@@ -1465,8 +1429,8 @@ def export_department_monthly_assessment_stats():
         return jsonify({'success': False, 'message': '当前筛选范围内无完整教学月，无法导出月度考评'}), 400
     wb = _build_department_monthly_workbook(payload)
     default_title = f'{start_date_str}至{end_date_str}部门月度考评统计'
-    filename = _build_export_filename(request.args.get('filename_title'), default_title)
-    return _workbook_response(wb, filename)
+    filename = build_export_filename(request.args.get('filename_title'), default_title)
+    return workbook_response(wb, filename)
 
 
 @admin_bp.route('/api/review/department-monthly-assessment/snapshots', methods=['GET'])
@@ -1556,8 +1520,8 @@ def export_department_monthly_assessment_snapshot(snapshot_id):
         return error_response, status_code
     _, payload_data = _load_snapshot_payload(record)
     wb = _build_department_monthly_workbook(payload_data)
-    filename = _build_export_filename(request.args.get('filename_title'), record.title)
-    return _workbook_response(wb, filename)
+    filename = build_export_filename(request.args.get('filename_title'), record.title)
+    return workbook_response(wb, filename)
 
 
 @admin_bp.route('/api/review/assessment/stats', methods=['GET'])
@@ -1616,11 +1580,11 @@ def export_review_assessment_stats():
         ])
     for cell in ws[1]:
         cell.font = Font(bold=True)
-    _autosize_worksheet(ws)
+    autosize_worksheet(ws)
 
     default_title = f'{start_date_str}至{end_date_str}考评统计'
-    filename = _build_export_filename(request.args.get('filename_title'), default_title)
-    return _workbook_response(wb, filename)
+    filename = build_export_filename(request.args.get('filename_title'), default_title)
+    return workbook_response(wb, filename)
 
 
 @admin_bp.route('/api/review/assessment/detail/<int:user_id>', methods=['GET'])
@@ -1944,15 +1908,7 @@ def download_manual_assessment_template():
     headers = ['表单ID', '考评项', '部门扣分', '个人扣分']
     ws.append(headers)
     ws.append([1001, '课堂秩序管理欠佳', 1, 2])
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return send_file(
-        output,
-        as_attachment=True,
-        download_name='手动导入考评模板.xlsx',
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
+    return workbook_response(wb, '手动导入考评模板.xlsx')
 
 
 @admin_bp.route('/api/review/assessment/import/preview', methods=['POST'])
