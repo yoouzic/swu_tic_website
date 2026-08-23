@@ -25,6 +25,20 @@ from app.services.review_mutation import (
 from app.services.review_scores import ScoreValidationError, normalize_score_items
 
 
+def _json_object_request():
+    """Return the JSON request body only when it is a JSON object.
+
+    Flask's ``get_json(silent=True)`` returns ``None`` for malformed JSON as
+    well as for JSON values that are not objects (``null``, arrays, scalars).
+    Review endpoints treat every one of those as a client request-format
+    error, never as a server error.
+    """
+    if not request.is_json:
+        return None
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else None
+
+
 def _serialize_audit_tag(audit_tag):
     parsed = parse_audit_tag(audit_tag)
     return {
@@ -395,8 +409,18 @@ def submit_review(form_id):
         # 获取表单数据
         # 兼容 JSON 格式（前端使用 fetch JSON 提交）和 Form 格式
         if request.is_json:
-            data = request.get_json()
+            data = _json_object_request()
+            if data is None:
+                return jsonify({
+                    'success': False,
+                    'message': '请求数据格式错误',
+                }), 400
             form_data = data.get('form_data', {})
+            if not isinstance(form_data, dict):
+                return jsonify({
+                    'success': False,
+                    'message': '请求数据格式错误',
+                }), 400
             review_comment = data.get('review_comment', '无')
             score_data_list = data.get('score_data', [])
         else:
@@ -405,11 +429,18 @@ def submit_review(form_id):
             score_data_list = []
             # 尝试从 form 字段中解析 score_data JSON 字符串（兼容旧方式或隐藏域提交）
             score_data_json = form_data.get('score_data')
-            if score_data_json:
-                try:
-                    score_data_list = json.loads(score_data_json)
-                except:
-                    pass
+            if score_data_json is not None:
+                if score_data_json == '':
+                    # 保持既有 empty score_data 语义：等价于无评分
+                    score_data_list = []
+                else:
+                    try:
+                        score_data_list = json.loads(score_data_json)
+                    except (ValueError, TypeError):
+                        return jsonify({
+                            'success': False,
+                            'message': '评分数据格式错误：score_data 不是合法 JSON',
+                        }), 400
         
         # 在任何 DB mutation 前验证评分输入
         try:
@@ -1275,9 +1306,19 @@ def submit_form_review(form_id):
                 ),
             }), 403
         
-        data = request.get_json()
+        data = _json_object_request()
+        if data is None:
+            return jsonify({
+                'success': False,
+                'message': '请求数据格式错误',
+            }), 400
         review_comment = data.get('review_comment', '')
         form_data = data.get('form_data', {})
+        if not isinstance(form_data, dict):
+            return jsonify({
+                'success': False,
+                'message': '请求数据格式错误',
+            }), 400
 
         # 在任何 DB mutation 前验证评分输入
         try:
