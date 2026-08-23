@@ -35,10 +35,18 @@ def get_teaching_settings():
     if required_submission < 0:
         required_submission = 0
 
+    try:
+        total_weeks = int(SystemSetting.get('teaching_total_weeks', '20') or 20)
+    except Exception:
+        total_weeks = 20
+    if total_weeks < 1 or total_weeks > 52:
+        total_weeks = 20
+
     return {
         'first_week_date': first_week_date,
         'week_start_day': week_start_day,
         'required_submission': required_submission,
+        'total_weeks': total_weeks,
     }, None
 
 
@@ -55,7 +63,11 @@ def get_teaching_week_no(date_obj, settings):
     diff = (target_date - teaching_start).days
     if diff < 0:
         return None
-    return (diff // 7) + 1
+    week_no = (diff // 7) + 1
+    total_weeks = settings.get('total_weeks')
+    if total_weeks is not None and week_no > total_weeks:
+        return None
+    return week_no
 
 
 def get_current_teaching_week(settings=None):

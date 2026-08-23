@@ -38,6 +38,7 @@ DEFAULT_SETTINGS = {
     'first_week_date': FIRST_WEEK_DATE,
     'week_start_day': 5,
     'required_submission': 1,
+    'total_weeks': 20,
 }
 
 
@@ -91,29 +92,24 @@ class TeachingStartFormulaTests(unittest.TestCase):
 
 
 class TimeValidatorWeekdayOffsetCharacterizationTests(unittest.TestCase):
-    """Pins the current TimeValidator behavior for Phase 2B-P1 reference.
-
-    Phase 2B-P1 will add corrected expectations; these tests intentionally
-    assert the current (buggy for non-Monday starts) output so the suite stays
-    green before the production fix.
-    """
+    """Pins the corrected Phase 2B-P1 TimeValidator weekday-offset behavior."""
 
     def _target(self, week_start_day):
         with patch.object(
             TimeValidator,
             'get_teaching_calendar_settings',
             return_value=(datetime(2026, 9, 7), week_start_day),
-        ):
+        ), patch.object(TimeValidator, '_get_total_weeks', return_value=20):
             return TimeValidator.calculate_target_date(1, 1)
 
     def test_week1_monday_with_monday_start_is_correct(self):
         self.assertEqual(self._target(0), datetime(2026, 9, 7))
 
-    def test_week1_monday_with_saturday_start_pins_current_bug(self):
-        self.assertEqual(self._target(5), datetime(2026, 9, 5))
+    def test_week1_monday_with_saturday_start_is_corrected(self):
+        self.assertEqual(self._target(5), datetime(2026, 9, 7))
 
-    def test_week1_monday_with_sunday_start_pins_current_bug(self):
-        self.assertEqual(self._target(6), datetime(2026, 9, 6))
+    def test_week1_monday_with_sunday_start_is_corrected(self):
+        self.assertEqual(self._target(6), datetime(2026, 9, 7))
 
     def test_get_time_suggestion_current_week_uses_teaching_start(self):
         class FrozenDateTime(datetime):
@@ -190,6 +186,77 @@ class WeekNumberEquivalenceTests(unittest.TestCase):
                 return cls(target.year, target.month, target.day)
 
         return FrozenDateTime
+
+
+class TotalWeeksBoundaryTests(unittest.TestCase):
+    def test_time_validator_rejects_week_after_total(self):
+        with patch.object(
+            TimeValidator,
+            'get_teaching_calendar_settings',
+            return_value=(datetime(2026, 9, 7), 0),
+        ), patch('app.models.SystemSetting.get', return_value='20'):
+            self.assertEqual(
+                TimeValidator.calculate_target_date(20, 1),
+                datetime(2027, 1, 18),
+            )
+            self.assertIsNone(TimeValidator.calculate_target_date(21, 1))
+            self.assertIsNone(TimeValidator.calculate_target_date(30, 1))
+
+    def test_leave_week_no_after_term_returns_none(self):
+        settings = dict(DEFAULT_SETTINGS)
+        term_end = _teaching_start() + timedelta(weeks=settings['total_weeks'])
+        self.assertEqual(
+            get_teaching_week_no(term_end - timedelta(days=1), settings),
+            settings['total_weeks'],
+        )
+        self.assertIsNone(get_teaching_week_no(term_end, settings))
+        self.assertIsNone(get_teaching_week_no(term_end + timedelta(days=1), settings))
+
+    def test_course_registration_after_term_returns_none(self):
+        first_week = '2026-09-07'
+        week_start = '5'
+        total = '20'
+        term_end = _teaching_start() + timedelta(weeks=20)
+
+        updated_values = {
+            'teaching_first_week_monday': first_week,
+            'teaching_week_start_day': week_start,
+            'teaching_total_weeks': total,
+        }
+
+        def setting_get(key, default=None):
+            return updated_values.get(key, default)
+
+        for target in (term_end, term_end + timedelta(days=1)):
+            with self.subTest(target=target):
+                with patch(
+                    'app.utils.course_registration_limits.SystemSetting.get',
+                    side_effect=setting_get,
+                ), patch(
+                    'app.utils.course_registration_limits.datetime',
+                    WeekNumberEquivalenceTests._frozen_datetime(target),
+                ):
+                    self.assertIsNone(get_current_teaching_week_no())
+
+    def test_assessment_week_no_after_term_returns_none(self):
+        term_end = _teaching_start() + timedelta(weeks=20)
+        self.assertEqual(
+            _get_teaching_week_no(
+                term_end - timedelta(days=1),
+                FIRST_WEEK_DATE,
+                DEFAULT_SETTINGS['week_start_day'],
+                20,
+            ),
+            20,
+        )
+        self.assertIsNone(
+            _get_teaching_week_no(
+                term_end,
+                FIRST_WEEK_DATE,
+                DEFAULT_SETTINGS['week_start_day'],
+                20,
+            )
+        )
 
 
 class LectureDateParsingEquivalenceTests(unittest.TestCase):
@@ -336,10 +403,13 @@ class TeachingCalendarSettingsSemanticsTests(unittest.TestCase):
     def test_time_validator_missing_first_week_returns_none_zero(self):
         self.assertEqual(TimeValidator.get_teaching_calendar_settings(), (None, 0))
 
-    def test_time_validator_invalid_week_start_discards_parsed_first_week(self):
+    def test_time_validator_invalid_week_start_preserves_parsed_first_week(self):
         self._set('teaching_first_week_monday', '2026-09-07')
         self._set('teaching_week_start_day', 'not-an-int')
-        self.assertEqual(TimeValidator.get_teaching_calendar_settings(), (None, 0))
+        self.assertEqual(
+            TimeValidator.get_teaching_calendar_settings(),
+            (datetime(2026, 9, 7), 0),
+        )
 
     def test_leave_management_missing_first_week_returns_error(self):
         settings, err = get_teaching_settings()

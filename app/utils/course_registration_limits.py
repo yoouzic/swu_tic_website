@@ -66,7 +66,18 @@ def get_current_teaching_week_no():
     diff_days = (datetime.now().date() - teaching_start).days
     if diff_days < 0:
         return None
-    return (diff_days // 7) + 1
+    week_no = (diff_days // 7) + 1
+
+    try:
+        total_weeks = int(SystemSetting.get('teaching_total_weeks', '20') or 20)
+    except Exception:
+        total_weeks = 20
+    if total_weeks < 1 or total_weeks > 52:
+        total_weeks = 20
+
+    if week_no > total_weeks:
+        return None
+    return week_no
 
 
 def get_course_registration_count_for_week(course_code, selection_code, week_no):

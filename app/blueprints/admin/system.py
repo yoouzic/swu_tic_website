@@ -23,6 +23,30 @@ DEFAULT_AUTO_REVIEW_REPORT_DIR = os.path.join('data', 'storage', 'exports', 'aut
 DEFAULT_AUTO_REVIEW_UPLOAD_DIR = os.path.join('data', 'storage', 'uploads', 'auto_review')
 
 
+def _coerce_teaching_int(value):
+    """Return int(value) for non-bool numeric-looking values, or None."""
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_teaching_settings_int(setting, default, lower=None, upper=None):
+    """Fail-safe parsing for legacy/invalid teaching settings rows."""
+    if not setting or setting.value is None or setting.value == '':
+        return default
+    parsed = _coerce_teaching_int(setting.value)
+    if parsed is None:
+        return default
+    if lower is not None and parsed < lower:
+        return default
+    if upper is not None and parsed > upper:
+        return default
+    return parsed
+
+
 @admin_bp.route('/auto_review')
 @role_required('超级管理员')
 def auto_review_page():
@@ -143,20 +167,31 @@ def get_teaching_settings():
         profile_editable_fields = get_profile_editable_fields()
         course_weekly_limit = get_course_weekly_limit_settings()
 
+        first_week_raw = settings['first_week_monday'].value if settings['first_week_monday'] else None
+        first_week_value = None
+        if first_week_raw:
+            try:
+                datetime.strptime(str(first_week_raw).strip(), '%Y-%m-%d')
+                first_week_value = first_week_raw
+            except (TypeError, ValueError):
+                first_week_value = None
+
+        week_start_day = _safe_teaching_settings_int(
+            settings['week_start_day'], default=0, lower=0, upper=6
+        )
+        total_weeks = _safe_teaching_settings_int(
+            settings['total_weeks'], default=20, lower=1, upper=52
+        )
+        required_submission = _safe_teaching_settings_int(
+            settings['required_submission_count'], default=1, lower=0
+        )
+
         data = {
-            'first_week_monday': settings['first_week_monday'].value if settings['first_week_monday'] else None,
-            'week_start_day': int(settings['week_start_day'].value) if settings['week_start_day'] else 0,
-            'total_weeks': int(settings['total_weeks'].value) if settings['total_weeks'] else 20,
-            'required_submission_count': (
-                int(settings['required_submission_count'].value)
-                if settings['required_submission_count']
-                else 1
-            ),
-            'required_listening_count': (
-                int(settings['required_submission_count'].value)
-                if settings['required_submission_count']
-                else 1
-            ),
+            'first_week_monday': first_week_value,
+            'week_start_day': week_start_day,
+            'total_weeks': total_weeks,
+            'required_submission_count': required_submission,
+            'required_listening_count': required_submission,
             'check_dept_review': settings['check_dept_review'].value == 'true'
             if settings['check_dept_review']
             else False,
@@ -190,17 +225,55 @@ def get_teaching_settings():
 def update_teaching_settings():
     """更新听课制度设置"""
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({
+                'success': False,
+                'message': '请求数据格式错误',
+            }), 400
+
         required_fields = ['first_week_monday', 'total_weeks', 'required_submission_count']
         for field in required_fields:
             if field not in data:
                 return jsonify({'success': False, 'message': f'缺少必填字段: {field}'}), 400
 
+        first_week_raw = str(data['first_week_monday'] or '').strip()
+        if not first_week_raw:
+            return jsonify({'success': False, 'message': '第一周基准周一日期格式错误，应为YYYY-MM-DD'}), 400
+        try:
+            datetime.strptime(first_week_raw, '%Y-%m-%d')
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'message': '第一周基准周一日期格式错误，应为YYYY-MM-DD'}), 400
+
+        week_start_raw = data.get('week_start_day', 0)
+        week_start_day = _coerce_teaching_int(week_start_raw)
+        if week_start_day is None or week_start_day < 0 or week_start_day > 6:
+            return jsonify({
+                'success': False,
+                'message': '教学周起始日必须是0到6之间的整数',
+            }), 400
+
+        total_weeks_raw = data['total_weeks']
+        total_weeks = _coerce_teaching_int(total_weeks_raw)
+        if total_weeks is None or total_weeks < 1 or total_weeks > 52:
+            return jsonify({
+                'success': False,
+                'message': '总教学周数必须是1到52之间的整数',
+            }), 400
+
+        required_submission_raw = data['required_submission_count']
+        required_submission = _coerce_teaching_int(required_submission_raw)
+        if required_submission is None or required_submission < 0:
+            return jsonify({
+                'success': False,
+                'message': '需交表数必须是大于等于0的整数',
+            }), 400
+
         settings_map = {
-            'teaching_first_week_monday': str(data['first_week_monday']),
-            'teaching_week_start_day': str(data.get('week_start_day', 0)),
-            'teaching_total_weeks': str(data['total_weeks']),
-            'teaching_required_submission': str(data['required_submission_count']),
+            'teaching_first_week_monday': first_week_raw,
+            'teaching_week_start_day': str(week_start_day),
+            'teaching_total_weeks': str(total_weeks),
+            'teaching_required_submission': str(required_submission),
             'teaching_check_dept_review': 'true' if data.get('check_dept_review') else 'false',
             'teaching_check_center_review': 'true' if data.get('check_center_review') else 'false',
             'teaching_show_auto_review_details': 'true'

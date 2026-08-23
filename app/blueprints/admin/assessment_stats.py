@@ -252,21 +252,31 @@ def _get_teaching_reward_settings():
         required_submission = 1
     if required_submission < 0:
         required_submission = 0
+    try:
+        total_weeks = int(SystemSetting.get('teaching_total_weeks', '20') or 20)
+    except Exception:
+        total_weeks = 20
+    if total_weeks < 1 or total_weeks > 52:
+        total_weeks = 20
     return {
         'first_week_date': first_week_date,
         'week_start_day': week_start_day,
-        'required_submission': required_submission
+        'required_submission': required_submission,
+        'total_weeks': total_weeks
     }, None
 
 
-def _get_teaching_week_no(date_obj, first_week_date, week_start_day):
+def _get_teaching_week_no(date_obj, first_week_date, week_start_day, total_weeks=None):
     if not date_obj or not first_week_date:
         return None
     teaching_start = first_week_date - timedelta(days=(first_week_date.weekday() - week_start_day) % 7)
     diff = (date_obj - teaching_start).days
     if diff < 0:
         return None
-    return (diff // 7) + 1
+    week_no = (diff // 7) + 1
+    if total_weeks is not None and week_no > total_weeks:
+        return None
+    return week_no
 
 
 def _compute_teaching_week_window(start_date, end_date, first_week_date, week_start_day):
@@ -351,7 +361,8 @@ def _get_form_effective_week_no(form, reward_settings):
     week_no = _get_teaching_week_no(
         lecture_date,
         reward_settings['first_week_date'],
-        reward_settings['week_start_day']
+        reward_settings['week_start_day'],
+        reward_settings.get('total_weeks'),
     )
     if week_no is None:
         return None

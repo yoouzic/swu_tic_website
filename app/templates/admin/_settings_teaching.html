@@ -10,7 +10,7 @@
         <div class="activity-feedback activity-feedback--info" id="teachingSettingsFeedback" role="status" aria-live="polite" hidden></div>
         <form id="teachingSettingsForm">
             <div class="row g-3">
-                <div class="col-md-6"><label for="firstWeekMonday" class="form-label">第一周起始日期</label><input type="date" class="form-control" id="firstWeekMonday" name="first_week_monday" required><div class="form-text">该日期作为第一周的第一天。</div></div>
+                <div class="col-md-6"><label for="firstWeekMonday" class="form-label">第一周基准周一日期</label><input type="date" class="form-control" id="firstWeekMonday" name="first_week_monday" required><div class="form-text">用于确定第一教学周；实际教学周起点由“教学周起始日”决定。</div></div>
                 <div class="col-md-6"><label for="weekStartDay" class="form-label">教学周起始日</label><select class="form-select" id="weekStartDay" name="week_start_day" required><option value="0">周一</option><option value="1">周二</option><option value="2">周三</option><option value="3">周四</option><option value="4">周五</option><option value="5">周六</option><option value="6">周日</option></select></div>
                 <div class="col-md-6"><label for="totalWeeks" class="form-label">总教学周数</label><input type="number" class="form-control" id="totalWeeks" name="total_weeks" min="1" max="52" value="20" required></div>
                 <div class="col-md-6"><label for="requiredSubmission" class="form-label">每周需交表数量</label><input type="number" class="form-control" id="requiredSubmission" name="required_submission_count" min="0" value="1" required><div class="form-text">同时也是需听表单数量。</div></div>

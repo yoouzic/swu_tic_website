@@ -25,21 +25,35 @@ class TimeValidator:
 
     @classmethod
     def get_teaching_calendar_settings(cls) -> Tuple[Optional[datetime], int]:
-        try:
-            from ..models import SystemSetting
-            first_week_setting = SystemSetting.query.filter_by(key='teaching_first_week_monday').first()
-            week_start_setting = SystemSetting.query.filter_by(key='teaching_week_start_day').first()
-            first_week = None
-            if first_week_setting and first_week_setting.value:
+        from ..models import SystemSetting
+        first_week_setting = SystemSetting.query.filter_by(key='teaching_first_week_monday').first()
+        week_start_setting = SystemSetting.query.filter_by(key='teaching_week_start_day').first()
+
+        first_week = None
+        if first_week_setting and first_week_setting.value:
+            try:
                 first_week = datetime.strptime(first_week_setting.value, '%Y-%m-%d')
-            week_start_day = 0
-            if week_start_setting and week_start_setting.value is not None:
-                week_start_day = int(week_start_setting.value)
-            if week_start_day < 0 or week_start_day > 6:
-                week_start_day = 0
-            return first_week, week_start_day
-        except Exception:
-            return None, 0
+            except (TypeError, ValueError):
+                first_week = None
+
+        week_start_day = 0
+        if week_start_setting and week_start_setting.value is not None:
+            try:
+                parsed = int(week_start_setting.value)
+            except (TypeError, ValueError):
+                parsed = 0
+            week_start_day = parsed if 0 <= parsed <= 6 else 0
+        return first_week, week_start_day
+
+    @classmethod
+    def _get_total_weeks(cls) -> int:
+        from ..models import SystemSetting
+        try:
+            raw = SystemSetting.get('teaching_total_weeks', '20') or 20
+            parsed = int(raw)
+        except (TypeError, ValueError):
+            return 20
+        return parsed if 1 <= parsed <= 52 else 20
     
     @classmethod
     def parse_chinese_number(cls, chinese_str: str) -> Optional[int]:
@@ -127,15 +141,23 @@ class TimeValidator:
         try:
             if not semester_start:
                 semester_start, week_start_day = cls.get_teaching_calendar_settings()
+                total_weeks = cls._get_total_weeks()
             else:
+                # Explicit semester_start is treated as the reference Monday and
+                # keeps the legacy Monday-only behavior; total_weeks is not
+                # available from this argument and is not enforced.
                 week_start_day = 0
+                total_weeks = None
             if not semester_start:
+                return None
+            if total_weeks is not None and (week_num < 1 or week_num > total_weeks):
                 return None
             days_to_subtract = (semester_start.weekday() - week_start_day) % 7
             first_week_start = semester_start - timedelta(days=days_to_subtract)
             target_week_start = first_week_start + timedelta(weeks=week_num - 1)
-            weekday_index = weekday_num - 1
-            target_date = target_week_start + timedelta(days=weekday_index)
+            target_python_weekday = weekday_num - 1
+            offset = (target_python_weekday - week_start_day) % 7
+            target_date = target_week_start + timedelta(days=offset)
             
             return target_date
             
