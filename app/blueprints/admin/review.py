@@ -17,6 +17,11 @@ import json
 from . import admin_bp
 from .shared import _active_user_query, _build_review_form_filter_datetime, _get_form_latest_timestamp, _latest_form_groups_for_users, _normalize_review_form_time_filter, get_reviewer_display_mode
 from app.services.review_domain import is_form_in_review_scope, partition_forms_by_review_scope
+from app.services.review_mutation import (
+    REVIEW_EDITABLE_FIELD_LABELS,
+    append_review_modification_note,
+    collect_modified_fields,
+)
 
 
 def _serialize_audit_tag(audit_tag):
@@ -456,41 +461,18 @@ def submit_review(form_id):
             'updated_at': datetime.now()  # 更新时间为审核时间
         }
 
-        field_names = {
-            'listener_name': '听课人姓名',
-            'course_changes': '课程信息变化',
-            'lecture_date': '听课时间',
-            'class_period': '第几节',
-            'lecture_location': '听课地点',
-            'teacher_name': '授课教师',
-            'teacher_college': '教师所属学院',
-            'course_title': '课程总标题',
-            'student_grade_class': '专业年级',
-            'abnormal_situation': '异常情况反映',
-            'teaching_method': '主要教学方法',
-            'classroom_discipline': '管理课堂纪律',
-            'classroom_atmosphere': '调动课堂气氛',
-            'courseware_quality': '课件制作质量',
-            'overall_effect': '整体教学效果',
-            'quality_case': '优质案例推荐',
-            'course_feedback': '课程反馈',
-            'suggestions': '不足及建议',
-            'student_signature1': '听课班级同学签名1',
-            'contact_phone1': '联系电话1',
-            'student_signature2': '听课班级同学签名2',
-            'contact_phone2': '联系电话2'
-        }
-        modified_fields = []
-        for field, label in field_names.items():
-            new_value = new_form_data.get(field)
-            old_value = getattr(original_form, field, None)
-            if str(new_value or '') != str(old_value or ''):
-                modified_fields.append(label)
+        modified_fields = collect_modified_fields(
+            original_form,
+            new_form_data,
+            REVIEW_EDITABLE_FIELD_LABELS,
+        )
 
         if modified_fields:
             base_comment = (review_comment or '').strip() or '无'
-            modification_note = f"\n\n[系统记录] 审核人修改了以下字段：{', '.join(modified_fields)}"
-            new_form_data['review_comment'] = base_comment + modification_note
+            new_form_data['review_comment'] = append_review_modification_note(
+                base_comment,
+                modified_fields,
+            )
         
         target_form = None
         if latest_form.status == new_status:
@@ -1288,7 +1270,6 @@ def submit_form_review(form_id):
         form_data = data.get('form_data', {})
         
         # 检查表单数据是否有修改
-        modified_fields = []
         original_data = {
             'listener_name': original_form.listener_name,
             'course_changes': original_form.course_changes,
@@ -1313,36 +1294,15 @@ def submit_form_review(form_id):
             'student_signature2': original_form.student_signature2,
             'contact_phone2': original_form.contact_phone2
         }
-        
-        field_names = {
-            'listener_name': '听课人姓名',
-            'course_changes': '课程信息变化',
-            'lecture_date': '听课时间',
-            'class_period': '第几节',
-            'lecture_location': '听课地点',
-            'teacher_name': '授课教师',
-            'teacher_college': '教师所属学院',
-            'course_title': '课程总标题',
-            'student_grade_class': '专业年级',
-            'abnormal_situation': '异常情况反映',
-            'teaching_method': '主要教学方法',
-            'classroom_discipline': '管理课堂纪律',
-            'classroom_atmosphere': '调动课堂气氛',
-            'courseware_quality': '课件制作质量',
-            'overall_effect': '整体教学效果',
-            'quality_case': '优质案例推荐',
-            'course_feedback': '课程反馈',
-            'suggestions': '不足及建议',
-            'student_signature1': '听课班级同学签名1',
-            'contact_phone1': '联系电话1',
-            'student_signature2': '听课班级同学签名2',
-            'contact_phone2': '联系电话2'
+        candidate_values = {
+            field: form_data.get(field, original_value)
+            for field, original_value in original_data.items()
         }
-        
-        for field, original_value in original_data.items():
-            new_value = form_data.get(field, original_value)
-            if str(new_value or '') != str(original_value or ''):
-                modified_fields.append(field_names.get(field, field))
+        modified_fields = collect_modified_fields(
+            original_form,
+            candidate_values,
+            REVIEW_EDITABLE_FIELD_LABELS,
+        )
         
         # 处理听课时间（优先使用带星期几的显示格式）
         lecture_date = form_data.get('lecture_date_display') or form_data.get('lecture_date', original_form.lecture_date)
@@ -1466,8 +1426,10 @@ def submit_form_review(form_id):
         
         # 如果有修改字段，在审核意见后添加修改说明
         if modified_fields:
-            modification_note = f"\n\n[系统记录] 审核人修改了以下字段：{', '.join(modified_fields)}"
-            target_form.review_comment = (review_comment or '无') + modification_note
+            target_form.review_comment = append_review_modification_note(
+                review_comment or '无',
+                modified_fields,
+            )
 
         db.session.add(target_form)
         delete_review_form_draft(session['user_id'], form_id)
