@@ -18,7 +18,10 @@ except Exception:
 from flask import current_app
 
 from ..models import db, LectureForm, Teacher, Course, SystemSetting, User, ScoreRecord, ScoreItem
-from ..services.legacy_review_compat import resolve_legacy_semester_monday
+from ..services.legacy_review_compat import (
+    get_legacy_review_week_no,
+    resolve_legacy_semester_monday,
+)
 from .audit_tags import is_auto_review_allowed
 from .env_config import env_path
 from .time_validator import TimeValidator
@@ -125,6 +128,7 @@ class AutoReviewEngine:
         self.contacts_df = _read_excel(self.contacts_path)
         self.feedback_df = _read_excel(self.feedback_path, sheet_name='反馈表')
         
+        self._explicit_semester_monday = semester_monday or None
         self.semester_monday_str = semester_monday or resolve_legacy_semester_monday()
         self.semester_monday = None
         if self.semester_monday_str:
@@ -417,12 +421,14 @@ class AutoReviewEngine:
         }
 
     def _compute_week_from_date(self, d: datetime.date) -> Optional[int]:
-        if not self.semester_monday:
-            return None
-        delta_days = (d - self.semester_monday).days
-        if delta_days < 0:
-            return None
-        return (delta_days // 7) + 1
+        if self._explicit_semester_monday:
+            if not self.semester_monday:
+                return None
+            delta_days = (d - self.semester_monday).days
+            if delta_days < 0:
+                return None
+            return (delta_days // 7) + 1
+        return get_legacy_review_week_no(d)
 
     def _validate_reviewer_identity(self, form_like: Any, issues: List[str], fixes: List[str]) -> Optional[Dict[str, Any]]:
         """验证反馈人身份信息"""
