@@ -20,7 +20,11 @@
             </button>
             <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="appUserMenuToggle">
                 <li><a class="dropdown-item" href="{{ url_for('user.profile') }}"><i class="bi bi-person" aria-hidden="true"></i>个人资料</a></li>
-                <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right" aria-hidden="true"></i>退出登录</a></li>
+                <li>
+                    <form method="post" action="{{ url_for('auth.logout') }}" class="d-flex">
+                        <button type="submit" class="dropdown-item"><i class="bi bi-box-arrow-right" aria-hidden="true"></i>退出登录</button>
+                    </form>
+                </li>
             </ul>
         </div>
     </div>

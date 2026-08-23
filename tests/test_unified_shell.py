@@ -77,7 +77,8 @@ class UnifiedShellTest(unittest.TestCase):
         self.assertEqual(template.count("url_for('user.profile')"), 1)
         self.assertEqual(template.count("url_for('auth.logout')"), 1)
         self.assertIn('>个人资料</a>', template)
-        self.assertIn('>退出登录</a>', template)
+        self.assertIn('>退出登录</button>', template)
+        self.assertIn('method="post" action="{{ url_for(\'auth.logout\') }}"', template)
 
     def test_user_dropdown_name_collapses_to_icon_on_small_screens(self):
         css = Path('app/static/css/style.css').read_text(encoding='utf-8')

@@ -116,16 +116,49 @@ def view_sample():
     return send_file(template_path, as_attachment=False)
 
 
+def _safe_export_filename(filename):
+    """Validate a generated export filename without breaking Chinese contact names."""
+    if not isinstance(filename, str) or not filename:
+        return None
+    # 拒绝任何路径分隔符、父目录、绝对/驱动器路径和 Windows ADS 冒号。
+    if '/' in filename or '\\' in filename:
+        return None
+    if filename != os.path.basename(filename):
+        return None
+    if '..' in filename or ':' in filename:
+        return None
+    if any(ord(ch) < 32 for ch in filename):
+        return None
+    if not filename.lower().endswith('.xlsx'):
+        return None
+    return filename
+
+
+def _export_file_within_root(export_dir, filename):
+    """Return the realpath if candidate is safely inside export_dir, else None."""
+    export_real = os.path.realpath(export_dir)
+    candidate_real = os.path.realpath(os.path.join(export_real, filename))
+    try:
+        inside = os.path.commonpath([export_real, candidate_real]) == export_real
+    except ValueError:
+        return None
+    return candidate_real if inside else None
+
+
 @admin_bp.route('/download_passwords/<filename>')
 @role_required('超级管理员')
 def download_passwords(filename):
     """下载密码文件"""
-    file_path = os.path.join(env_path('EXPORT_DIR', DEFAULT_EXPORT_DIR), filename)
-    if os.path.exists(file_path):
-        return send_file(file_path, as_attachment=True)
-    else:
+    safe_filename = _safe_export_filename(filename)
+    if safe_filename is None:
         flash('文件不存在', 'error')
         return redirect(url_for('admin.super_admin_dashboard'))
+    export_dir = env_path('EXPORT_DIR', DEFAULT_EXPORT_DIR)
+    file_path = _export_file_within_root(export_dir, safe_filename)
+    if file_path and os.path.isfile(file_path):
+        return send_file(file_path, as_attachment=True)
+    flash('文件不存在', 'error')
+    return redirect(url_for('admin.super_admin_dashboard'))
 
 
 @admin_bp.route('/auto_review')
@@ -1487,6 +1520,19 @@ def preview_import():
     except Exception as e:
         return jsonify({'success': False, 'message': f'预览失败：{str(e)}'}), 500
 
+
+def _resolve_group_id_for_import(user):
+    """Resolve/create the department scoped Group and fill user.group_id."""
+    if not user.department or not user.group or user.group in ('待分配', UNASSIGNED_GROUP_NAME):
+        return None
+    group = Group.query.filter_by(name=user.group, department=user.department).first()
+    if group is None:
+        group = Group(name=user.group, department=user.department)
+        db.session.add(group)
+        db.session.flush()
+    return group.id
+
+
 @admin_bp.route('/confirm_import', methods=['POST'])
 @role_required('超级管理员')
 def confirm_import():
@@ -1532,12 +1578,13 @@ def confirm_import():
                 user.qq = r['qq']
                 user.role = r['role']
                 user.group = r['group']
-                # 保障部门/小组存在
+                # 保障部门/小组存在，并同步真实 group_id
                 if user.department and not Department.query.filter_by(name=user.department).first():
                     db.session.add(Department(name=user.department))
                 if user.group and user.department:
                     if not Group.query.filter_by(name=user.group, department=user.department).first() and user.group not in ['待分配', UNASSIGNED_GROUP_NAME]:
                         db.session.add(Group(name=user.group, department=user.department))
+                user.group_id = _resolve_group_id_for_import(user)
                 password = generate_random_password()
                 user.password_hash = generate_password_hash(password)
                 record_password_audit(
@@ -1574,12 +1621,13 @@ def confirm_import():
                     user.student_id = r['student_id']
                     user.role = r['role']
                     user.group = r['group']
-                    # 保障部门/小组存在
+                    # 保障部门/小组存在，并同步真实 group_id
                     if user.department and not Department.query.filter_by(name=user.department).first():
                         db.session.add(Department(name=user.department))
                     if user.group and user.department:
                         if not Group.query.filter_by(name=user.group, department=user.department).first() and user.group not in ['待分配', UNASSIGNED_GROUP_NAME]:
                             db.session.add(Group(name=user.group, department=user.department))
+                    user.group_id = _resolve_group_id_for_import(user)
                     password = generate_random_password()
                     user.password_hash = generate_password_hash(password)
                     record_password_audit(
@@ -1622,6 +1670,7 @@ def confirm_import():
                             db.session.add(Group(name=user.group, department=user.department))
                     db.session.add(user)
                     db.session.flush()
+                    user.group_id = _resolve_group_id_for_import(user)
                     record_password_audit(
                         actor_user_id=actor_user_id,
                         target_user_id=user.id,
@@ -1739,7 +1788,10 @@ def view_forms():
         base_query = base_query.filter(LectureForm.lecture_date.contains(date_filter))
     
     if status_filter:
-        base_query = base_query.filter(LectureForm.status == status_filter)
+        if status_filter == '已审核':
+            base_query = base_query.filter(LectureForm.status.in_(['已审核', '部门已审核', '中心已审核']))
+        else:
+            base_query = base_query.filter(LectureForm.status == status_filter)
     
     # 获取所有符合条件的表单，按unique_id分组
     all_forms = base_query.order_by(LectureForm.unique_id, LectureForm.updated_at.desc()).all()
@@ -1802,9 +1854,20 @@ def view_forms():
                     yield num
     
     forms = Pagination(page, per_page, total, page_forms)
-    
+
+    def page_url(target_page):
+        args = request.args.to_dict(flat=True)
+        args['page'] = target_page
+        return url_for('admin.view_forms', **args)
+
     reviewer_display_mode = get_reviewer_display_mode()
-    return render_template('admin/view_forms.html', forms=forms, user=user, reviewer_display_mode=reviewer_display_mode)
+    return render_template(
+        'admin/view_forms.html',
+        forms=forms,
+        user=user,
+        reviewer_display_mode=reviewer_display_mode,
+        page_url=page_url,
+    )
 
 @admin_bp.route('/import_forms_excel')
 @role_required('超级管理员')
@@ -2074,9 +2137,10 @@ def reject_form_review(form_id):
         if 'user_id' not in session:
             return jsonify({'success': False, 'message': '请先登录'}), 401
         
-        # 允许所有管理员驳回，或者检查审表权限
+        # 驳回必须拥有实际审核权限，不能仅凭“管理员角色”放行。
         user = User.query.get(session['user_id'])
-        if user.role not in ['管理员', '超级管理员'] and not get_user_review_permission(user.id):
+        permission = get_user_review_permission(user.id)
+        if not permission:
              return jsonify({
                  'success': False,
                  'message': build_forbidden_message(
@@ -2088,22 +2152,38 @@ def reject_form_review(form_id):
 
         original_form = LectureForm.query.get_or_404(form_id)
         
-        # 获取最新版本
+        # 获取最新版本；历史数据 unique_id 为空时回退到原始记录本身。
         unique_id = original_form.unique_id or original_form.id
-        latest_form = LectureForm.query.filter_by(unique_id=unique_id).order_by(LectureForm.id.desc()).first()
+        latest_form = LectureForm.query.filter_by(unique_id=unique_id).order_by(LectureForm.id.desc()).first() or original_form
         
         # 校验：确保操作的是最新版本
         if latest_form and latest_form.id != original_form.id:
             return jsonify({'success': False, 'message': '该表单已有更新版本，请刷新页面后操作'}), 400
         
-        # 检查可见性权限
+        # 对象级授权：目标表单主人必须属于当前账号的可审核范围，不存在时 fail-closed。
         reviewable_user_ids = get_reviewable_users(session['user_id'])
         form_user = _active_user_query().filter_by(number=original_form.listener_number).first()
+        if not form_user or form_user.id not in reviewable_user_ids:
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '表单审核',
+                     '该表单不在当前审核范围内。',
+                     action='驳回',
+                 ),
+             }), 403
         
-        if user.role != '超级管理员':
-            if not form_user or form_user.id not in reviewable_user_ids:
-                if not get_user_review_permission(user.id):
-                     return forbidden_json('表单审核', '该表单不在当前审核范围内。', action='操作')
+        # 阶段授权：驳回只能作用于当前审核级别允许处理的表单状态。
+        # 已驳回记录的“更新驳回意见”属于既有兼容分支，不在常规状态推进检查中拒绝。
+        if latest_form.status != '已驳回' and not can_review_status(user.id, latest_form.status):
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '表单审核',
+                    '当前账号没有驳回该状态表单的权限。',
+                    action='驳回',
+                ),
+            }), 403
 
         data = request.get_json()
         reason = data.get('reason', '')
@@ -2208,6 +2288,19 @@ def submit_review(form_id):
         if not original_form:
             return jsonify({'success': False, 'message': '表单不存在'})
         
+        # 校验目标表单所有者是否在当前账号可审核范围内（对象级授权，绝不能只依赖状态/权限）
+        reviewable_user_ids = get_reviewable_users(session['user_id'])
+        form_user = _active_user_query().filter_by(number=original_form.listener_number).first()
+        if not form_user or form_user.id not in reviewable_user_ids:
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '表单审核',
+                    '该表单不在当前审核范围内。',
+                    action='审核',
+                ),
+            }), 403
+
         # 检查是否可以审核该状态的表单
         if not can_review_status(session['user_id'], original_form.status):
             return jsonify({
@@ -2244,9 +2337,9 @@ def submit_review(form_id):
         course_changes_raw = (form_data.get('course_changes') or '').strip()
         resolved_course_changes = course_changes_raw or (original_form.course_changes or '无')
         
-        # 获取最新版本
+        # 获取最新版本；历史数据 unique_id 为空且尚无版本时回退到原记录本身。
         unique_id = original_form.unique_id or original_form.id
-        latest_form = LectureForm.query.filter_by(unique_id=unique_id).order_by(LectureForm.id.desc()).first()
+        latest_form = LectureForm.query.filter_by(unique_id=unique_id).order_by(LectureForm.id.desc()).first() or original_form
         
         # 校验：确保操作的是最新版本
         if latest_form and latest_form.id != original_form.id:
@@ -2257,7 +2350,8 @@ def submit_review(form_id):
             'unique_id': unique_id,
             'audit_tag': original_form.audit_tag,
             'listener_name': form_data.get('listener_name'),
-            'listener_number': form_data.get('listener_number'),
+            # 表单所有者身份以服务端原始记录为准，禁止客户端重指定
+            'listener_number': original_form.listener_number,
             'course_changes': resolved_course_changes,
             'lecture_date': form_data.get('lecture_date'),
             'class_period': form_data.get('class_period'),
@@ -2639,7 +2733,11 @@ def get_review_statistics():
         current_user = User.query.get(session['user_id'])
         query = _active_user_query().filter(User.role.in_(['信息员', '管理员']))
         if permission == '审表_小组':
-            query = query.filter(User.group_id == current_user.group_id)
+            group_scope_ids = get_reviewable_users(session['user_id'])
+            if group_scope_ids:
+                query = query.filter(User.id.in_(group_scope_ids))
+            else:
+                query = query.filter(db.text('1=0'))
         elif permission == '审表_部门':
             query = query.filter(User.department == current_user.department)
         users = [u for u in query.all() if u.id != current_user.id]
@@ -4738,6 +4836,67 @@ def validate_schedule_format():
     except Exception as e:
         return jsonify({'success': False, 'message': f'验证失败：{str(e)}'})
 
+_SCHEDULE_COURSE_KEY_FIELDS = (
+    'course_code', 'selection_code', 'start_week', 'weekday', 'class_period',
+    'course_name', 'venue_start_week', 'venue_class_period', 'class_size',
+    'class_composition', 'credits', 'total_hours', 'offering_college',
+    'major_composition', 'enrollment_count', 'weekly_hours', 'class_time',
+    'class_location', 'course_nature', 'teacher_id', 'venue_id', 'semester',
+    'academic_year',
+)
+
+_SCHEDULE_ROW_COLUMNS = {
+    'course_code': '课程号',
+    'selection_code': '选课课号',
+    'start_week': '起始周',
+    'weekday': '星期几',
+    'class_period': '上课节次',
+    'course_name': '课程名称',
+    'venue_start_week': '场地上课起始周',
+    'venue_class_period': '场地上课节次',
+    'class_size': '教学班人数',
+    'class_composition': '教学班组成',
+    'credits': '学分',
+    'total_hours': '总学时',
+    'offering_college': '开课学院',
+    'major_composition': '专业组成',
+    'enrollment_count': '选课人数',
+    'weekly_hours': '周学时',
+    'class_time': '上课时间',
+    'class_location': '上课地点',
+    'course_nature': '课程性质',
+    'teacher_id': '教工号',
+    'venue_id': '场地编号',
+    'semester': '学期',
+    'academic_year': '学年',
+}
+
+
+def _normalized_schedule_value(value):
+    if value is None:
+        return ''
+    if hasattr(value, 'isoformat'):
+        return value.isoformat()
+    # Normalize integral numeric values consistently between Excel rows and ORM columns.
+    from numbers import Real
+    if isinstance(value, Real) and not isinstance(value, bool):
+        number = float(value)
+        return str(int(number)) if number.is_integer() else str(number)
+    text = str(value).strip()
+    return '' if text.lower() == 'nan' else text
+
+
+def _course_row_key(row):
+    return tuple(
+        _normalized_schedule_value(row.get(_SCHEDULE_ROW_COLUMNS[field]))
+        for field in _SCHEDULE_COURSE_KEY_FIELDS
+    )
+
+
+def _course_model_key(course):
+    return tuple(_normalized_schedule_value(getattr(course, field, None)) for field in _SCHEDULE_COURSE_KEY_FIELDS)
+
+
 @admin_bp.route('/api/schedule/import', methods=['POST'])
 @role_required('超级管理员')
 def import_schedule_data():
@@ -4754,7 +4913,10 @@ def import_schedule_data():
         validation_result = validate_schedule_format()
         if not validation_result.get_json().get('success'):
             return validation_result
-        
+
+        # validate_schedule_format 已消费文件流，必须回绕后再次读取。
+        file.seek(0)
+
         # 读取文件
         df = pd.read_excel(file)
         
@@ -4766,6 +4928,7 @@ def import_schedule_data():
             'venues_added': 0,
             'venues_updated': 0,
             'courses_added': 0,
+            'courses_skipped_duplicate': 0,
             'errors': []
         }
         
@@ -4829,7 +4992,8 @@ def import_schedule_data():
             except Exception as e:
                 stats['errors'].append(f"处理场地数据时出错（场地编号：{row['场地编号']}）：{str(e)}")
         
-        # 处理课程数据 - 保留所有记录，不再合并相同课程号和选课课号的记录
+        # 处理课程数据 - 使用完整自然键幂等插入，保留不同节次/地点/周次的合法课程记录。
+        existing_course_keys = {_course_model_key(course) for course in Course.query.all()}
         for _, row in df.iterrows():
             try:
                 course_code = str(row['课程号']).strip()
@@ -4866,7 +5030,12 @@ def import_schedule_data():
                     semester=str(row['学期']) if pd.notna(row['学期']) else None,
                     academic_year=str(row['学年']).strip() if pd.notna(row['学年']) else None
                 )
+                course_key = _course_row_key(row)
+                if course_key in existing_course_keys:
+                    stats['courses_skipped_duplicate'] += 1
+                    continue
                 db.session.add(course)
+                existing_course_keys.add(course_key)
                 stats['courses_added'] += 1
                     
             except Exception as e:
@@ -5177,6 +5346,16 @@ def update_department(dept_id):
                          action='修改',
                      ),
                  }), 403
+            # 小组级管理权限不能修改部门级元数据/负责人。
+            if manage_permission != '管理部门':
+                return jsonify({
+                    'success': False,
+                    'message': build_forbidden_message(
+                        '人员与部门',
+                        '仅部门级及以上的管理权限可以修改部门信息。',
+                        action='修改',
+                    ),
+                }), 403
         
         data = request.get_json()
         
@@ -5226,12 +5405,19 @@ def update_department(dept_id):
                 if not manager_user or not is_user_active(manager_user):
                     return jsonify({'success': False, 'message': '指定的负责人不存在'}), 400
                 
-                # 检查负责人是否属于该部门
+                # 检查负责人是否属于该部门；非超管不得自动跨部门迁移人员。
                 if manager_user.department != new_name: # new_name 是更新后的部门名
-                     # 自动将负责人分配至该部门
+                     if manage_permission != '超级管理员':
+                         return jsonify({
+                             'success': False,
+                             'message': build_forbidden_message(
+                                 '人员与部门',
+                                 '指定的负责人不属于该部门，不能自动跨部门迁移。',
+                                 action='修改',
+                             ),
+                         }), 400
+                     # 超级管理员保留既有自动分配兼容行为
                      manager_user.department = new_name
-                     # 如果之前有小组且小组不属于新部门，则清除小组（或保持不变，视业务逻辑而定）
-                     # 简单起见，如果部门变了，小组关联也应该重置，除非小组也迁移了
                      if manager_user.group_id:
                          group = Group.query.get(manager_user.group_id)
                          if group and group.department != new_name:
@@ -6160,12 +6346,13 @@ def delete_form(form_id):
     """删除单个表单版本"""
     try:
         permission = get_user_review_permission(session['user_id'])
-        if not permission:
+        # 删除是破坏性管理动作：仅中心级审核权限/超级管理员允许，后端独立强制。
+        if permission != '审表_中心':
             return jsonify({
                 'success': False,
                 'message': build_forbidden_message(
                     '表单审核',
-                    '当前账号没有审核权限。',
+                    '当前账号没有删除表单的权限。',
                     action='删除',
                 ),
             }), 403
@@ -6211,12 +6398,13 @@ def delete_form_group(group_id):
     """删除整个表单组及关联数据"""
     try:
         permission = get_user_review_permission(session['user_id'])
-        if not permission:
+        # 删除表单组会连带清理预约/评分，必须由中心级审核权限/超级管理员执行。
+        if permission != '审表_中心':
             return jsonify({
                 'success': False,
                 'message': build_forbidden_message(
                     '表单审核',
-                    '当前账号没有审核权限。',
+                    '当前账号没有删除表单组的权限。',
                     action='删除',
                 ),
             }), 403
@@ -6836,6 +7024,50 @@ def update_user_permissions(user_id):
         data = request.get_json()
         permission_ids = data.get('permission_ids', [])
         
+        # 非超级管理员只能授予自身拥有的、且不高于自身级别的权限。
+        if manage_permission != '超级管理员':
+            current_review = get_user_review_permission(current_user.id)
+            review_rank = {'审表_小组': 1, '审表_部门': 2, '审表_中心': 3}
+            current_review_rank = review_rank.get(current_review, 0)
+            for perm_id in permission_ids:
+                permission = Permission.query.get(perm_id)
+                if permission is None:
+                    continue
+                name = permission.name
+                if name in ('管理部门', '超级管理员'):
+                    return jsonify({
+                        'success': False,
+                        'message': build_forbidden_message(
+                            '权限管理',
+                            '不能授予高于自身级别或系统保留的管理权限。',
+                            action='授予',
+                        ),
+                    }), 403
+                if name == '管理部门小组':
+                    # 管理部门级管理员可以下放小组管理权；已通过上方管理权限门槛。
+                    continue
+                if name in review_rank:
+                    if current_review_rank < review_rank[name]:
+                        return jsonify({
+                            'success': False,
+                            'message': build_forbidden_message(
+                                '权限管理',
+                                '不能授予高于自身的审核权限。',
+                                action='授予',
+                            ),
+                        }), 403
+                    continue
+                if name != '填表':
+                    # 拒绝未知/自定义权限名绕过的可能性。
+                    return jsonify({
+                        'success': False,
+                        'message': build_forbidden_message(
+                            '权限管理',
+                            '无权授予该权限。',
+                            action='授予',
+                        ),
+                    }), 403
+
         # 删除用户现有的自定义权限（如果有特殊角色权限）
         RolePermission.query.filter_by(role=f'特殊角色_{user.id}').delete()
         
@@ -6843,10 +7075,6 @@ def update_user_permissions(user_id):
         for perm_id in permission_ids:
             permission = Permission.query.get(perm_id)
             if permission:
-                # "管理部门"权限不能赋予"管理部门"或"超级管理员"权限，防止权限提升
-                if manage_permission != '超级管理员' and (permission.name == '管理部门' or permission.name == '超级管理员'):
-                    continue
-                    
                 role_perm = RolePermission(role=f'特殊角色_{user.id}', permission_id=perm_id)
                 db.session.add(role_perm)
         

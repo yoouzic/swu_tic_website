@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from flask_wtf.csrf import CSRFError, CSRFProtect
 from datetime import datetime
 import os
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -39,6 +40,30 @@ app.config['UPLOAD_FOLDER'] = env_path('UPLOAD_FOLDER', DEFAULT_UPLOAD_FOLDER)
 MAX_CONTENT_LENGTH_MB = env_int('MAX_CONTENT_LENGTH_MB', 16, minimum=1)
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH_MB * 1024 * 1024  # 可通过环境变量调整上传大小
 app.config['DEBUG'] = env_bool('FLASK_DEBUG', False)
+
+# Session / cookie hardening
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = env_bool('SESSION_COOKIE_SECURE', is_production())
+
+# CSRF protection: enabled by default; tests may disable explicitly in TEST config.
+app.config['WTF_CSRF_ENABLED'] = True
+app.config['WTF_CSRF_TIME_LIMIT'] = None
+app.config['WTF_CSRF_HEADERS'] = ['X-CSRFToken', 'X-CSRF-Token']
+csrf = CSRFProtect(app)
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(error):
+    """Return JSON for API/fetch CSRF failures; keep normal pages safe and simple."""
+    if request.path.startswith('/admin/api/') or request.is_json:
+        return jsonify({
+            'success': False,
+            'code': 'csrf_failed',
+            'message': '请求校验失败，请刷新页面后重试。',
+        }), 400
+    return ('请求校验失败，请刷新页面后重试。', 400)
+
 
 # Automated review runtime. The API key remains private application config
 # and is intentionally excluded from AUTOMATION_PUBLIC_CONFIG.

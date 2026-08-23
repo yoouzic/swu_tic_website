@@ -474,20 +474,20 @@ function renderUserList(users, type) {
                 <h2 class="accordion-header" id="${headingId}">
                     <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}">
                         <div class="d-flex justify-content-between w-100 align-items-center">
-                            <span>${user.name} <small class="text-muted">(${user.number})</small></span>
-                            <span class="badge bg-secondary rounded-pill me-2">${user.submitted_count}/${user.required_count}</span>
+                            <span>${escapeHtml(user.name)} <small class="text-muted">(${escapeHtml(user.number)})</small></span>
+                            <span class="badge bg-secondary rounded-pill me-2">${escapeHtml(user.submitted_count)}/${escapeHtml(user.required_count)}</span>
                         </div>
                     </button>
                 </h2>
                 <div id="${collapseId}" class="accordion-collapse collapse" data-bs-parent="#${type}Accordion">
                     <div class="accordion-body py-2">
-                        <div class="small text-muted mb-1">所属：${user.department} - ${user.group}</div>
+                        <div class="small text-muted mb-1">所属：${escapeHtml(user.department)} - ${escapeHtml(user.group)}</div>
                         ${statusBars}
                         <div class="mt-2 small">
                             ${user.forms.map(f => `
                                 <div class="d-flex justify-content-between border-bottom py-1">
-                                    <span>${f.date} ${f.period}</span>
-                                    <span class="badge ${getStatusBadgeClass(f.status)}">${f.status}</span>
+                                    <span>${escapeHtml(f.date)} ${escapeHtml(f.period)}</span>
+                                    <span class="badge ${getStatusBadgeClass(f.status)}">${escapeHtml(f.status)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -699,6 +699,14 @@ function escapeAttrValue(value) {
     return String(value || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
 
+function localDateString(date) {
+    const d = date instanceof Date ? date : new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 function escapeHtml(value) {
     return String(value || '')
         .replace(/&/g, '&amp;')
@@ -790,8 +798,8 @@ function checkPermission() {
                 const endDate = new Date();
                 const startDate = new Date();
                 startDate.setDate(endDate.getDate() - 7);
-                document.getElementById('startDate').value = queueParams.get('start_date') || startDate.toISOString().split('T')[0];
-                document.getElementById('endDate').value = queueParams.get('end_date') || endDate.toISOString().split('T')[0];
+                document.getElementById('startDate').value = queueParams.get('start_date') || localDateString(startDate);
+                document.getElementById('endDate').value = queueParams.get('end_date') || localDateString(endDate);
                 document.getElementById('timeFilterType').value = queueParams.get('time_filter_type') || 'created';
                 document.getElementById('statusFilter').value = queueParams.get('status') || '';
                 document.getElementById('riskFilter').value = queueParams.get('risk') || '';
@@ -816,6 +824,12 @@ function checkPermission() {
 function restoreReviewQueueUserSelection() {
     const requestedIds = new Set(new URLSearchParams(window.location.search).getAll('user_ids'));
     if (requestedIds.size === 0) {
+        // 新查询且没有显式 user selection：默认选择当前允许范围内的全部可审核用户。
+        const checkboxes = Array.from(document.querySelectorAll('#userStructure .user-checkbox'));
+        checkboxes.forEach((checkbox) => {
+            checkbox.checked = true;
+        });
+        selectedUserIds = checkboxes.map((checkbox) => checkbox.value);
         return;
     }
     document.querySelectorAll('#userStructure .user-checkbox').forEach((checkbox) => {
@@ -967,7 +981,7 @@ function renderUserStructure() {
                              style="cursor: pointer;" 
                              data-bs-toggle="collapse" 
                              data-bs-target="#deptCollapse${deptIndex}">
-                            <span><strong><i class="bi bi-building me-1"></i> ${deptName}</strong></span>
+                            <span><strong><i class="bi bi-building me-1"></i> ${escapeHtml(deptName)}</strong></span>
                             <i class="bi bi-chevron-down text-muted"></i>
                         </div>
                     </div>
@@ -992,8 +1006,8 @@ function renderUserStructure() {
                                  data-bs-toggle="collapse" 
                                  data-bs-target="#groupCollapse${groupId}">
                                 <span>
-                                    <i class="bi bi-people me-1"></i> ${groupName}
-                                    <span class="badge bg-secondary ms-2">${departments[deptName][groupName].length}人</span>
+                                    <i class="bi bi-people me-1"></i> ${escapeHtml(groupName)}
+                                    <span class="badge bg-secondary ms-2">${escapeHtml(departments[deptName][groupName].length)}人</span>
                                 </span>
                                 <i class="bi bi-chevron-down text-muted"></i>
                             </div>
@@ -1009,7 +1023,7 @@ function renderUserStructure() {
                             <input class="form-check-input user-checkbox group-${groupId}" type="checkbox" 
                                    id="user_${user.id}" value="${user.id}">
                             <label class="form-check-label" for="user_${user.id}">
-                                ${user.name} (${user.number})
+                                ${escapeHtml(user.name)} (${escapeHtml(user.number)})
                             </label>
                         </div>
                     `;
@@ -1324,7 +1338,10 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                         <span class="badge ${getStatusClass(latestForm.status)}">${escapeHtml(latestForm.status || '-')}</span>
                         <span class="badge ${getAutomationCategoryClass(automationCategory)}" data-automation-category>${escapeHtml(automationCategory)}</span>
                         <span class="badge ${getAutomationCoverageClass(automationCoverage)}" data-automation-coverage="${automationCoverage}">课表${getAutomationCoverageLabel(automationCoverage)}</span>
-                        <span class="badge bg-light text-dark">${forms.length} 个版本</span>
+                        <button type="button" class="badge bg-light text-dark border-0"
+                                onclick="toggleVersions('${groupCollapseId}', '${chevronId}')"
+                                aria-expanded="false" aria-controls="${groupCollapseId}"
+                                aria-label="展开或收起 ${escapeHtml(forms.length)} 个版本">${escapeHtml(forms.length)} 个版本</button>
                     </div>
                 </div>
                 <div class="review-item__action-cell">
@@ -1404,7 +1421,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                                                         <td><span class="badge ${getStatusClass(version.status)}">${version.status || '-'}</span></td>
                                                         <td>${version.updated_at || version.created_at || '-'}</td>
                                                         <td>${version.reviewer_display || '-'}</td>
-                                                        <td><span title="${version.review_comment || ''}">${(version.review_comment || '-').length > 24 ? version.review_comment.substring(0, 24) + '...' : (version.review_comment || '-')}</span></td>
+                                                        <td><span title="${escapeHtml(version.review_comment || '')}">${escapeHtml((version.review_comment || '-').length > 24 ? version.review_comment.substring(0, 24) + '...' : (version.review_comment || '-'))}</span></td>
                                                         <td>
                                                             <div class="btn-group">
                                                                 <button class="btn btn-outline-secondary btn-sm" onclick="viewForm(${version.id})" title="查看此版本">
@@ -2022,9 +2039,9 @@ function showAutoReviewDecision(stats, formIds, button) {
     renderAutomationBatchPreview(stats);
     ack.checked = false;
     startButton.disabled = true;
-    ack.addEventListener('change', () => {
+    ack.onchange = () => {
         startButton.disabled = !(ack.checked === true);
-    });
+    };
     startButton.onclick = () => {
         const transferAck = ack.checked === true;
         if (!transferAck) {
@@ -2221,8 +2238,8 @@ function resetFilters() {
     const startDate = new Date();
     startDate.setDate(endDate.getDate() - 7);
     
-    document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
-    document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+    document.getElementById('startDate').value = localDateString(startDate);
+    document.getElementById('endDate').value = localDateString(endDate);
     document.getElementById('statusFilter').value = '';
     document.getElementById('riskFilter').value = '';
     document.getElementById('timeFilterType').value = 'created';

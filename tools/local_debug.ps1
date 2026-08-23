@@ -63,9 +63,13 @@ function Resolve-PythonCommand {
         $candidates += [pscustomobject]@{ Exe = $override; Prefix = @() }
     }
     $localVenv = Join-Path $RepoRoot '.venv\Scripts\python.exe'
+    $auditVenv = Join-Path $RepoRoot '.venv-audit\Scripts\python.exe'
     $siblingVenv = Join-Path (Split-Path $RepoRoot -Parent) 'SWU_TIC-main\.venv\Scripts\python.exe'
     if (Test-Path -LiteralPath $localVenv) {
         $candidates += [pscustomobject]@{ Exe = $localVenv; Prefix = @() }
+    }
+    if (Test-Path -LiteralPath $auditVenv) {
+        $candidates += [pscustomobject]@{ Exe = $auditVenv; Prefix = @() }
     }
     if (Test-Path -LiteralPath $siblingVenv) {
         $candidates += [pscustomobject]@{ Exe = $siblingVenv; Prefix = @() }
@@ -77,7 +81,7 @@ function Resolve-PythonCommand {
         $candidates += [pscustomobject]@{ Exe = 'python'; Prefix = @() }
     }
     foreach ($candidate in $candidates) {
-        & $candidate.Exe @($candidate.Prefix) -c 'import flask, flask_sqlalchemy, werkzeug' 2>$null
+        & $candidate.Exe @($candidate.Prefix) -c 'import flask, flask_sqlalchemy, werkzeug, flask_wtf' 2>$null
         if ($LASTEXITCODE -eq 0) { return $candidate }
     }
     throw 'No Python interpreter with project dependencies was found. Install requirements.txt first.'

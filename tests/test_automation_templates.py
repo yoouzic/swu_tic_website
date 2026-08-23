@@ -366,7 +366,7 @@ setTimeout(() => {
         start_flow = template[start_start:start_end]
 
         self.assertIn('startButton.disabled = true;', show_flow)
-        self.assertIn("ack.addEventListener('change'", show_flow)
+        self.assertIn('ack.onchange', show_flow)
         self.assertIn('ack.checked === true', show_flow)
         self.assertRegex(show_flow, r'if\s*\(!transferAck\)\s*\{')
         self.assertLess(show_flow.index('if (!transferAck)'), show_flow.index('.hide()'))

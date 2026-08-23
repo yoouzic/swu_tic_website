@@ -381,7 +381,8 @@ class CourseRegistration(db.Model):
     
     is_used = db.Column(db.Boolean, default=False)  # 是否已被用于填写表单
     
-    created_at = db.Column(db.DateTime, server_default=db.func.current_timestamp())
+    # 与业务侧 datetime.now 语义保持一致；存量 UTC 数据由一次性迁移脚本处理。
+    created_at = db.Column(db.DateTime, default=datetime.now)
     
     user = db.relationship('User', backref='registrations')
     

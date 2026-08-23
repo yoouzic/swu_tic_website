@@ -68,9 +68,9 @@
                             <i class="bi bi-file-earmark-text"></i> 查看表单
                         </a>
                         {% if user.role == '超级管理员' %}
-                            <a href="{{ url_for('admin.preview_import') }}" class="btn btn-warning btn-sm" onclick="return false;">
+                            <span class="btn btn-warning btn-sm disabled" aria-disabled="true" role="button">
                                 <i class="bi bi-upload"></i> 导入用户 (请在部门管理中操作)
-                            </a>
+                            </span>
                         {% endif %}
                     </div>
                 {% endif %}

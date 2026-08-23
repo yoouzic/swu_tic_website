@@ -41,8 +41,14 @@
                                     </div>
                                 </div>
                             </div>
+                            {% if semester_configured is defined and not semester_configured %}
+                            <div class="alert alert-warning" role="alert">
+                                请联系管理员在 系统设置 → 教学制度 配置学期起始周后再登记。
+                            </div>
+                            {% endif %}
                             <div class="d-grid">
-                                <button type="button" class="btn btn-primary" id="submitReservationButton">确认登记</button>
+                                <button type="button" class="btn btn-primary" id="submitReservationButton"
+                                        {% if semester_configured is defined and not semester_configured %}disabled{% endif %}>确认登记</button>
                             </div>
                         </form>
                     </div>

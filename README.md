@@ -16,6 +16,17 @@
 - `AUTOMATION_UPLOAD_DIR`、`AUTO_REVIEW_UPLOAD_DIR`、`UPLOAD_FOLDER`：自动审核和通用上传的隔离目录。
 - `CELERY_TASK_ALWAYS_EAGER`：仅限测试或本地诊断；生产 worker 必须使用正常 Celery 队列。
 
+## 存量 CourseRegistration 时区迁移（一次性）
+
+历史版本的 `CourseRegistration.created_at` 使用 SQLite `CURRENT_TIMESTAMP`（UTC），与业务侧 `datetime.now()`（UTC+8）不一致。数据库备份后，可执行：
+
+```powershell
+python tools/migrate_course_registration_utc8.py             # 默认 dry-run
+python tools/migrate_course_registration_utc8.py --apply      # 真正迁移 UTC -> UTC+8
+```
+
+脚本使用 `SystemSetting` marker 幂等保护；重复运行不会重复加 8 小时。默认 dry-run 只打印将调整的记录。
+
 ## 初始化与启动
 
 在目标 checkout 中使用与部署一致的 Python 环境：

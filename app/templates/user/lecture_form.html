@@ -14,9 +14,9 @@
         <a href="#signature-information">签名信息</a>
     </nav>
     <div class="lecture-form-content">
-    {% if form_data_json %}
+    {% if form_data is defined %}
     <script>
-        var initialFormData = {{ form_data_json|safe }};
+        var initialFormData = {{ form_data | tojson }};
         document.addEventListener('DOMContentLoaded', function() {
             // 延迟一点执行以确保其他初始化脚本已运行
             setTimeout(function() {
