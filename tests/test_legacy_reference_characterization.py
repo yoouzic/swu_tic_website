@@ -371,6 +371,69 @@ class LegacyReferenceCharacterizationTests(unittest.TestCase):
     def test_location_normalization_removes_room_zero_padding(self):
         self.assertEqual(self.engine._normalize_location('33-0201'), '33-201')
 
+    def test_weekday_normalization_freeze_numeric_variants(self):
+        import pandas as pd
+
+        values = ['3', 3, 3.0, '3.0']
+        texts = [str(value) for value in values]
+        self.assertEqual(texts, ['3', '3', '3.0', '3.0'])
+        self.assertEqual(
+            [self.engine._normalize_weekday(text) for text in texts],
+            ['三', '三', '3.0', '3.0'],
+        )
+
+    def test_class_period_normalization_freeze_common_forms(self):
+        self.assertEqual(self.engine._normalize_class_period('3-4节'), '第3-4节')
+        self.assertEqual(self.engine._normalize_class_period('第3-4节'), '第3-4节')
+        # Unprefixed/non-节-terminated values are currently returned as-is.
+        self.assertEqual(self.engine._normalize_class_period('3-4'), '3-4')
+        self.assertEqual(self.engine._normalize_class_period(''), '')
+
+    def test_rongchang_location_normalization_freeze(self):
+        self.assertEqual(self.engine._normalize_location('荣昌1234'), '荣昌01-234')
+        self.assertEqual(self.engine._normalize_location('荣昌 1234'), '荣昌01-234')
+        self.assertEqual(self.engine._normalize_location('33-0201'), '33-201')
+
+    def test_student_grade_class_precedes_class_composition_in_reference_data(self):
+        # Both anchors present: student_grade_class wins, even when the
+        # legacy class_composition payload would not match.
+        result = self.engine.search_reference_data({
+            'teacher_name': '张三',
+            'course_title': '数据结构',
+            'student_grade_class': '2023级计算机1班',
+            'class_composition': '不存在的班级',
+        })
+        self.assertGreater(len(result['schedule_matches']), 0)
+        self.assertIn('_with_class', result['schedule_matches'][0]['match_type'])
+
+        # When student_grade_class is present but does not match, the
+        # class_composition field is NOT used for refinement.
+        result = self.engine.search_reference_data({
+            'teacher_name': '张三',
+            'course_title': '数据结构',
+            'student_grade_class': '不存在的班级',
+            'class_composition': '2023级计算机1班',
+        })
+        self.assertGreater(len(result['schedule_matches']), 0)
+        self.assertNotIn('_with_class', result['schedule_matches'][0]['match_type'])
+
+    def test_class_composition_alone_participates_in_refinement(self):
+        result = self.engine.search_reference_data({
+            'teacher_name': '张三',
+            'course_title': '数据结构',
+            'class_composition': '2023级计算机1班',
+        })
+        self.assertGreater(len(result['schedule_matches']), 0)
+        self.assertIn('_with_class', result['schedule_matches'][0]['match_type'])
+
+    def test_empty_teacher_and_course_anchors_return_no_schedule_candidates(self):
+        result = self.engine.search_reference_data({
+            'class_period': '第3-4节',
+            'lecture_location': '32-302',
+            'student_grade_class': '2023级计算机1班',
+        })
+        self.assertEqual(result['schedule_matches'], [])
+
 
 if __name__ == '__main__':
     unittest.main()
