@@ -27,7 +27,7 @@ class AppFactoryTests(unittest.TestCase):
         self.assertTrue(hasattr(create_app, '__call__'))
 
     def test_singleton_route_contract(self):
-        self.assertEqual(_route_counts(app), (172, 133, 20))
+        self.assertEqual(_route_counts(app), (168, 129, 20))
 
     def test_secondary_app_route_contract_and_override_consistency(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -41,7 +41,7 @@ class AppFactoryTests(unittest.TestCase):
                 'AUTOMATION_UPLOAD_DIR': str(automation_upload_dir),
                 'DEEPSEEK_MODEL': 'override-model',
             })
-            self.assertEqual(_route_counts(a2), (172, 133, 20))
+            self.assertEqual(_route_counts(a2), (168, 129, 20))
             self.assertEqual(a2.config['DEEPSEEK_MODEL'], 'override-model')
             self.assertEqual(
                 a2.config['AUTOMATION_PUBLIC_CONFIG']['DEEPSEEK_MODEL'],

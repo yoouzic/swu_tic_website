@@ -2,25 +2,16 @@
 # Phase 1 mechanical split from app/blueprints/admin.py
 # Module: system
 
-from flask import render_template, request, redirect, url_for, session, jsonify, send_file
+from flask import render_template, request, redirect, url_for, session, jsonify
 from app.models import User, Department, Group, LectureForm, Teacher, Venue, Course, ListeningBan, db, SystemSetting
 from datetime import datetime
-from app.utils.auto_review import AutoReviewEngine, SETTING_KEY_SEMESTER_MONDAY, SETTING_KEY_SCHEDULE_PATH, SETTING_KEY_CONTACTS_PATH, SETTING_KEY_FEEDBACK_PATH
 from app.security import role_required
 from app.utils.profile_settings import PROFILE_EDITABLE_FIELD_OPTIONS, SETTING_KEY_PROFILE_EDITABLE_FIELDS, get_profile_editable_fields, normalize_profile_editable_fields
 from app.utils.course_registration_limits import SETTING_KEY_COURSE_WEEKLY_LIMIT_COUNT, SETTING_KEY_COURSE_WEEKLY_LIMIT_ENABLED, get_course_weekly_limit_settings, normalize_course_weekly_limit_count
-from app.utils.env_config import env_path
-import os
 from werkzeug.security import check_password_hash
 import json
 from . import admin_bp
-from .shared import _get_accessible_department_users, allowed_file
-
-
-DEFAULT_AUTO_REVIEW_REPORT_DIR = os.path.join('data', 'storage', 'exports', 'auto_review')
-
-
-DEFAULT_AUTO_REVIEW_UPLOAD_DIR = os.path.join('data', 'storage', 'uploads', 'auto_review')
+from .shared import _get_accessible_department_users
 
 
 def _coerce_teaching_int(value):
@@ -65,98 +56,6 @@ def _safe_teaching_settings_int(setting, default, lower=None, upper=None):
 def auto_review_page():
     """自动审核旧入口，兼容书签并定位到设置中心。"""
     return redirect(url_for('admin.system_management', tab='automation'))
-
-
-@admin_bp.route('/api/auto_review/settings', methods=['GET', 'POST'])
-@role_required('超级管理员')
-def auto_review_settings():
-    """自动审核基础设置：获取/设置第一周星期一，并检查文件存在"""
-    if request.method == 'GET':
-        engine = AutoReviewEngine()
-        return jsonify({'success': True, 'status': engine.files_status()})
-
-    data = request.get_json() or {}
-    monday = data.get('semester_monday')
-    if not monday:
-        return jsonify({'success': False, 'message': '缺少第一周星期一日期（YYYY-MM-DD）'}), 400
-    try:
-        datetime.strptime(monday, '%Y-%m-%d')
-    except Exception:
-        return jsonify({'success': False, 'message': '日期格式错误，应为YYYY-MM-DD'}), 400
-    SystemSetting.set(SETTING_KEY_SEMESTER_MONDAY, monday)
-    engine = AutoReviewEngine()
-    return jsonify({'success': True, 'status': engine.files_status()})
-
-
-@admin_bp.route('/api/auto_review/upload', methods=['POST'])
-@role_required('超级管理员')
-def auto_review_upload():
-    """上传/替换课表、通讯录或反馈文件，并保存路径到系统设置"""
-    if 'file' not in request.files:
-        return jsonify({'success': False, 'message': '未选择文件'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'success': False, 'message': '未选择文件'}), 400
-    file_type = request.form.get('file_type') or request.form.get('type')
-    if file_type not in ('schedule', 'contacts', 'feedback'):
-        return jsonify({'success': False, 'message': '缺少或错误的文件类型（schedule/contacts/feedback）'}), 400
-    if not allowed_file(file.filename):
-        return jsonify({'success': False, 'message': '文件格式不支持，请上传.xls或.xlsx文件'}), 400
-
-    upload_dir = env_path('AUTO_REVIEW_UPLOAD_DIR', DEFAULT_AUTO_REVIEW_UPLOAD_DIR)
-    os.makedirs(upload_dir, exist_ok=True)
-
-    ext = file.filename.rsplit('.', 1)[1].lower()
-    prefix = 'schedule' if file_type == 'schedule' else ('contacts' if file_type == 'contacts' else 'feedback')
-    save_name = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
-    save_path = os.path.join(upload_dir, save_name)
-    file.save(save_path)
-
-    if file_type == 'schedule':
-        SystemSetting.set(SETTING_KEY_SCHEDULE_PATH, save_path)
-    elif file_type == 'contacts':
-        SystemSetting.set(SETTING_KEY_CONTACTS_PATH, save_path)
-    else:
-        SystemSetting.set(SETTING_KEY_FEEDBACK_PATH, save_path)
-
-    engine = AutoReviewEngine()
-    return jsonify({'success': True, 'message': '上传成功', 'path': save_path, 'status': engine.files_status()})
-
-
-@admin_bp.route('/api/auto_review/feedback_run', methods=['POST'])
-@role_required('超级管理员')
-def auto_review_feedback_run():
-    """执行反馈文件审核，并可导出报告"""
-    data = request.get_json() or {}
-    export = data.get('export', True)
-
-    engine = AutoReviewEngine()
-    result = engine.review_feedback()
-
-    report_path = None
-    if export:
-        report_path = engine.export_report(result)
-
-    download_url = None
-    if report_path:
-        basename = os.path.basename(report_path)
-        download_url = url_for('admin.auto_review_download', filename=basename)
-
-    return jsonify({'success': True, 'data': result, 'report_path': report_path, 'download_url': download_url})
-
-
-@admin_bp.route('/auto_review/download')
-@role_required('超级管理员')
-def auto_review_download():
-    """下载自动审核报告"""
-    filename = request.args.get('filename')
-    if not filename:
-        return jsonify({'success': False, 'message': '缺少文件名'}), 400
-    reports_dir = env_path('AUTO_REVIEW_REPORT_DIR', DEFAULT_AUTO_REVIEW_REPORT_DIR)
-    real_path = os.path.join(reports_dir, os.path.basename(filename))
-    if not os.path.exists(real_path):
-        return jsonify({'success': False, 'message': '报告不存在'}), 404
-    return send_file(real_path, as_attachment=True)
 
 
 @admin_bp.route('/api/settings/teaching', methods=['GET'])
@@ -409,7 +308,6 @@ def system_management():
     return render_template(
         'admin/system_management.html',
         active_tab=active_tab,
-        status=AutoReviewEngine().files_status(),
         available_departments=list(_get_accessible_department_users(user.id).keys()),
         account_username=user.student_id,
         is_super_admin=True,

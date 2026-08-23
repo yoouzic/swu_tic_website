@@ -1,3 +1,9 @@
+"""Legacy compatibility engine.
+
+System-level legacy upload/settings/report endpoints have been retired.
+The engine remains for the legacy immediate form check and reference-data
+lookup endpoints in admin/review.py. Do not add new consumers.
+"""
 import os
 import re
 from datetime import datetime, timedelta
