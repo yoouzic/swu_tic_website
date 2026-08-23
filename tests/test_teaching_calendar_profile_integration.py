@@ -110,7 +110,7 @@ class TeachingCalendarProfileIntegrationTests(unittest.TestCase):
 
     def test_user_profile_after_term_does_not_render_week_21(self):
         self._login(self.user)
-        with patch('app.blueprints.user.datetime', _frozen_datetime(AFTER_TERM)):
+        with patch('app.blueprints.user.profile.datetime', _frozen_datetime(AFTER_TERM)):
             response = self.client.get('/user/profile')
         self.assertEqual(response.status_code, 200)
         self.assertNotIn('第21周', response.get_data(as_text=True))

@@ -201,8 +201,9 @@ class UIFinalConvergenceContractTests(unittest.TestCase):
             p.read_text(encoding="utf-8")
             for p in sorted((ROOT / "app" / "blueprints" / "admin").glob("*.py"))
         )
-        user = (ROOT / "app" / "blueprints" / "user.py").read_text(
-            encoding="utf-8"
+        user = "\n".join(
+            p.read_text(encoding="utf-8")
+            for p in sorted((ROOT / "app" / "blueprints" / "user").glob("*.py"))
         )
 
         self.assertRegex(

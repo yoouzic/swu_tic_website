@@ -10,7 +10,7 @@ AUTH_BLUEPRINT = ROOT / 'app' / 'blueprints' / 'auth.py'
 SECURITY_MODULE = ROOT / 'app' / 'security.py'
 
 BUSINESS_BLUEPRINTS = [
-    ROOT / 'app' / 'blueprints' / 'user.py',
+    *sorted((ROOT / 'app' / 'blueprints' / 'user').glob('*.py')),
     *sorted((ROOT / 'app' / 'blueprints' / 'admin').glob('*.py')),
 ]
 
