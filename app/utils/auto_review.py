@@ -8,8 +8,6 @@ import os
 import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
-from difflib import SequenceMatcher
-
 import pandas as pd
 try:
     import pycorrector
@@ -22,6 +20,10 @@ from ..services.legacy_review_compat import (
     get_legacy_review_week_no,
     resolve_legacy_semester_monday,
 )
+from ..services.review_contacts import (
+    find_reviewer_by_id as _canonical_find_reviewer_by_id,
+    find_reviewer_by_name as _canonical_find_reviewer_by_name,
+)
 from .audit_tags import is_auto_review_allowed
 from .env_config import env_path
 from .time_validator import TimeValidator
@@ -29,11 +31,9 @@ from .user_status import active_user_filter, is_user_active
 
 
 DEFAULT_SCHEDULE_PATH = env_path('AUTO_REVIEW_DEFAULT_SCHEDULE_PATH', os.path.join('data', 'storage', 'templates', 'auto_review', '2025-2026-1课表.xlsx'))
-DEFAULT_CONTACTS_PATH = env_path('AUTO_REVIEW_DEFAULT_CONTACTS_PATH', os.path.join('data', 'storage', 'templates', 'auto_review', '第20届教学信息中心通讯录251016-审表信息版.xlsx'))
 DEFAULT_FEEDBACK_PATH = env_path('AUTO_REVIEW_DEFAULT_FEEDBACK_PATH', os.path.join('data', 'storage', 'templates', 'auto_review', '办公部第7周反馈表-自动审表版.xlsx'))
 SETTING_KEY_SEMESTER_MONDAY = 'semester_first_monday'
 SETTING_KEY_SCHEDULE_PATH = 'auto_review_schedule_path'
-SETTING_KEY_CONTACTS_PATH = 'auto_review_contacts_path'
 SETTING_KEY_FEEDBACK_PATH = 'auto_review_feedback_path'
 
 # 有效学院列表（根据审核要求）
@@ -96,36 +96,23 @@ def _read_excel(path: str, sheet_name: Any = 0) -> Optional[pd.DataFrame]:
         return None
 
 
-def _similarity(a: str, b: str) -> float:
-    """计算两个字符串的相似度"""
-    if not a or not b:
-        return 0.0
-    return SequenceMatcher(None, a, b).ratio()
-
-
 class AutoReviewEngine:
     def __init__(self,
                  schedule_path: Optional[str] = None,
-                 contacts_path: Optional[str] = None,
                  semester_monday: Optional[str] = None,
                  feedback_path: Optional[str] = None):
         # 读取系统设置中的上传路径，否则使用默认文件
         schedule_config = SystemSetting.get(SETTING_KEY_SCHEDULE_PATH)
-        contacts_config = SystemSetting.get(SETTING_KEY_CONTACTS_PATH)
         feedback_config = SystemSetting.get(SETTING_KEY_FEEDBACK_PATH)
         self.schedule_path = schedule_path or schedule_config or DEFAULT_SCHEDULE_PATH
-        self.contacts_path = contacts_path or contacts_config or DEFAULT_CONTACTS_PATH
         self.feedback_path = feedback_path or feedback_config or DEFAULT_FEEDBACK_PATH
         if not _exists(self.schedule_path) and _exists(DEFAULT_SCHEDULE_PATH):
             self.schedule_path = DEFAULT_SCHEDULE_PATH
-        if not _exists(self.contacts_path) and _exists(DEFAULT_CONTACTS_PATH):
-            self.contacts_path = DEFAULT_CONTACTS_PATH
         if not _exists(self.feedback_path) and _exists(DEFAULT_FEEDBACK_PATH):
             self.feedback_path = DEFAULT_FEEDBACK_PATH
         
         # 读取文件
         self.schedule_df = _read_excel(self.schedule_path)
-        self.contacts_df = _read_excel(self.contacts_path)
         self.feedback_df = _read_excel(self.feedback_path, sheet_name='反馈表')
         
         self._explicit_semester_monday = semester_monday or None
@@ -223,73 +210,12 @@ class AutoReviewEngine:
         return [t.strip() for t in text.split('|') if t.strip()]
 
     def _find_reviewer_by_id(self, reviewer_id: str) -> Optional[Dict[str, Any]]:
-        """根据编号在通讯录中查找反馈人"""
-        if not self.contacts_df is not None or not reviewer_id:
-            return None
-        
-        try:
-            # 查找编号匹配的行
-            matches = self.contacts_df[self.contacts_df['编号'].astype(str) == str(reviewer_id)]
-            if len(matches) > 0:
-                row = matches.iloc[0]
-                return {
-                    'id': str(row['编号']),
-                    'name': str(row['姓名']),
-                    'department': str(row['部门/组别']),
-                    'college': str(row['学院']),
-                    'phone': str(row['手机号码'])
-                }
-        except Exception as e:
-            current_app.logger.error(f"查找反馈人失败: {e}")
-        return None
+        """根据编号在 canonical User 通讯录中查找反馈人"""
+        return _canonical_find_reviewer_by_id(reviewer_id)
 
     def _find_reviewer_by_name(self, name: str, fuzzy: bool = True) -> Optional[Dict[str, Any]]:
-        """根据姓名在通讯录中查找反馈人，支持模糊匹配"""
-        if self.contacts_df is None or not name:
-            return None
-        
-        try:
-            # 提取姓名（去除学院信息）
-            clean_name = name
-            if '（' in name and '）' in name:
-                clean_name = name.split('（')[0].strip()
-            
-            # 精确匹配
-            exact_matches = self.contacts_df[self.contacts_df['姓名'] == clean_name]
-            if len(exact_matches) > 0:
-                row = exact_matches.iloc[0]
-                return {
-                    'id': str(row['编号']),
-                    'name': str(row['姓名']),
-                    'department': str(row['部门/组别']),
-                    'college': str(row['学院']),
-                    'phone': str(row['手机号码'])
-                }
-            
-            # 模糊匹配
-            if fuzzy:
-                best_match = None
-                best_score = 0.8  # 相似度阈值
-                
-                for _, row in self.contacts_df.iterrows():
-                    contact_name = str(row['姓名'])
-                    score = _similarity(clean_name, contact_name)
-                    if score > best_score:
-                        best_score = score
-                        best_match = {
-                            'id': str(row['编号']),
-                            'name': str(row['姓名']),
-                            'department': str(row['部门/组别']),
-                            'college': str(row['学院']),
-                            'phone': str(row['手机号码']),
-                            'similarity': score
-                        }
-                
-                return best_match
-                
-        except Exception as e:
-            current_app.logger.error(f"查找反馈人失败: {e}")
-        return None
+        """根据姓名在 canonical User 通讯录中查找反馈人，支持模糊匹配"""
+        return _canonical_find_reviewer_by_name(name, fuzzy=fuzzy)
 
     def _find_course_in_schedule(self, teacher_name: str, teacher_college: str, 
                                 course_title: str, class_composition: str, 
@@ -412,10 +338,8 @@ class AutoReviewEngine:
     def files_status(self) -> Dict[str, Any]:
         return {
             'schedule_path': self.schedule_path,
-            'contacts_path': self.contacts_path,
             'feedback_path': self.feedback_path,
             'schedule_exists': self.schedule_df is not None,
-            'contacts_exists': self.contacts_df is not None,
             'feedback_exists': self.feedback_df is not None,
             'semester_monday': self.semester_monday_str,
         }

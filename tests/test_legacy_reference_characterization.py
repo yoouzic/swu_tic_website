@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Characterization tests for the current legacy reference-data contract.
+"""Characterization tests for review reference-data contract.
 
-These tests intentionally use the legacy AutoReviewEngine Excel-backed path to
-freeze the exact request/response item fields and matching semantics before
-any canonical migration decision.
+Schedule matches remain frozen against the legacy Excel path.  Contact matches
+now use the canonical ``User`` source while preserving the legacy response
+shape, matching order and duplicate behavior.
 """
 import tempfile
 import unittest
@@ -12,20 +12,9 @@ from pathlib import Path
 from openpyxl import Workbook
 
 from app.app import app
-from app.models import db
+from app.models import User, db
 from app.utils.auto_review import AutoReviewEngine
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
-
-
-def _write_contacts(path):
-    wb = Workbook()
-    ws = wb.active
-    ws.append(['编号', '姓名', '部门/组别', '学院', '手机号码'])
-    ws.append(['1001', '张三', '办公部', '计算机与信息科学学院、软件学院', '13800000000'])
-    ws.append(['1002', '张三丰', '技术部', '工程技术学院', '13900000000'])
-    ws.append(['1003', '李四', '策划部', '外国语学院', '13700000000'])
-    ws.append(['1004', '欧阳修文正凯旋门', '测试部', '测试学院', '13600000000'])
-    wb.save(path)
 
 
 def _write_schedule(path):
@@ -50,6 +39,21 @@ def _write_schedule(path):
     wb.save(path)
 
 
+def _write_many_schedule(path):
+    wb = Workbook()
+    ws = wb.active
+    ws.append([
+        '姓名', '教师所属学院', '课程名称', '星期几', '上课节次',
+        '场地名称', '教学班组成', '起始周',
+    ])
+    for i in range(1, 7):
+        ws.append([
+            f'教师{i}', '计算机学院', '数据结构',
+            '一', f'第{i}-{i + 1}节', f'3{i}-{i}01', f'2023级班{i}', '1',
+        ])
+    wb.save(path)
+
+
 class LegacyReferenceCharacterizationTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -60,19 +64,41 @@ class LegacyReferenceCharacterizationTests(unittest.TestCase):
         self.app_context.push()
         db.drop_all()
         db.create_all()
-        self.contacts_path = Path(self.temp_dir.name) / 'contacts.xlsx'
+        self._add_user('1001', '张三', '办公部', '', '计算机与信息科学学院、软件学院', '13800000000')
+        self._add_user('1002', '张三丰', '技术部', '', '工程技术学院', '13900000000')
+        self._add_user('1003', '李四', '策划部', '', '外国语学院', '13700000000')
+        self._add_user('1004', '欧阳修文正凯旋门', '测试部', '第一小组', '测试学院', '13600000000')
+        self._add_user('123456', '王五', '物理部', '', '物理科学与技术学院', '13500000000')
+        self._add_user('1005', '已离任', '离任部', '', '离任学院', '13400000000', active=False)
         self.schedule_path = Path(self.temp_dir.name) / 'schedule.xlsx'
-        _write_contacts(self.contacts_path)
         _write_schedule(self.schedule_path)
-        self.engine = AutoReviewEngine(
-            schedule_path=str(self.schedule_path),
-            contacts_path=str(self.contacts_path),
-        )
+        self.engine = AutoReviewEngine(schedule_path=str(self.schedule_path))
 
     def tearDown(self):
         cleanup_sqlite_database(db, drop_all=True)
         self.app_context.pop()
         self.temp_dir.cleanup()
+
+    def _add_user(self, number, name, department, group, college, phone, active=True):
+        db.session.add(User(
+            number=number,
+            department=department or '未分配部门',
+            name=name,
+            gender='-',
+            grade='2023',
+            college=college,
+            major='-',
+            dormitory='-',
+            phone=phone,
+            qq='-',
+            student_id=f'S{number}',
+            password_hash='x',
+            role='信息员',
+            group=group or '未分配小组',
+            group_id=None,
+            is_active=active,
+        ))
+        db.session.commit()
 
     def test_empty_input_returns_empty_references(self):
         result = self.engine.search_reference_data({})
@@ -89,19 +115,65 @@ class LegacyReferenceCharacterizationTests(unittest.TestCase):
         self.assertEqual(match['department'], '办公部')
         self.assertEqual(match['phone'], '13800000000')
         self.assertEqual(match['match_type'], 'id')
+        self.assertNotIn('similarity', match)
+
+    def test_name_exact_contract_has_no_similarity(self):
+        result = self.engine.search_reference_data({'listener_name': '张三'})
+        matches = result['contact_matches']
+        self.assertEqual(len(matches), 1)
+        match = matches[0]
+        self.assertEqual(match['match_type'], 'name')
+        self.assertNotIn('similarity', match)
+
+    def test_id_and_name_same_person_deduplicates_to_id_match(self):
+        result = self.engine.search_reference_data({
+            'listener_number': '1001',
+            'listener_name': '张三',
+        })
+        matches = result['contact_matches']
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]['match_type'], 'id')
+
+    def test_id_and_name_different_persons_return_id_then_name(self):
+        result = self.engine.search_reference_data({
+            'listener_number': '1001',
+            'listener_name': '李四',
+        })
+        matches = result['contact_matches']
+        self.assertEqual(len(matches), 2)
+        self.assertEqual(matches[0]['id'], '1001')
+        self.assertEqual(matches[0]['match_type'], 'id')
+        self.assertEqual(matches[1]['id'], '1003')
+        self.assertEqual(matches[1]['match_type'], 'name')
+
+    def test_reviewer_id_numeric_fallback_requires_more_than_five_digits(self):
+        short = self.engine.search_reference_data({'reviewer_id': '1001'})
+        self.assertEqual(short['contact_matches'], [])
+
+        long = self.engine.search_reference_data({'reviewer_id': '123456'})
+        matches = long['contact_matches']
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]['id'], '123456')
+        self.assertEqual(matches[0]['match_type'], 'id')
 
     def test_fuzzy_contact_by_name_contract(self):
         result = self.engine.search_reference_data({'listener_name': '欧阳修文正凯旋'})
         matches = result['contact_matches']
         self.assertGreater(len(matches), 0)
         match = matches[0]
-        self.assertIn('id', match)
-        self.assertIn('name', match)
-        self.assertIn('college', match)
-        self.assertIn('department', match)
-        self.assertIn('phone', match)
-        self.assertIn('similarity', match)
+        self.assertEqual(match['name'], '欧阳修文正凯旋门')
         self.assertEqual(match['match_type'], 'name')
+        self.assertIn('similarity', match)
+        self.assertGreater(match['similarity'], 0.8)
+
+    def test_inactive_user_is_not_a_contact_reference(self):
+        result = self.engine.search_reference_data({'listener_number': '1005'})
+        self.assertEqual(result['contact_matches'], [])
+
+    def test_department_group_reconstruction_uses_slash_when_group_present(self):
+        result = self.engine.search_reference_data({'listener_number': '1004'})
+        matches = result['contact_matches']
+        self.assertEqual(matches[0]['department'], '测试部/第一小组')
 
     def test_missing_contact_returns_empty(self):
         result = self.engine.search_reference_data({
@@ -156,6 +228,40 @@ class LegacyReferenceCharacterizationTests(unittest.TestCase):
             'course_title': '数据结构',
         })
         self.assertLessEqual(len(result['schedule_matches']), 5)
+
+    def test_schedule_more_than_five_candidates_freezes_top_five_order(self):
+        many_path = Path(self.temp_dir.name) / 'many-schedule.xlsx'
+        _write_many_schedule(many_path)
+        engine = AutoReviewEngine(schedule_path=str(many_path))
+        result = engine.search_reference_data({'course_title': '数据结构'})
+        matches = result['schedule_matches']
+        self.assertEqual(len(matches), 5)
+        self.assertEqual(
+            [m['teacher_name'] for m in matches],
+            ['教师1', '教师2', '教师3', '教师4', '教师5'],
+        )
+        self.assertTrue(all('course_name' in m['match_type'] for m in matches))
+
+    def test_schedule_time_refinement_without_location_keeps_previous_candidates(self):
+        # 时间筛选无结果时，legacy 会保留上一级候选，而不是清空。
+        result = self.engine.search_reference_data({
+            'teacher_name': '张三',
+            'course_title': '数据结构',
+            'lecture_date': '2026/09/10星期四',
+            'class_period': '第9-10节',
+        })
+        matches = result['schedule_matches']
+        self.assertGreater(len(matches), 0)
+        self.assertEqual(matches[0]['teacher_name'], '张三')
+
+    def test_schedule_course_name_fallback_contract(self):
+        result = self.engine.search_reference_data({
+            'teacher_name': '不存在教师',
+            'course_title': '数据结构',
+        })
+        matches = result['schedule_matches']
+        self.assertGreater(len(matches), 0)
+        self.assertTrue(all('course_name' in m['match_type'] for m in matches))
 
 
 if __name__ == '__main__':

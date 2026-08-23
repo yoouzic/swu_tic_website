@@ -10,6 +10,7 @@ ASSESSMENT_SERVICE_FILES = (
     Path('app/services/stat_snapshots.py'),
     Path('app/services/assessment_calc.py'),
     Path('app/services/legacy_review_compat.py'),
+    Path('app/services/review_contacts.py'),
 )
 
 BLUEPRINT_PREFIX = 'app.blueprints'
@@ -63,6 +64,7 @@ class AssessmentServiceArchitectureTests(unittest.TestCase):
             Path('app/services/assessment_scope.py'),
             Path('app/services/review_form_queries.py'),
             Path('app/services/legacy_review_compat.py'),
+            Path('app/services/review_contacts.py'),
         ):
             tree = ast.parse(service_file.read_text(encoding='utf-8'))
             _check_no_flask_or_blueprint(tree, service_file.name)
