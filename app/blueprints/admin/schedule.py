@@ -6,6 +6,8 @@ from flask import request, jsonify
 from app.models import Teacher, Venue, Course, db
 from app.security import role_required
 from app.utils.env_config import env_path
+from app.services.schedule_snapshots import persist_import_snapshot
+import hashlib
 import pandas as pd
 import os
 from . import admin_bp
@@ -191,6 +193,9 @@ def import_schedule_data():
 
         # validate_schedule_format 已消费文件流，必须回绕后再次读取。
         file.seek(0)
+        source_bytes = file.read()
+        source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+        file.seek(0)
 
         # 读取文件
         df = pd.read_excel(file)
@@ -316,6 +321,13 @@ def import_schedule_data():
             except Exception as e:
                 stats['errors'].append(f"处理课程数据时出错（课程号：{course_code}-{selection_code}）：{str(e)}")
         
+        # 同步生成 canonical row-level schedule snapshot（与上述写入同一事务）。
+        persist_import_snapshot(
+            df,
+            source_filename=file.filename or 'schedule.xlsx',
+            source_sha256=source_sha256,
+        )
+
         # 提交数据库更改
         db.session.commit()
         

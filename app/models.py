@@ -602,3 +602,74 @@ class ExportJobRecord(db.Model):
 
     def __repr__(self):
         return f'<ExportJobRecord {self.id} {self.status} {self.percent}>'
+
+
+class ScheduleImportBatch(db.Model):
+    """Admin-owned canonical raw schedule snapshot batch.
+
+    A batch is created from one successful legacy schedule workbook import and
+    is grouped by the workbook's own semester field.  For a given semester at
+    most one batch may be ``active``; the invariant is enforced transactionally
+    by the service layer, not by SQLite partial-unique tricks.
+    """
+    __tablename__ = 'schedule_import_batches'
+
+    id = db.Column(db.Integer, primary_key=True)
+    semester = db.Column(db.String(50), nullable=False, index=True)
+    academic_year = db.Column(db.String(20), nullable=True)
+    source_filename = db.Column(db.String(255), nullable=False)
+    source_sha256 = db.Column(db.String(64), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='active', index=True)
+    row_count = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.now, index=True)
+
+    rows = db.relationship(
+        'ScheduleImportRow',
+        backref='batch',
+        cascade='all, delete-orphan',
+        order_by='ScheduleImportRow.source_row',
+    )
+
+    __table_args__ = (
+        db.Index('ix_schedule_import_batch_semester_status', 'semester', 'status'),
+    )
+
+    def __repr__(self):
+        return f'<ScheduleImportBatch {self.id} {self.semester} {self.status}>'
+
+
+class ScheduleImportRow(db.Model):
+    """Row-level raw legacy schedule source semantics.
+
+    These fields intentionally retain the exact cell text seen by the legacy
+    matcher (``str(row['...'])``) before any normalization.  They must never be
+    reconstructed from the aggregated Teacher/Venue/Course entities.
+    """
+    __tablename__ = 'schedule_import_rows'
+
+    id = db.Column(db.Integer, primary_key=True)
+    batch_id = db.Column(
+        db.Integer,
+        db.ForeignKey('schedule_import_batches.id'),
+        nullable=False,
+        index=True,
+    )
+    source_row = db.Column(db.Integer, nullable=False)
+
+    teacher_name = db.Column(db.Text, nullable=True)
+    teacher_college = db.Column(db.Text, nullable=True)
+    course_name = db.Column(db.Text, nullable=True)
+    weekday_raw = db.Column(db.String(50), nullable=True)
+    class_period_raw = db.Column(db.String(100), nullable=True)
+    location_raw = db.Column(db.Text, nullable=True)
+    class_composition_raw = db.Column(db.Text, nullable=True)
+    start_week_raw = db.Column(db.String(100), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+    __table_args__ = (
+        db.Index('ix_schedule_import_row_batch_source', 'batch_id', 'source_row'),
+    )
+
+    def __repr__(self):
+        return f'<ScheduleImportRow {self.id} batch={self.batch_id} row={self.source_row}>'

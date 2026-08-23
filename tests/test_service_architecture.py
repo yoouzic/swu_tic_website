@@ -15,6 +15,8 @@ SERVICE_FILES = (
 TEACHING_CALENDAR_FILE = Path('app/services/teaching_calendar.py')
 TEACHING_CALENDAR_SETTINGS_FILE = Path('app/services/teaching_calendar_settings.py')
 FORM_WEEK_SEMANTICS_FILE = Path('app/services/form_week_semantics.py')
+SCHEDULE_SNAPSHOTS_FILE = Path('app/services/schedule_snapshots.py')
+ACADEMIC_TERM_FILE = Path('app/services/academic_term.py')
 
 FORBIDDEN_IMPORT_PREFIXES = (
     'flask',
@@ -201,6 +203,82 @@ class ServiceArchitectureTests(unittest.TestCase):
             if isinstance(n, ast.FunctionDef)
         }
         self.assertIn('effective_form_week', functions)
+
+    def test_schedule_snapshots_boundary_has_no_flask_blueprint_or_review_automation(self):
+        tree = ast.parse(SCHEDULE_SNAPSHOTS_FILE.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.name
+                    self.assertFalse(
+                        name.startswith('flask')
+                        or name.startswith('app.blueprints')
+                        or name.startswith('app.review_automation'),
+                        f'{SCHEDULE_SNAPSHOTS_FILE.name} imports forbidden module: {name}',
+                    )
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ''
+                self.assertFalse(
+                    module.startswith('flask')
+                    or module.startswith('app.blueprints')
+                    or module.startswith('app.review_automation'),
+                    f'{SCHEDULE_SNAPSHOTS_FILE.name} imports forbidden module: {module}',
+                )
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                self.assertNotIn(
+                    node.id,
+                    {'request', 'session', 'jsonify', 'render_template', 'redirect', 'url_for', 'flash', 'current_app'},
+                )
+
+    def test_academic_term_boundary_has_no_flask_blueprint_or_review_automation(self):
+        tree = ast.parse(ACADEMIC_TERM_FILE.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.name
+                    self.assertFalse(
+                        name.startswith('flask')
+                        or name.startswith('app.blueprints')
+                        or name.startswith('app.review_automation'),
+                        f'{ACADEMIC_TERM_FILE.name} imports forbidden module: {name}',
+                    )
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ''
+                self.assertFalse(
+                    module.startswith('flask')
+                    or module.startswith('app.blueprints')
+                    or module.startswith('app.review_automation'),
+                    f'{ACADEMIC_TERM_FILE.name} imports forbidden module: {module}',
+                )
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                self.assertNotIn(
+                    node.id,
+                    {'request', 'session', 'jsonify', 'render_template', 'redirect', 'url_for', 'flash', 'current_app'},
+                )
+
+    def test_schedule_snapshots_exposes_canonical_api(self):
+        tree = ast.parse(SCHEDULE_SNAPSHOTS_FILE.read_text(encoding='utf-8'))
+        functions = {
+            n.name for n in tree.body
+            if isinstance(n, ast.FunctionDef)
+        }
+        self.assertIn('get_active_schedule_batch', functions)
+        self.assertIn('get_active_schedule_rows', functions)
+        self.assertIn('persist_import_snapshot', functions)
+
+    def test_academic_term_exposes_canonical_api(self):
+        tree = ast.parse(ACADEMIC_TERM_FILE.read_text(encoding='utf-8'))
+        functions = {
+            n.name for n in tree.body
+            if isinstance(n, ast.FunctionDef)
+        }
+        constants = {
+            n.targets[0].id for n in tree.body
+            if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)
+        }
+        self.assertIn('get_current_teaching_semester', functions)
+        self.assertIn('normalize_semester_identifier', functions)
+        self.assertIn('SETTING_KEY_CURRENT_TEACHING_SEMESTER', constants)
 
 
 if __name__ == '__main__':
