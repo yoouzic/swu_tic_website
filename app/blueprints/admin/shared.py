@@ -2,93 +2,17 @@
 # Phase 1 mechanical split from app/blueprints/admin.py
 # Module: shared
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, send_file, current_app
-from app.models import User, Department, Group, LectureForm, Permission, RolePermission, Teacher, Venue, Course, ListeningBan, CourseRegistration, db, SystemSetting, ScoreRecord, ScoreItem, StatisticsSnapshot, PersonnelMovementRecord, AssessmentOverride
-from sqlalchemy import func
-from datetime import datetime, timedelta
-from app.utils.auto_review import AutoReviewEngine, SETTING_KEY_SEMESTER_MONDAY, SETTING_KEY_SCHEDULE_PATH, SETTING_KEY_CONTACTS_PATH, SETTING_KEY_FEEDBACK_PATH
-from app.blueprints.auth import login_required, role_required
-from app.utils.review_permissions import (
-    get_user_review_permission, 
-    can_review_status, 
-    get_user_structure_for_review, 
-    get_reviewable_users,
-    get_reviewable_status_list,
-    get_next_status_after_review,
-    get_review_permission_presentation,
-)
-from app.utils.permission_feedback import (
-    build_forbidden_message,
-    build_forbidden_payload,
-    forbidden_json,
-    flash_forbidden,
-)
-from app.utils.manage_permissions import (
-    get_user_manage_permission,
-    check_manage_permission
-)
-from app.utils.password_audit import record_password_audit
-from app.utils.audit_tags import (
-    REVIEW_TAG_OPTIONS,
-    LATE_TAG_OPTIONS,
-    LATE_TAG_LATE,
-    REVIEW_TAG_REQUIRED,
-    build_audit_tag,
-    parse_audit_tag,
-    validate_audit_tag,
-    is_auto_review_allowed,
-)
-from app.utils.leave_management import (
-    ASSESSMENT_EXEMPT_OVERRIDE_TYPES,
-    LEAVE_OVERRIDE_TYPE,
-    build_leave_status_payload,
-    get_current_teaching_week as get_leave_current_teaching_week,
-    get_form_effective_week_no as get_leave_form_effective_week_no,
-    get_leave_makeup_forms,
-    get_teaching_settings as get_leave_teaching_settings,
-    parse_lecture_date_value,
-    set_leave_makeup_forms,
-)
-from app.utils.user_status import (
-    UNASSIGNED_DEPARTMENT_NAME,
-    UNASSIGNED_GROUP_NAME,
-    active_user_filter,
-    is_user_active,
-)
-from app.utils.profile_settings import (
-    PROFILE_EDITABLE_FIELD_OPTIONS,
-    SETTING_KEY_PROFILE_EDITABLE_FIELDS,
-    get_profile_editable_fields,
-    normalize_profile_editable_fields,
-)
-from app.utils.course_registration_limits import (
-    SETTING_KEY_COURSE_WEEKLY_LIMIT_COUNT,
-    SETTING_KEY_COURSE_WEEKLY_LIMIT_ENABLED,
-    get_course_weekly_limit_settings,
-    normalize_course_weekly_limit_count,
-)
-from app.utils.review_drafts import (
-    delete_review_form_draft,
-    load_review_form_draft,
-    normalize_review_draft_payload,
-    parse_review_form_draft,
-    save_review_form_draft,
-)
-from app.utils.env_config import env_path
+from app.models import User, LectureForm, db, SystemSetting, PersonnelMovementRecord
+from datetime import datetime
+from app.utils.review_permissions import get_reviewable_users
+from app.utils.manage_permissions import get_user_manage_permission
+from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, active_user_filter
 import pandas as pd
-import openpyxl
-from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
-from io import BytesIO
-import os
-from werkzeug.utils import secure_filename
-from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 import string
-from datetime import datetime
 import json
-import numpy as np
 import re
-from collections import defaultdict
+
 
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 
