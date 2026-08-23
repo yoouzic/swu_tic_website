@@ -13,7 +13,6 @@ import pandas as pd
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 import os
 from werkzeug.security import generate_password_hash
-import secrets
 from . import admin_bp
 from .shared import _active_user_query, allowed_file, generate_random_password
 
@@ -175,12 +174,8 @@ def preview_import():
                 valid_rows += 1
             errors.extend([f"第{i + 1}行: {e}" for e in row_errors])
 
-        import_id = secrets.token_hex(8)
-        cache = current_app.config.setdefault('IMPORT_CACHE', {})
-        cache[import_id] = {
-            'rows': preview_rows,
-            'expected_cols': expected_cols,
-        }
+        from app.services.import_state import save_import_preview
+        import_id = save_import_preview(preview_rows, expected_cols)
 
         return jsonify({
             'success': True,
@@ -218,11 +213,12 @@ def confirm_import():
         data = request.get_json()
         import_id = data.get('import_id')
         overwrite = bool(data.get('overwrite', False))
-        cache = current_app.config.get('IMPORT_CACHE', {})
-        if not import_id or import_id not in cache:
+        from app.services.import_state import load_import_preview
+        preview_payload = load_import_preview(import_id)
+        if preview_payload is None:
             return jsonify({'success': False, 'message': '导入会话已失效，请重新预览'}), 400
 
-        rows = cache[import_id]['rows']
+        rows = preview_payload['rows']
         actor_user_id = session.get('user_id')
         imported_count = 0
         updated_count = 0
@@ -372,8 +368,12 @@ def confirm_import():
             export_path = os.path.join(export_dir, export_filename)
             password_df.to_excel(export_path, index=False)
 
-        # 清理会话缓存
-        cache.pop(import_id, None)
+        # 清理会话状态；业务已经成功，状态清理失败不应变成 HTTP 500。
+        from app.services.import_state import consume_import_preview
+        try:
+            consume_import_preview(import_id)
+        except Exception as exc:
+            current_app.logger.warning('导入状态清理失败，将等待TTL清理: %s', exc)
 
         current_app.logger.info(f'通讯录导入完成 新增{imported_count} 更新{updated_count} 跳过{skipped_count}')
         return jsonify({
@@ -404,13 +404,8 @@ def export_contacts():
         role_error_message = '自动分配主任、部长信息时出现错误，请检查“主任”和“部长”的群组名称'
 
         # 生成任务ID并初始化进度
-        job_id = secrets.token_hex(8)
-        progress = current_app.config.setdefault('EXPORT_PROGRESS', {})
-        progress[job_id] = {
-            'status': 'running',
-            'percent': 0,
-            'message': '准备导出...'
-        }
+        from app.services.import_state import get_export_job, start_export_job, update_export_job
+        job_id = start_export_job()
 
         # 查询用户
         query = _active_user_query()
@@ -419,8 +414,7 @@ def export_contacts():
 
         users = query.all()
         total = len(users)
-        progress[job_id]['percent'] = 5
-        progress[job_id]['message'] = f'查询到 {total} 条记录'
+        update_export_job(job_id, percent=5, message=f'查询到 {total} 条记录')
 
         def contact_number_sort_key(user):
             number = str(user.number or '').strip()
@@ -467,8 +461,7 @@ def export_contacts():
             role_error_details.append(f'不能检测到以下部门的部长：{missing_departments}')
         if role_error_details and not ignore_role_errors:
             detailed_role_error_message = f'{role_error_message}：{"；".join(role_error_details)}'
-            progress[job_id]['status'] = 'failed'
-            progress[job_id]['message'] = detailed_role_error_message
+            update_export_job(job_id, status='failed', message=detailed_role_error_message)
             return jsonify({'success': False, 'message': detailed_role_error_message}), 400
 
         directors.sort(key=contact_number_sort_key)
@@ -594,8 +587,7 @@ def export_contacts():
                 row_idx += 1
                 written_count += 1
                 if total and written_count % max(1, total // 20) == 0:
-                    progress[job_id]['percent'] = 5 + int(written_count / total * 90)
-                    progress[job_id]['message'] = f'已写入 {written_count}/{total}'
+                    update_export_job(job_id, percent=5 + int(written_count / total * 90), message=f'已写入 {written_count}/{total}')
         else:
             sections = [
                 ('中心主任', directors),
@@ -610,8 +602,7 @@ def export_contacts():
                     row_idx += 1
                     written_count += 1
                     if total and written_count % max(1, total // 20) == 0:
-                        progress[job_id]['percent'] = 5 + int(written_count / total * 90)
-                        progress[job_id]['message'] = f'已写入 {written_count}/{total}'
+                        update_export_job(job_id, percent=5 + int(written_count / total * 90), message=f'已写入 {written_count}/{total}')
 
         last_data_row = max(row_idx - 1, 2)
         ws.auto_filter.ref = f'A2:K{last_data_row}'
@@ -637,14 +628,17 @@ def export_contacts():
         export_path = os.path.join(export_dir, export_filename)
         wb.save(export_path)
 
-        download_url = url_for('admin.download_passwords', filename=export_filename).replace('download_passwords', 'download_passwords')
-        progress[job_id]['percent'] = 100
-        progress[job_id]['status'] = 'completed'
-        progress[job_id]['message'] = '导出完成'
-        progress[job_id]['download_url'] = url_for('admin.download_passwords', filename=export_filename)
+        download_url = url_for('admin.download_passwords', filename=export_filename)
+        update_export_job(
+            job_id,
+            percent=100,
+            status='completed',
+            message='导出完成',
+            download_url=download_url,
+        )
 
         current_app.logger.info(f'通讯录导出完成 记录数{total} 部门{department or "全部"} 文件{export_filename}')
-        return jsonify({'success': True, 'job_id': job_id, 'download_url': progress[job_id]['download_url'], 'total': total})
+        return jsonify({'success': True, 'job_id': job_id, 'download_url': download_url, 'total': total})
     except Exception as e:
         return jsonify({
             'success': False,
@@ -656,10 +650,10 @@ def export_contacts():
 @role_required('超级管理员')
 def export_progress(job_id):
     """查询导出进度"""
-    from flask import current_app
-    prog = current_app.config.get('EXPORT_PROGRESS', {})
-    if job_id not in prog:
+    from app.services.import_state import get_export_job
+    progress = get_export_job(job_id)
+    if progress is None:
         return jsonify({'success': False, 'message': '任务不存在'}), 404
-    return jsonify({'success': True, 'progress': prog[job_id]})
+    return jsonify({'success': True, 'progress': progress})
 
 

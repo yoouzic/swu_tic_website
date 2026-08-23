@@ -574,3 +574,31 @@ class AssessmentOverride(db.Model):
 
     def __repr__(self):
         return f'<AssessmentOverride user={self.user_id} type={self.override_type} weeks={self.start_week}-{self.end_week}>'
+
+
+class ImportPreviewSession(db.Model):
+    """Persisted contacts-import preview payload, shared across workers."""
+    __tablename__ = 'import_preview_sessions'
+
+    id = db.Column(db.String(32), primary_key=True)
+    payload_json = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now, index=True)
+
+    def __repr__(self):
+        return f'<ImportPreviewSession {self.id}>'
+
+
+class ExportJobRecord(db.Model):
+    """Persisted contacts-export progress state, shared across workers."""
+    __tablename__ = 'export_job_records'
+
+    id = db.Column(db.String(32), primary_key=True)
+    status = db.Column(db.String(20), nullable=False, default='running')
+    percent = db.Column(db.Integer, nullable=False, default=0)
+    message = db.Column(db.String(255), nullable=False, default='')
+    download_url = db.Column(db.String(500), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.now, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def __repr__(self):
+        return f'<ExportJobRecord {self.id} {self.status} {self.percent}>'
