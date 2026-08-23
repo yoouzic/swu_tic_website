@@ -426,6 +426,8 @@ def submit_review(form_id):
             'listener_name': form_data.get('listener_name'),
             # 表单所有者身份以服务端原始记录为准，禁止客户端重指定
             'listener_number': original_form.listener_number,
+            # 同一 logical form 必须保持同一次预约登记关联
+            'registration_id': original_form.registration_id,
             'course_changes': resolved_course_changes,
             'lecture_date': form_data.get('lecture_date'),
             'class_period': form_data.get('class_period'),
@@ -1363,6 +1365,7 @@ def submit_form_review(form_id):
             target_form = LectureForm(
                 listener_name=original_form.listener_name,
                 listener_number=original_form.listener_number,
+                registration_id=original_form.registration_id,
                 course_changes=original_form.course_changes,
                 lecture_date=original_form.lecture_date,
                 class_period=original_form.class_period,

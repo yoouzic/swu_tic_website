@@ -213,10 +213,14 @@ class LectureForm(db.Model):
 
     def get_latest_version(self):
         """返回该 logical form 的最新版本：按 id DESC，而不是活动时间。"""
+        if self.logical_id is None:
+            return self
         return self._version_query().order_by(LectureForm.id.desc()).first()
 
     def get_all_versions(self):
         """返回该 logical form 的全版本链，最新版本在前：id DESC。"""
+        if self.logical_id is None:
+            return [self]
         return self._version_query().order_by(LectureForm.id.desc()).all()
 
 # 权限表（用于更细粒度的权限控制）

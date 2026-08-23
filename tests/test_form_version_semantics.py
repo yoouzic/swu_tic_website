@@ -9,6 +9,7 @@ from werkzeug.security import generate_password_hash
 
 from app.app import app
 from app.models import (
+    CourseRegistration,
     Department,
     Group,
     LectureForm,
@@ -74,6 +75,11 @@ class FormVersionModelTests(unittest.TestCase):
     def tearDown(self):
         cleanup_sqlite_database(db, drop_all=True)
         self.app_context.pop()
+
+    def test_transient_unflushed_form_returns_self(self):
+        transient = _form(None, None, BASE_TIME)
+        self.assertIs(transient.get_latest_version(), transient)
+        self.assertEqual(transient.get_all_versions(), [transient])
 
     def test_normal_form_logical_id_and_versions(self):
         form = _form(100, None, BASE_TIME)
@@ -234,6 +240,85 @@ class FormVersionRouteTests(unittest.TestCase):
         body = response.get_json()
         self.assertFalse(body['success'])
         self.assertIn('更新版本', body['message'])
+
+    def _form_with_registration(self, form_id, owner_number, status='待审核'):
+        registration = CourseRegistration(
+            course_code='C1', selection_code='S1', user_id=self.info.id,
+        )
+        db.session.add(registration)
+        db.session.flush()
+        form = self._form(form_id, None, owner_number, status=status)
+        form.registration_id = registration.id
+        db.session.add(form)
+        db.session.commit()
+        return form, registration
+
+    def _submit_review_payload(self, form):
+        form_data = {
+            'listener_name': form.listener_name,
+            'course_changes': form.course_changes or '无',
+            'lecture_date': form.lecture_date,
+            'class_period': form.class_period,
+            'lecture_location': form.lecture_location,
+            'teacher_name': form.teacher_name,
+            'teacher_college': form.teacher_college,
+            'course_title': form.course_title,
+            'student_grade_class': form.student_grade_class,
+            'abnormal_situation': form.abnormal_situation or '无',
+            'teaching_method': form.teaching_method,
+            'classroom_discipline': form.classroom_discipline,
+            'classroom_atmosphere': form.classroom_atmosphere,
+            'courseware_quality': form.courseware_quality,
+            'overall_effect': form.overall_effect,
+            'quality_case': form.quality_case,
+            'course_feedback': form.course_feedback,
+            'suggestions': form.suggestions or '无',
+            'student_signature1': form.student_signature1,
+            'contact_phone1': form.contact_phone1,
+            'student_signature2': form.student_signature2 or '',
+            'contact_phone2': form.contact_phone2 or '',
+        }
+        return {'form_data': form_data, 'review_comment': 'ok'}
+
+    def test_submit_review_new_version_preserves_registration_id(self):
+        original, registration = self._form_with_registration(
+            100, self.info.number)
+        self._login(self.dept_manager)
+        response = self.client.post(
+            f'/admin/api/review/submit/{original.id}',
+            json=self._submit_review_payload(original),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['success'])
+        new_version = original.get_latest_version()
+        self.assertNotEqual(new_version.id, original.id)
+        self.assertEqual(new_version.registration_id, registration.id)
+
+    def test_submit_form_review_new_version_preserves_registration_id(self):
+        original, registration = self._form_with_registration(
+            100, self.info.number)
+        self._login(self.dept_manager)
+        response = self.client.post(
+            f'/admin/api/review/form/{original.id}',
+            json={},
+        )
+        self.assertEqual(response.status_code, 200)
+        new_version = original.get_latest_version()
+        self.assertNotEqual(new_version.id, original.id)
+        self.assertEqual(new_version.registration_id, registration.id)
+
+    def test_reject_new_version_preserves_registration_id(self):
+        original, registration = self._form_with_registration(
+            100, self.info.number)
+        self._login(self.dept_manager)
+        response = self.client.post(
+            f'/admin/api/review/reject/{original.id}',
+            json={'reason': 'x'},
+        )
+        self.assertEqual(response.status_code, 200)
+        new_version = original.get_latest_version()
+        self.assertNotEqual(new_version.id, original.id)
+        self.assertEqual(new_version.registration_id, registration.id)
 
 
 if __name__ == '__main__':
