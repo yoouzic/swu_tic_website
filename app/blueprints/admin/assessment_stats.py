@@ -269,14 +269,13 @@ def _get_teaching_reward_settings():
 def _get_teaching_week_no(date_obj, first_week_date, week_start_day, total_weeks=None):
     if not date_obj or not first_week_date:
         return None
-    teaching_start = first_week_date - timedelta(days=(first_week_date.weekday() - week_start_day) % 7)
-    diff = (date_obj - teaching_start).days
-    if diff < 0:
-        return None
-    week_no = (diff // 7) + 1
-    if total_weeks is not None and week_no > total_weeks:
-        return None
-    return week_no
+    from app.services.teaching_calendar import TeachingCalendarConfig, teaching_week_number
+    config = TeachingCalendarConfig(
+        first_week_date=first_week_date,
+        week_start_day=week_start_day,
+        total_weeks=total_weeks if total_weeks is not None else 52,
+    )
+    return teaching_week_number(date_obj, config)
 
 
 def _compute_teaching_week_window(start_date, end_date, first_week_date, week_start_day):
@@ -348,7 +347,12 @@ def _compute_teaching_week_window(start_date, end_date, first_week_date, week_st
 
 
 def _get_teaching_term_start(first_week_date, week_start_day):
-    return first_week_date - timedelta(days=(first_week_date.weekday() - week_start_day) % 7)
+    from app.services.teaching_calendar import TeachingCalendarConfig, teaching_term_start
+    return teaching_term_start(TeachingCalendarConfig(
+        first_week_date=first_week_date,
+        week_start_day=week_start_day,
+        total_weeks=52,
+    ))
 
 
 def _get_form_effective_week_no(form, reward_settings):

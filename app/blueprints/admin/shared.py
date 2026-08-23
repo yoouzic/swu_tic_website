@@ -232,25 +232,7 @@ def _latest_form_groups_for_users(listener_numbers):
 
 
 def _parse_lecture_date_value(raw_value):
-    if not raw_value:
-        return None
-    if isinstance(raw_value, datetime):
-        return raw_value.date()
-    text = str(raw_value).strip()
-    if not text:
-        return None
-    normalized = text.replace('年', '-').replace('月', '-').replace('日', '')
-    for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%Y.%m.%d']:
-        try:
-            return datetime.strptime(normalized, fmt).date()
-        except Exception:
-            continue
-    match = re.search(r'(\d{4})\D+(\d{1,2})\D+(\d{1,2})', text)
-    if not match:
-        return None
-    try:
-        return datetime(int(match.group(1)), int(match.group(2)), int(match.group(3))).date()
-    except Exception:
-        return None
+    from app.services.teaching_calendar import parse_lecture_date
+    return parse_lecture_date(raw_value)
 
 

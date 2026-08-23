@@ -139,28 +139,29 @@ class TimeValidator:
             datetime: 目标日期或None
         """
         try:
+            from ..services.teaching_calendar import TeachingCalendarConfig, date_for_teaching_weekday
             if not semester_start:
                 semester_start, week_start_day = cls.get_teaching_calendar_settings()
                 total_weeks = cls._get_total_weeks()
+                if not semester_start:
+                    return None
+                config = TeachingCalendarConfig(
+                    first_week_date=semester_start,
+                    week_start_day=week_start_day,
+                    total_weeks=total_weeks,
+                )
             else:
                 # Explicit semester_start is treated as the reference Monday and
-                # keeps the legacy Monday-only behavior; total_weeks is not
-                # available from this argument and is not enforced.
-                week_start_day = 0
-                total_weeks = None
-            if not semester_start:
-                return None
-            if total_weeks is not None and (week_num < 1 or week_num > total_weeks):
-                return None
-            days_to_subtract = (semester_start.weekday() - week_start_day) % 7
-            first_week_start = semester_start - timedelta(days=days_to_subtract)
-            target_week_start = first_week_start + timedelta(weeks=week_num - 1)
-            target_python_weekday = weekday_num - 1
-            offset = (target_python_weekday - week_start_day) % 7
-            target_date = target_week_start + timedelta(days=offset)
-            
-            return target_date
-            
+                # keeps the legacy Monday-only behavior.  A conservative maximum
+                # total is used because this argument has no total_weeks.
+                config = TeachingCalendarConfig(
+                    first_week_date=semester_start,
+                    week_start_day=0,
+                    total_weeks=52,
+                )
+            result_date = date_for_teaching_weekday(week_num, weekday_num, config)
+            return datetime.combine(result_date, datetime.min.time())
+
         except Exception:
             return None
     

@@ -162,7 +162,7 @@ class WeekNumberEquivalenceTests(unittest.TestCase):
         for target, expected in cases:
             with self.subTest(target=target):
                 with patch(
-                    'app.utils.course_registration_limits.SystemSetting.get',
+                    'app.models.SystemSetting.get',
                     side_effect=self._fake_setting_get,
                 ), patch(
                     'app.utils.course_registration_limits.datetime',
@@ -230,7 +230,7 @@ class TotalWeeksBoundaryTests(unittest.TestCase):
         for target in (term_end, term_end + timedelta(days=1)):
             with self.subTest(target=target):
                 with patch(
-                    'app.utils.course_registration_limits.SystemSetting.get',
+                    'app.models.SystemSetting.get',
                     side_effect=setting_get,
                 ), patch(
                     'app.utils.course_registration_limits.datetime',
@@ -426,7 +426,7 @@ class TeachingCalendarSettingsSemanticsTests(unittest.TestCase):
 
     def test_course_registration_missing_first_week_returns_none(self):
         with patch(
-            'app.utils.course_registration_limits.SystemSetting.get',
+            'app.models.SystemSetting.get',
             side_effect=lambda key, default=None: None,
         ):
             self.assertIsNone(get_current_teaching_week_no())

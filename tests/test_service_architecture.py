@@ -12,6 +12,9 @@ SERVICE_FILES = (
     Path('app/services/review_scores.py'),
 )
 
+TEACHING_CALENDAR_FILE = Path('app/services/teaching_calendar.py')
+TEACHING_CALENDAR_SETTINGS_FILE = Path('app/services/teaching_calendar_settings.py')
+
 FORBIDDEN_IMPORT_PREFIXES = (
     'flask',
     'app.blueprints',
@@ -115,6 +118,61 @@ class ServiceArchitectureTests(unittest.TestCase):
         self.assertIn('collect_modified_fields', functions)
         self.assertIn('append_review_modification_note', functions)
         self.assertIn('REVIEW_EDITABLE_FIELD_LABELS', {n.targets[0].id for n in tree.body if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)})
+
+    def test_teaching_calendar_core_has_no_app_model_or_flask_dependency(self):
+        tree = ast.parse(TEACHING_CALENDAR_FILE.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.name
+                    self.assertFalse(
+                        name.startswith('flask') or name.startswith('app.') or name.startswith('sqlalchemy'),
+                        f'{TEACHING_CALENDAR_FILE.name} imports forbidden module: {name}',
+                    )
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ''
+                self.assertFalse(
+                    module.startswith('flask') or module.startswith('app.') or module.startswith('sqlalchemy'),
+                    f'{TEACHING_CALENDAR_FILE.name} imports forbidden module: {module}',
+                )
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                self.assertNotIn(node.id, FORBIDDEN_NAMES | {'SystemSetting', 'db', 'LectureForm'})
+
+    def test_teaching_calendar_settings_boundary_has_no_flask_or_blueprint_dependency(self):
+        tree = ast.parse(TEACHING_CALENDAR_SETTINGS_FILE.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.name
+                    self.assertFalse(
+                        name.startswith('flask') or name.startswith('app.blueprints'),
+                        f'{TEACHING_CALENDAR_SETTINGS_FILE.name} imports forbidden module: {name}',
+                    )
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ''
+                self.assertFalse(
+                    module.startswith('flask') or module.startswith('app.blueprints'),
+                    f'{TEACHING_CALENDAR_SETTINGS_FILE.name} imports forbidden module: {module}',
+                )
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                self.assertNotIn(node.id, {'request', 'session', 'jsonify', 'render_template', 'redirect', 'url_for', 'flash'})
+
+    def test_teaching_calendar_core_exposes_canonical_api(self):
+        tree = ast.parse(TEACHING_CALENDAR_FILE.read_text(encoding='utf-8'))
+        functions = {
+            n.name for n in tree.body
+            if isinstance(n, ast.FunctionDef)
+        }
+        classes = {
+            n.name for n in tree.body
+            if isinstance(n, ast.ClassDef)
+        }
+        self.assertIn('TeachingCalendarConfig', classes)
+        self.assertIn('teaching_term_start', functions)
+        self.assertIn('teaching_term_end', functions)
+        self.assertIn('teaching_week_number', functions)
+        self.assertIn('date_for_teaching_weekday', functions)
+        self.assertIn('parse_lecture_date', functions)
 
 
 if __name__ == '__main__':

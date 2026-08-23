@@ -53,21 +53,13 @@ def get_teaching_settings():
 def get_teaching_week_no(date_obj, settings):
     if not date_obj or not settings or not settings.get('first_week_date'):
         return None
-    if isinstance(date_obj, datetime):
-        target_date = date_obj.date()
-    else:
-        target_date = date_obj
-    first_week_date = settings['first_week_date']
-    week_start_day = settings['week_start_day']
-    teaching_start = first_week_date - timedelta(days=(first_week_date.weekday() - week_start_day) % 7)
-    diff = (target_date - teaching_start).days
-    if diff < 0:
-        return None
-    week_no = (diff // 7) + 1
-    total_weeks = settings.get('total_weeks')
-    if total_weeks is not None and week_no > total_weeks:
-        return None
-    return week_no
+    from ..services.teaching_calendar import TeachingCalendarConfig, teaching_week_number
+    config = TeachingCalendarConfig(
+        first_week_date=settings['first_week_date'],
+        week_start_day=settings.get('week_start_day', 0),
+        total_weeks=settings.get('total_weeks', 52),
+    )
+    return teaching_week_number(date_obj, config)
 
 
 def get_current_teaching_week(settings=None):
@@ -79,26 +71,8 @@ def get_current_teaching_week(settings=None):
 
 
 def parse_lecture_date_value(raw_value):
-    if not raw_value:
-        return None
-    if isinstance(raw_value, datetime):
-        return raw_value.date()
-    text = str(raw_value).strip()
-    if not text:
-        return None
-    normalized = text.replace('年', '-').replace('月', '-').replace('日', '')
-    for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%Y.%m.%d']:
-        try:
-            return datetime.strptime(normalized, fmt).date()
-        except Exception:
-            continue
-    match = re.search(r'(\d{4})\D+(\d{1,2})\D+(\d{1,2})', text)
-    if not match:
-        return None
-    try:
-        return datetime(int(match.group(1)), int(match.group(2)), int(match.group(3))).date()
-    except Exception:
-        return None
+    from ..services.teaching_calendar import parse_lecture_date
+    return parse_lecture_date(raw_value)
 
 
 def get_form_effective_week_no(form, settings):
