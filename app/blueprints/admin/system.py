@@ -8,6 +8,11 @@ from datetime import datetime
 from app.security import role_required
 from app.utils.profile_settings import PROFILE_EDITABLE_FIELD_OPTIONS, SETTING_KEY_PROFILE_EDITABLE_FIELDS, get_profile_editable_fields, normalize_profile_editable_fields
 from app.utils.course_registration_limits import SETTING_KEY_COURSE_WEEKLY_LIMIT_COUNT, SETTING_KEY_COURSE_WEEKLY_LIMIT_ENABLED, get_course_weekly_limit_settings, normalize_course_weekly_limit_count
+from app.services.academic_term import (
+    SETTING_KEY_CURRENT_TEACHING_SEMESTER,
+    get_current_teaching_semester,
+    normalize_semester_identifier,
+)
 from werkzeug.security import check_password_hash
 import json
 from . import admin_bp
@@ -121,6 +126,7 @@ def get_teaching_settings():
                 if settings['reviewer_display_mode']
                 else 'name'
             ),
+            'current_semester': get_current_teaching_semester(),
             'profile_editable_fields': profile_editable_fields,
             'profile_editable_field_options': PROFILE_EDITABLE_FIELD_OPTIONS,
             'course_weekly_limit_enabled': course_weekly_limit['enabled'],
@@ -206,6 +212,15 @@ def update_teaching_settings():
                 ensure_ascii=False,
             ),
         }
+
+        # Additive current-semester control-plane field.  Old clients that do
+        # not send it keep the previously saved value.
+        if 'current_semester' in data:
+            try:
+                current_semester = normalize_semester_identifier(data['current_semester'])
+            except ValueError as exc:
+                return jsonify({'success': False, 'message': str(exc)}), 400
+            settings_map[SETTING_KEY_CURRENT_TEACHING_SEMESTER] = current_semester
 
         for key, value in settings_map.items():
             setting = SystemSetting.query.filter_by(key=key).first()

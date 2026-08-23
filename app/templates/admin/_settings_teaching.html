@@ -3,6 +3,7 @@
     <div class="activity-panel__body">
         <div class="row g-3 mb-3" aria-label="当前设置概览">
             <div class="col-sm-6 col-xl-3"><div class="border rounded p-3"><strong class="d-block text-muted small">第一周周一</strong><span id="previewFirstWeek">-</span></div></div>
+            <div class="col-sm-6 col-xl-3"><div class="border rounded p-3"><strong class="d-block text-muted small">当前教学学期</strong><span id="previewCurrentSemester">-</span></div></div>
             <div class="col-sm-6 col-xl-3"><div class="border rounded p-3"><strong class="d-block text-muted small">总教学周数</strong><span id="previewTotalWeeks">-</span></div></div>
             <div class="col-sm-6 col-xl-3"><div class="border rounded p-3"><strong class="d-block text-muted small">每周需交/听表</strong><span id="previewRequiredSubmit">-</span></div></div>
             <div class="col-sm-6 col-xl-3"><div class="border rounded p-3"><strong class="d-block text-muted small">课程登记周限制</strong><span id="previewCourseWeeklyLimit">-</span></div></div>
@@ -11,6 +12,7 @@
         <form id="teachingSettingsForm">
             <div class="row g-3">
                 <div class="col-md-6"><label for="firstWeekMonday" class="form-label">第一周基准周一日期</label><input type="date" class="form-control" id="firstWeekMonday" name="first_week_monday" required><div class="form-text">用于确定第一教学周；实际教学周起点由“教学周起始日”决定。</div></div>
+                <div class="col-md-6"><label for="currentSemester" class="form-label">当前教学学期</label><input type="text" class="form-control" id="currentSemester" name="current_semester" maxlength="255" placeholder="例如 2026-2027-1"><div class="form-text">用于选择当前正式课表版本，例如 2026-2027-1。</div></div>
                 <div class="col-md-6"><label for="weekStartDay" class="form-label">教学周起始日</label><select class="form-select" id="weekStartDay" name="week_start_day" required><option value="0">周一</option><option value="1">周二</option><option value="2">周三</option><option value="3">周四</option><option value="4">周五</option><option value="5">周六</option><option value="6">周日</option></select></div>
                 <div class="col-md-6"><label for="totalWeeks" class="form-label">总教学周数</label><input type="number" class="form-control" id="totalWeeks" name="total_weeks" min="1" max="52" value="20" required></div>
                 <div class="col-md-6"><label for="requiredSubmission" class="form-label">每周需交表数量</label><input type="number" class="form-control" id="requiredSubmission" name="required_submission_count" min="0" value="1" required><div class="form-text">同时也是需听表单数量。</div></div>
@@ -33,6 +35,7 @@
     const fields = () => document.querySelectorAll('[data-profile-editable-field]');
     function renderSettings(settings) {
         document.getElementById('previewFirstWeek').textContent = settings.first_week_monday || '未设置';
+        document.getElementById('previewCurrentSemester').textContent = settings.current_semester || '未设置';
         document.getElementById('previewTotalWeeks').textContent = settings.total_weeks || 20;
         document.getElementById('previewRequiredSubmit').textContent = settings.required_submission_count || 1;
         const errorFree = [];
@@ -45,6 +48,7 @@
         const selected = new Set(settings.profile_editable_fields || []);
         document.getElementById('previewProfileEditableFields').textContent = selected.size ? options.filter((item) => selected.has(item.key)).map((item) => item.label).join('、') : '全部禁止';
         document.getElementById('firstWeekMonday').value = settings.first_week_monday || '';
+        document.getElementById('currentSemester').value = settings.current_semester || '';
         document.getElementById('totalWeeks').value = settings.total_weeks || 20;
         document.getElementById('requiredSubmission').value = settings.required_submission_count || 1;
         document.getElementById('weekStartDay').value = settings.week_start_day || 0;
