@@ -166,7 +166,7 @@ def _load_review_form_groups_for_definition(form_ids):
             continue
         sorted_forms = sorted(
             form_list,
-            key=lambda form: (_get_form_latest_timestamp(form) or datetime.min, form.id),
+            key=lambda form: form.id,
             reverse=True
         )
         entries.append({
@@ -229,9 +229,9 @@ def reject_form_review(form_id):
 
         original_form = LectureForm.query.get_or_404(form_id)
         
-        # 获取最新版本；历史数据 unique_id 为空时回退到原始记录本身。
+        # 获取最新版本；历史数据 unique_id 为空时由 logical group 查询包含 base。
         unique_id = original_form.unique_id or original_form.id
-        latest_form = LectureForm.query.filter_by(unique_id=unique_id).order_by(LectureForm.id.desc()).first() or original_form
+        latest_form = original_form.get_latest_version()
         
         # 校验：确保操作的是最新版本
         if latest_form and latest_form.id != original_form.id:
@@ -411,9 +411,9 @@ def submit_review(form_id):
         course_changes_raw = (form_data.get('course_changes') or '').strip()
         resolved_course_changes = course_changes_raw or (original_form.course_changes or '无')
         
-        # 获取最新版本；历史数据 unique_id 为空且尚无版本时回退到原记录本身。
+        # 获取最新版本；历史数据 unique_id 为空时由 logical group 查询包含 base。
         unique_id = original_form.unique_id or original_form.id
-        latest_form = LectureForm.query.filter_by(unique_id=unique_id).order_by(LectureForm.id.desc()).first() or original_form
+        latest_form = original_form.get_latest_version()
         
         # 校验：确保操作的是最新版本
         if latest_form and latest_form.id != original_form.id:
@@ -990,15 +990,12 @@ def get_forms_for_review():
         )
         from app.review_automation.routes import latest_assessment_summaries
         automation_summaries = latest_assessment_summaries([
-            max(
-                form_group,
-                key=lambda item: (item.updated_at or item.created_at, item.id),
-            ).id
+            max(form_group, key=lambda item: item.id).id
             for _, form_group in sorted_groups
         ])
         
         for unique_id, form_group in sorted_groups:
-            sorted_form_group = sorted(form_group, key=lambda f: (f.updated_at or f.created_at), reverse=True)
+            sorted_form_group = sorted(form_group, key=lambda f: f.id, reverse=True)
             latest_form = sorted_form_group[0]
             group_data_for_filter = {
                 'unique_id': unique_id,
@@ -1353,7 +1350,7 @@ def submit_form_review(form_id):
         
         new_status = get_next_status_after_review(session['user_id'])
         unique_id = original_form.unique_id or original_form.id
-        latest_form = LectureForm.query.filter_by(unique_id=unique_id).order_by(LectureForm.id.desc()).first()
+        latest_form = original_form.get_latest_version()
         if latest_form and latest_form.id != original_form.id:
             return jsonify({'success': False, 'message': '该表单已有更新版本，请刷新页面后操作'}), 400
 

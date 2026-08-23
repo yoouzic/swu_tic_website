@@ -196,17 +196,28 @@ class LectureForm(db.Model):
         }
         return status_map.get(self.status, self.status)
     
+    @property
+    def logical_id(self):
+        """Canonical logical form identity for this row."""
+        return self.unique_id or self.id
+
+    def _version_query(self):
+        """Query all rows belonging to this logical form, including legacy bases."""
+        logical_id = self.logical_id
+        return LectureForm.query.filter(
+            db.or_(
+                LectureForm.id == logical_id,
+                LectureForm.unique_id == logical_id,
+            )
+        )
+
     def get_latest_version(self):
-        """获取该表单的最新版本"""
-        if not self.unique_id:
-            return self
-        return LectureForm.query.filter_by(unique_id=self.unique_id).order_by(LectureForm.updated_at.desc()).first()
-    
+        """返回该 logical form 的最新版本：按 id DESC，而不是活动时间。"""
+        return self._version_query().order_by(LectureForm.id.desc()).first()
+
     def get_all_versions(self):
-        """获取该表单的所有版本"""
-        if not self.unique_id:
-            return [self]
-        return LectureForm.query.filter_by(unique_id=self.unique_id).order_by(LectureForm.updated_at.desc()).all()
+        """返回该 logical form 的全版本链，最新版本在前：id DESC。"""
+        return self._version_query().order_by(LectureForm.id.desc()).all()
 
 # 权限表（用于更细粒度的权限控制）
 class Permission(db.Model):

@@ -2,17 +2,20 @@
 """Characterization and service tests for review scope policy (Phase 2A.1)."""
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 from werkzeug.security import generate_password_hash
 
 from app.app import app
 from app.models import (
+    CourseRegistration,
     Department,
     Group,
     LectureForm,
     Permission,
     RolePermission,
+    ScoreRecord,
     User,
     db,
 )
@@ -310,6 +313,99 @@ class ReviewScopeRouteLegacyTests(_ScopeTestBase):
         body = response.get_json()
         self.assertTrue(body['success'])
         self.assertEqual(body['new_status'], '已驳回')
+
+    def test_delete_form_group_mixed_scope_denies_atomically(self):
+        logical_id = 90001
+        form_a = self._form(self.info_same.number)
+        form_a.unique_id = logical_id
+        registration = CourseRegistration(
+            course_code='C1', selection_code='S1', user_id=self.info_same.id,
+        )
+        db.session.add(registration)
+        db.session.flush()
+        form_a.registration_id = registration.id
+        db.session.add(form_a)
+        db.session.flush()
+        db.session.add(ScoreRecord(
+            form_id=form_a.id,
+            reviewer_id=self.center_manager.id,
+        ))
+
+        form_b = self._form('NO_SUCH_NUMBER')
+        form_b.unique_id = logical_id
+        db.session.add(form_b)
+        db.session.commit()
+
+        self._login(self.center_manager)
+        response = self.client.delete(f'/admin/api/review/group/{logical_id}')
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(response.get_json()['success'])
+
+        db.session.refresh(form_a)
+        db.session.refresh(form_b)
+        self.assertIsNotNone(LectureForm.query.get(form_a.id))
+        self.assertIsNotNone(LectureForm.query.get(form_b.id))
+        self.assertIsNotNone(ScoreRecord.query.filter_by(form_id=form_a.id).first())
+        self.assertIsNotNone(CourseRegistration.query.get(registration.id))
+
+    def test_bulk_missing_priority_returns_404_before_403(self):
+        self._login(self.super_admin)
+        foreign_form = self._form('NO_SUCH_NUMBER')
+        missing_id = 999999
+        response = self.client.post(
+            '/admin/api/review/form-tags/preview',
+            json={'form_ids': [missing_id, foreign_form.id]},
+        )
+        self.assertEqual(response.status_code, 404)
+        body = response.get_json()
+        self.assertFalse(body['success'])
+        self.assertIn('不存在', body['message'])
+
+    def test_get_form_for_review_cross_scope_returns_403(self):
+        self._login(self.dept_manager)
+        foreign_form = self._form(self.info_cross_dept.number)
+        response = self.client.get(f'/admin/api/review/form/{foreign_form.id}')
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(response.get_json()['success'])
+
+    def test_review_form_draft_cross_scope_get_and_put_return_403(self):
+        self._login(self.dept_manager)
+        foreign_form = self._form(self.info_cross_dept.number)
+        get_response = self.client.get(
+            f'/admin/api/review/form/{foreign_form.id}/draft'
+        )
+        self.assertEqual(get_response.status_code, 403)
+        self.assertFalse(get_response.get_json()['success'])
+
+        put_response = self.client.put(
+            f'/admin/api/review/form/{foreign_form.id}/draft',
+            json={'data': {}},
+        )
+        self.assertEqual(put_response.status_code, 403)
+        self.assertFalse(put_response.get_json()['success'])
+
+    def test_review_queue_group_latest_uses_id_not_updated_at(self):
+        # Lower id is newer by activity time, but higher id must still be latest.
+        form_low = self._form(self.info_same.number, status='部门已审核')
+        form_low.unique_id = 500
+        form_low.updated_at = datetime(2030, 1, 1)
+        form_high = self._form(self.info_same.number, status='部门已审核')
+        form_high.unique_id = 500
+        form_high.updated_at = datetime(2020, 1, 1)
+        db.session.add_all([form_low, form_high])
+        db.session.commit()
+
+        self._login(self.center_manager)
+        response = self.client.get('/admin/api/review/forms')
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        group = next(g for g in body['forms'] if g['unique_id'] == 500)
+        ids = [f['id'] for f in group['forms']]
+        self.assertIn(form_high.id, ids)
+        self.assertIn(form_low.id, ids)
+        can_review = {f['id']: f['can_review'] for f in group['forms']}
+        self.assertTrue(can_review[form_high.id])
+        self.assertFalse(can_review[form_low.id])
 
 
 if __name__ == '__main__':
