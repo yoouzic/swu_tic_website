@@ -18,6 +18,7 @@ except Exception:
 from flask import current_app
 
 from ..models import db, LectureForm, Teacher, Course, SystemSetting, User, ScoreRecord, ScoreItem
+from ..services.legacy_review_compat import resolve_legacy_semester_monday
 from .audit_tags import is_auto_review_allowed
 from .env_config import env_path
 from .time_validator import TimeValidator
@@ -124,7 +125,7 @@ class AutoReviewEngine:
         self.contacts_df = _read_excel(self.contacts_path)
         self.feedback_df = _read_excel(self.feedback_path, sheet_name='反馈表')
         
-        self.semester_monday_str = semester_monday or SystemSetting.get(SETTING_KEY_SEMESTER_MONDAY)
+        self.semester_monday_str = semester_monday or resolve_legacy_semester_monday()
         self.semester_monday = None
         if self.semester_monday_str:
             try:

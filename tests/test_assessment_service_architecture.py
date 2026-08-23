@@ -9,6 +9,7 @@ ASSESSMENT_SERVICE_FILES = (
     Path('app/services/review_form_queries.py'),
     Path('app/services/stat_snapshots.py'),
     Path('app/services/assessment_calc.py'),
+    Path('app/services/legacy_review_compat.py'),
 )
 
 BLUEPRINT_PREFIX = 'app.blueprints'
@@ -58,7 +59,11 @@ class AssessmentServiceArchitectureTests(unittest.TestCase):
                 self.assertNotIn(node.id, HTTP_NAMES)
 
     def test_scope_and_query_services_are_http_free(self):
-        for service_file in (Path('app/services/assessment_scope.py'), Path('app/services/review_form_queries.py')):
+        for service_file in (
+            Path('app/services/assessment_scope.py'),
+            Path('app/services/review_form_queries.py'),
+            Path('app/services/legacy_review_compat.py'),
+        ):
             tree = ast.parse(service_file.read_text(encoding='utf-8'))
             _check_no_flask_or_blueprint(tree, service_file.name)
             for node in ast.walk(tree):
