@@ -13,10 +13,10 @@ from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.audit_tags import REVIEW_TAG_OPTIONS, LATE_TAG_OPTIONS, build_audit_tag, parse_audit_tag, validate_audit_tag
 from app.utils.user_status import UNASSIGNED_GROUP_NAME
 from app.utils.review_drafts import delete_review_form_draft, load_review_form_draft, normalize_review_draft_payload, parse_review_form_draft, save_review_form_draft
-from datetime import datetime
 import json
 from . import admin_bp
 from .shared import _active_user_query, _build_review_form_filter_datetime, _get_form_latest_timestamp, _latest_form_groups_for_users, _normalize_review_form_time_filter, get_reviewer_display_mode
+from app.services.review_domain import is_form_in_review_scope, partition_forms_by_review_scope
 
 
 def _serialize_audit_tag(audit_tag):
@@ -57,30 +57,21 @@ def _load_review_forms_for_operation(form_ids):
 
     forms = LectureForm.query.filter(LectureForm.id.in_(normalized_form_ids)).all()
     form_map = {form.id: form for form in forms}
-    listener_numbers = {form.listener_number for form in forms if form.listener_number}
-    users_by_number = {
-        user.number: user
-        for user in _active_user_query().filter(User.number.in_(listener_numbers)).all()
-    } if listener_numbers else {}
-    reviewable_user_ids = set(get_reviewable_users(session['user_id']))
 
-    ordered_forms = []
-    missing_ids = []
-    unauthorized_ids = []
-    for form_id in normalized_form_ids:
-        form = form_map.get(form_id)
-        if not form:
-            missing_ids.append(form_id)
-            continue
-        form_user = users_by_number.get(form.listener_number)
-        if not form_user or form_user.id not in reviewable_user_ids:
-            unauthorized_ids.append(form_id)
-            continue
-        ordered_forms.append(form)
-
+    missing_ids = [form_id for form_id in normalized_form_ids if form_id not in form_map]
     if missing_ids:
         return None, jsonify({'success': False, 'message': f'以下表单不存在：{missing_ids[:5]}'}), 404
-    if unauthorized_ids:
+
+    existing_forms = [
+        form_map[form_id]
+        for form_id in normalized_form_ids
+        if form_id in form_map
+    ]
+    allowed_forms, denied_forms = partition_forms_by_review_scope(
+        session['user_id'],
+        existing_forms,
+    )
+    if denied_forms:
         return None, jsonify({
             'success': False,
             'message': build_forbidden_message(
@@ -89,7 +80,7 @@ def _load_review_forms_for_operation(form_ids):
                 action='操作',
             ),
         }), 403
-    return ordered_forms, None, None
+    return allowed_forms, None, None
 
 
 @admin_bp.route('/api/review/form/<int:form_id>/draft', methods=['GET', 'PUT', 'DELETE'])
@@ -110,9 +101,7 @@ def review_form_draft(form_id):
             }), 403
 
         form = LectureForm.query.get_or_404(form_id)
-        reviewable_user_ids = get_reviewable_users(user_id)
-        form_user = _active_user_query().filter_by(number=form.listener_number).first()
-        if not form_user or form_user.id not in reviewable_user_ids:
+        if not is_form_in_review_scope(user_id, form):
             return forbidden_json('表单审核', '该表单不在当前审核范围内。', action='审核')
 
         if request.method == 'GET':
@@ -249,9 +238,7 @@ def reject_form_review(form_id):
             return jsonify({'success': False, 'message': '该表单已有更新版本，请刷新页面后操作'}), 400
         
         # 对象级授权：目标表单主人必须属于当前账号的可审核范围，不存在时 fail-closed。
-        reviewable_user_ids = get_reviewable_users(session['user_id'])
-        form_user = _active_user_query().filter_by(number=original_form.listener_number).first()
-        if not form_user or form_user.id not in reviewable_user_ids:
+        if not is_form_in_review_scope(session['user_id'], original_form):
              return jsonify({
                  'success': False,
                  'message': build_forbidden_message(
@@ -378,9 +365,7 @@ def submit_review(form_id):
             return jsonify({'success': False, 'message': '表单不存在'})
         
         # 校验目标表单所有者是否在当前账号可审核范围内（对象级授权，绝不能只依赖状态/权限）
-        reviewable_user_ids = get_reviewable_users(session['user_id'])
-        form_user = _active_user_query().filter_by(number=original_form.listener_number).first()
-        if not form_user or form_user.id not in reviewable_user_ids:
+        if not is_form_in_review_scope(session['user_id'], original_form):
             return jsonify({
                 'success': False,
                 'message': build_forbidden_message(
@@ -1089,9 +1074,7 @@ def get_form_for_review(form_id):
         form = LectureForm.query.get_or_404(form_id)
         
         # 检查是否有权限审核此表单
-        reviewable_user_ids = get_reviewable_users(session['user_id'])
-        form_user = _active_user_query().filter_by(number=form.listener_number).first()
-        if not form_user or form_user.id not in reviewable_user_ids:
+        if not is_form_in_review_scope(session['user_id'], form):
             return forbidden_json('表单审核', '该表单不在当前审核范围内。', action='审核')
         
         # 构建表单数据
@@ -1287,9 +1270,7 @@ def submit_form_review(form_id):
         original_form = LectureForm.query.get_or_404(form_id)
         
         # 检查是否有权限审核此表单
-        reviewable_user_ids = get_reviewable_users(session['user_id'])
-        form_user = _active_user_query().filter_by(number=original_form.listener_number).first()
-        if not form_user or form_user.id not in reviewable_user_ids:
+        if not is_form_in_review_scope(session['user_id'], original_form):
             return forbidden_json('表单审核', '该表单不在当前审核范围内。', action='审核')
         
         # 检查是否可以审核此状态的表单
@@ -1523,9 +1504,7 @@ def delete_form(form_id):
 
         form_to_delete = LectureForm.query.get_or_404(form_id)
 
-        reviewable_user_ids = get_reviewable_users(session['user_id'])
-        form_user = _active_user_query().filter_by(number=form_to_delete.listener_number).first()
-        if not form_user or form_user.id not in reviewable_user_ids:
+        if not is_form_in_review_scope(session['user_id'], form_to_delete):
             return jsonify({
                 'success': False,
                 'message': build_forbidden_message(
@@ -1580,18 +1559,19 @@ def delete_form_group(group_id):
         if not group_forms:
             return jsonify({'success': False, 'message': '表单组不存在'}), 404
 
-        reviewable_user_ids = get_reviewable_users(session['user_id'])
-        for form in group_forms:
-            form_user = _active_user_query().filter_by(number=form.listener_number).first()
-            if not form_user or form_user.id not in reviewable_user_ids:
-                return jsonify({
-                    'success': False,
-                    'message': build_forbidden_message(
-                        '表单组',
-                        '当前账号没有删除该表单组的权限。',
-                        action='删除',
-                    ),
-                }), 403
+        _allowed_forms, denied_forms = partition_forms_by_review_scope(
+            session['user_id'],
+            group_forms,
+        )
+        if denied_forms:
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '表单组',
+                    '当前账号没有删除该表单组的权限。',
+                    action='删除',
+                ),
+            }), 403
 
         form_ids = [form.id for form in group_forms]
         registration_ids = list({form.registration_id for form in group_forms if form.registration_id})

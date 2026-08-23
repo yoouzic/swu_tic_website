@@ -46,6 +46,16 @@ class AdminModuleArchitectureTests(unittest.TestCase):
         for domain in DOMAIN_MODULES:
             tree = read_ast(domain)
             for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        name = alias.name
+                        if name.startswith('app.blueprints.admin.'):
+                            child = name.split('.')[-1]
+                            if child in DOMAIN_MODULES and child != domain:
+                                self.fail(
+                                    f'{domain}.py has forbidden sibling import: {name}'
+                                )
+                    continue
                 if not isinstance(node, ast.ImportFrom):
                     continue
                 imported = imported_module_name(node)
@@ -72,6 +82,11 @@ class AdminModuleArchitectureTests(unittest.TestCase):
     def test_shared_does_not_import_domain_module(self):
         tree = read_ast('shared')
         for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.startswith('app.blueprints.admin.'):
+                        self.fail(f'shared.py imports domain module: {alias.name}')
+                continue
             if not isinstance(node, ast.ImportFrom):
                 continue
             imported = imported_module_name(node)
@@ -91,27 +106,35 @@ class AdminModuleArchitectureTests(unittest.TestCase):
                         self.fail('shared.py contains @admin_bp.route')
 
     def test_single_admin_blueprint_created_only_in_init(self):
-        # It must be created only in __init__.py.
+        # Count every Blueprint construction; only __init__.py may create it.
         for module in ALL_MODULES:
             tree = read_ast(module)
-            for node in tree.body:
-                if not isinstance(node, ast.Assign):
+            blueprint_calls = []
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
                     continue
-                if not any(
-                    isinstance(t, ast.Name) and t.id == 'admin_bp'
-                    for t in node.targets
-                ):
-                    continue
-                call = node.value
+                func = node.func
                 is_blueprint_call = (
-                    isinstance(call, ast.Call)
-                    and isinstance(call.func, ast.Name)
-                    and call.func.id == 'Blueprint'
+                    (isinstance(func, ast.Name) and func.id == 'Blueprint')
+                    or (
+                        isinstance(func, ast.Attribute)
+                        and isinstance(func.value, ast.Name)
+                        and func.value.id == 'flask'
+                        and func.attr == 'Blueprint'
+                    )
                 )
-                if module != '__init__' and is_blueprint_call:
-                    self.fail(f'{module}.py creates a new admin_bp')
-                if module == '__init__' and not is_blueprint_call:
-                    self.fail('__init__.py admin_bp is not created via Blueprint()')
+                if is_blueprint_call:
+                    blueprint_calls.append(node.lineno)
+            if module == '__init__':
+                self.assertEqual(
+                    len(blueprint_calls), 1,
+                    f'__init__.py must create exactly one Blueprint; found {blueprint_calls}',
+                )
+            else:
+                self.assertEqual(
+                    len(blueprint_calls), 0,
+                    f'{module}.py must not create a Blueprint; found {blueprint_calls}',
+                )
 
     def test_no_wildcard_imports_in_admin_package(self):
         for module in ALL_MODULES:

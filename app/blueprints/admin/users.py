@@ -15,7 +15,6 @@ from app.utils.audit_tags import parse_audit_tag
 from app.utils.leave_management import parse_lecture_date_value
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, is_user_active
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
 import json
 from . import admin_bp
 from .shared import _active_user_query, _create_personnel_movement_record, _serialize_user_basic, _snapshot_user_for_movement, generate_random_password
