@@ -2,7 +2,10 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from ..models import SystemSetting, User, db, Course, ListeningBan, CourseRegistration as Reservation, Teacher, LectureForm, LectureFormDraft
 from .auth import login_required
 from ..utils.user_status import active_user_filter
-from app.services.form_bindings import get_registration_logical_form_counts
+from app.services.form_bindings import (
+    get_registration_logical_form_counts,
+    registration_has_form_binding,
+)
 from datetime import datetime, timedelta
 from sqlalchemy import and_, func
 from ..utils.time_validator import validate_listening_time, TimeValidator
@@ -1337,8 +1340,7 @@ def api_update_my_reservation(reservation_id):
         if not reservation:
             return jsonify({'success': False, 'message': '登记记录不存在'}), 404
 
-        bind_count = db.session.query(func.count()).select_from(LectureForm).filter_by(registration_id=reservation.id).scalar() or 0
-        if bind_count > 0:
+        if registration_has_form_binding(reservation.id):
             return jsonify({'success': False, 'message': '该登记已绑定听课反馈表单，不能修改'}), 400
 
         data = request.get_json() or {}
@@ -1367,8 +1369,7 @@ def api_delete_my_reservation(reservation_id):
         if not reservation:
             return jsonify({'success': False, 'message': '登记记录不存在'}), 404
 
-        bind_count = db.session.query(func.count()).select_from(LectureForm).filter_by(registration_id=reservation.id).scalar() or 0
-        if bind_count > 0:
+        if registration_has_form_binding(reservation.id):
             return jsonify({'success': False, 'message': '该登记已绑定听课反馈表单，不能删除'}), 400
 
         db.session.delete(reservation)

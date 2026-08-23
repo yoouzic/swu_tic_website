@@ -9,6 +9,7 @@ SERVICE_FILES = (
     Path('app/services/review_domain.py'),
     Path('app/services/review_mutation.py'),
     Path('app/services/form_bindings.py'),
+    Path('app/services/review_scores.py'),
 )
 
 FORBIDDEN_IMPORT_PREFIXES = (
@@ -77,6 +78,23 @@ class ServiceArchitectureTests(unittest.TestCase):
                 if module.startswith('app.'):
                     self.fail(
                         f'{service_file.name} imports app module: {module}'
+                    )
+
+    def test_review_scores_service_has_no_model_or_sqlalchemy_import(self):
+        service_file = SERVICE_FILES[3]
+        tree = ast.parse(service_file.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.startswith('app.') or alias.name.startswith('sqlalchemy'):
+                        self.fail(
+                            f'{service_file.name} imports forbidden module: {alias.name}'
+                        )
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ''
+                if module.startswith('app.') or module.startswith('sqlalchemy'):
+                    self.fail(
+                        f'{service_file.name} imports forbidden module: {module}'
                     )
 
     def test_review_domain_service_exposes_narrow_public_api(self):

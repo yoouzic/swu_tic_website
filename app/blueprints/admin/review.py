@@ -22,6 +22,7 @@ from app.services.review_mutation import (
     append_review_modification_note,
     collect_modified_fields,
 )
+from app.services.review_scores import ScoreValidationError, normalize_score_items
 
 
 def _serialize_audit_tag(audit_tag):
@@ -410,6 +411,15 @@ def submit_review(form_id):
                 except:
                     pass
         
+        # 在任何 DB mutation 前验证评分输入
+        try:
+            normalized_score_data = normalize_score_items(score_data_list)
+        except ScoreValidationError as exc:
+            return jsonify({
+                'success': False,
+                'message': f'评分数据格式错误：{exc}',
+            }), 400
+
         # 确定新状态
         new_status = get_next_status_after_review(session['user_id'])
 
@@ -495,11 +505,11 @@ def submit_review(form_id):
         db.session.flush()  # 获取新表单ID
         
         # 处理评分数据
-        if score_data_list:
+        if normalized_score_data:
             try:
                 # 计算总分
-                total_dept_score = sum(float(item.get('department_score', 0)) for item in score_data_list)
-                total_personal_score = sum(float(item.get('personal_score', 0)) for item in score_data_list)
+                total_dept_score = sum(item['department_score'] for item in normalized_score_data)
+                total_personal_score = sum(item['personal_score'] for item in normalized_score_data)
                 
                 # 创建评分记录
                 score_record = ScoreRecord(
@@ -512,13 +522,13 @@ def submit_review(form_id):
                 db.session.flush() # 获取评分记录ID
                 
                 # 创建评分项
-                for item in score_data_list:
+                for item in normalized_score_data:
                     score_item = ScoreItem(
                         score_record_id=score_record.id,
-                        reason=item.get('reason'),
-                        department_score=float(item.get('department_score', 0)),
-                        personal_score=float(item.get('personal_score', 0)),
-                        is_auto_generated=item.get('is_auto_generated', item.get('is_auto', False))
+                        reason=item['reason'],
+                        department_score=item['department_score'],
+                        personal_score=item['personal_score'],
+                        is_auto_generated=item['is_auto_generated']
                     )
                     db.session.add(score_item)
             except Exception as e:
@@ -1268,6 +1278,15 @@ def submit_form_review(form_id):
         data = request.get_json()
         review_comment = data.get('review_comment', '')
         form_data = data.get('form_data', {})
+
+        # 在任何 DB mutation 前验证评分输入
+        try:
+            normalized_score_data = normalize_score_items(data.get('score_data', []))
+        except ScoreValidationError as exc:
+            return jsonify({
+                'success': False,
+                'message': f'评分数据格式错误：{exc}',
+            }), 400
         
         # 检查表单数据是否有修改
         original_data = {
@@ -1397,7 +1416,7 @@ def submit_form_review(form_id):
         if old_score_record:
             db.session.delete(old_score_record)
 
-        score_data = data.get('score_data', [])
+        score_data = normalized_score_data
         if score_data:
             total_dept = 0.0
             total_pers = 0.0
@@ -1409,10 +1428,10 @@ def submit_form_review(form_id):
             db.session.flush() # 获取 score_record.id
             
             for item in score_data:
-                reason = item.get('reason')
-                dept_score = float(item.get('department_score', 0))
-                pers_score = float(item.get('personal_score', 0))
-                is_auto = item.get('is_auto', False)
+                reason = item['reason']
+                dept_score = item['department_score']
+                pers_score = item['personal_score']
+                is_auto_generated = item['is_auto_generated']
                 
                 if dept_score > 0 or pers_score > 0:
                     score_item = ScoreItem(
@@ -1420,7 +1439,7 @@ def submit_form_review(form_id):
                         reason=reason,
                         department_score=dept_score,
                         personal_score=pers_score,
-                        is_auto_generated=is_auto
+                        is_auto_generated=is_auto_generated
                     )
                     db.session.add(score_item)
                     total_dept += dept_score
