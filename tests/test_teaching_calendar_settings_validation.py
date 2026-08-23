@@ -138,6 +138,41 @@ class TeachingCalendarSettingsValidationTests(unittest.TestCase):
         self.assertFalse(response.get_json()['success'])
         self._assert_main_settings_unchanged()
 
+    def test_update_rejects_non_integral_float_week_start(self):
+        payload = _valid_payload()
+        payload['week_start_day'] = 5.9
+        response = self._post(payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.get_json()['success'])
+        self._assert_main_settings_unchanged()
+
+    def test_update_rejects_non_integral_float_total_weeks(self):
+        payload = _valid_payload()
+        payload['total_weeks'] = 20.9
+        response = self._post(payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.get_json()['success'])
+        self._assert_main_settings_unchanged()
+
+    def test_update_rejects_non_integral_float_required_submission(self):
+        payload = _valid_payload()
+        payload['required_submission_count'] = 1.9
+        response = self._post(payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.get_json()['success'])
+        self._assert_main_settings_unchanged()
+
+    def test_update_accepts_integral_float_values(self):
+        payload = _valid_payload()
+        payload['week_start_day'] = 5.0
+        payload['total_weeks'] = 20.0
+        payload['required_submission_count'] = 1.0
+        response = self._post(payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['success'])
+        self.assertEqual(SystemSetting.get('teaching_week_start_day'), '5')
+        self.assertEqual(SystemSetting.get('teaching_total_weeks'), '20')
+
     def test_update_rejects_non_object_json_env(self):
         for raw in ('null', '[]', '"string"', '1', '{broken'):
             with self.subTest(raw=raw):

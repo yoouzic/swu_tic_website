@@ -153,11 +153,24 @@ def profile():
         
         # 获取周起始日设置 (0=周一, ..., 6=周日)
         week_start_day_setting = SystemSetting.query.filter_by(key='teaching_week_start_day').first()
-        week_start_day = int(week_start_day_setting.value) if week_start_day_setting else 0
+        try:
+            week_start_day = int(week_start_day_setting.value) if week_start_day_setting and week_start_day_setting.value else 0
+        except (TypeError, ValueError):
+            week_start_day = 0
+        if week_start_day < 0 or week_start_day > 6:
+            week_start_day = 0
         
         required_submission = int(SystemSetting.query.filter_by(key='teaching_required_submission').first().value) if SystemSetting.query.filter_by(key='teaching_required_submission').first() else 1
         # 每周需听表单数量与需交表单数量一致
         required_listening = required_submission
+
+        total_weeks_setting = SystemSetting.query.filter_by(key='teaching_total_weeks').first()
+        try:
+            total_weeks = int(total_weeks_setting.value) if total_weeks_setting and total_weeks_setting.value else 20
+        except (TypeError, ValueError):
+            total_weeks = 20
+        if total_weeks < 1 or total_weeks > 52:
+            total_weeks = 20
         
         check_dept = SystemSetting.query.filter_by(key='teaching_check_dept_review').first()
         check_dept = check_dept.value == 'true' if check_dept else False
@@ -198,7 +211,10 @@ def profile():
             diff = (d - actual_start_date).days
             if diff < 0:
                 return -1
-            return (diff // 7) + 1
+            week_no = (diff // 7) + 1
+            if week_no > total_weeks:
+                return -1
+            return week_no
 
         def get_form_group_week_num(versions):
             if not versions:

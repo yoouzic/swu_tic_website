@@ -112,15 +112,21 @@ class TimeValidatorWeekdayOffsetCharacterizationTests(unittest.TestCase):
         self.assertEqual(self._target(6), datetime(2026, 9, 7))
 
     def test_get_time_suggestion_current_week_uses_teaching_start(self):
+        from app.services.teaching_calendar import TeachingCalendarConfig
+
         class FrozenDateTime(datetime):
             @classmethod
             def now(cls):
                 return cls(2026, 9, 7)
 
-        with patch.object(
-            TimeValidator,
-            'get_teaching_calendar_settings',
-            return_value=(datetime(2026, 9, 7), 5),
+        config = TeachingCalendarConfig(
+            first_week_date=date(2026, 9, 7),
+            week_start_day=5,
+            total_weeks=20,
+        )
+        with patch(
+            'app.services.teaching_calendar_settings.load_teaching_calendar_config',
+            return_value=(config, None),
         ), patch('app.utils.time_validator.datetime', FrozenDateTime):
             suggestion = TimeValidator.get_time_suggestion()
         # teaching_start is 2026-09-05, now 2026-09-07 => current week 1,

@@ -52,11 +52,24 @@ def _build_user_profile_stats(user):
         first_week_date = None
 
     week_start_day_setting = SystemSetting.query.filter_by(key='teaching_week_start_day').first()
-    week_start_day = int(week_start_day_setting.value) if week_start_day_setting and week_start_day_setting.value else 0
+    try:
+        week_start_day = int(week_start_day_setting.value) if week_start_day_setting and week_start_day_setting.value else 0
+    except (TypeError, ValueError):
+        week_start_day = 0
+    if week_start_day < 0 or week_start_day > 6:
+        week_start_day = 0
 
     required_submission_setting = SystemSetting.query.filter_by(key='teaching_required_submission').first()
     required_submission = int(required_submission_setting.value) if required_submission_setting and required_submission_setting.value else 1
     required_listening = required_submission
+
+    total_weeks_setting = SystemSetting.query.filter_by(key='teaching_total_weeks').first()
+    try:
+        total_weeks = int(total_weeks_setting.value) if total_weeks_setting and total_weeks_setting.value else 20
+    except (TypeError, ValueError):
+        total_weeks = 20
+    if total_weeks < 1 or total_weeks > 52:
+        total_weeks = 20
 
     check_dept_setting = SystemSetting.query.filter_by(key='teaching_check_dept_review').first()
     check_dept = check_dept_setting.value == 'true' if check_dept_setting else False
@@ -73,7 +86,10 @@ def _build_user_profile_stats(user):
         diff = (current_date - actual_start_date).days
         if diff < 0:
             return -1
-        return (diff // 7) + 1
+        week_no = (diff // 7) + 1
+        if week_no > total_weeks:
+            return -1
+        return week_no
 
     def get_form_group_week_num(versions):
         if not versions:
@@ -93,12 +109,18 @@ def _build_user_profile_stats(user):
     current_week_num = None
     current_week_label = '当前不在教学周内'
     if first_week_date:
-        resolved_week_num = get_week_num(datetime.now().date())
+        today = datetime.now().date()
+        days_to_subtract = (first_week_date.weekday() - week_start_day) % 7
+        term_start = first_week_date - timedelta(days=days_to_subtract)
+        term_end = term_start + timedelta(days=total_weeks * 7)
+        resolved_week_num = get_week_num(today)
         if resolved_week_num > 0:
             current_week_num = resolved_week_num
             current_week_label = f'当前教学周（第 {resolved_week_num} 周）'
-        else:
+        elif today < term_start:
             current_week_label = '本学期教学周尚未开始'
+        else:
+            current_week_label = '当前不在教学周内'
 
     all_forms = LectureForm.query.filter_by(listener_number=user.number).order_by(LectureForm.created_at.asc()).all()
     form_groups = {}

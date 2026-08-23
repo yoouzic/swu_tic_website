@@ -278,7 +278,7 @@ def _get_teaching_week_no(date_obj, first_week_date, week_start_day, total_weeks
     return teaching_week_number(date_obj, config)
 
 
-def _compute_teaching_week_window(start_date, end_date, first_week_date, week_start_day):
+def _compute_teaching_week_window(start_date, end_date, first_week_date, week_start_day, total_weeks=None):
     range_start = start_date.date()
     range_end = (end_date - timedelta(days=1)).date()
     if range_end < range_start:
@@ -291,8 +291,25 @@ def _compute_teaching_week_window(start_date, end_date, first_week_date, week_st
             'window_start': None,
             'window_end': None
         }
-    first_full_start = range_start + timedelta(days=(week_start_day - range_start.weekday()) % 7)
-    last_candidate_start = range_end - timedelta(days=6)
+    teaching_start = first_week_date - timedelta(days=(first_week_date.weekday() - week_start_day) % 7)
+    effective_start = max(range_start, teaching_start)
+    teaching_end_exclusive = teaching_start + timedelta(days=total_weeks * 7) if total_weeks is not None else None
+    if teaching_end_exclusive is not None:
+        effective_end = min(range_end, teaching_end_exclusive - timedelta(days=1))
+    else:
+        effective_end = range_end
+    if effective_end < effective_start:
+        return {
+            'has_full_weeks': False,
+            'start_week': None,
+            'end_week': None,
+            'week_count': 0,
+            'label': '无完整教学周',
+            'window_start': None,
+            'window_end': None
+        }
+    first_full_start = effective_start + timedelta(days=(week_start_day - effective_start.weekday()) % 7)
+    last_candidate_start = effective_end - timedelta(days=6)
     if last_candidate_start < first_full_start:
         return {
             'has_full_weeks': False,
@@ -304,9 +321,6 @@ def _compute_teaching_week_window(start_date, end_date, first_week_date, week_st
             'window_end': None
         }
     last_full_start = last_candidate_start - timedelta(days=(last_candidate_start.weekday() - week_start_day) % 7)
-    teaching_start = first_week_date - timedelta(days=(first_week_date.weekday() - week_start_day) % 7)
-    if first_full_start < teaching_start:
-        first_full_start = teaching_start
     if last_full_start < first_full_start:
         return {
             'has_full_weeks': False,
@@ -724,7 +738,8 @@ def _build_department_monthly_assessment_payload(current_user_id, start_date, en
         start_date,
         end_date,
         reward_settings['first_week_date'],
-        reward_settings['week_start_day']
+        reward_settings['week_start_day'],
+        reward_settings.get('total_weeks'),
     )
     month_templates = _build_teaching_month_templates(reward_window, reward_settings)
     selected_departments, department_user_map = _resolve_selected_departments(current_user_id, department_names)
@@ -966,7 +981,8 @@ def _build_submission_snapshot_payload(users, start_date, end_date, sort_by, tim
         start_date,
         end_date,
         reward_settings['first_week_date'],
-        reward_settings['week_start_day']
+        reward_settings['week_start_day'],
+        reward_settings.get('total_weeks'),
     )
     rows = _build_submission_count_rows(
         users,
@@ -1120,7 +1136,8 @@ def get_submission_count_stats():
         start_date,
         end_date,
         reward_settings['first_week_date'],
-        reward_settings['week_start_day']
+        reward_settings['week_start_day'],
+        reward_settings.get('total_weeks'),
     )
     sort_by = request.args.get('sort_by', 'submission')
     if sort_by not in ['submission', 'reward']:
@@ -1201,7 +1218,8 @@ def get_submission_reward_detail(user_id):
         start_date,
         end_date,
         reward_settings['first_week_date'],
-        reward_settings['week_start_day']
+        reward_settings['week_start_day'],
+        reward_settings.get('total_weeks'),
     )
     row = _build_submission_count_rows(users, start_date, end_date, reward_settings, reward_window)[0]
     return jsonify({

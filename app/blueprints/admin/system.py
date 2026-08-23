@@ -24,13 +24,26 @@ DEFAULT_AUTO_REVIEW_UPLOAD_DIR = os.path.join('data', 'storage', 'uploads', 'aut
 
 
 def _coerce_teaching_int(value):
-    """Return int(value) for non-bool numeric-looking values, or None."""
+    """Return an integer only for strict integer representations.
+
+    Non-integral floats are rejected instead of being silently truncated.
+    """
+    import math
+    import re
+
     if isinstance(value, bool):
         return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if math.isfinite(value) and value.is_integer():
+            return int(value)
         return None
+    if isinstance(value, str):
+        text = value.strip()
+        if re.fullmatch(r'[+-]?\d+', text):
+            return int(text)
+    return None
 
 
 def _safe_teaching_settings_int(setting, default, lower=None, upper=None):

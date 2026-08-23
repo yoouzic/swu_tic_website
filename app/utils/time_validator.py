@@ -210,20 +210,41 @@ class TimeValidator:
     
     @classmethod
     def get_time_suggestion(cls) -> str:
-        """获取时间填写建议"""
-        now = datetime.now()
-        first_week, week_start_day = cls.get_teaching_calendar_settings()
-        if not first_week:
+        """获取时间填写建议。
+
+        The returned teaching week is guaranteed to be within total_weeks and
+        therefore valid for ``calculate_target_date``.
+        """
+        from ..services.teaching_calendar_settings import load_teaching_calendar_config
+        from ..services.teaching_calendar import (
+            teaching_term_end,
+            teaching_term_start,
+            teaching_week_number,
+        )
+
+        config, error = load_teaching_calendar_config()
+        if error is not None or config is None:
             return "请先在系统听课制度设置中配置教学周起始时间"
-        days_to_subtract = (first_week.weekday() - week_start_day) % 7
-        first_week_start = first_week - timedelta(days=days_to_subtract)
-        current_week = ((now.date() - first_week_start.date()).days // 7) + 1
-        next_week_num = max(1, current_week + 1)
+
+        now = datetime.now()
+        today = now.date()
+        term_start = teaching_term_start(config)
+        term_end = teaching_term_end(config)
+
+        if today < term_start:
+            next_week_num = 1
+        elif today >= term_end:
+            return "当前学期教学周已结束，请联系管理员更新学期设置"
+        else:
+            current_week = teaching_week_number(today, config)
+            if current_week is None or current_week >= config.total_weeks:
+                return "当前学期教学周已结束，请联系管理员更新学期设置"
+            next_week_num = current_week + 1
+
         next_week = now + timedelta(days=7)
-        
         weekdays = ['一', '二', '三', '四', '五', '六', '日']
         next_weekday = weekdays[next_week.weekday()]
-        
+
         return f"建议格式：第{next_week_num}周星期{next_weekday}第3-4节，在教学楼A101教室听课"
 
 
