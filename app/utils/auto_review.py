@@ -20,6 +20,7 @@ from ..services.legacy_review_compat import (
     get_legacy_review_week_no,
     resolve_legacy_semester_monday,
 )
+from ..services.review_schedule_source import current_canonical_legacy_df
 from ..services.review_contacts import (
     find_reviewer_by_id as _canonical_find_reviewer_by_id,
     find_reviewer_by_name as _canonical_find_reviewer_by_name,
@@ -98,15 +99,31 @@ class AutoReviewEngine:
     def __init__(self,
                  schedule_path: Optional[str] = None,
                  semester_monday: Optional[str] = None):
-        # 读取系统设置中的上传路径，否则使用默认文件
-        schedule_config = SystemSetting.get(SETTING_KEY_SCHEDULE_PATH)
-        self.schedule_path = schedule_path or schedule_config or DEFAULT_SCHEDULE_PATH
-        if not _exists(self.schedule_path) and _exists(DEFAULT_SCHEDULE_PATH):
-            self.schedule_path = DEFAULT_SCHEDULE_PATH
-        
-        # 读取文件
-        self.schedule_df = _read_excel(self.schedule_path)
-        
+        # Explicit schedule_path always wins: it is a test/tool injection path
+        # and must continue to read the legacy Excel file directly.
+        self.schedule_source_kind = 'none'
+        if schedule_path:
+            self.schedule_path = schedule_path
+            self.schedule_df = _read_excel(self.schedule_path)
+            self.schedule_source_kind = 'explicit_legacy' if self.schedule_df is not None else 'none'
+        else:
+            canonical_df = current_canonical_legacy_df()
+            if canonical_df is not None:
+                self.schedule_path = None
+                self.schedule_df = canonical_df
+                self.schedule_source_kind = 'canonical_snapshot'
+            else:
+                # Canonical selection not READY: use legacy Excel only as a
+                # compatibility fallback.  This does not weaken the canonical
+                # selector; the fallback decision lives here in the source
+                # resolver, not in schedule_snapshots.
+                schedule_config = SystemSetting.get(SETTING_KEY_SCHEDULE_PATH)
+                self.schedule_path = schedule_config or DEFAULT_SCHEDULE_PATH
+                if not _exists(self.schedule_path) and _exists(DEFAULT_SCHEDULE_PATH):
+                    self.schedule_path = DEFAULT_SCHEDULE_PATH
+                self.schedule_df = _read_excel(self.schedule_path)
+                self.schedule_source_kind = 'legacy_fallback' if self.schedule_df is not None else 'none'
+
         self._explicit_semester_monday = semester_monday or None
         self.semester_monday_str = semester_monday or resolve_legacy_semester_monday()
         self.semester_monday = None
