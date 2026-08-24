@@ -30,6 +30,7 @@ CURRENT_SEMESTER_CONFIGURED_BUT_NO_ACTIVE_SNAPSHOT = (
 )
 READY = 'READY'
 AMBIGUOUS = 'AMBIGUOUS'
+INVALID_AUTHORITY = 'INVALID_AUTHORITY'
 
 # Legacy matcher-facing column names in the admin schedule workbook.
 SNAPSHOT_COLUMNS = {
@@ -60,10 +61,20 @@ class CurrentScheduleSelection:
     semester: str = ''
     batch: Optional[ScheduleImportBatch] = None
     rows: List[ScheduleImportRow] = field(default_factory=list)
+    error: Optional[str] = None
 
     @property
     def is_ready(self) -> bool:
         return self.status == READY
+
+
+@dataclass
+class AuthorityResolution:
+    """Internal distinction between absent, valid, and invalid authority."""
+    selection_exists: bool
+    batch: Optional[ScheduleImportBatch] = None
+    valid: bool = False
+    error: Optional[str] = None
 
 
 def _is_nan(value) -> bool:
@@ -123,12 +134,36 @@ def _set_semester_selection(semester: str, batch_id: int) -> None:
     selection.active_batch_id = batch_id
 
 
-def _active_batch_via_selection(semester: str) -> Optional[ScheduleImportBatch]:
-    """Return the authoritative batch for a semester, if a selection exists."""
+def _resolve_authority(semester: str) -> AuthorityResolution:
+    """Return the exact authority state: absent, valid, or invalid.
+
+    A present-but-invalid authority (dangling pointer or wrong-semester
+    pointer) must never fall back to ``ScheduleImportBatch.status``.
+    """
     selection = db.session.get(ScheduleSemesterSelection, semester)
     if selection is None:
-        return None
-    return db.session.get(ScheduleImportBatch, selection.active_batch_id)
+        return AuthorityResolution(selection_exists=False)
+
+    batch = db.session.get(ScheduleImportBatch, selection.active_batch_id)
+    if batch is None:
+        return AuthorityResolution(
+            selection_exists=True,
+            valid=False,
+            error='dangling_authority_pointer',
+        )
+    if batch.semester != semester:
+        return AuthorityResolution(
+            selection_exists=True,
+            batch=batch,
+            valid=False,
+            error='authority_semester_mismatch',
+        )
+
+    return AuthorityResolution(
+        selection_exists=True,
+        batch=batch,
+        valid=True,
+    )
 
 
 def _legacy_single_active_fallback(semester: str) -> Optional[ScheduleImportBatch]:
@@ -231,13 +266,13 @@ def persist_import_snapshot(
 def get_active_schedule_batch(semester: str) -> Optional[ScheduleImportBatch]:
     """Return the authoritative active snapshot batch for a semester.
 
-    The authoritative source is ``ScheduleSemesterSelection``.  The legacy
-    single-active fallback exists only for data created before the authority
-    table was introduced and fails closed when ambiguous.
+    The authoritative source is ``ScheduleSemesterSelection``.  A present but
+    invalid authority (dangling/wrong-semester) fails closed; the legacy
+    single-active fallback is allowed only when the selection row is absent.
     """
-    batch = _active_batch_via_selection(semester)
-    if batch is not None:
-        return batch
+    authority = _resolve_authority(semester)
+    if authority.selection_exists:
+        return authority.batch if authority.valid else None
     return _legacy_single_active_fallback(semester)
 
 
@@ -278,22 +313,35 @@ def resolve_current_schedule_snapshot(
 
     semester = str(semester).strip()
 
-    batch = _active_batch_via_selection(semester)
-    if batch is None:
-        # No authority pointer: only accept an exactly-one legacy active row.
-        active_count = _legacy_active_count(semester)
-        if active_count == 0:
+    authority = _resolve_authority(semester)
+    if authority.selection_exists:
+        if not authority.valid:
             return CurrentScheduleSelection(
-                status=CURRENT_SEMESTER_CONFIGURED_BUT_NO_ACTIVE_SNAPSHOT,
+                status=INVALID_AUTHORITY,
                 semester=semester,
+                error=authority.error,
             )
-        if active_count > 1:
-            return CurrentScheduleSelection(
-                status=AMBIGUOUS,
-                semester=semester,
-            )
-        batch = _legacy_single_active_fallback(semester)
+        return CurrentScheduleSelection(
+            status=READY,
+            semester=semester,
+            batch=authority.batch,
+            rows=_rows_for_batch(authority.batch),
+        )
 
+    # Selection row absent: the legacy exactly-one active fallback is allowed.
+    active_count = _legacy_active_count(semester)
+    if active_count == 0:
+        return CurrentScheduleSelection(
+            status=CURRENT_SEMESTER_CONFIGURED_BUT_NO_ACTIVE_SNAPSHOT,
+            semester=semester,
+        )
+    if active_count > 1:
+        return CurrentScheduleSelection(
+            status=AMBIGUOUS,
+            semester=semester,
+        )
+
+    batch = _legacy_single_active_fallback(semester)
     if batch is None:
         return CurrentScheduleSelection(
             status=CURRENT_SEMESTER_CONFIGURED_BUT_NO_ACTIVE_SNAPSHOT,

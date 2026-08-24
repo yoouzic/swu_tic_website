@@ -160,6 +160,56 @@ class ScheduleSelectionContractTest(unittest.TestCase):
         self.assertIsNone(result.batch)
         self.assertEqual(result.rows, [])
 
+    def test_dangling_authority_pointer_fails_closed_without_status_fallback(self):
+        # A legacy active row exists, but a selection row is present and its
+        # pointer is dangling.  Authority exists => status fallback forbidden.
+        legacy = ScheduleImportBatch(
+            semester='DANGLE', status='active', row_count=0,
+            source_filename='legacy.xlsx', source_sha256='l' * 64,
+        )
+        db.session.add(legacy)
+        db.session.flush()
+        db.session.add(ScheduleSemesterSelection(
+            semester='DANGLE',
+            active_batch_id=999999,
+        ))
+        db.session.commit()
+
+        self.assertIsNone(get_active_schedule_batch('DANGLE'))
+        result = resolve_current_schedule_snapshot(semester='DANGLE')
+        self.assertEqual(result.status, 'INVALID_AUTHORITY')
+        self.assertIsNone(result.batch)
+        self.assertEqual(result.rows, [])
+        self.assertEqual(result.error, 'dangling_authority_pointer')
+
+    def test_wrong_semester_authority_pointer_fails_closed_without_status_fallback(self):
+        other = ScheduleImportBatch(
+            semester='OTHER', status='active', row_count=0,
+            source_filename='other.xlsx', source_sha256='o' * 64,
+        )
+        legacy = ScheduleImportBatch(
+            semester='X', status='active', row_count=0,
+            source_filename='legacy.xlsx', source_sha256='l' * 64,
+        )
+        db.session.add_all([other, legacy])
+        db.session.flush()
+        db.session.add(ScheduleSemesterSelection(
+            semester='X',
+            active_batch_id=other.id,
+        ))
+        db.session.commit()
+
+        self.assertIsNone(get_active_schedule_batch('X'))
+        result = resolve_current_schedule_snapshot(semester='X')
+        self.assertEqual(result.status, 'INVALID_AUTHORITY')
+        self.assertIsNone(result.batch)
+        self.assertEqual(result.rows, [])
+        self.assertEqual(result.error, 'authority_semester_mismatch')
+        # The other semester's selection is untouched.
+        self.assertTrue(
+            db.session.get(ScheduleImportBatch, other.id) is not None,
+        )
+
     def test_selection_pointer_is_authority_over_status_flags(self):
         b1 = ScheduleImportBatch(
             semester='AUTH1', status='active', row_count=0,
@@ -294,7 +344,7 @@ class ScheduleSelectionContractTest(unittest.TestCase):
             1,
         )
 
-    def test_concurrent_different_semesters_do_not_interfere(self):
+    def test_concurrent_different_semesters_preserve_authority_isolation(self):
         barrier = threading.Barrier(2)
         results = []
 
@@ -326,11 +376,16 @@ class ScheduleSelectionContractTest(unittest.TestCase):
         self.assertEqual(len(results), 2)
         ok = [semester for semester, status, _ in results if status == 'ok']
         self.assertGreaterEqual(len(ok), 1)
+        # Safety: no selection may point to a batch belonging to another
+        # semester.  SQLite may still limit concurrent write availability.
         for semester in ('X', 'Y'):
             selection = db.session.get(ScheduleSemesterSelection, semester)
             if selection is not None:
+                batch = get_active_schedule_batch(semester)
+                self.assertIsNotNone(batch)
+                self.assertEqual(batch.semester, semester)
                 self.assertEqual(
-                    get_active_schedule_batch(semester).id,
+                    batch.id,
                     selection.active_batch_id,
                 )
 
