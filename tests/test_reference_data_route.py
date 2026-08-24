@@ -8,7 +8,15 @@ from unittest import mock
 import pandas as pd
 
 from app.app import app
-from app.models import SystemSetting, User, db
+from app.models import (
+    ScheduleImportBatch,
+    ScheduleImportRow,
+    ScheduleImportRowScalarMeta,
+    ScheduleSemesterSelection,
+    SystemSetting,
+    User,
+    db,
+)
 from app.services.schedule_snapshots import persist_import_snapshot
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
 
@@ -163,6 +171,58 @@ class ReferenceDataRouteTest(unittest.TestCase):
         data = response.get_json()['result']
         self.assertEqual(data['schedule_matches'][0]['teacher_name'], '张三')
         self.assertIn('_with_location', data['schedule_matches'][0]['match_type'])
+
+
+    def test_malformed_known_kind_route_fails_closed_without_500(self):
+        batch = ScheduleImportBatch(
+            semester=SEMESTER,
+            status='active',
+            row_count=1,
+            source_filename='corrupt.xlsx',
+            source_sha256='c' * 64,
+        )
+        db.session.add(batch)
+        db.session.flush()
+        row = ScheduleImportRow(
+            batch_id=batch.id,
+            source_row=2,
+            teacher_name='abc',
+            teacher_college='计算机学院',
+            course_name='数据结构',
+            weekday_raw='三',
+            class_period_raw='第3-4节',
+            location_raw='32-302',
+            class_composition_raw='2023级计算机1班',
+            start_week_raw='1',
+        )
+        db.session.add(row)
+        db.session.flush()
+        db.session.add(ScheduleImportRowScalarMeta(
+            row_id=row.id,
+            teacher_name_kind='int',
+            course_name_kind='text',
+        ))
+        db.session.add(ScheduleSemesterSelection(
+            semester=SEMESTER,
+            active_batch_id=batch.id,
+        ))
+        db.session.commit()
+        SystemSetting.set('teaching_current_semester', SEMESTER)
+
+        with mock.patch(
+            'app.services.review_schedule_source._read_excel',
+            return_value=None,
+        ) as read_excel:
+            response = self._post({
+                'listener_number': self.super_admin.number,
+                'teacher_name': '张三',
+                'course_title': '数据结构',
+            })
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        data = response.get_json()['result']
+        self.assertEqual(data['schedule_matches'], [])
+        self.assertEqual(len(data['contact_matches']), 1)
+        read_excel.assert_not_called()
 
 
 if __name__ == '__main__':

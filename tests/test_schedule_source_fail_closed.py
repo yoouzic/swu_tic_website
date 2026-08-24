@@ -19,6 +19,7 @@ from app.models import (
 from app.services.review_schedule_source import (
     NONE,
     SCALAR_METADATA_INCOMPLETE,
+    SCALAR_METADATA_INVALID,
     resolve_review_schedule_source,
 )
 from app.utils.auto_review import AutoReviewEngine
@@ -248,6 +249,77 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
         self.assertEqual(engine.schedule_source_kind, 'none')
         self.assertIsNone(engine.schedule_df)
         read_excel.assert_not_called()
+
+
+    def _make_snapshot_with_meta(
+        self,
+        teacher,
+        teacher_kind,
+        course='数据结构',
+        course_kind='text',
+        semester='2026-2027-1',
+    ):
+        batch, row = self._make_old_snapshot_without_metadata(
+            teacher=teacher,
+            course=course,
+            semester=semester,
+        )
+        db.session.add(ScheduleImportRowScalarMeta(
+            row_id=row.id,
+            teacher_name_kind=teacher_kind,
+            course_name_kind=course_kind,
+        ))
+        db.session.commit()
+        SystemSetting.set('teaching_current_semester', semester)
+        SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
+
+    def _assert_invalid_metadata(self):
+        resolution = resolve_review_schedule_source()
+        self.assertEqual(resolution.kind, NONE)
+        self.assertEqual(resolution.canonical_status, SCALAR_METADATA_INVALID)
+        self.assertIsNone(resolution.dataframe)
+
+    def test_invalid_int_payload_fails_closed(self):
+        self._make_snapshot_with_meta('abc', 'int')
+        self._assert_invalid_metadata()
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=LEGACY_DF) as read_excel:
+            engine = AutoReviewEngine()
+        self.assertEqual(engine.schedule_source_kind, 'none')
+        self.assertIsNone(engine.schedule_df)
+        read_excel.assert_not_called()
+
+    def test_invalid_float_payload_fails_closed(self):
+        self._make_snapshot_with_meta('not-a-float', 'float')
+        self._assert_invalid_metadata()
+
+    def test_invalid_bool_payload_fails_closed_instead_of_silent_false(self):
+        self._make_snapshot_with_meta('garbage', 'bool')
+        self._assert_invalid_metadata()
+
+    def test_invalid_temporal_payloads_fail_closed(self):
+        cases = [
+            ('not-a-datetime', 'datetime', 'T-DT'),
+            ('not-a-date', 'date', 'T-D'),
+            ('not-a-time', 'time', 'T-T'),
+        ]
+        for teacher, kind, semester in cases:
+            with self.subTest(kind=kind):
+                self._make_snapshot_with_meta(
+                    teacher, kind, semester=semester,
+                )
+                self._assert_invalid_metadata()
+
+    def test_invalid_nan_nat_raw_payloads_fail_closed(self):
+        cases = [
+            ('ordinary-text', 'nan', 'N-NAN'),
+            ('ordinary-text', 'nat', 'N-NAT'),
+        ]
+        for teacher, kind, semester in cases:
+            with self.subTest(kind=kind):
+                self._make_snapshot_with_meta(
+                    teacher, kind, semester=semester,
+                )
+                self._assert_invalid_metadata()
 
 
 if __name__ == '__main__':

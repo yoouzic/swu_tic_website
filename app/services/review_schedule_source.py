@@ -38,6 +38,7 @@ CANONICAL_SNAPSHOT = 'canonical_snapshot'
 LEGACY_FALLBACK = 'legacy_fallback'
 NONE = 'none'
 SCALAR_METADATA_INCOMPLETE = 'scalar_metadata_incomplete'
+SCALAR_METADATA_INVALID = 'scalar_metadata_invalid'
 
 # Service-level state returned before the engine decides whether a legacy file
 # actually exists.
@@ -150,31 +151,91 @@ def snapshot_scalar_metadata_complete(rows: List[ScheduleImportRow]) -> bool:
     return len(by_row) == len(row_ids)
 
 
-def _anchor_cell(row, meta, field: str):
+def snapshot_scalar_metadata_valid(rows: List[ScheduleImportRow]) -> bool:
+    """Return False if any known-kind metadata has an invalid raw payload."""
+    row_ids = [row.id for row in rows if row.id is not None]
+    if not row_ids:
+        return True
+
+    metas = ScheduleImportRowScalarMeta.query.filter(
+        ScheduleImportRowScalarMeta.row_id.in_(row_ids)
+    ).all()
+    by_row = {meta.row_id: meta for meta in metas}
+
+    for row in rows:
+        meta = by_row.get(row.id)
+        if meta is None:
+            return False
+        ok_teacher, _ = _reconstruct_anchor_cell(row, meta, 'teacher_name')
+        ok_course, _ = _reconstruct_anchor_cell(row, meta, 'course_name')
+        if not ok_teacher or not ok_course:
+            return False
+    return True
+
+
+def _reconstruct_anchor_cell(row, meta, field: str):
+    """Strictly validate and reconstruct one matcher anchor scalar.
+
+    Returns ``(True, value)`` on success, ``(False, None)`` on any
+    known-kind/raw-payload mismatch.  It never silently corrupts.
+    """
     text = getattr(row, field)
     if meta is None:
-        raise ValueError('missing scalar metadata for canonical snapshot use')
+        return False, None
     kind = getattr(meta, f'{field}_kind')
 
-    if kind == 'text':
-        return text
-    if kind == 'int':
-        return int(text)
-    if kind == 'float':
-        return float(text)
-    if kind == 'bool':
-        return text == 'True'
-    if kind == 'datetime':
-        return pd.Timestamp(text)
-    if kind == 'date':
-        return datetime.date.fromisoformat(str(text)[:10])
-    if kind == 'time':
-        return datetime.time.fromisoformat(str(text))
-    if kind == 'nan':
-        return float('nan')
-    if kind == 'nat':
-        return pd.NaT
-    raise ValueError(f'unknown scalar kind: {kind}')
+    try:
+        if kind == 'text':
+            return True, text
+        if kind == 'int':
+            value = int(text)
+            if str(value) != text:
+                return False, None
+            return True, value
+        if kind == 'float':
+            value = float(text)
+            if str(value) != text:
+                return False, None
+            return True, value
+        if kind == 'bool':
+            if text == 'True':
+                return True, True
+            if text == 'False':
+                return True, False
+            return False, None
+        if kind == 'datetime':
+            value = pd.Timestamp(text)
+            if str(value) != text:
+                return False, None
+            return True, value
+        if kind == 'date':
+            value = datetime.date.fromisoformat(str(text)[:10])
+            if str(value) != str(text)[:10]:
+                return False, None
+            return True, value
+        if kind == 'time':
+            value = datetime.time.fromisoformat(str(text))
+            if str(value) != str(text):
+                return False, None
+            return True, value
+        if kind == 'nan':
+            if str(text) != 'nan':
+                return False, None
+            return True, float('nan')
+        if kind == 'nat':
+            if str(text) != 'NaT':
+                return False, None
+            return True, pd.NaT
+        return False, None
+    except (ValueError, TypeError):
+        return False, None
+
+
+def _anchor_cell(row, meta, field: str):
+    ok, value = _reconstruct_anchor_cell(row, meta, field)
+    if not ok:
+        raise ValueError('invalid scalar payload for canonical snapshot use')
+    return value
 
 
 def snapshot_rows_to_legacy_df(
@@ -248,6 +309,12 @@ def resolve_review_schedule_source(
             return ReviewScheduleSourceResolution(
                 kind=NONE,
                 canonical_status=SCALAR_METADATA_INCOMPLETE,
+                semester=selection.semester,
+            )
+        if not snapshot_scalar_metadata_valid(selection.rows):
+            return ReviewScheduleSourceResolution(
+                kind=NONE,
+                canonical_status=SCALAR_METADATA_INVALID,
                 semester=selection.semester,
             )
         return ReviewScheduleSourceResolution(
