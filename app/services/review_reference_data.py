@@ -9,7 +9,7 @@ implemented inside AutoReviewEngine.search_reference_data():
         'contact_matches': [...]
     }
 """
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from app.services.review_contacts import (
     find_reviewer_by_id as _find_reviewer_by_id,
@@ -18,16 +18,18 @@ from app.services.review_contacts import (
 from app.services.review_schedule_matcher import find_course_in_schedule
 from app.services.review_schedule_source import resolve_review_schedule_source
 
+_SCHEDULE_DF_UNSET = object()
+
 
 def search_review_reference_data(
     form_data: Dict[str, Any],
-    schedule_df=None,
+    schedule_df=_SCHEDULE_DF_UNSET,
 ) -> Dict[str, Any]:
     """Search reference data using the frozen legacy contact/schedule contract.
 
-    If ``schedule_df`` is not supplied, the canonical schedule source resolver
-    is used so production callers share the same source decision as
-    AutoReviewEngine.
+    ``schedule_df`` omitted means resolve the global review schedule source.
+    Passing ``None`` explicitly is an intentional unavailable source and must
+    not trigger a second resolution.
     """
     result = {
         'schedule_matches': [],
@@ -66,7 +68,7 @@ def search_review_reference_data(
                 result['contact_matches'].append(contact_by_name)
 
     # 2. 搜索课表
-    if schedule_df is None:
+    if schedule_df is _SCHEDULE_DF_UNSET:
         resolution = resolve_review_schedule_source()
         schedule_df = resolution.dataframe
 
