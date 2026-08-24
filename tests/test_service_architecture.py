@@ -17,6 +17,7 @@ TEACHING_CALENDAR_SETTINGS_FILE = Path('app/services/teaching_calendar_settings.
 FORM_WEEK_SEMANTICS_FILE = Path('app/services/form_week_semantics.py')
 SCHEDULE_SNAPSHOTS_FILE = Path('app/services/schedule_snapshots.py')
 ACADEMIC_TERM_FILE = Path('app/services/academic_term.py')
+REVIEW_SCHEDULE_SOURCE_FILE = Path('app/services/review_schedule_source.py')
 
 FORBIDDEN_IMPORT_PREFIXES = (
     'flask',
@@ -255,6 +256,41 @@ class ServiceArchitectureTests(unittest.TestCase):
                     node.id,
                     {'request', 'session', 'jsonify', 'render_template', 'redirect', 'url_for', 'flash', 'current_app'},
                 )
+
+    def test_review_schedule_source_boundary_has_no_flask_blueprint_or_review_automation(self):
+        tree = ast.parse(REVIEW_SCHEDULE_SOURCE_FILE.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.name
+                    self.assertFalse(
+                        name.startswith('flask')
+                        or name.startswith('app.blueprints')
+                        or name.startswith('app.review_automation'),
+                        f'{REVIEW_SCHEDULE_SOURCE_FILE.name} imports forbidden module: {name}',
+                    )
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ''
+                self.assertFalse(
+                    module.startswith('flask')
+                    or module.startswith('app.blueprints')
+                    or module.startswith('app.review_automation'),
+                    f'{REVIEW_SCHEDULE_SOURCE_FILE.name} imports forbidden module: {module}',
+                )
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                self.assertNotIn(
+                    node.id,
+                    {'request', 'session', 'jsonify', 'render_template', 'redirect', 'url_for', 'flash', 'current_app'},
+                )
+
+    def test_review_schedule_source_exposes_adapter_api(self):
+        tree = ast.parse(REVIEW_SCHEDULE_SOURCE_FILE.read_text(encoding='utf-8'))
+        functions = {
+            n.name for n in tree.body
+            if isinstance(n, ast.FunctionDef)
+        }
+        self.assertIn('snapshot_rows_to_legacy_df', functions)
+        self.assertIn('current_canonical_legacy_df', functions)
 
     def test_schedule_snapshots_exposes_canonical_api(self):
         tree = ast.parse(SCHEDULE_SNAPSHOTS_FILE.read_text(encoding='utf-8'))
