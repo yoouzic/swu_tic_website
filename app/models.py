@@ -608,9 +608,9 @@ class ScheduleImportBatch(db.Model):
     """Admin-owned canonical raw schedule snapshot batch.
 
     A batch is created from one successful legacy schedule workbook import and
-    is grouped by the workbook's own semester field.  For a given semester at
-    most one batch may be ``active``; the invariant is enforced transactionally
-    by the service layer, not by SQLite partial-unique tricks.
+    is grouped by the workbook's own semester field.  ``status`` is historical
+    metadata only; the authoritative current batch for a semester is stored in
+    ``ScheduleSemesterSelection``.
     """
     __tablename__ = 'schedule_import_batches'
 
@@ -697,3 +697,35 @@ class ScheduleSemesterSelection(db.Model):
 
     def __repr__(self):
         return f'<ScheduleSemesterSelection {self.semester} -> {self.active_batch_id}>'
+
+
+class ScheduleImportRowScalarMeta(db.Model):
+    """Minimal scalar-type metadata for matcher anchor cells.
+
+    ``ScheduleImportRow`` stores the raw matcher-facing text, which is correct
+    for string/raw fidelity.  Pandas candidate selection in the legacy matcher
+    however compares actual scalar values (``int``/``float``/``NaN``/``str``).
+    This additive table preserves only the two anchor fields used by candidate
+    selection so the canonical adapter can reproduce legacy scalar equality.
+    """
+    __tablename__ = 'schedule_import_row_scalar_meta'
+
+    id = db.Column(db.Integer, primary_key=True)
+    row_id = db.Column(
+        db.Integer,
+        db.ForeignKey('schedule_import_rows.id'),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    teacher_name_kind = db.Column(db.String(10), nullable=False, default='text')
+    course_name_kind = db.Column(db.String(10), nullable=False, default='text')
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+    row = db.relationship('ScheduleImportRow', backref='scalar_meta', uselist=False)
+
+    def __repr__(self):
+        return (
+            f'<ScheduleImportRowScalarMeta row={self.row_id} '
+            f'teacher={self.teacher_name_kind} course={self.course_name_kind}>'
+        )

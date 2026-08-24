@@ -20,7 +20,12 @@ from ..services.legacy_review_compat import (
     get_legacy_review_week_no,
     resolve_legacy_semester_monday,
 )
-from ..services.review_schedule_source import current_canonical_legacy_df
+from ..services.review_schedule_source import (
+    CANONICAL_SNAPSHOT,
+    LEGACY_FALLBACK_ELIGIBLE,
+    NONE,
+    resolve_review_schedule_source,
+)
 from ..services.review_contacts import (
     find_reviewer_by_id as _canonical_find_reviewer_by_id,
     find_reviewer_by_name as _canonical_find_reviewer_by_name,
@@ -101,28 +106,32 @@ class AutoReviewEngine:
                  semester_monday: Optional[str] = None):
         # Explicit schedule_path always wins: it is a test/tool injection path
         # and must continue to read the legacy Excel file directly.
-        self.schedule_source_kind = 'none'
+        self.schedule_source_kind = NONE
         if schedule_path:
             self.schedule_path = schedule_path
             self.schedule_df = _read_excel(self.schedule_path)
-            self.schedule_source_kind = 'explicit_legacy' if self.schedule_df is not None else 'none'
+            self.schedule_source_kind = 'explicit_legacy' if self.schedule_df is not None else NONE
         else:
-            canonical_df = current_canonical_legacy_df()
-            if canonical_df is not None:
+            resolution = resolve_review_schedule_source()
+            if resolution.kind == CANONICAL_SNAPSHOT:
                 self.schedule_path = None
-                self.schedule_df = canonical_df
-                self.schedule_source_kind = 'canonical_snapshot'
-            else:
-                # Canonical selection not READY: use legacy Excel only as a
-                # compatibility fallback.  This does not weaken the canonical
-                # selector; the fallback decision lives here in the source
-                # resolver, not in schedule_snapshots.
+                self.schedule_df = resolution.dataframe
+                self.schedule_source_kind = CANONICAL_SNAPSHOT
+            elif resolution.kind == LEGACY_FALLBACK_ELIGIBLE:
+                # Current semester is unset: the only canonical non-READY state
+                # allowed to consult the historical legacy Excel compatibility
+                # file.  Configured-but-missing/ambiguous/invalid states never
+                # reach this branch.
                 schedule_config = SystemSetting.get(SETTING_KEY_SCHEDULE_PATH)
                 self.schedule_path = schedule_config or DEFAULT_SCHEDULE_PATH
                 if not _exists(self.schedule_path) and _exists(DEFAULT_SCHEDULE_PATH):
                     self.schedule_path = DEFAULT_SCHEDULE_PATH
                 self.schedule_df = _read_excel(self.schedule_path)
-                self.schedule_source_kind = 'legacy_fallback' if self.schedule_df is not None else 'none'
+                self.schedule_source_kind = 'legacy_fallback' if self.schedule_df is not None else NONE
+            else:
+                self.schedule_path = None
+                self.schedule_df = None
+                self.schedule_source_kind = NONE
 
         self._explicit_semester_monday = semester_monday or None
         self.semester_monday_str = semester_monday or resolve_legacy_semester_monday()

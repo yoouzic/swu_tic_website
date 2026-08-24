@@ -310,6 +310,120 @@ class CanonicalMatcherDifferentialTest(unittest.TestCase):
         canonical_matches = canonical_engine.search_reference_data(form_data)['schedule_matches']
         self.assertEqual(legacy_matches, canonical_matches)
 
+    def test_scalar_anchor_fidelity_numeric_and_nan(self):
+        import math
+        data = [
+            {
+                '姓名': 123,
+                '教师所属学院': '计算机学院',
+                '课程名称': '数据结构',
+                '星期几': '三',
+                '上课节次': '第3-4节',
+                '场地名称': '32-302',
+                '教学班组成': '2023级计算机1班',
+                '起始周': '1',
+            },
+            {
+                '姓名': '张三',
+                '教师所属学院': '计算机学院',
+                '课程名称': 456,
+                '星期几': '三',
+                '上课节次': '第3-4节',
+                '场地名称': '32-302',
+                '教学班组成': '2023级计算机1班',
+                '起始周': '1',
+            },
+            {
+                '姓名': float('nan'),
+                '教师所属学院': '计算机学院',
+                '课程名称': '缺失课程',
+                '星期几': '三',
+                '上课节次': '第3-4节',
+                '场地名称': '32-302',
+                '教学班组成': '2023级计算机1班',
+                '起始周': '1',
+            },
+            {
+                '姓名': '王五',
+                '教师所属学院': '计算机学院',
+                '课程名称': float('nan'),
+                '星期几': '三',
+                '上课节次': '第3-4节',
+                '场地名称': '32-302',
+                '教学班组成': '2023级计算机1班',
+                '起始周': '1',
+            },
+        ]
+        legacy_df = pd.DataFrame(data, columns=LEGACY_COLUMNS)
+        source_df = pd.DataFrame([
+            {**row, '学期': SEMESTER, '学年': '2025'}
+            for row in data
+        ])
+        persist_import_snapshot(source_df, 'scalar.xlsx', 'c' * 64)
+        canonical_df = snapshot_rows_to_legacy_df(
+            get_active_schedule_rows(SEMESTER),
+        )
+
+        queries = [
+            {'teacher_name': '123', 'course_title': '数据结构'},
+            {'teacher_name': '张三', 'course_title': '456'},
+            {'teacher_name': 'nan', 'course_title': '缺失课程'},
+            {'teacher_name': '王五', 'course_title': 'nan'},
+            {'teacher_name': '123.0', 'course_title': '数据结构'},
+            {'teacher_name': '张三', 'course_title': '123.0'},
+        ]
+        for form in queries:
+            with self.subTest(form=form):
+                legacy_engine = self._engine_with_df(legacy_df)
+                canonical_engine = self._engine_with_df(canonical_df)
+                _, legacy_all = legacy_engine._find_course_in_schedule(
+                    form.get('teacher_name'),
+                    None,
+                    form.get('course_title'),
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                _, canonical_all = canonical_engine._find_course_in_schedule(
+                    form.get('teacher_name'),
+                    None,
+                    form.get('course_title'),
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                self.assertEqual(legacy_all, canonical_all, form)
+
+    def test_search_reference_data_scalar_anchor_parity(self):
+        import math
+        data = [{
+            '姓名': 123,
+            '教师所属学院': '计算机学院',
+            '课程名称': '数据结构',
+            '星期几': '三',
+            '上课节次': '第3-4节',
+            '场地名称': '32-302',
+            '教学班组成': '2023级计算机1班',
+            '起始周': '1',
+        }]
+        legacy_df = pd.DataFrame(data, columns=LEGACY_COLUMNS)
+        source_df = pd.DataFrame([
+            {**data[0], '学期': SEMESTER, '学年': '2025'}
+        ])
+        persist_import_snapshot(source_df, 'scalar2.xlsx', 'd' * 64)
+        canonical_df = snapshot_rows_to_legacy_df(
+            get_active_schedule_rows(SEMESTER),
+        )
+        form = {'teacher_name': '123', 'course_title': '数据结构'}
+        legacy_engine = self._engine_with_df(legacy_df)
+        canonical_engine = self._engine_with_df(canonical_df)
+        self.assertEqual(
+            legacy_engine.search_reference_data(form)['schedule_matches'],
+            canonical_engine.search_reference_data(form)['schedule_matches'],
+        )
+
     def test_review_any_schedule_fields_identical(self):
         from types import SimpleNamespace
         legacy_engine = self._engine_with_df(self.legacy_df)

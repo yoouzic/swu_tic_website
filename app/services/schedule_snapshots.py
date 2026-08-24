@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple
 from app.models import (
     ScheduleImportBatch,
     ScheduleImportRow,
+    ScheduleImportRowScalarMeta,
     ScheduleSemesterSelection,
     db,
 )
@@ -112,6 +113,21 @@ def _academic_year_key(value) -> str:
 
 def _row_cell(row, column: str) -> str:
     return legacy_cell_text(row.get(column))
+
+
+def _scalar_kind(value) -> str:
+    """Classify the legacy scalar type for matcher anchor candidate selection."""
+    from numbers import Integral, Real
+
+    if value is None or _is_nan(value):
+        return 'missing'
+    if isinstance(value, bool):
+        return 'text'
+    if isinstance(value, Integral):
+        return 'int'
+    if isinstance(value, Real):
+        return 'float'
+    return 'text'
 
 
 def _set_semester_selection(semester: str, batch_id: int) -> None:
@@ -231,9 +247,10 @@ def persist_import_snapshot(
         db.session.flush()
         batches.append(batch)
 
+        row_objects = []
         for source_index, row in rows:
             source_row = int(source_index) + source_row_offset
-            db.session.add(ScheduleImportRow(
+            row_obj = ScheduleImportRow(
                 batch_id=batch.id,
                 source_row=source_row,
                 teacher_name=_row_cell(row, SNAPSHOT_COLUMNS['teacher_name']),
@@ -246,6 +263,16 @@ def persist_import_snapshot(
                     row, SNAPSHOT_COLUMNS['class_composition_raw']
                 ),
                 start_week_raw=_row_cell(row, SNAPSHOT_COLUMNS['start_week_raw']),
+            )
+            db.session.add(row_obj)
+            row_objects.append((source_index, row, row_obj))
+
+        db.session.flush()
+        for _, row, row_obj in row_objects:
+            db.session.add(ScheduleImportRowScalarMeta(
+                row_id=row_obj.id,
+                teacher_name_kind=_scalar_kind(row.get('姓名')),
+                course_name_kind=_scalar_kind(row.get('课程名称')),
             ))
 
         _set_semester_selection(semester, batch.id)

@@ -289,8 +289,14 @@ class ServiceArchitectureTests(unittest.TestCase):
             n.name for n in tree.body
             if isinstance(n, ast.FunctionDef)
         }
+        classes = {
+            n.name for n in tree.body
+            if isinstance(n, ast.ClassDef)
+        }
         self.assertIn('snapshot_rows_to_legacy_df', functions)
         self.assertIn('current_canonical_legacy_df', functions)
+        self.assertIn('resolve_review_schedule_source', functions)
+        self.assertIn('ReviewScheduleSourceResolution', classes)
 
     def test_schedule_snapshots_exposes_canonical_api(self):
         tree = ast.parse(SCHEDULE_SNAPSHOTS_FILE.read_text(encoding='utf-8'))
