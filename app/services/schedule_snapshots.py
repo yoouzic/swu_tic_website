@@ -8,9 +8,12 @@ legacy AutoReviewEngine matcher reads from ``pd.read_excel`` /
 ``str(row[...])`` and is intentionally separate from the normalized/frozen
 ``review_automation`` dataset layer.
 """
+import datetime
 import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
+
+import pandas as pd
 
 from app.models import (
     ScheduleImportBatch,
@@ -120,14 +123,26 @@ def _scalar_kind(value) -> str:
     from numbers import Integral, Real
 
     if value is None or _is_nan(value):
-        return 'missing'
+        return 'nan'
+    if value is pd.NaT or (hasattr(value, 'is_nat') and getattr(value, 'is_nat')()):
+        return 'nat'
     if isinstance(value, bool):
-        return 'text'
+        return 'bool'
     if isinstance(value, Integral):
         return 'int'
     if isinstance(value, Real):
         return 'float'
-    return 'text'
+    if isinstance(value, pd.Timestamp):
+        return 'datetime'
+    if isinstance(value, datetime.datetime):
+        return 'datetime'
+    if isinstance(value, datetime.date):
+        return 'date'
+    if isinstance(value, datetime.time):
+        return 'time'
+    if isinstance(value, str):
+        return 'text'
+    return 'unknown'
 
 
 def _set_semester_selection(semester: str, batch_id: int) -> None:

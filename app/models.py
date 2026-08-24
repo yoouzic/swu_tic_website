@@ -722,7 +722,10 @@ class ScheduleImportRowScalarMeta(db.Model):
     course_name_kind = db.Column(db.String(10), nullable=False, default='text')
     created_at = db.Column(db.DateTime, default=datetime.now)
 
-    row = db.relationship('ScheduleImportRow', backref='scalar_meta', uselist=False)
+    row = db.relationship(
+        'ScheduleImportRow',
+        backref=db.backref('scalar_meta', uselist=False, cascade='all, delete-orphan'),
+    )
 
     def __repr__(self):
         return (

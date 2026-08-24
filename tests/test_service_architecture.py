@@ -296,6 +296,7 @@ class ServiceArchitectureTests(unittest.TestCase):
         self.assertIn('snapshot_rows_to_legacy_df', functions)
         self.assertIn('current_canonical_legacy_df', functions)
         self.assertIn('resolve_review_schedule_source', functions)
+        self.assertIn('snapshot_scalar_metadata_complete', functions)
         self.assertIn('ReviewScheduleSourceResolution', classes)
 
     def test_schedule_snapshots_exposes_canonical_api(self):

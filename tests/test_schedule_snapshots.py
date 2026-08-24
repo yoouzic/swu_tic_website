@@ -13,6 +13,8 @@ from app.app import app
 from app.models import (
     ScheduleImportBatch,
     ScheduleImportRow,
+    ScheduleImportRowScalarMeta,
+    ScheduleSemesterSelection,
     SystemSetting,
     User,
     db,
@@ -284,10 +286,36 @@ class ScheduleSnapshotTest(unittest.TestCase):
         persist_import_snapshot(df, source_filename='x.xlsx', source_sha256='a' * 64)
         self.assertGreater(ScheduleImportBatch.query.count(), 0)
         self.assertGreater(ScheduleImportRow.query.count(), 0)
+        self.assertGreater(ScheduleImportRowScalarMeta.query.count(), 0)
 
         db.session.rollback()
         self.assertEqual(ScheduleImportBatch.query.count(), 0)
         self.assertEqual(ScheduleImportRow.query.count(), 0)
+        self.assertEqual(ScheduleImportRowScalarMeta.query.count(), 0)
+        self.assertEqual(ScheduleSemesterSelection.query.count(), 0)
+
+    def test_new_snapshot_has_one_to_one_scalar_metadata(self):
+        df = pd.DataFrame([full_row(), full_row(teacher_name='李四')], columns=HEADERS)
+        persist_import_snapshot(df, source_filename='x.xlsx', source_sha256='a' * 64)
+        db.session.commit()
+
+        self.assertEqual(ScheduleImportRow.query.count(), 2)
+        self.assertEqual(ScheduleImportRowScalarMeta.query.count(), 2)
+        row_ids = {row.id for row in ScheduleImportRow.query.all()}
+        meta_row_ids = {meta.row_id for meta in ScheduleImportRowScalarMeta.query.all()}
+        self.assertEqual(row_ids, meta_row_ids)
+
+    def test_delete_batch_cascades_rows_and_scalar_metadata(self):
+        df = pd.DataFrame([full_row()], columns=HEADERS)
+        persist_import_snapshot(df, source_filename='x.xlsx', source_sha256='a' * 64)
+        db.session.commit()
+
+        batch = ScheduleImportBatch.query.one()
+        db.session.delete(batch)
+        db.session.commit()
+
+        self.assertEqual(ScheduleImportRow.query.count(), 0)
+        self.assertEqual(ScheduleImportRowScalarMeta.query.count(), 0)
 
     def test_differential_fidelity_with_legacy_excel_path(self):
         path = self._workbook([

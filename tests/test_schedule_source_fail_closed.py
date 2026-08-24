@@ -10,9 +10,15 @@ import pandas as pd
 from app.app import app
 from app.models import (
     ScheduleImportBatch,
+    ScheduleImportRow,
+    ScheduleImportRowScalarMeta,
     ScheduleSemesterSelection,
     SystemSetting,
     db,
+)
+from app.services.review_schedule_source import (
+    SCALAR_METADATA_INCOMPLETE,
+    resolve_review_schedule_source,
 )
 from app.utils.auto_review import AutoReviewEngine
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
@@ -145,6 +151,100 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
         self.assertEqual(engine.schedule_source_kind, 'explicit_legacy')
         self.assertIsNotNone(engine.schedule_df)
         read_excel.assert_called_once()
+
+    def _make_old_snapshot_without_metadata(
+        self,
+        semester='2026-2027-1',
+        teacher='123',
+        course='数据结构',
+    ):
+        batch = ScheduleImportBatch(
+            semester=semester,
+            status='active',
+            row_count=1,
+            source_filename='old.xlsx',
+            source_sha256='o' * 64,
+        )
+        db.session.add(batch)
+        db.session.flush()
+        row = ScheduleImportRow(
+            batch_id=batch.id,
+            source_row=2,
+            teacher_name=teacher,
+            teacher_college='计算机学院',
+            course_name=course,
+            weekday_raw='三',
+            class_period_raw='第3-4节',
+            location_raw='32-302',
+            class_composition_raw='2023级计算机1班',
+            start_week_raw='1',
+        )
+        db.session.add(row)
+        db.session.flush()
+        db.session.add(ScheduleSemesterSelection(
+            semester=semester,
+            active_batch_id=batch.id,
+        ))
+        db.session.commit()
+        return batch, row
+
+    def test_old_snapshot_missing_metadata_fails_closed_for_numeric_looking(self):
+        self._make_old_snapshot_without_metadata(teacher='123', course='数据结构')
+        SystemSetting.set('teaching_current_semester', '2026-2027-1')
+        SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
+
+        resolution = resolve_review_schedule_source()
+        self.assertEqual(resolution.kind, SCALAR_METADATA_INCOMPLETE)
+        self.assertIsNone(resolution.dataframe)
+
+        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+            engine = AutoReviewEngine()
+        self.assertEqual(engine.schedule_source_kind, 'none')
+        self.assertIsNone(engine.schedule_df)
+        read_excel.assert_not_called()
+
+    def test_old_snapshot_missing_metadata_fails_closed_for_nan_anchor(self):
+        self._make_old_snapshot_without_metadata(teacher='nan', course='缺失课程')
+        SystemSetting.set('teaching_current_semester', '2026-2027-1')
+        SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
+
+        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+            engine = AutoReviewEngine()
+        self.assertEqual(engine.schedule_source_kind, 'none')
+        self.assertIsNone(engine.schedule_df)
+        read_excel.assert_not_called()
+
+    def test_old_snapshot_missing_metadata_fails_closed_even_for_plain_text(self):
+        self._make_old_snapshot_without_metadata(teacher='张三', course='数据结构')
+        SystemSetting.set('teaching_current_semester', '2026-2027-1')
+        SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
+
+        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+            engine = AutoReviewEngine()
+        self.assertEqual(engine.schedule_source_kind, 'none')
+        self.assertIsNone(engine.schedule_df)
+        read_excel.assert_not_called()
+
+    def test_unknown_scalar_metadata_fails_closed(self):
+        batch, row = self._make_old_snapshot_without_metadata(
+            teacher='张三', course='数据结构',
+        )
+        db.session.add(ScheduleImportRowScalarMeta(
+            row_id=row.id,
+            teacher_name_kind='unknown',
+            course_name_kind='text',
+        ))
+        db.session.commit()
+        SystemSetting.set('teaching_current_semester', '2026-2027-1')
+        SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
+
+        resolution = resolve_review_schedule_source()
+        self.assertEqual(resolution.kind, SCALAR_METADATA_INCOMPLETE)
+        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+            engine = AutoReviewEngine()
+        self.assertEqual(engine.schedule_source_kind, 'none')
+        self.assertIsNone(engine.schedule_df)
+        read_excel.assert_not_called()
 
 
 if __name__ == '__main__':

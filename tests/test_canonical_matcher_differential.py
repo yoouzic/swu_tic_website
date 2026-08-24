@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """Round 6B differential parity: legacy Excel schedule vs canonical snapshot."""
+import datetime
 import tempfile
 import unittest
 from pathlib import Path
 
 import pandas as pd
+from openpyxl import Workbook
 
 from app.app import app
 from app.models import db
@@ -393,6 +395,125 @@ class CanonicalMatcherDifferentialTest(unittest.TestCase):
                     None,
                     None,
                     None,
+                )
+                self.assertEqual(legacy_all, canonical_all, form)
+
+    def test_complete_excel_scalar_universe_differential(self):
+        path = Path(self.temp_dir.name) / 'scalar_universe.xlsx'
+        workbook = Workbook()
+        ws = workbook.active
+        headers = [
+            '姓名', '教师所属学院', '课程名称', '星期几', '上课节次',
+            '场地名称', '教学班组成', '起始周',
+        ]
+        ws.append(headers)
+        base = {
+            '教师所属学院': '计算机学院',
+            '星期几': '三',
+            '上课节次': '第3-4节',
+            '场地名称': '32-302',
+            '教学班组成': '2023级计算机1班',
+            '起始周': '1',
+        }
+        rows = [
+            ('张三', '数据结构'),
+            (123, '数据结构'),
+            (123.5, '数据结构'),
+            (True, '数据结构'),
+            (datetime.datetime(2026, 1, 1, 8, 30), '数据结构'),
+            (datetime.time(10, 30), '数据结构'),
+            (None, '缺失课程'),
+            ('王五', 123),
+            ('李四', True),
+            ('赵六', datetime.datetime(2026, 2, 2, 9, 0)),
+            ('钱七', datetime.time(11, 30)),
+            ('孙八', None),
+        ]
+        for teacher, course in rows:
+            ws.append([
+                teacher, base['教师所属学院'], course, base['星期几'],
+                base['上课节次'], base['场地名称'], base['教学班组成'], base['起始周'],
+            ])
+        workbook.save(path)
+
+        legacy_df = pd.read_excel(path)
+        source_df = legacy_df.copy()
+        source_df['学期'] = SEMESTER
+        source_df['学年'] = '2025'
+        persist_import_snapshot(source_df, 'scalar_universe.xlsx', 'e' * 64)
+        canonical_df = snapshot_rows_to_legacy_df(
+            get_active_schedule_rows(SEMESTER),
+        )
+
+        queries = [
+            {'teacher_name': '123', 'course_title': '数据结构'},
+            {'teacher_name': '123.5', 'course_title': '数据结构'},
+            {'teacher_name': 'True', 'course_title': '数据结构'},
+            {'teacher_name': '2026-01-01 08:30:00', 'course_title': '数据结构'},
+            {'teacher_name': '10:30:00', 'course_title': '数据结构'},
+            {'teacher_name': 'nan', 'course_title': '缺失课程'},
+            {'teacher_name': '王五', 'course_title': '123'},
+            {'teacher_name': '李四', 'course_title': 'True'},
+            {'teacher_name': '赵六', 'course_title': '2026-02-02 09:00:00'},
+            {'teacher_name': '钱七', 'course_title': '11:30:00'},
+            {'teacher_name': '孙八', 'course_title': 'nan'},
+        ]
+        for form in queries:
+            with self.subTest(form=form):
+                legacy_engine = self._engine_with_df(legacy_df)
+                canonical_engine = self._engine_with_df(canonical_df)
+                _, legacy_all = legacy_engine._find_course_in_schedule(
+                    form.get('teacher_name'), None, form.get('course_title'),
+                    None, None, None, None,
+                )
+                _, canonical_all = canonical_engine._find_course_in_schedule(
+                    form.get('teacher_name'), None, form.get('course_title'),
+                    None, None, None, None,
+                )
+                self.assertEqual(legacy_all, canonical_all, form)
+
+    def test_nat_scalar_parity_from_xlsx(self):
+        path = Path(self.temp_dir.name) / 'nat.xlsx'
+        workbook = Workbook()
+        ws = workbook.active
+        ws.append([
+            '姓名', '教师所属学院', '课程名称', '星期几', '上课节次',
+            '场地名称', '教学班组成', '起始周',
+        ])
+        rows = [
+            (datetime.datetime(2026, 1, 1, 8, 30), '数据结构'),
+            (None, '数据结构'),
+            (datetime.datetime(2026, 2, 2, 9, 0), '数据结构'),
+        ]
+        for teacher, course in rows:
+            ws.append([
+                teacher, '计算机学院', course, '三', '第3-4节',
+                '32-302', '2023级计算机1班', '1',
+            ])
+        workbook.save(path)
+        legacy_df = pd.read_excel(path)
+        source_df = legacy_df.copy()
+        source_df['学期'] = SEMESTER
+        source_df['学年'] = '2025'
+        persist_import_snapshot(source_df, 'nat.xlsx', 'f' * 64)
+        canonical_df = snapshot_rows_to_legacy_df(
+            get_active_schedule_rows(SEMESTER),
+        )
+
+        for form in [
+            {'teacher_name': 'NaT', 'course_title': '数据结构'},
+            {'teacher_name': '2026-01-01 08:30:00', 'course_title': '数据结构'},
+        ]:
+            with self.subTest(form=form):
+                legacy_engine = self._engine_with_df(legacy_df)
+                canonical_engine = self._engine_with_df(canonical_df)
+                _, legacy_all = legacy_engine._find_course_in_schedule(
+                    form.get('teacher_name'), None, form.get('course_title'),
+                    None, None, None, None,
+                )
+                _, canonical_all = canonical_engine._find_course_in_schedule(
+                    form.get('teacher_name'), None, form.get('course_title'),
+                    None, None, None, None,
                 )
                 self.assertEqual(legacy_all, canonical_all, form)
 
