@@ -157,7 +157,7 @@ class LegacyReviewCompatTests(unittest.TestCase):
 
     def test_construction_no_longer_reads_feedback_excel(self):
         self._set_canonical('2026-09-07', week_start='0', total_weeks='20')
-        with mock.patch('app.utils.auto_review._read_excel', return_value=None) as read_excel:
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=None) as read_excel:
             AutoReviewEngine()
         self.assertEqual(read_excel.call_count, 1)
 

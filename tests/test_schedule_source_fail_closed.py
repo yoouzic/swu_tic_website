@@ -17,6 +17,7 @@ from app.models import (
     db,
 )
 from app.services.review_schedule_source import (
+    NONE,
     SCALAR_METADATA_INCOMPLETE,
     resolve_review_schedule_source,
 )
@@ -55,7 +56,7 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
     def test_configured_no_snapshot_with_legacy_file_fails_closed(self):
         SystemSetting.set('teaching_current_semester', '2026-2027-1')
         SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
-        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=LEGACY_DF) as read_excel:
             engine = AutoReviewEngine()
         self.assertEqual(engine.schedule_source_kind, 'none')
         self.assertIsNone(engine.schedule_df)
@@ -76,7 +77,7 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
         SystemSetting.set('teaching_current_semester', '2026-2027-1')
         SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
 
-        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=LEGACY_DF) as read_excel:
             engine = AutoReviewEngine()
         self.assertEqual(engine.schedule_source_kind, 'none')
         self.assertIsNone(engine.schedule_df)
@@ -96,7 +97,7 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
         SystemSetting.set('teaching_current_semester', '2026-2027-1')
         SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
 
-        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=LEGACY_DF) as read_excel:
             engine = AutoReviewEngine()
         self.assertEqual(engine.schedule_source_kind, 'none')
         self.assertIsNone(engine.schedule_df)
@@ -104,14 +105,14 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
 
     def test_unset_semester_with_legacy_file_falls_back(self):
         SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
-        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=LEGACY_DF) as read_excel:
             engine = AutoReviewEngine()
         self.assertEqual(engine.schedule_source_kind, 'legacy_fallback')
         self.assertIsNotNone(engine.schedule_df)
         read_excel.assert_called_once()
 
     def test_unset_semester_without_legacy_file_is_none(self):
-        with mock.patch('app.utils.auto_review._read_excel', return_value=None) as read_excel:
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=None) as read_excel:
             engine = AutoReviewEngine()
         self.assertEqual(engine.schedule_source_kind, 'none')
         self.assertIsNone(engine.schedule_df)
@@ -137,7 +138,7 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
         )
         SystemSetting.set('teaching_current_semester', '2026-2027-1')
         SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
-        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=LEGACY_DF) as read_excel:
             engine = AutoReviewEngine()
         self.assertEqual(engine.schedule_source_kind, 'canonical_snapshot')
         self.assertEqual(str(engine.schedule_df.iloc[0]['姓名']), '张三')
@@ -146,7 +147,7 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
     def test_explicit_schedule_path_remains_highest_priority(self):
         SystemSetting.set('teaching_current_semester', '2026-2027-1')
         SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
-        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=LEGACY_DF) as read_excel:
             engine = AutoReviewEngine(schedule_path=str(self.legacy_path))
         self.assertEqual(engine.schedule_source_kind, 'explicit_legacy')
         self.assertIsNotNone(engine.schedule_df)
@@ -194,10 +195,11 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
         SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
 
         resolution = resolve_review_schedule_source()
-        self.assertEqual(resolution.kind, SCALAR_METADATA_INCOMPLETE)
+        self.assertEqual(resolution.kind, NONE)
+        self.assertEqual(resolution.canonical_status, SCALAR_METADATA_INCOMPLETE)
         self.assertIsNone(resolution.dataframe)
 
-        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=LEGACY_DF) as read_excel:
             engine = AutoReviewEngine()
         self.assertEqual(engine.schedule_source_kind, 'none')
         self.assertIsNone(engine.schedule_df)
@@ -208,7 +210,7 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
         SystemSetting.set('teaching_current_semester', '2026-2027-1')
         SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
 
-        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=LEGACY_DF) as read_excel:
             engine = AutoReviewEngine()
         self.assertEqual(engine.schedule_source_kind, 'none')
         self.assertIsNone(engine.schedule_df)
@@ -219,7 +221,7 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
         SystemSetting.set('teaching_current_semester', '2026-2027-1')
         SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
 
-        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=LEGACY_DF) as read_excel:
             engine = AutoReviewEngine()
         self.assertEqual(engine.schedule_source_kind, 'none')
         self.assertIsNone(engine.schedule_df)
@@ -239,8 +241,9 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
         SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
 
         resolution = resolve_review_schedule_source()
-        self.assertEqual(resolution.kind, SCALAR_METADATA_INCOMPLETE)
-        with mock.patch('app.utils.auto_review._read_excel', return_value=LEGACY_DF) as read_excel:
+        self.assertEqual(resolution.kind, NONE)
+        self.assertEqual(resolution.canonical_status, SCALAR_METADATA_INCOMPLETE)
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=LEGACY_DF) as read_excel:
             engine = AutoReviewEngine()
         self.assertEqual(engine.schedule_source_kind, 'none')
         self.assertIsNone(engine.schedule_df)

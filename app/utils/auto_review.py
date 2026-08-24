@@ -4,11 +4,9 @@ System-level legacy upload/settings/report endpoints have been retired.
 The engine remains for the legacy immediate form check and reference-data
 lookup endpoints in admin/review.py. Do not add new consumers.
 """
-import os
 import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
-import pandas as pd
 try:
     import pycorrector
 except Exception:
@@ -20,25 +18,24 @@ from ..services.legacy_review_compat import (
     get_legacy_review_week_no,
     resolve_legacy_semester_monday,
 )
-from ..services.review_schedule_source import (
-    CANONICAL_SNAPSHOT,
-    LEGACY_FALLBACK_ELIGIBLE,
-    NONE,
-    resolve_review_schedule_source,
+from ..services.review_schedule_source import resolve_review_schedule_source
+from ..services.review_schedule_matcher import (
+    find_course_in_schedule,
+    normalize_class_period,
+    normalize_location,
+    normalize_weekday,
 )
+from ..services.review_reference_data import search_review_reference_data
 from ..services.review_contacts import (
     find_reviewer_by_id as _canonical_find_reviewer_by_id,
     find_reviewer_by_name as _canonical_find_reviewer_by_name,
 )
 from .audit_tags import is_auto_review_allowed
-from .env_config import env_path
 from .time_validator import TimeValidator
 from .user_status import active_user_filter, is_user_active
 
 
-DEFAULT_SCHEDULE_PATH = env_path('AUTO_REVIEW_DEFAULT_SCHEDULE_PATH', os.path.join('data', 'storage', 'templates', 'auto_review', '2025-2026-1课表.xlsx'))
 SETTING_KEY_SEMESTER_MONDAY = 'semester_first_monday'
-SETTING_KEY_SCHEDULE_PATH = 'auto_review_schedule_path'
 
 # 有效学院列表（根据审核要求）
 VALID_COLLEGES = [
@@ -72,66 +69,17 @@ VALID_SCALE_VALUES = ['非常好', '好', '一般']
 VALID_CASE_VALUES = ['推荐', '不推荐']
 
 
-def _exists(path: str) -> bool:
-    try:
-        return os.path.exists(path)
-    except Exception:
-        return False
-
-
-def _read_excel(path: str, sheet_name: Any = 0) -> Optional[pd.DataFrame]:
-    if not _exists(path):
-        return None
-    try:
-        if path.lower().endswith('.xls'):
-            # 尝试多种方式读取.xls文件
-            try:
-                df = pd.read_excel(path, sheet_name=sheet_name, engine='xlrd')
-            except:
-                try:
-                    df = pd.read_excel(path, sheet_name=sheet_name, engine='openpyxl')
-                except:
-                    df = pd.read_excel(path, sheet_name=sheet_name)
-        else:
-            df = pd.read_excel(path, sheet_name=sheet_name)  # openpyxl for .xlsx
-        return df
-    except Exception as e:
-        current_app.logger.error(f"读取Excel文件失败 {path}: {e}")
-        return None
-
-
 class AutoReviewEngine:
     def __init__(self,
                  schedule_path: Optional[str] = None,
                  semester_monday: Optional[str] = None):
-        # Explicit schedule_path always wins: it is a test/tool injection path
-        # and must continue to read the legacy Excel file directly.
-        self.schedule_source_kind = NONE
-        if schedule_path:
-            self.schedule_path = schedule_path
-            self.schedule_df = _read_excel(self.schedule_path)
-            self.schedule_source_kind = 'explicit_legacy' if self.schedule_df is not None else NONE
-        else:
-            resolution = resolve_review_schedule_source()
-            if resolution.kind == CANONICAL_SNAPSHOT:
-                self.schedule_path = None
-                self.schedule_df = resolution.dataframe
-                self.schedule_source_kind = CANONICAL_SNAPSHOT
-            elif resolution.kind == LEGACY_FALLBACK_ELIGIBLE:
-                # Current semester is unset: the only canonical non-READY state
-                # allowed to consult the historical legacy Excel compatibility
-                # file.  Configured-but-missing/ambiguous/invalid states never
-                # reach this branch.
-                schedule_config = SystemSetting.get(SETTING_KEY_SCHEDULE_PATH)
-                self.schedule_path = schedule_config or DEFAULT_SCHEDULE_PATH
-                if not _exists(self.schedule_path) and _exists(DEFAULT_SCHEDULE_PATH):
-                    self.schedule_path = DEFAULT_SCHEDULE_PATH
-                self.schedule_df = _read_excel(self.schedule_path)
-                self.schedule_source_kind = 'legacy_fallback' if self.schedule_df is not None else NONE
-            else:
-                self.schedule_path = None
-                self.schedule_df = None
-                self.schedule_source_kind = NONE
+        # The complete source decision now lives in review_schedule_source.
+        resolution = resolve_review_schedule_source(
+            explicit_schedule_path=schedule_path,
+        )
+        self.schedule_source_kind = resolution.kind
+        self.schedule_path = resolution.schedule_path
+        self.schedule_df = resolution.dataframe
 
         self._explicit_semester_monday = semester_monday or None
         self.semester_monday_str = semester_monday or resolve_legacy_semester_monday()
@@ -158,62 +106,18 @@ class AutoReviewEngine:
     
     @staticmethod
     def _normalize_weekday(weekday_str: str) -> str:
-        """将数字星期转换为中文星期，如 '1' -> '一'"""
-        try:
-            if weekday_str.isdigit():
-                num = int(weekday_str)
-                cn_char = AutoReviewEngine._weekday_to_cn_char(num)
-                return cn_char if cn_char else weekday_str
-            return weekday_str
-        except:
-            return weekday_str
-    
+        """Compatibility wrapper; authority is review_schedule_matcher."""
+        return normalize_weekday(weekday_str)
+
     @staticmethod
     def _normalize_class_period(period_str: str) -> str:
-        """将课表中的节次格式转换为标准格式，如 '1-2节' -> '第1-2节'"""
-        if not period_str:
-            return period_str
-        
-        # 如果已经有"第"，直接返回
-        if period_str.startswith('第'):
-            return period_str
-        
-        # 如果以"节"结尾，在前面加"第"
-        if period_str.endswith('节'):
-            return f'第{period_str}'
-        
-        # 其他情况直接返回
-        return period_str
+        """Compatibility wrapper; authority is review_schedule_matcher."""
+        return normalize_class_period(period_str)
 
     @staticmethod
     def _normalize_location(loc: str) -> str:
-        """规范场地：
-        - 针对通用格式 "楼-房间" 去除房间号前导零，例如 33-0201 -> 33-201
-        - 新增：将 "荣昌abcd"（a,b,c,d为数字）规范为 "荣昌0a-bcd"（不移除bcd的前导零）
-        """
-        if not loc:
-            return loc
-        try:
-            # 特例：荣昌校区的场地格式，如 "荣昌abcd" -> "荣昌0a-bcd"
-            loc_str = loc.strip()
-            m = re.match(r'^荣昌\s*(\d{4})$', loc_str)
-            if m:
-                digits = m.group(1)
-                building = f"0{digits[0]}"
-                room = digits[1:]  # 保留原始bcd，不去除前导零
-                return f"荣昌{building}-{room}"
-
-            parts = loc.split('-')
-            if len(parts) == 2:
-                building, room = parts
-                # 去除房间号前导零，但保留其他字符
-                room_clean = re.sub(r'^0+', '', room) if room else room
-                if not room_clean:  # 如果全是0，保留一个0
-                    room_clean = '0'
-                return f"{building}-{room_clean}"
-            return loc
-        except Exception:
-            return loc
+        """Compatibility wrapper; authority is review_schedule_matcher."""
+        return normalize_location(loc)
 
     @staticmethod
     def _starts_with_teacher(text: str) -> bool:
@@ -235,123 +139,21 @@ class AutoReviewEngine:
         """根据姓名在 canonical User 通讯录中查找反馈人，支持模糊匹配"""
         return _canonical_find_reviewer_by_name(name, fuzzy=fuzzy)
 
-    def _find_course_in_schedule(self, teacher_name: str, teacher_college: str, 
-                                course_title: str, class_composition: str, 
+    def _find_course_in_schedule(self, teacher_name: str, teacher_college: str,
+                                course_title: str, class_composition: str,
                                 location: str, feedback_weekday_cn: Optional[str] = None,
                                 feedback_class_period: Optional[str] = None) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
-        """在课表中查找匹配的课程，返回最佳匹配和所有可能匹配。
-        优先使用反馈中的星期几与节次进行筛选。"""
-        if self.schedule_df is None:
-            return None, []
-        
-        try:
-            # 逐步筛选，从最严格到最宽松
-            all_matches = []
-            
-            # 1. 精确匹配：教师姓名 + 课程名称
-            if teacher_name and course_title:
-                exact_matches = self.schedule_df[
-                    (self.schedule_df['姓名'] == teacher_name) & 
-                    (self.schedule_df['课程名称'] == course_title)
-                ]
-                if len(exact_matches) > 0:
-                    for _, row in exact_matches.iterrows():
-                        match_info = {
-                            'course_name': str(row['课程名称']),
-                            'teacher_name': str(row['姓名']),
-                            'teacher_college': str(row['教师所属学院']),
-                            'weekday': self._normalize_weekday(str(row['星期几'])),
-                            'class_period': self._normalize_class_period(str(row['上课节次'])),
-                            'location': str(row['场地名称']),
-                            'class_composition': str(row['教学班组成']),
-                            'start_week': str(row['起始周']),
-                            'match_type': 'exact'
-                        }
-                        all_matches.append(match_info)
-            
-            # 2. 如果精确匹配失败，尝试教师姓名匹配
-            if not all_matches and teacher_name:
-                teacher_matches = self.schedule_df[self.schedule_df['姓名'] == teacher_name]
-                if len(teacher_matches) > 0:
-                    for _, row in teacher_matches.iterrows():
-                        match_info = {
-                            'course_name': str(row['课程名称']),
-                            'teacher_name': str(row['姓名']),
-                            'teacher_college': str(row['教师所属学院']),
-                            'weekday': self._normalize_weekday(str(row['星期几'])),
-                            'class_period': self._normalize_class_period(str(row['上课节次'])),
-                            'location': str(row['场地名称']),
-                            'class_composition': str(row['教学班组成']),
-                            'start_week': str(row['起始周']),
-                            'match_type': 'teacher_name'
-                        }
-                        all_matches.append(match_info)
-            
-            # 3. 如果还是没有匹配，尝试课程名称匹配
-            if not all_matches and course_title:
-                course_matches = self.schedule_df[self.schedule_df['课程名称'] == course_title]
-                if len(course_matches) > 0:
-                    for _, row in course_matches.iterrows():
-                        match_info = {
-                            'course_name': str(row['课程名称']),
-                            'teacher_name': str(row['姓名']),
-                            'teacher_college': str(row['教师所属学院']),
-                            'weekday': self._normalize_weekday(str(row['星期几'])),
-                            'class_period': self._normalize_class_period(str(row['上课节次'])),
-                            'location': str(row['场地名称']),
-                            'class_composition': str(row['教学班组成']),
-                            'start_week': str(row['起始周']),
-                            'match_type': 'course_name'
-                        }
-                        all_matches.append(match_info)
-            
-            # 4. 优先按星期几与节次筛选
-            if all_matches and (feedback_weekday_cn or feedback_class_period):
-                time_matches = []
-                for match in all_matches:
-                    ok_weekday = True
-                    ok_period = True
-                    if feedback_weekday_cn:
-                        ok_weekday = (match.get('weekday') == feedback_weekday_cn)
-                    if feedback_class_period:
-                        match_period = self._normalize_class_period(match.get('class_period') or '')
-                        wanted_period = self._normalize_class_period(feedback_class_period)
-                        ok_period = (match_period == wanted_period)
-                    if ok_weekday and ok_period:
-                        match['match_type'] += '_with_time'
-                        time_matches.append(match)
-                if time_matches:
-                    all_matches = time_matches
-
-            # 5. 进一步筛选：如果有地点信息，优先匹配地点
-            if all_matches and location:
-                normalized_loc = self._normalize_location(location)
-                location_matches = []
-                for match in all_matches:
-                    if self._normalize_location(match['location']) == normalized_loc:
-                        match['match_type'] += '_with_location'
-                        location_matches.append(match)
-                if location_matches:
-                    all_matches = location_matches
-            
-            # 5. 进一步筛选：如果有教学班组成信息，优先匹配
-            if all_matches and class_composition:
-                class_matches = []
-                for match in all_matches:
-                    if class_composition in match['class_composition']:
-                        match['match_type'] += '_with_class'
-                        class_matches.append(match)
-                if class_matches:
-                    all_matches = class_matches
-            
-            # 返回最佳匹配（第一个）和所有匹配
-            best_match = all_matches[0] if all_matches else None
-            return best_match, all_matches
-            
-        except Exception as e:
-            current_app.logger.error(f"课表匹配失败: {e}")
-        
-        return None, []
+        """Compatibility wrapper; algorithm authority is review_schedule_matcher."""
+        return find_course_in_schedule(
+            self.schedule_df,
+            teacher_name,
+            teacher_college,
+            course_title,
+            class_composition,
+            location,
+            feedback_weekday_cn=feedback_weekday_cn,
+            feedback_class_period=feedback_class_period,
+        )
 
     def _compute_week_from_date(self, d: datetime.date) -> Optional[int]:
         if self._explicit_semester_monday:
@@ -940,80 +742,8 @@ class AutoReviewEngine:
         }
 
     def search_reference_data(self, form_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        根据表单数据搜索参考资料（课表和通讯录）
-        返回：
-        {
-            'schedule_matches': [match1, match2, ...],  # Top 5 matches
-            'contact_matches': [match1, match2, ...]
-        }
-        """
-        result = {
-            'schedule_matches': [],
-            'contact_matches': []
-        }
-
-        # 1. 搜索通讯录
-        listener_name = form_data.get('listener_name')
-        listener_id = form_data.get('listener_number')
-        
-        # 如果没有 listener_number，尝试从 reviewer_id 获取（兼容旧逻辑，但需小心）
-        if not listener_id:
-             raw_id = form_data.get('reviewer_id')
-             if raw_id and str(raw_id).isdigit() and len(str(raw_id)) > 5:
-                 listener_id = raw_id
-        
-        # 尝试通过ID搜索
-        if listener_id:
-            contact_by_id = self._find_reviewer_by_id(str(listener_id))
-            if contact_by_id:
-                contact_by_id['match_type'] = 'id'
-                result['contact_matches'].append(contact_by_id)
-        
-        # 尝试通过姓名搜索
-        if listener_name:
-            # 如果名字包含学院信息，提取名字部分
-            name_part = listener_name
-            if '（' in listener_name:
-                name_part = listener_name.split('（')[0].strip()
-            
-            contact_by_name = self._find_reviewer_by_name(name_part, fuzzy=True)
-            if contact_by_name:
-                # 避免重复添加
-                is_duplicate = False
-                for existing in result['contact_matches']:
-                    if existing['id'] == contact_by_name['id']:
-                        is_duplicate = True
-                        break
-                
-                if not is_duplicate:
-                    contact_by_name['match_type'] = 'name'
-                    result['contact_matches'].append(contact_by_name)
-
-        # 2. 搜索课表
-        teacher_name = form_data.get('teacher_name')
-        teacher_college = form_data.get('teacher_college')
-        course_title = form_data.get('course_title')
-        class_composition = form_data.get('student_grade_class') or form_data.get('class_composition')
-        location = form_data.get('lecture_location')
-        
-        # 解析时间和节次
-        lecture_date = form_data.get('lecture_date')
-        weekday_cn = None
-        if lecture_date:
-            s = str(lecture_date).strip()
-            if '星期' in s:
-                _, right = s.split('星期', 1)
-                weekday_cn = right.strip()[:1] if right else None
-        
-        class_period = form_data.get('class_period')
-
-        _, all_matches = self._find_course_in_schedule(
-            teacher_name, teacher_college, course_title, class_composition, location,
-            feedback_weekday_cn=weekday_cn, feedback_class_period=class_period
+        """Compatibility wrapper; orchestration lives in review_reference_data."""
+        return search_review_reference_data(
+            form_data,
+            schedule_df=self.schedule_df,
         )
-        
-        # 取前5个匹配项
-        result['schedule_matches'] = all_matches[:5]
-        
-        return result

@@ -23,6 +23,7 @@ from app.services.review_mutation import (
     collect_modified_fields,
 )
 from app.services.review_scores import ScoreValidationError, normalize_score_items
+from app.services.review_reference_data import search_review_reference_data
 
 
 def _json_object_request():
@@ -1704,8 +1705,7 @@ def get_reference_data():
 
         form_data = request.get_json()
         
-        engine = AutoReviewEngine()
-        result = engine.search_reference_data(form_data)
+        result = search_review_reference_data(form_data)
         
         return jsonify({'success': True, 'result': result})
     except Exception as e:

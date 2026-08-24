@@ -95,7 +95,7 @@ class CanonicalCutoverTest(unittest.TestCase):
 
     def test_canonical_ready_does_not_read_legacy_excel(self):
         self._make_canonical_ready()
-        with mock.patch('app.utils.auto_review._read_excel', return_value=None) as read_excel:
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=None) as read_excel:
             engine = AutoReviewEngine()
         self.assertEqual(engine.schedule_source_kind, 'canonical_snapshot')
         read_excel.assert_not_called()

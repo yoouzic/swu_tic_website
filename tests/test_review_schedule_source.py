@@ -11,7 +11,7 @@ from app.app import app
 from app.models import db
 from app.services.review_schedule_source import (
     LEGACY_SCHEDULE_COLUMNS,
-    current_canonical_legacy_df,
+    resolve_review_schedule_source,
     snapshot_rows_to_legacy_df,
 )
 from app.services.schedule_snapshots import (
@@ -185,10 +185,10 @@ class ReviewScheduleSourceTest(unittest.TestCase):
         )
         self.assertEqual([str(value) for value in legacy_df['姓名']], [f'教师{i}' for i in range(1, 7)])
 
-    def test_current_canonical_legacy_df_returns_none_when_not_ready(self):
-        self.assertIsNone(current_canonical_legacy_df())
+    def test_source_resolution_returns_none_when_not_ready(self):
+        self.assertIsNone(resolve_review_schedule_source().dataframe)
 
-    def test_current_canonical_legacy_df_returns_ready_snapshot(self):
+    def test_source_resolution_returns_ready_snapshot(self):
         persist_import_snapshot(
             pd.DataFrame([full_row()], columns=HEADERS),
             'ready.xlsx',
@@ -197,9 +197,10 @@ class ReviewScheduleSourceTest(unittest.TestCase):
         from app.services.academic_term import get_current_teaching_semester
         from app.models import SystemSetting
         SystemSetting.set('teaching_current_semester', get_current_teaching_semester() or DEFAULT_ROW['学期'])
-        df = current_canonical_legacy_df()
-        self.assertIsNotNone(df)
-        self.assertEqual(df.iloc[0]['姓名'], '张三')
+        resolution = resolve_review_schedule_source()
+        self.assertEqual(resolution.kind, 'canonical_snapshot')
+        self.assertIsNotNone(resolution.dataframe)
+        self.assertEqual(resolution.dataframe.iloc[0]['姓名'], '张三')
 
 
 if __name__ == '__main__':

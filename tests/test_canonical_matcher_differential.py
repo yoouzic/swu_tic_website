@@ -11,6 +11,8 @@ from openpyxl import Workbook
 from app.app import app
 from app.models import db
 from app.services.review_schedule_source import snapshot_rows_to_legacy_df
+from app.services.review_schedule_matcher import find_course_in_schedule
+from app.services.review_reference_data import search_review_reference_data
 from app.services.schedule_snapshots import (
     get_active_schedule_rows,
     persist_import_snapshot,
@@ -544,6 +546,37 @@ class CanonicalMatcherDifferentialTest(unittest.TestCase):
             legacy_engine.search_reference_data(form)['schedule_matches'],
             canonical_engine.search_reference_data(form)['schedule_matches'],
         )
+
+    def test_service_matcher_identical_to_autoreview_wrapper(self):
+        engine = self._engine_with_df(self.legacy_df)
+        cases = [
+            ('张三', None, '数据结构', None, None, None, None),
+            (None, None, '数据结构', None, None, None, None),
+            ('不存在教师', None, '数据结构', None, None, None, None),
+            ('张三', None, '数据结构', '2023级计算机1班', None, None, None),
+        ]
+        for case in cases:
+            with self.subTest(case=case):
+                direct = find_course_in_schedule(self.legacy_df, *case)
+                wrapper = engine._find_course_in_schedule(*case)
+                self.assertEqual(direct, wrapper)
+
+    def test_reference_data_service_identical_to_autoreview_wrapper(self):
+        engine = self._engine_with_df(self.legacy_df)
+        form_data = {
+            'teacher_name': '张三',
+            'course_title': '数据结构',
+            'student_grade_class': '2023级计算机1班',
+            'lecture_location': '32-302',
+            'lecture_date': '2026/09/09星期三',
+            'class_period': '第3-4节',
+        }
+        direct = search_review_reference_data(
+            form_data,
+            schedule_df=self.legacy_df,
+        )
+        wrapper = engine.search_reference_data(form_data)
+        self.assertEqual(direct, wrapper)
 
     def test_review_any_schedule_fields_identical(self):
         from types import SimpleNamespace

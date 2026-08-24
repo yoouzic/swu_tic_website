@@ -1,24 +1,36 @@
 # -*- coding: utf-8 -*-
-"""Adapter and fail-closed source resolution for canonical schedule snapshots.
+"""Single boundary for review schedule source resolution.
 
-This module deliberately does not normalize any cell text.  Snapshot rows
-already contain the exact ``str(row['...'])`` values that the legacy
-AutoReviewEngine matcher expects; the existing matcher performs its own
-normalization later.
+This module owns:
+- canonical snapshot adapter to legacy-shaped DataFrame
+- scalar metadata completeness gate
+- explicit/legacy/canonical/fail-closed source decision
+- legacy Excel loader compatibility
+
+No Flask/request/session dependency is allowed here.
 """
 import datetime
+import logging
+import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 import pandas as pd
 
-from app.models import ScheduleImportRow, ScheduleImportRowScalarMeta
+from app.models import (
+    ScheduleImportRow,
+    ScheduleImportRowScalarMeta,
+    SystemSetting,
+)
 from app.services.schedule_snapshots import (
     CURRENT_SEMESTER_UNSET,
     READY,
     CurrentScheduleSelection,
     resolve_current_schedule_snapshot,
 )
+from app.utils.env_config import env_path
+
+logger = logging.getLogger(__name__)
 
 # Final source kinds used by AutoReviewEngine.
 EXPLICIT_LEGACY = 'explicit_legacy'
@@ -30,6 +42,14 @@ SCALAR_METADATA_INCOMPLETE = 'scalar_metadata_incomplete'
 # Service-level state returned before the engine decides whether a legacy file
 # actually exists.
 LEGACY_FALLBACK_ELIGIBLE = 'legacy_fallback_eligible'
+
+DEFAULT_SCHEDULE_PATH = env_path(
+    'AUTO_REVIEW_DEFAULT_SCHEDULE_PATH',
+    os.path.join(
+        'data', 'storage', 'templates', 'auto_review', '2025-2026-1课表.xlsx'
+    ),
+)
+SETTING_KEY_SCHEDULE_PATH = 'auto_review_schedule_path'
 
 # Exact legacy column order used by the matcher.
 LEGACY_SCHEDULE_COLUMNS = [
@@ -68,18 +88,42 @@ KNOWN_SCALAR_KINDS = {
 }
 
 
+def _exists(path: str) -> bool:
+    try:
+        return os.path.exists(path)
+    except Exception:
+        return False
+
+
+def _read_excel(path: str, sheet_name: int = 0) -> Optional[pd.DataFrame]:
+    """Read a legacy schedule workbook with the frozen loader fallback order."""
+    if not _exists(path):
+        return None
+    try:
+        if path.lower().endswith('.xls'):
+            try:
+                df = pd.read_excel(path, sheet_name=sheet_name, engine='xlrd')
+            except Exception:
+                try:
+                    df = pd.read_excel(path, sheet_name=sheet_name, engine='openpyxl')
+                except Exception:
+                    df = pd.read_excel(path, sheet_name=sheet_name)
+        else:
+            df = pd.read_excel(path, sheet_name=sheet_name)
+        return df
+    except Exception as e:
+        logger.error("读取Excel文件失败 %s: %s", path, e)
+        return None
+
+
 @dataclass(frozen=True)
 class ReviewScheduleSourceResolution:
-    """Structured result for AutoReviewEngine schedule source resolution.
-
-    ``dataframe`` is populated only for canonical READY with complete scalar
-    metadata.  The legacy fallback-eligible state requires the engine to decide
-    whether an actual legacy file exists before setting the final source kind.
-    """
+    """Final structured result for review schedule source resolution."""
     kind: str
     canonical_status: Optional[str] = None
     semester: str = ''
     dataframe: Optional[pd.DataFrame] = None
+    schedule_path: Optional[str] = None
 
 
 def snapshot_scalar_metadata_complete(rows: List[ScheduleImportRow]) -> bool:
@@ -136,11 +180,7 @@ def _anchor_cell(row, meta, field: str):
 def snapshot_rows_to_legacy_df(
     rows: List[ScheduleImportRow],
 ) -> pd.DataFrame:
-    """Convert canonical snapshot rows to legacy matcher-facing DataFrame.
-
-    Row order is preserved from the input list.  Callers must pass rows in
-    ``source_row ASC`` order; no sorting/normalization is performed here.
-    """
+    """Convert canonical snapshot rows to legacy matcher-facing DataFrame."""
     row_ids = [row.id for row in rows if row.id is not None]
     meta_by_row: Dict[int, ScheduleImportRowScalarMeta] = {}
     if row_ids:
@@ -167,21 +207,47 @@ def snapshot_rows_to_legacy_df(
     return pd.DataFrame(data, columns=LEGACY_SCHEDULE_COLUMNS)
 
 
-def resolve_review_schedule_source() -> ReviewScheduleSourceResolution:
-    """Resolve the canonical schedule source into a structured state.
+def _try_legacy_fallback() -> ReviewScheduleSourceResolution:
+    schedule_config = SystemSetting.get(SETTING_KEY_SCHEDULE_PATH)
+    path = schedule_config or DEFAULT_SCHEDULE_PATH
+    if not _exists(path) and _exists(DEFAULT_SCHEDULE_PATH):
+        path = DEFAULT_SCHEDULE_PATH
+    df = _read_excel(path)
+    return ReviewScheduleSourceResolution(
+        kind=LEGACY_FALLBACK if df is not None else NONE,
+        canonical_status=CURRENT_SEMESTER_UNSET,
+        semester='',
+        dataframe=df,
+        schedule_path=path,
+    )
 
-    The only non-READY canonical state allowed to consider legacy Excel is
-    ``CURRENT_SEMESTER_UNSET``.  Configured-but-unavailable, ambiguous,
-    invalid-authority, and READY-but-incomplete-metadata states fail closed so
-    the compatibility resolver cannot silently use a stale historical Excel.
+
+def resolve_review_schedule_source(
+    explicit_schedule_path: Optional[str] = None,
+) -> ReviewScheduleSourceResolution:
+    """Resolve the final review schedule source decision.
+
+    This is the single boundary shared by AutoReviewEngine and reference-data
+    orchestration.  Explicit path wins; canonical READY requires complete
+    scalar metadata; configured non-READY or incomplete states fail closed;
+    legacy fallback is eligible only when current semester is unset.
     """
+    if explicit_schedule_path:
+        df = _read_excel(explicit_schedule_path)
+        return ReviewScheduleSourceResolution(
+            kind=EXPLICIT_LEGACY if df is not None else NONE,
+            semester='',
+            dataframe=df,
+            schedule_path=explicit_schedule_path,
+        )
+
     selection: CurrentScheduleSelection = resolve_current_schedule_snapshot()
 
     if selection.status == READY:
         if not snapshot_scalar_metadata_complete(selection.rows):
             return ReviewScheduleSourceResolution(
-                kind=SCALAR_METADATA_INCOMPLETE,
-                canonical_status=READY,
+                kind=NONE,
+                canonical_status=SCALAR_METADATA_INCOMPLETE,
                 semester=selection.semester,
             )
         return ReviewScheduleSourceResolution(
@@ -192,24 +258,10 @@ def resolve_review_schedule_source() -> ReviewScheduleSourceResolution:
         )
 
     if selection.status == CURRENT_SEMESTER_UNSET:
-        return ReviewScheduleSourceResolution(
-            kind=LEGACY_FALLBACK_ELIGIBLE,
-            canonical_status=CURRENT_SEMESTER_UNSET,
-            semester='',
-        )
+        return _try_legacy_fallback()
 
     return ReviewScheduleSourceResolution(
         kind=NONE,
         canonical_status=selection.status,
         semester=selection.semester,
     )
-
-
-def current_canonical_legacy_df() -> Optional[pd.DataFrame]:
-    """Return a legacy-shaped DataFrame for the current READY snapshot.
-
-    Returns ``None`` when the canonical selection is not READY or when scalar
-    metadata is incomplete.
-    """
-    resolution = resolve_review_schedule_source()
-    return resolution.dataframe
