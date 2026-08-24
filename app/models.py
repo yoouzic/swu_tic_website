@@ -673,3 +673,27 @@ class ScheduleImportRow(db.Model):
 
     def __repr__(self):
         return f'<ScheduleImportRow {self.id} batch={self.batch_id} row={self.source_row}>'
+
+
+class ScheduleSemesterSelection(db.Model):
+    """Authoritative active-batch pointer for one semester.
+
+    This is the single source of truth used by canonical schedule selection.
+    ``ScheduleImportBatch.status`` is retained as historical metadata; code
+    that selects the current snapshot must read this selection row, not the
+    batch status column.
+    """
+    __tablename__ = 'schedule_semester_selections'
+
+    semester = db.Column(db.String(50), primary_key=True)
+    active_batch_id = db.Column(
+        db.Integer,
+        db.ForeignKey('schedule_import_batches.id'),
+        nullable=False,
+    )
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+    active_batch = db.relationship('ScheduleImportBatch', foreign_keys=[active_batch_id])
+
+    def __repr__(self):
+        return f'<ScheduleSemesterSelection {self.semester} -> {self.active_batch_id}>'

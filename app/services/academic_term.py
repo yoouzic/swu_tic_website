@@ -8,7 +8,7 @@ dataset upload parameter.
 from app.models import SystemSetting
 
 SETTING_KEY_CURRENT_TEACHING_SEMESTER = 'teaching_current_semester'
-MAX_SEMESTER_IDENTIFIER_LENGTH = 255
+MAX_SEMESTER_IDENTIFIER_LENGTH = 50
 
 
 def get_current_teaching_semester() -> str:
@@ -32,7 +32,7 @@ def normalize_semester_identifier(value) -> str:
 
     text = value.strip()
     if len(text) > MAX_SEMESTER_IDENTIFIER_LENGTH:
-        raise ValueError('当前教学学期长度不能超过255个字符')
+        raise ValueError('当前教学学期长度不能超过50个字符')
 
     for char in text:
         if ord(char) < 32 or ord(char) == 127:

@@ -429,6 +429,7 @@ class ScheduleSnapshotTest(unittest.TestCase):
         inspector = inspect(db.engine)
         self.assertTrue(inspector.has_table('schedule_import_batches'))
         self.assertTrue(inspector.has_table('schedule_import_rows'))
+        self.assertTrue(inspector.has_table('schedule_semester_selections'))
 
 
 if __name__ == '__main__':

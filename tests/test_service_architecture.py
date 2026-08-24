@@ -262,9 +262,15 @@ class ServiceArchitectureTests(unittest.TestCase):
             n.name for n in tree.body
             if isinstance(n, ast.FunctionDef)
         }
+        classes = {
+            n.name for n in tree.body
+            if isinstance(n, ast.ClassDef)
+        }
         self.assertIn('get_active_schedule_batch', functions)
         self.assertIn('get_active_schedule_rows', functions)
         self.assertIn('persist_import_snapshot', functions)
+        self.assertIn('resolve_current_schedule_snapshot', functions)
+        self.assertIn('CurrentScheduleSelection', classes)
 
     def test_academic_term_exposes_canonical_api(self):
         tree = ast.parse(ACADEMIC_TERM_FILE.read_text(encoding='utf-8'))

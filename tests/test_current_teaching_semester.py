@@ -106,9 +106,15 @@ class CurrentTeachingSemesterTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(get_current_teaching_semester(), '2026-2027-1')
 
-    def test_overlong_and_non_string_are_rejected(self):
+    def test_max_length_50_is_accepted_and_51_is_rejected(self):
+        max_payload = dict(VALID_BASE_PAYLOAD)
+        max_payload['current_semester'] = 'x' * 50
+        response = self._post(max_payload)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(get_current_teaching_semester(), 'x' * 50)
+
         overlong_payload = dict(VALID_BASE_PAYLOAD)
-        overlong_payload['current_semester'] = 'x' * 256
+        overlong_payload['current_semester'] = 'x' * 51
         response = self._post(overlong_payload)
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.get_json()['success'])
@@ -118,7 +124,7 @@ class CurrentTeachingSemesterTest(unittest.TestCase):
         response = self._post(bad_type_payload)
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.get_json()['success'])
-        self.assertEqual(get_current_teaching_semester(), '')
+        self.assertEqual(get_current_teaching_semester(), 'x' * 50)
 
     def test_normalize_semester_identifier_allows_non_regex_identifiers(self):
         self.assertEqual(normalize_semester_identifier(' 2026-2027-1 '), '2026-2027-1')
