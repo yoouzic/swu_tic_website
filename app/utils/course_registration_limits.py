@@ -46,27 +46,13 @@ def normalize_course_weekly_limit_count(value):
 
 
 def get_current_teaching_week_no():
-    first_week_raw = SystemSetting.get('teaching_first_week_monday')
-    if not first_week_raw:
-        return None
+    from app.services.teaching_calendar import teaching_week_number
+    from app.services.teaching_calendar_settings import load_teaching_calendar_config
 
-    try:
-        first_week_date = datetime.strptime(first_week_raw, '%Y-%m-%d').date()
-    except Exception:
+    config, error = load_teaching_calendar_config()
+    if error is not None or config is None:
         return None
-
-    try:
-        week_start_day = int(SystemSetting.get('teaching_week_start_day', '0') or 0)
-    except Exception:
-        week_start_day = 0
-    if week_start_day < 0 or week_start_day > 6:
-        week_start_day = 0
-
-    teaching_start = first_week_date - timedelta(days=(first_week_date.weekday() - week_start_day) % 7)
-    diff_days = (datetime.now().date() - teaching_start).days
-    if diff_days < 0:
-        return None
-    return (diff_days // 7) + 1
+    return teaching_week_number(datetime.now().date(), config)
 
 
 def get_course_registration_count_for_week(course_code, selection_code, week_no):

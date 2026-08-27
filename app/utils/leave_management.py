@@ -3,7 +3,6 @@ import json
 import re
 
 from ..models import AssessmentOverride, LectureForm, SystemSetting
-from .audit_tags import LATE_TAG_LATE, parse_audit_tag
 
 
 LEAVE_OVERRIDE_TYPE = 'leave'
@@ -13,20 +12,18 @@ LEAVE_MAKEUP_FORMS_KEY = 'makeup_forms'
 
 
 def get_teaching_settings():
-    first_week_raw = SystemSetting.get('teaching_first_week_monday')
-    if not first_week_raw:
+    from ..services.teaching_calendar_settings import (
+        INVALID_FIRST_WEEK,
+        MISSING_FIRST_WEEK,
+        load_teaching_calendar_config,
+    )
+    config, error = load_teaching_calendar_config()
+    if error == MISSING_FIRST_WEEK:
         return None, '请先在制度设置中配置第一周起始日期'
-    try:
-        first_week_date = datetime.strptime(first_week_raw, '%Y-%m-%d').date()
-    except Exception:
+    if error == INVALID_FIRST_WEEK:
         return None, '制度设置中的第一周起始日期格式错误'
-
-    try:
-        week_start_day = int(SystemSetting.get('teaching_week_start_day', '0') or 0)
-    except Exception:
-        week_start_day = 0
-    if week_start_day < 0 or week_start_day > 6:
-        week_start_day = 0
+    if config is None:
+        return None, '请先在制度设置中配置第一周起始日期'
 
     try:
         required_submission = int(SystemSetting.get('teaching_required_submission', '1') or 1)
@@ -36,26 +33,23 @@ def get_teaching_settings():
         required_submission = 0
 
     return {
-        'first_week_date': first_week_date,
-        'week_start_day': week_start_day,
+        'first_week_date': config.first_week_date,
+        'week_start_day': config.week_start_day,
         'required_submission': required_submission,
+        'total_weeks': config.total_weeks,
     }, None
 
 
 def get_teaching_week_no(date_obj, settings):
     if not date_obj or not settings or not settings.get('first_week_date'):
         return None
-    if isinstance(date_obj, datetime):
-        target_date = date_obj.date()
-    else:
-        target_date = date_obj
-    first_week_date = settings['first_week_date']
-    week_start_day = settings['week_start_day']
-    teaching_start = first_week_date - timedelta(days=(first_week_date.weekday() - week_start_day) % 7)
-    diff = (target_date - teaching_start).days
-    if diff < 0:
-        return None
-    return (diff // 7) + 1
+    from ..services.teaching_calendar import TeachingCalendarConfig, teaching_week_number
+    config = TeachingCalendarConfig(
+        first_week_date=settings['first_week_date'],
+        week_start_day=settings.get('week_start_day', 0),
+        total_weeks=settings.get('total_weeks', 52),
+    )
+    return teaching_week_number(date_obj, config)
 
 
 def get_current_teaching_week(settings=None):
@@ -67,44 +61,21 @@ def get_current_teaching_week(settings=None):
 
 
 def parse_lecture_date_value(raw_value):
-    if not raw_value:
-        return None
-    if isinstance(raw_value, datetime):
-        return raw_value.date()
-    text = str(raw_value).strip()
-    if not text:
-        return None
-    normalized = text.replace('年', '-').replace('月', '-').replace('日', '')
-    for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%Y.%m.%d']:
-        try:
-            return datetime.strptime(normalized, fmt).date()
-        except Exception:
-            continue
-    match = re.search(r'(\d{4})\D+(\d{1,2})\D+(\d{1,2})', text)
-    if not match:
-        return None
-    try:
-        return datetime(int(match.group(1)), int(match.group(2)), int(match.group(3))).date()
-    except Exception:
-        return None
+    from ..services.teaching_calendar import parse_lecture_date
+    return parse_lecture_date(raw_value)
 
 
 def get_form_effective_week_no(form, settings):
     if not form:
         return None
-    parsed_tag = parse_audit_tag(form.audit_tag)
-    if parsed_tag.get('week_correction_week_no') is not None:
-        return parsed_tag['week_correction_week_no']
-
-    lecture_date = parse_lecture_date_value(form.lecture_date)
-    week_no = get_teaching_week_no(lecture_date, settings)
-    if week_no is None:
-        return None
-    if parsed_tag.get('legacy_late_tag') == LATE_TAG_LATE:
-        week_no -= 1
-    if week_no < 1:
-        return None
-    return week_no
+    from ..services.form_week_semantics import effective_form_week
+    from ..services.teaching_calendar import TeachingCalendarConfig
+    config = TeachingCalendarConfig(
+        first_week_date=settings['first_week_date'],
+        week_start_day=settings.get('week_start_day', 0),
+        total_weeks=settings.get('total_weeks', 52),
+    )
+    return effective_form_week(form.lecture_date, form.audit_tag, config)
 
 
 def _latest_form_groups_for_user_number(user_number):

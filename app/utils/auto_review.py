@@ -1,10 +1,12 @@
-import os
+"""Legacy compatibility engine.
+
+System-level legacy upload/settings/report endpoints have been retired.
+The engine remains for the legacy immediate form check and reference-data
+lookup endpoints in admin/review.py. Do not add new consumers.
+"""
 import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
-from difflib import SequenceMatcher
-
-import pandas as pd
 try:
     import pycorrector
 except Exception:
@@ -12,19 +14,28 @@ except Exception:
 from flask import current_app
 
 from ..models import db, LectureForm, Teacher, Course, SystemSetting, User, ScoreRecord, ScoreItem
+from ..services.legacy_review_compat import (
+    get_legacy_review_week_no,
+    resolve_legacy_semester_monday,
+)
+from ..services.review_schedule_source import resolve_review_schedule_source
+from ..services.review_schedule_matcher import (
+    find_course_in_schedule,
+    normalize_class_period,
+    normalize_location,
+    normalize_weekday,
+)
+from ..services.review_reference_data import search_review_reference_data
+from ..services.review_contacts import (
+    find_reviewer_by_id as _canonical_find_reviewer_by_id,
+    find_reviewer_by_name as _canonical_find_reviewer_by_name,
+)
 from .audit_tags import is_auto_review_allowed
-from .env_config import env_path
 from .time_validator import TimeValidator
 from .user_status import active_user_filter, is_user_active
 
 
-DEFAULT_SCHEDULE_PATH = env_path('AUTO_REVIEW_DEFAULT_SCHEDULE_PATH', os.path.join('data', 'storage', 'templates', 'auto_review', '2025-2026-1课表.xlsx'))
-DEFAULT_CONTACTS_PATH = env_path('AUTO_REVIEW_DEFAULT_CONTACTS_PATH', os.path.join('data', 'storage', 'templates', 'auto_review', '第20届教学信息中心通讯录251016-审表信息版.xlsx'))
-DEFAULT_FEEDBACK_PATH = env_path('AUTO_REVIEW_DEFAULT_FEEDBACK_PATH', os.path.join('data', 'storage', 'templates', 'auto_review', '办公部第7周反馈表-自动审表版.xlsx'))
 SETTING_KEY_SEMESTER_MONDAY = 'semester_first_monday'
-SETTING_KEY_SCHEDULE_PATH = 'auto_review_schedule_path'
-SETTING_KEY_CONTACTS_PATH = 'auto_review_contacts_path'
-SETTING_KEY_FEEDBACK_PATH = 'auto_review_feedback_path'
 
 # 有效学院列表（根据审核要求）
 VALID_COLLEGES = [
@@ -58,67 +69,20 @@ VALID_SCALE_VALUES = ['非常好', '好', '一般']
 VALID_CASE_VALUES = ['推荐', '不推荐']
 
 
-def _exists(path: str) -> bool:
-    try:
-        return os.path.exists(path)
-    except Exception:
-        return False
-
-
-def _read_excel(path: str, sheet_name: Any = 0) -> Optional[pd.DataFrame]:
-    if not _exists(path):
-        return None
-    try:
-        if path.lower().endswith('.xls'):
-            # 尝试多种方式读取.xls文件
-            try:
-                df = pd.read_excel(path, sheet_name=sheet_name, engine='xlrd')
-            except:
-                try:
-                    df = pd.read_excel(path, sheet_name=sheet_name, engine='openpyxl')
-                except:
-                    df = pd.read_excel(path, sheet_name=sheet_name)
-        else:
-            df = pd.read_excel(path, sheet_name=sheet_name)  # openpyxl for .xlsx
-        return df
-    except Exception as e:
-        current_app.logger.error(f"读取Excel文件失败 {path}: {e}")
-        return None
-
-
-def _similarity(a: str, b: str) -> float:
-    """计算两个字符串的相似度"""
-    if not a or not b:
-        return 0.0
-    return SequenceMatcher(None, a, b).ratio()
-
-
 class AutoReviewEngine:
     def __init__(self,
                  schedule_path: Optional[str] = None,
-                 contacts_path: Optional[str] = None,
-                 semester_monday: Optional[str] = None,
-                 feedback_path: Optional[str] = None):
-        # 读取系统设置中的上传路径，否则使用默认文件
-        schedule_config = SystemSetting.get(SETTING_KEY_SCHEDULE_PATH)
-        contacts_config = SystemSetting.get(SETTING_KEY_CONTACTS_PATH)
-        feedback_config = SystemSetting.get(SETTING_KEY_FEEDBACK_PATH)
-        self.schedule_path = schedule_path or schedule_config or DEFAULT_SCHEDULE_PATH
-        self.contacts_path = contacts_path or contacts_config or DEFAULT_CONTACTS_PATH
-        self.feedback_path = feedback_path or feedback_config or DEFAULT_FEEDBACK_PATH
-        if not _exists(self.schedule_path) and _exists(DEFAULT_SCHEDULE_PATH):
-            self.schedule_path = DEFAULT_SCHEDULE_PATH
-        if not _exists(self.contacts_path) and _exists(DEFAULT_CONTACTS_PATH):
-            self.contacts_path = DEFAULT_CONTACTS_PATH
-        if not _exists(self.feedback_path) and _exists(DEFAULT_FEEDBACK_PATH):
-            self.feedback_path = DEFAULT_FEEDBACK_PATH
-        
-        # 读取文件
-        self.schedule_df = _read_excel(self.schedule_path)
-        self.contacts_df = _read_excel(self.contacts_path)
-        self.feedback_df = _read_excel(self.feedback_path, sheet_name='反馈表')
-        
-        self.semester_monday_str = semester_monday or SystemSetting.get(SETTING_KEY_SEMESTER_MONDAY)
+                 semester_monday: Optional[str] = None):
+        # The complete source decision now lives in review_schedule_source.
+        resolution = resolve_review_schedule_source(
+            explicit_schedule_path=schedule_path,
+        )
+        self.schedule_source_kind = resolution.kind
+        self.schedule_path = resolution.schedule_path
+        self.schedule_df = resolution.dataframe
+
+        self._explicit_semester_monday = semester_monday or None
+        self.semester_monday_str = semester_monday or resolve_legacy_semester_monday()
         self.semester_monday = None
         if self.semester_monday_str:
             try:
@@ -142,62 +106,18 @@ class AutoReviewEngine:
     
     @staticmethod
     def _normalize_weekday(weekday_str: str) -> str:
-        """将数字星期转换为中文星期，如 '1' -> '一'"""
-        try:
-            if weekday_str.isdigit():
-                num = int(weekday_str)
-                cn_char = AutoReviewEngine._weekday_to_cn_char(num)
-                return cn_char if cn_char else weekday_str
-            return weekday_str
-        except:
-            return weekday_str
-    
+        """Compatibility wrapper; authority is review_schedule_matcher."""
+        return normalize_weekday(weekday_str)
+
     @staticmethod
     def _normalize_class_period(period_str: str) -> str:
-        """将课表中的节次格式转换为标准格式，如 '1-2节' -> '第1-2节'"""
-        if not period_str:
-            return period_str
-        
-        # 如果已经有"第"，直接返回
-        if period_str.startswith('第'):
-            return period_str
-        
-        # 如果以"节"结尾，在前面加"第"
-        if period_str.endswith('节'):
-            return f'第{period_str}'
-        
-        # 其他情况直接返回
-        return period_str
+        """Compatibility wrapper; authority is review_schedule_matcher."""
+        return normalize_class_period(period_str)
 
     @staticmethod
     def _normalize_location(loc: str) -> str:
-        """规范场地：
-        - 针对通用格式 "楼-房间" 去除房间号前导零，例如 33-0201 -> 33-201
-        - 新增：将 "荣昌abcd"（a,b,c,d为数字）规范为 "荣昌0a-bcd"（不移除bcd的前导零）
-        """
-        if not loc:
-            return loc
-        try:
-            # 特例：荣昌校区的场地格式，如 "荣昌abcd" -> "荣昌0a-bcd"
-            loc_str = loc.strip()
-            m = re.match(r'^荣昌\s*(\d{4})$', loc_str)
-            if m:
-                digits = m.group(1)
-                building = f"0{digits[0]}"
-                room = digits[1:]  # 保留原始bcd，不去除前导零
-                return f"荣昌{building}-{room}"
-
-            parts = loc.split('-')
-            if len(parts) == 2:
-                building, room = parts
-                # 去除房间号前导零，但保留其他字符
-                room_clean = re.sub(r'^0+', '', room) if room else room
-                if not room_clean:  # 如果全是0，保留一个0
-                    room_clean = '0'
-                return f"{building}-{room_clean}"
-            return loc
-        except Exception:
-            return loc
+        """Compatibility wrapper; authority is review_schedule_matcher."""
+        return normalize_location(loc)
 
     @staticmethod
     def _starts_with_teacher(text: str) -> bool:
@@ -212,210 +132,38 @@ class AutoReviewEngine:
         return [t.strip() for t in text.split('|') if t.strip()]
 
     def _find_reviewer_by_id(self, reviewer_id: str) -> Optional[Dict[str, Any]]:
-        """根据编号在通讯录中查找反馈人"""
-        if not self.contacts_df is not None or not reviewer_id:
-            return None
-        
-        try:
-            # 查找编号匹配的行
-            matches = self.contacts_df[self.contacts_df['编号'].astype(str) == str(reviewer_id)]
-            if len(matches) > 0:
-                row = matches.iloc[0]
-                return {
-                    'id': str(row['编号']),
-                    'name': str(row['姓名']),
-                    'department': str(row['部门/组别']),
-                    'college': str(row['学院']),
-                    'phone': str(row['手机号码'])
-                }
-        except Exception as e:
-            current_app.logger.error(f"查找反馈人失败: {e}")
-        return None
+        """根据编号在 canonical User 通讯录中查找反馈人"""
+        return _canonical_find_reviewer_by_id(reviewer_id)
 
     def _find_reviewer_by_name(self, name: str, fuzzy: bool = True) -> Optional[Dict[str, Any]]:
-        """根据姓名在通讯录中查找反馈人，支持模糊匹配"""
-        if self.contacts_df is None or not name:
-            return None
-        
-        try:
-            # 提取姓名（去除学院信息）
-            clean_name = name
-            if '（' in name and '）' in name:
-                clean_name = name.split('（')[0].strip()
-            
-            # 精确匹配
-            exact_matches = self.contacts_df[self.contacts_df['姓名'] == clean_name]
-            if len(exact_matches) > 0:
-                row = exact_matches.iloc[0]
-                return {
-                    'id': str(row['编号']),
-                    'name': str(row['姓名']),
-                    'department': str(row['部门/组别']),
-                    'college': str(row['学院']),
-                    'phone': str(row['手机号码'])
-                }
-            
-            # 模糊匹配
-            if fuzzy:
-                best_match = None
-                best_score = 0.8  # 相似度阈值
-                
-                for _, row in self.contacts_df.iterrows():
-                    contact_name = str(row['姓名'])
-                    score = _similarity(clean_name, contact_name)
-                    if score > best_score:
-                        best_score = score
-                        best_match = {
-                            'id': str(row['编号']),
-                            'name': str(row['姓名']),
-                            'department': str(row['部门/组别']),
-                            'college': str(row['学院']),
-                            'phone': str(row['手机号码']),
-                            'similarity': score
-                        }
-                
-                return best_match
-                
-        except Exception as e:
-            current_app.logger.error(f"查找反馈人失败: {e}")
-        return None
+        """根据姓名在 canonical User 通讯录中查找反馈人，支持模糊匹配"""
+        return _canonical_find_reviewer_by_name(name, fuzzy=fuzzy)
 
-    def _find_course_in_schedule(self, teacher_name: str, teacher_college: str, 
-                                course_title: str, class_composition: str, 
+    def _find_course_in_schedule(self, teacher_name: str, teacher_college: str,
+                                course_title: str, class_composition: str,
                                 location: str, feedback_weekday_cn: Optional[str] = None,
                                 feedback_class_period: Optional[str] = None) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
-        """在课表中查找匹配的课程，返回最佳匹配和所有可能匹配。
-        优先使用反馈中的星期几与节次进行筛选。"""
-        if self.schedule_df is None:
-            return None, []
-        
-        try:
-            # 逐步筛选，从最严格到最宽松
-            all_matches = []
-            
-            # 1. 精确匹配：教师姓名 + 课程名称
-            if teacher_name and course_title:
-                exact_matches = self.schedule_df[
-                    (self.schedule_df['姓名'] == teacher_name) & 
-                    (self.schedule_df['课程名称'] == course_title)
-                ]
-                if len(exact_matches) > 0:
-                    for _, row in exact_matches.iterrows():
-                        match_info = {
-                            'course_name': str(row['课程名称']),
-                            'teacher_name': str(row['姓名']),
-                            'teacher_college': str(row['教师所属学院']),
-                            'weekday': self._normalize_weekday(str(row['星期几'])),
-                            'class_period': self._normalize_class_period(str(row['上课节次'])),
-                            'location': str(row['场地名称']),
-                            'class_composition': str(row['教学班组成']),
-                            'start_week': str(row['起始周']),
-                            'match_type': 'exact'
-                        }
-                        all_matches.append(match_info)
-            
-            # 2. 如果精确匹配失败，尝试教师姓名匹配
-            if not all_matches and teacher_name:
-                teacher_matches = self.schedule_df[self.schedule_df['姓名'] == teacher_name]
-                if len(teacher_matches) > 0:
-                    for _, row in teacher_matches.iterrows():
-                        match_info = {
-                            'course_name': str(row['课程名称']),
-                            'teacher_name': str(row['姓名']),
-                            'teacher_college': str(row['教师所属学院']),
-                            'weekday': self._normalize_weekday(str(row['星期几'])),
-                            'class_period': self._normalize_class_period(str(row['上课节次'])),
-                            'location': str(row['场地名称']),
-                            'class_composition': str(row['教学班组成']),
-                            'start_week': str(row['起始周']),
-                            'match_type': 'teacher_name'
-                        }
-                        all_matches.append(match_info)
-            
-            # 3. 如果还是没有匹配，尝试课程名称匹配
-            if not all_matches and course_title:
-                course_matches = self.schedule_df[self.schedule_df['课程名称'] == course_title]
-                if len(course_matches) > 0:
-                    for _, row in course_matches.iterrows():
-                        match_info = {
-                            'course_name': str(row['课程名称']),
-                            'teacher_name': str(row['姓名']),
-                            'teacher_college': str(row['教师所属学院']),
-                            'weekday': self._normalize_weekday(str(row['星期几'])),
-                            'class_period': self._normalize_class_period(str(row['上课节次'])),
-                            'location': str(row['场地名称']),
-                            'class_composition': str(row['教学班组成']),
-                            'start_week': str(row['起始周']),
-                            'match_type': 'course_name'
-                        }
-                        all_matches.append(match_info)
-            
-            # 4. 优先按星期几与节次筛选
-            if all_matches and (feedback_weekday_cn or feedback_class_period):
-                time_matches = []
-                for match in all_matches:
-                    ok_weekday = True
-                    ok_period = True
-                    if feedback_weekday_cn:
-                        ok_weekday = (match.get('weekday') == feedback_weekday_cn)
-                    if feedback_class_period:
-                        match_period = self._normalize_class_period(match.get('class_period') or '')
-                        wanted_period = self._normalize_class_period(feedback_class_period)
-                        ok_period = (match_period == wanted_period)
-                    if ok_weekday and ok_period:
-                        match['match_type'] += '_with_time'
-                        time_matches.append(match)
-                if time_matches:
-                    all_matches = time_matches
-
-            # 5. 进一步筛选：如果有地点信息，优先匹配地点
-            if all_matches and location:
-                normalized_loc = self._normalize_location(location)
-                location_matches = []
-                for match in all_matches:
-                    if self._normalize_location(match['location']) == normalized_loc:
-                        match['match_type'] += '_with_location'
-                        location_matches.append(match)
-                if location_matches:
-                    all_matches = location_matches
-            
-            # 5. 进一步筛选：如果有教学班组成信息，优先匹配
-            if all_matches and class_composition:
-                class_matches = []
-                for match in all_matches:
-                    if class_composition in match['class_composition']:
-                        match['match_type'] += '_with_class'
-                        class_matches.append(match)
-                if class_matches:
-                    all_matches = class_matches
-            
-            # 返回最佳匹配（第一个）和所有匹配
-            best_match = all_matches[0] if all_matches else None
-            return best_match, all_matches
-            
-        except Exception as e:
-            current_app.logger.error(f"课表匹配失败: {e}")
-        
-        return None, []
-
-    def files_status(self) -> Dict[str, Any]:
-        return {
-            'schedule_path': self.schedule_path,
-            'contacts_path': self.contacts_path,
-            'feedback_path': self.feedback_path,
-            'schedule_exists': self.schedule_df is not None,
-            'contacts_exists': self.contacts_df is not None,
-            'feedback_exists': self.feedback_df is not None,
-            'semester_monday': self.semester_monday_str,
-        }
+        """Compatibility wrapper; algorithm authority is review_schedule_matcher."""
+        return find_course_in_schedule(
+            self.schedule_df,
+            teacher_name,
+            teacher_college,
+            course_title,
+            class_composition,
+            location,
+            feedback_weekday_cn=feedback_weekday_cn,
+            feedback_class_period=feedback_class_period,
+        )
 
     def _compute_week_from_date(self, d: datetime.date) -> Optional[int]:
-        if not self.semester_monday:
-            return None
-        delta_days = (d - self.semester_monday).days
-        if delta_days < 0:
-            return None
-        return (delta_days // 7) + 1
+        if self._explicit_semester_monday:
+            if not self.semester_monday:
+                return None
+            delta_days = (d - self.semester_monday).days
+            if delta_days < 0:
+                return None
+            return (delta_days // 7) + 1
+        return get_legacy_review_week_no(d)
 
     def _validate_reviewer_identity(self, form_like: Any, issues: List[str], fixes: List[str]) -> Optional[Dict[str, Any]]:
         """验证反馈人身份信息"""
@@ -749,91 +497,6 @@ class AutoReviewEngine:
             )
         }
 
-    def review_feedback(self, path: Optional[str] = None) -> Dict[str, Any]:
-        """审核反馈表文件"""
-        df = _read_excel(path, sheet_name='反馈表') if path else self.feedback_df
-        if df is None:
-            return {'summary': {'total': 0, 'passed': 0, 'failed': 0}, 'results': []}
-        
-        results = []
-        
-        # 更精确的列名映射表（基于实际数据分析）
-        colmap = {
-            'id': ['序号', '编号', 'ID', '西南大学学生教学质量监控信息（意见）处理笺'],
-            'listener_name': ['听课人姓名+学院', '听课人', '听课人姓名', 'Unnamed: 1'],
-            'reviewer_id': ['听课人(填写编号)', '编号', 'Unnamed: 2'],
-            'teacher_name': ['授课教师(谨防错别字)', '教师', '教师姓名', '授课教师', 'Unnamed: 7'],
-            'teacher_college': ['教师所属学院(对照全校课表填写)', '教师学院', '学院', 'Unnamed: 8'],
-            'course_title': ['课程(总标题)', '课程', '课程名', '课程名称', 'Unnamed: 9'],
-            'lecture_date': ['听课时间(如:2023/10/19星期四)', '听课时间', '上课时间', '日期', 'Unnamed: 4'],
-            'class_period': ['第几节(如:第1-3节)', '节次', '上课节次', '听课节次', 'Unnamed: 5'],
-            'lecture_location': ['听课地点(如:32-302)', '地点', '上课地点', '教室', 'Unnamed: 6'],
-            'class_composition': ['专业年级(如:2018级植物生产类05、06班)', '专业年级', 'Unnamed: 10'],
-            'teaching_method': ['主要教学方法', 'Unnamed: 12'],
-            'classroom_discipline': ['管理课堂纪律', '课堂纪律', 'Unnamed: 13'],
-            'classroom_atmosphere': ['调动课堂气氛', '课堂气氛', 'Unnamed: 14'],
-            'courseware_quality': ['课件制作质量', '课件质量', 'Unnamed: 15'],
-            'overall_effect': ['整体教学效果', 'Unnamed: 16'],
-            'quality_case': ['优质案例推荐', '是否推荐优质案例', 'Unnamed: 17'],
-            'course_feedback': ['课程反馈(优点,五十字以上,评价的内容实在且有针对性,结尾不需要句号)', '课程反馈', 'Unnamed: 18'],
-            'suggestions': ['不足及建议(根据事实,没有则填"无")', '不足及建议', '建议', 'Unnamed: 19'],
-            'contact_phone': ['联系电话', 'Unnamed: 22']
-        }
-        
-        def take(row: pd.Series, keys: List[str]) -> str:
-            for k in keys:
-                if k in row.index:
-                    v = row.get(k)
-                    if pd.isna(v):
-                        continue
-                    s = str(v).strip()
-                    if s and s.lower() != 'nan':
-                        return s
-            return ''
-        
-        # 跳过标题行（第一行通常是列名）
-        start_row = 1 if len(df) > 1 else 0
-        
-        for idx, r in df.iloc[start_row:].iterrows():
-            # 跳过空行
-            if r.isna().all():
-                continue
-                
-            class FeedbackForm:
-                pass
-            
-            f = FeedbackForm()
-            setattr(f, 'id', take(r, colmap['id']) or str(idx + 1))
-            setattr(f, 'listener_name', take(r, colmap['listener_name']))
-            setattr(f, 'reviewer_id', take(r, colmap['reviewer_id']))
-            setattr(f, 'teacher_name', take(r, colmap['teacher_name']))
-            setattr(f, 'teacher_college', take(r, colmap['teacher_college']))
-            setattr(f, 'course_title', take(r, colmap['course_title']))
-            setattr(f, 'lecture_date', take(r, colmap['lecture_date']))
-            setattr(f, 'class_period', take(r, colmap['class_period']))
-            setattr(f, 'lecture_location', take(r, colmap['lecture_location']))
-            setattr(f, 'class_composition', take(r, colmap['class_composition']))
-            setattr(f, 'teaching_method', take(r, colmap['teaching_method']))
-            setattr(f, 'classroom_discipline', take(r, colmap['classroom_discipline']))
-            setattr(f, 'classroom_atmosphere', take(r, colmap['classroom_atmosphere']))
-            setattr(f, 'courseware_quality', take(r, colmap['courseware_quality']))
-            setattr(f, 'overall_effect', take(r, colmap['overall_effect']))
-            setattr(f, 'quality_case', take(r, colmap['quality_case']))
-            setattr(f, 'course_feedback', take(r, colmap['course_feedback']))
-            setattr(f, 'suggestions', take(r, colmap['suggestions']))
-            setattr(f, 'contact_phone', take(r, colmap['contact_phone']))
-            
-            # 只处理有实际内容的行
-            if getattr(f, 'listener_name') or getattr(f, 'teacher_name') or getattr(f, 'course_title'):
-                results.append(self.review_any(f))
-        
-        summary = {
-            'total': len(results),
-            'passed': sum(1 for r in results if r['passed']),
-            'failed': sum(1 for r in results if not r['passed']),
-        }
-        return {'summary': summary, 'results': results}
-
     def run(self, status_filter: Optional[str] = '待审核') -> Dict[str, Any]:
         """运行自动审核"""
         forms = LectureForm.query.filter_by(status=status_filter).all()
@@ -847,41 +510,6 @@ class AutoReviewEngine:
         }
         return {'summary': summary, 'results': results}
 
-    def export_report(self, data: Dict[str, Any]) -> Optional[str]:
-        """导出审核报告"""
-        try:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f'auto_review_report_{timestamp}.xlsx'
-            reports_dir = env_path('AUTO_REVIEW_REPORT_DIR', os.path.join('data', 'storage', 'exports', 'auto_review'))
-            os.makedirs(reports_dir, exist_ok=True)
-            filepath = os.path.join(reports_dir, filename)
-            
-            # 准备导出数据
-            export_data = []
-            for result in data.get('results', []):
-                ri = result.get('reviewer_info') or {}
-                rid = ri.get('id') or result.get('reviewer_id', '')
-                export_data.append({
-                    '信息员编号': rid,
-                    '听课人': result.get('listener', ''),
-                    '教师': result.get('teacher', ''),
-                    '课程': result.get('course', ''),
-                    '是否通过': '通过' if result.get('passed') else '不通过',
-                    '问题数': len(result.get('issues', [])),
-                    '问题详情': '; '.join(result.get('issues', [])),
-                    '修正建议': '; '.join(result.get('fixes', [])),
-                    '备注': result.get('notes', '')  # 添加备注列
-                })
-            
-            df = pd.DataFrame(export_data)
-            # 明确列顺序，确保首列为“信息员编号”
-            columns = ['信息员编号', '听课人', '教师', '课程', '是否通过', '问题数', '问题详情', '修正建议', '备注']
-            df = df[columns]
-            df.to_excel(filepath, index=False)
-            return filepath
-        except Exception as e:
-            current_app.logger.error(f"导出报告失败: {e}")
-            return None
 
     def check_text_errors(self, text: str, enable_typos_check: bool = True) -> List[str]:
         """
@@ -937,7 +565,6 @@ class AutoReviewEngine:
             issues.append('中文文本中可能使用了英文逗号')
             
         return issues
-
     def batch_review_db_forms(
         self,
         form_ids: List[int],
@@ -1115,80 +742,8 @@ class AutoReviewEngine:
         }
 
     def search_reference_data(self, form_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        根据表单数据搜索参考资料（课表和通讯录）
-        返回：
-        {
-            'schedule_matches': [match1, match2, ...],  # Top 5 matches
-            'contact_matches': [match1, match2, ...]
-        }
-        """
-        result = {
-            'schedule_matches': [],
-            'contact_matches': []
-        }
-
-        # 1. 搜索通讯录
-        listener_name = form_data.get('listener_name')
-        listener_id = form_data.get('listener_number')
-        
-        # 如果没有 listener_number，尝试从 reviewer_id 获取（兼容旧逻辑，但需小心）
-        if not listener_id:
-             raw_id = form_data.get('reviewer_id')
-             if raw_id and str(raw_id).isdigit() and len(str(raw_id)) > 5:
-                 listener_id = raw_id
-        
-        # 尝试通过ID搜索
-        if listener_id:
-            contact_by_id = self._find_reviewer_by_id(str(listener_id))
-            if contact_by_id:
-                contact_by_id['match_type'] = 'id'
-                result['contact_matches'].append(contact_by_id)
-        
-        # 尝试通过姓名搜索
-        if listener_name:
-            # 如果名字包含学院信息，提取名字部分
-            name_part = listener_name
-            if '（' in listener_name:
-                name_part = listener_name.split('（')[0].strip()
-            
-            contact_by_name = self._find_reviewer_by_name(name_part, fuzzy=True)
-            if contact_by_name:
-                # 避免重复添加
-                is_duplicate = False
-                for existing in result['contact_matches']:
-                    if existing['id'] == contact_by_name['id']:
-                        is_duplicate = True
-                        break
-                
-                if not is_duplicate:
-                    contact_by_name['match_type'] = 'name'
-                    result['contact_matches'].append(contact_by_name)
-
-        # 2. 搜索课表
-        teacher_name = form_data.get('teacher_name')
-        teacher_college = form_data.get('teacher_college')
-        course_title = form_data.get('course_title')
-        class_composition = form_data.get('student_grade_class') or form_data.get('class_composition')
-        location = form_data.get('lecture_location')
-        
-        # 解析时间和节次
-        lecture_date = form_data.get('lecture_date')
-        weekday_cn = None
-        if lecture_date:
-            s = str(lecture_date).strip()
-            if '星期' in s:
-                _, right = s.split('星期', 1)
-                weekday_cn = right.strip()[:1] if right else None
-        
-        class_period = form_data.get('class_period')
-
-        _, all_matches = self._find_course_in_schedule(
-            teacher_name, teacher_college, course_title, class_composition, location,
-            feedback_weekday_cn=weekday_cn, feedback_class_period=class_period
+        """Compatibility wrapper; orchestration lives in review_reference_data."""
+        return search_review_reference_data(
+            form_data,
+            schedule_df=self.schedule_df,
         )
-        
-        # 取前5个匹配项
-        result['schedule_matches'] = all_matches[:5]
-        
-        return result

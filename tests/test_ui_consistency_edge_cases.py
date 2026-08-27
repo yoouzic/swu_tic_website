@@ -22,8 +22,18 @@ from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_datab
 
 REVIEW_TEMPLATE = Path('app/templates/admin/review_forms.html')
 MEMBER_TEMPLATE = Path('app/templates/admin/_user_detail_panel.html')
-ADMIN_BLUEPRINT = Path('app/blueprints/admin.py')
+ADMIN_PACKAGE = Path('app/blueprints/admin')
+SYSTEM_BLUEPRINT = Path('app/blueprints/admin/system.py')
 AUTH_BLUEPRINT = Path('app/blueprints/auth.py')
+
+
+def read_admin_package_sources():
+    """Read all admin package Python sources for package-wide contract checks."""
+    return "\n".join(
+        p.read_text(encoding='utf-8')
+        for p in sorted(ADMIN_PACKAGE.glob('*.py'))
+    )
+
 STYLE = Path('app/static/css/style.css')
 PEOPLE_TEMPLATE = Path('app/templates/admin/manage_departments.html')
 METRIC_TEMPLATE = Path('app/templates/partials/_metric.html')
@@ -36,7 +46,8 @@ class UIConsistencyStaticContractTest(unittest.TestCase):
     def setUpClass(cls):
         cls.review = REVIEW_TEMPLATE.read_text(encoding='utf-8')
         cls.member = MEMBER_TEMPLATE.read_text(encoding='utf-8')
-        cls.admin = ADMIN_BLUEPRINT.read_text(encoding='utf-8')
+        cls.admin = read_admin_package_sources()
+        cls.system = SYSTEM_BLUEPRINT.read_text(encoding='utf-8')
         cls.auth = AUTH_BLUEPRINT.read_text(encoding='utf-8')
         cls.style = STYLE.read_text(encoding='utf-8')
         cls.people = PEOPLE_TEMPLATE.read_text(encoding='utf-8')
@@ -45,7 +56,7 @@ class UIConsistencyStaticContractTest(unittest.TestCase):
         cls.system_imports = SYSTEM_IMPORTS_TEMPLATE.read_text(encoding='utf-8')
 
     def test_system_destructive_confirmation_identifies_the_current_password(self):
-        self.assertIn('account_username=user.student_id', self.admin)
+        self.assertIn('account_username=user.student_id', self.system)
         self.assertIn(
             'id="clearDataUsername" name="username" value="{{ account_username }}" autocomplete="username"',
             self.system_imports,

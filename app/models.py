@@ -196,17 +196,32 @@ class LectureForm(db.Model):
         }
         return status_map.get(self.status, self.status)
     
+    @property
+    def logical_id(self):
+        """Canonical logical form identity for this row."""
+        return self.unique_id or self.id
+
+    def _version_query(self):
+        """Query all rows belonging to this logical form, including legacy bases."""
+        logical_id = self.logical_id
+        return LectureForm.query.filter(
+            db.or_(
+                LectureForm.id == logical_id,
+                LectureForm.unique_id == logical_id,
+            )
+        )
+
     def get_latest_version(self):
-        """获取该表单的最新版本"""
-        if not self.unique_id:
+        """返回该 logical form 的最新版本：按 id DESC，而不是活动时间。"""
+        if self.logical_id is None:
             return self
-        return LectureForm.query.filter_by(unique_id=self.unique_id).order_by(LectureForm.updated_at.desc()).first()
-    
+        return self._version_query().order_by(LectureForm.id.desc()).first()
+
     def get_all_versions(self):
-        """获取该表单的所有版本"""
-        if not self.unique_id:
+        """返回该 logical form 的全版本链，最新版本在前：id DESC。"""
+        if self.logical_id is None:
             return [self]
-        return LectureForm.query.filter_by(unique_id=self.unique_id).order_by(LectureForm.updated_at.desc()).all()
+        return self._version_query().order_by(LectureForm.id.desc()).all()
 
 # 权限表（用于更细粒度的权限控制）
 class Permission(db.Model):
@@ -559,3 +574,161 @@ class AssessmentOverride(db.Model):
 
     def __repr__(self):
         return f'<AssessmentOverride user={self.user_id} type={self.override_type} weeks={self.start_week}-{self.end_week}>'
+
+
+class ImportPreviewSession(db.Model):
+    """Persisted contacts-import preview payload, shared across workers."""
+    __tablename__ = 'import_preview_sessions'
+
+    id = db.Column(db.String(32), primary_key=True)
+    payload_json = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now, index=True)
+
+    def __repr__(self):
+        return f'<ImportPreviewSession {self.id}>'
+
+
+class ExportJobRecord(db.Model):
+    """Persisted contacts-export progress state, shared across workers."""
+    __tablename__ = 'export_job_records'
+
+    id = db.Column(db.String(32), primary_key=True)
+    status = db.Column(db.String(20), nullable=False, default='running')
+    percent = db.Column(db.Integer, nullable=False, default=0)
+    message = db.Column(db.String(255), nullable=False, default='')
+    download_url = db.Column(db.String(500), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.now, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def __repr__(self):
+        return f'<ExportJobRecord {self.id} {self.status} {self.percent}>'
+
+
+class ScheduleImportBatch(db.Model):
+    """Admin-owned canonical raw schedule snapshot batch.
+
+    A batch is created from one successful legacy schedule workbook import and
+    is grouped by the workbook's own semester field.  ``status`` is historical
+    metadata only; the authoritative current batch for a semester is stored in
+    ``ScheduleSemesterSelection``.
+    """
+    __tablename__ = 'schedule_import_batches'
+
+    id = db.Column(db.Integer, primary_key=True)
+    semester = db.Column(db.String(50), nullable=False, index=True)
+    academic_year = db.Column(db.String(20), nullable=True)
+    source_filename = db.Column(db.String(255), nullable=False)
+    source_sha256 = db.Column(db.String(64), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='active', index=True)
+    row_count = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.now, index=True)
+
+    rows = db.relationship(
+        'ScheduleImportRow',
+        backref='batch',
+        cascade='all, delete-orphan',
+        order_by='ScheduleImportRow.source_row',
+    )
+
+    __table_args__ = (
+        db.Index('ix_schedule_import_batch_semester_status', 'semester', 'status'),
+    )
+
+    def __repr__(self):
+        return f'<ScheduleImportBatch {self.id} {self.semester} {self.status}>'
+
+
+class ScheduleImportRow(db.Model):
+    """Row-level raw legacy schedule source semantics.
+
+    These fields intentionally retain the exact cell text seen by the legacy
+    matcher (``str(row['...'])``) before any normalization.  They must never be
+    reconstructed from the aggregated Teacher/Venue/Course entities.
+    """
+    __tablename__ = 'schedule_import_rows'
+
+    id = db.Column(db.Integer, primary_key=True)
+    batch_id = db.Column(
+        db.Integer,
+        db.ForeignKey('schedule_import_batches.id'),
+        nullable=False,
+        index=True,
+    )
+    source_row = db.Column(db.Integer, nullable=False)
+
+    teacher_name = db.Column(db.Text, nullable=True)
+    teacher_college = db.Column(db.Text, nullable=True)
+    course_name = db.Column(db.Text, nullable=True)
+    weekday_raw = db.Column(db.String(50), nullable=True)
+    class_period_raw = db.Column(db.String(100), nullable=True)
+    location_raw = db.Column(db.Text, nullable=True)
+    class_composition_raw = db.Column(db.Text, nullable=True)
+    start_week_raw = db.Column(db.String(100), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+    __table_args__ = (
+        db.Index('ix_schedule_import_row_batch_source', 'batch_id', 'source_row'),
+    )
+
+    def __repr__(self):
+        return f'<ScheduleImportRow {self.id} batch={self.batch_id} row={self.source_row}>'
+
+
+class ScheduleSemesterSelection(db.Model):
+    """Authoritative active-batch pointer for one semester.
+
+    This is the single source of truth used by canonical schedule selection.
+    ``ScheduleImportBatch.status`` is retained as historical metadata; code
+    that selects the current snapshot must read this selection row, not the
+    batch status column.
+    """
+    __tablename__ = 'schedule_semester_selections'
+
+    semester = db.Column(db.String(50), primary_key=True)
+    active_batch_id = db.Column(
+        db.Integer,
+        db.ForeignKey('schedule_import_batches.id'),
+        nullable=False,
+    )
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+    active_batch = db.relationship('ScheduleImportBatch', foreign_keys=[active_batch_id])
+
+    def __repr__(self):
+        return f'<ScheduleSemesterSelection {self.semester} -> {self.active_batch_id}>'
+
+
+class ScheduleImportRowScalarMeta(db.Model):
+    """Minimal scalar-type metadata for matcher anchor cells.
+
+    ``ScheduleImportRow`` stores the raw matcher-facing text, which is correct
+    for string/raw fidelity.  Pandas candidate selection in the legacy matcher
+    however compares actual scalar values (``int``/``float``/``NaN``/``str``).
+    This additive table preserves only the two anchor fields used by candidate
+    selection so the canonical adapter can reproduce legacy scalar equality.
+    """
+    __tablename__ = 'schedule_import_row_scalar_meta'
+
+    id = db.Column(db.Integer, primary_key=True)
+    row_id = db.Column(
+        db.Integer,
+        db.ForeignKey('schedule_import_rows.id'),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    teacher_name_kind = db.Column(db.String(10), nullable=False, default='text')
+    course_name_kind = db.Column(db.String(10), nullable=False, default='text')
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+    row = db.relationship(
+        'ScheduleImportRow',
+        backref=db.backref('scalar_meta', uselist=False, cascade='all, delete-orphan'),
+    )
+
+    def __repr__(self):
+        return (
+            f'<ScheduleImportRowScalarMeta row={self.row_id} '
+            f'teacher={self.teacher_name_kind} course={self.course_name_kind}>'
+        )
