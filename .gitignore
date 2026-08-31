@@ -49,3 +49,7 @@ scripts/
 
 # Local design brainstorming artifacts
 .superpowers/
+
+# Local audit scratch artifacts
+.venv-audit/
+/SWU_TIC_*.zip

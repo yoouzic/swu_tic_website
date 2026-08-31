@@ -2,16 +2,22 @@
 # Phase 1 mechanical split from app/blueprints/admin.py
 # Module: contacts
 
-from flask import request, redirect, url_for, flash, session, jsonify, send_file
+from flask import request, redirect, url_for, flash, session, jsonify, send_file, current_app
 from app.models import User, Department, Group, db
 from datetime import datetime
 from app.security import role_required
 from app.utils.password_audit import record_password_audit
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME
 from app.utils.env_config import env_path
+from app.services.import_state import (
+    get_committed_import_result,
+    import_preview_exists,
+    is_password_artifact_published,
+)
 import pandas as pd
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 import os
+import re
 from werkzeug.security import generate_password_hash
 from . import admin_bp
 from .shared import _active_user_query, allowed_file, generate_random_password
@@ -68,6 +74,46 @@ def _export_file_within_root(export_dir, filename):
     return candidate_real if inside else None
 
 
+# 新式 R2 密码工件：文件名内嵌 16-hex import_id + 32-hex claim_token，发布以
+# durable COMMITTED marker 为界（fail closed：row 缺失 / AVAILABLE / CLAIMED /
+# token 不匹配一律拒绝，row 缺失不再视为已发布）。
+_TOKENIZED_PASSWORD_ARTIFACT_RE = re.compile(
+    r'^passwords_([0-9a-f]{16})_([0-9a-f]{32})\.xlsx$'
+)
+# P1/P1-R1 legacy 密码工件：仅内嵌 import_id（无 claim token）。历史文件没有
+# commit marker，无法可靠区分成功工件与孤儿工件，保留 P1-R1 兼容行为
+# （LEGACY_PASSWORD_ARTIFACT_PROVENANCE_AMBIGUITY）。
+_PASSWORD_ARTIFACT_RE = re.compile(r'^passwords_([0-9a-f]{16})\.xlsx$')
+
+
+def _password_artifact_filename(claim):
+    """Single filename builder for confirm-import password artifacts.
+
+    Claim-token-scoped physical identity: claim A → file A, claim B → file B,
+    so a stale worker's artifact path can never collide with the winner's.
+    """
+    return f'passwords_{claim.import_id}_{claim.claim_token}.xlsx'
+
+
+def _build_import_success_response(imported_count, updated_count, skipped_count,
+                                   total_users, password_artifact):
+    """Single success-JSON builder for first success and COMMITTED replay (R3).
+
+    Both paths must render through this helper so the first response and the
+    idempotent replay cannot drift apart.  ``message`` is rebuilt from counts
+    (never persisted), and the URL is regenerated from the artifact filename.
+    """
+    return {
+        'success': True,
+        'message': f'导入完成：新增 {imported_count}，更新 {updated_count}，跳过 {skipped_count}',
+        'imported_count': imported_count,
+        'updated_count': updated_count,
+        'skipped_count': skipped_count,
+        'total_users': total_users,
+        'password_file_url': (url_for('admin.download_passwords', filename=password_artifact) if password_artifact else None),
+    }
+
+
 @admin_bp.route('/download_passwords/<filename>')
 @role_required('超级管理员')
 def download_passwords(filename):
@@ -76,6 +122,24 @@ def download_passwords(filename):
     if safe_filename is None:
         flash('文件不存在', 'error')
         return redirect(url_for('admin.super_admin_dashboard'))
+    # Publish gate（新式 token 工件）：只有 durable COMMITTED marker 精确匹配
+    # (import_id, claim_token, filename) 才允许下载；其余一律拒绝。
+    token_match = _TOKENIZED_PASSWORD_ARTIFACT_RE.match(safe_filename)
+    if token_match:
+        if not is_password_artifact_published(
+            token_match.group(1), token_match.group(2), safe_filename,
+        ):
+            flash('文件不存在', 'error')
+            return redirect(url_for('admin.super_admin_dashboard'))
+    else:
+        # Legacy P1/P1-R1 工件（仅 import_id）：preview row 仍存在（AVAILABLE
+        # 或 CLAIMED）说明业务 commit 尚未发生，拒绝下载；row 缺失视为已发布
+        # （历史兼容行为，provenance 歧义已知）。contacts 导出与 legacy 时间戳
+        # 文件不受影响。
+        artifact_match = _PASSWORD_ARTIFACT_RE.match(safe_filename)
+        if artifact_match and import_preview_exists(artifact_match.group(1)):
+            flash('文件不存在', 'error')
+            return redirect(url_for('admin.super_admin_dashboard'))
     export_dir = env_path('EXPORT_DIR', DEFAULT_EXPORT_DIR)
     file_path = _export_file_within_root(export_dir, safe_filename)
     if file_path and os.path.isfile(file_path):
@@ -203,22 +267,58 @@ def _resolve_group_id_for_import(user):
     return group.id
 
 
+def _cleanup_generated_password_file(path):
+    """Best-effort removal of a generated password workbook; never masks the original error."""
+    if not path:
+        return
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        current_app.logger.warning('密码文件清理失败 %s: %s', path, exc)
+
+
 @admin_bp.route('/confirm_import', methods=['POST'])
 @role_required('超级管理员')
 def confirm_import():
     """确认导入到数据库，生成随机密码并保存哈希，返回总用户数"""
-    try:
-        from flask import current_app
-        current_app.logger.info('通讯录导入开始')
-        data = request.get_json()
-        import_id = data.get('import_id')
-        overwrite = bool(data.get('overwrite', False))
-        from app.services.import_state import load_import_preview
-        preview_payload = load_import_preview(import_id)
-        if preview_payload is None:
-            return jsonify({'success': False, 'message': '导入会话已失效，请重新预览'}), 400
+    current_app.logger.info('通讯录导入开始')
+    data = request.get_json()
+    import_id = data.get('import_id')
+    overwrite = bool(data.get('overwrite', False))
 
-        rows = preview_payload['rows']
+    # 所有权先行：同一 import_id 只有一个 confirm winner（durable claim，
+    # CAS UPDATE 所有权，崩溃后 lease 到期可恢复）。
+    from app.services.import_state import (
+        claim_import_preview,
+        finalize_import_preview_claim,
+        release_import_preview_claim,
+    )
+    claim = claim_import_preview(import_id)
+    if claim is None:
+        # R3 committed-aware 分支：claim 失败有两种原因——
+        # 1) 该 import 已 COMMITTED（v3 含 replay metadata）→ 幂等重放原成功
+        #    结果（RESULT REPLAY，绝不 RETRY EXECUTION：不重新生成密码/不重建
+        #    用户/不写审计/不重写工件，COMMITTED 仍是 terminal）；
+        # 2) 其余（missing/过期/active CLAIMED/COMMITTED v2/malformed）→
+        #    维持既有 400。
+        committed = get_committed_import_result(import_id)
+        if committed is not None:
+            response = _build_import_success_response(
+                committed.imported_count,
+                committed.updated_count,
+                committed.skipped_count,
+                committed.total_users,
+                committed.password_artifact,
+            )
+            current_app.logger.info(f'通讯录导入结果重放 import_id={import_id}')
+            return jsonify(response)
+        return jsonify({'success': False, 'message': '导入会话已失效，请重新预览'}), 400
+
+    export_path = None
+    try:
+        rows = claim.payload['rows']
         actor_user_id = session.get('user_id')
         imported_count = 0
         updated_count = 0
@@ -356,38 +456,50 @@ def confirm_import():
                         'password': password
                     })
 
-        db.session.commit()
-        total_users = _active_user_query().count()
-
+        # 密码工件必须在业务 commit 前生成完成：文件名内嵌 claim token，物理上
+        # 隔离不同 claim 的工件（stale worker 的路径绝不与 winner 冲突）；
+        # 工件失败则不进入 commit（§14/§15）。
         export_filename = None
         if password_list:
+            export_filename = _password_artifact_filename(claim)
             password_df = pd.DataFrame(password_list)
-            export_filename = f'passwords_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
             export_dir = env_path('EXPORT_DIR', DEFAULT_EXPORT_DIR)
             os.makedirs(export_dir, exist_ok=True)
             export_path = os.path.join(export_dir, export_filename)
             password_df.to_excel(export_path, index=False)
 
-        # 清理会话状态；业务已经成功，状态清理失败不应变成 HTTP 500。
-        from app.services.import_state import consume_import_preview
-        try:
-            consume_import_preview(import_id)
-        except Exception as exc:
-            current_app.logger.warning('导入状态清理失败，将等待TTL清理: %s', exc)
-
-        current_app.logger.info(f'通讯录导入完成 新增{imported_count} 更新{updated_count} 跳过{skipped_count}')
-        return jsonify({
-            'success': True,
-            'message': f'导入完成：新增 {imported_count}，更新 {updated_count}，跳过 {skipped_count}',
-            'imported_count': imported_count,
-            'updated_count': updated_count,
-            'skipped_count': skipped_count,
-            'total_users': total_users,
-            'password_file_url': (url_for('admin.download_passwords', filename=export_filename) if export_filename else None)
-        })
+        total_users = _active_user_query().count()
+        # 响应在 commit 前构造完成：commit 之后只剩低风险的日志与返回（§21）。
+        # 首次成功与 replay 共用同一 builder，避免字段漂移（R3 §12）。
+        response = _build_import_success_response(
+            imported_count, updated_count, skipped_count, total_users, export_filename,
+        )
+        # COMMITTED 发布证明 + replay result 与业务变更同一个数据库事务：
+        # CAS CLAIMED → COMMITTED（v3 记录 artifact filename 与结果计数快照），
+        # CAS 失败（ownership 丢失）即抛出并整体回滚，绝不提交用户修改（§10）。
+        finalize_import_preview_claim(
+            claim, db.session,
+            password_artifact=export_filename,
+            result={
+                'imported_count': imported_count,
+                'updated_count': updated_count,
+                'skipped_count': skipped_count,
+                'total_users': total_users,
+            },
+        )
+        db.session.commit()
     except Exception as e:
         db.session.rollback()
+        _cleanup_generated_password_file(export_path)
+        # 业务未 commit：CAS 释放 claim 回 AVAILABLE，管理员可用同一 import_id
+        # 重试；cleanup 只作用于当前 claim token 的工件路径，绝不影响其他
+        # owner 的文件（§14）。ownership 已被 lease 恢复取走时 release 返回
+        # False，不覆盖新 owner（§13）。
+        release_import_preview_claim(claim)
         return jsonify({'success': False, 'message': f'导入失败：{str(e)}'}), 500
+
+    current_app.logger.info(f'通讯录导入完成 新增{imported_count} 更新{updated_count} 跳过{skipped_count}')
+    return jsonify(response)
 
 
 @admin_bp.route('/api/export/contacts')

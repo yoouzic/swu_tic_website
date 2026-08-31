@@ -1,6 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-from sqlalchemy import REAL, event
+from sqlalchemy import REAL, and_, event, or_
 
 # 创建一个全局的db实例，稍后在app.py中初始化
 db = SQLAlchemy()
@@ -112,13 +112,36 @@ class Group(db.Model):
     def __repr__(self):
         return f'<Group {self.name} - {self.department}>'
     
+    @staticmethod
+    def member_criteria_for_identity(group_id, department, group_name):
+        """按小组身份参数化的成员判定 predicate（唯一权威定义）。
+
+        canonical 成员：``User.group_id == group_id``；
+        legacy 成员：仅当 ``User.group_id`` 为 NULL 时允许部门 + 文本 fallback；
+        一旦 ``group_id`` 非 NULL，canonical ID 永远胜过遗留的 group 名称文本。
+        read（get_members）/ update（改名同步）/ disband（解散选人）共享本定义。
+        """
+        return or_(
+            User.group_id == group_id,
+            and_(
+                User.group_id.is_(None),
+                User.department == department,
+                User.group == group_name,
+            ),
+        )
+
+    @classmethod
+    def member_criteria(cls, group):
+        """成员判定的唯一权威 predicate：canonical group_id 优先。"""
+        return cls.member_criteria_for_identity(group.id, group.department, group.name)
+
     def get_members(self):
         """获取小组成员"""
-        return User.query.filter_by(group=self.name, department=self.department).all()
-    
+        return User.query.filter(Group.member_criteria(self)).all()
+
     def get_member_count(self):
         """获取小组成员数量"""
-        return User.query.filter_by(group=self.name, department=self.department).count()
+        return User.query.filter(Group.member_criteria(self)).count()
 
 # 听课表单表（保持原有结构）
 class LectureForm(db.Model):

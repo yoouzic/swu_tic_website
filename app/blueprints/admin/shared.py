@@ -13,6 +13,7 @@ from app.services.excel_utils import (
     excel_cell_to_text as _excel_cell_to_text,
     to_int_or_none as _to_int_or_none,
 )
+from app.services.organization_membership import clear_user_group
 from app.services.review_form_queries import (
     build_review_form_filter_datetime as _build_review_form_filter_datetime,
     get_form_latest_timestamp as _get_form_latest_timestamp,
@@ -109,8 +110,7 @@ def _serialize_user_basic(user):
 
 def _set_user_unassigned(user):
     user.department = UNASSIGNED_DEPARTMENT_NAME
-    user.group_id = None
-    user.group = UNASSIGNED_GROUP_NAME
+    clear_user_group(user)
 
 
 

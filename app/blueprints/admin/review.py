@@ -22,6 +22,12 @@ from app.services.review_mutation import (
     append_review_modification_note,
     collect_modified_fields,
 )
+from app.services.review_application import (
+    ReviewMutationPlan,
+    ScoreAction,
+    VersionAction,
+    execute_review_mutation,
+)
 from app.services.review_scores import ScoreValidationError, normalize_score_items
 from app.services.review_reference_data import search_review_reference_data
 
@@ -509,77 +515,56 @@ def submit_review(form_id):
             REVIEW_EDITABLE_FIELD_LABELS,
         )
 
-        if modified_fields:
-            base_comment = (review_comment or '').strip() or '无'
-            new_form_data['review_comment'] = append_review_modification_note(
-                base_comment,
-                modified_fields,
-            )
-        
-        target_form = None
+        # —— 行为保持迁移（8B-P3A）：版本/评分/审计注记/草稿/事务执行全部
+        # 交由 application core；本 route 保留 HTTP adapter 与 plan 构造。
+        # 版本兼容分支（P0 characterization）：update 分支正常流程不可达，
+        # 但必须继续可表达；append 分支不触碰历史物理版本的评分记录。
         if latest_form.status == new_status:
-             # 更新现有记录
-             target_form = latest_form
-             for k, v in new_form_data.items():
-                 if k != 'unique_id' and hasattr(target_form, k): 
-                     setattr(target_form, k, v)
-             
-             # 删除旧的评分记录以便重新创建
-             old_score_record = ScoreRecord.query.filter_by(form_id=target_form.id).first()
-             if old_score_record:
-                 db.session.delete(old_score_record)
+            version_action = VersionAction.UPDATE_LATEST
         else:
-             # 创建新的表单记录
-             target_form = LectureForm(**new_form_data)
-             target_form.created_at = original_form.created_at # 继承创建时间
-             db.session.add(target_form)
-        
-        db.session.flush()  # 获取新表单ID
-        
-        # 处理评分数据
+            version_action = VersionAction.APPEND_VERSION
+
         if normalized_score_data:
-            try:
-                # 计算总分
-                total_dept_score = sum(item['department_score'] for item in normalized_score_data)
-                total_personal_score = sum(item['personal_score'] for item in normalized_score_data)
-                
-                # 创建评分记录
-                score_record = ScoreRecord(
-                    form_id=target_form.id,
-                    reviewer_id=session['user_id'],
-                    total_department_score=total_dept_score,
-                    total_personal_score=total_personal_score
-                )
-                db.session.add(score_record)
-                db.session.flush() # 获取评分记录ID
-                
-                # 创建评分项
-                for item in normalized_score_data:
-                    score_item = ScoreItem(
-                        score_record_id=score_record.id,
-                        reason=item['reason'],
-                        department_score=item['department_score'],
-                        personal_score=item['personal_score'],
-                        is_auto_generated=item['is_auto_generated']
-                    )
-                    db.session.add(score_item)
-            except Exception as e:
-                print(f"Error processing score data: {e}")
-                # 不中断主流程，只记录错误
-        
-        delete_review_form_draft(session['user_id'], form_id)
-        db.session.commit()
-        
+            score_action = ScoreAction.REPLACE
+            score_items = tuple(normalized_score_data)
+        elif version_action is VersionAction.UPDATE_LATEST:
+            # update 分支当前语义：无论是否带新评分都删除目标行旧评分记录。
+            score_action = ScoreAction.CLEAR
+            score_items = ()
+        else:
+            score_action = ScoreAction.NONE
+            score_items = ()
+
+        plan = ReviewMutationPlan(
+            actor_id=session['user_id'],
+            original_form_id=form_id,
+            original_form=original_form,
+            latest_form=latest_form,
+            logical_id=unique_id,
+            target_status=new_status,
+            registration_id=original_form.registration_id,
+            resolved_fields=new_form_data,
+            resolved_review_comment=review_comment,
+            audit_note_base=(review_comment or '').strip() or '无',
+            modified_fields=tuple(modified_fields),
+            version_action=version_action,
+            score_action=score_action,
+            delete_existing_score_record=(version_action is VersionAction.UPDATE_LATEST),
+            score_items_to_persist=score_items,
+        )
+
+        result = execute_review_mutation(plan)
+
         return jsonify({
             'success': True,
             'message': '审核提交成功',
-            'new_status': new_status,
-            'form_id': target_form.id
+            'new_status': result.new_status,
+            'form_id': result.target_form_id
         })
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': f'审核提交失败：{str(e)}'})
+        return jsonify({'success': False, 'message': f'审核提交失败：{str(e)}'}), 500
 
 
 def _safe_review_return_url(value):
@@ -1457,6 +1442,10 @@ def submit_form_review(form_id):
         old_score_record = ScoreRecord.query.filter_by(form_id=target_form.id).first()
         if old_score_record:
             db.session.delete(old_score_record)
+            # 先 flush 让 DELETE 在 replacement INSERT 之前生效，否则同一次
+            # flush 中 INSERT 先于 DELETE 执行，会触发 score_records.form_id
+            # 的 UNIQUE 约束（仅 flush，最终仍由唯一的 commit 提交整个审核）。
+            db.session.flush()
 
         score_data = normalized_score_data
         if score_data:

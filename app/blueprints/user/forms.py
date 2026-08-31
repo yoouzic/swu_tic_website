@@ -6,33 +6,17 @@ from app.models import (
     CourseRegistration as Reservation,
     LectureForm,
     LectureFormDraft,
-    ListeningBan,
-    SystemSetting,
-    Teacher,
     User,
     db,
 )
 from app.security import login_required
-from app.utils.user_status import active_user_filter
-from app.services.form_bindings import (
-    get_registration_logical_form_counts,
-    registration_has_form_binding,
-)
+from app.services.form_bindings import reconcile_registration_usage_flags
 from datetime import datetime, timedelta
-from sqlalchemy import and_, func
-from app.utils.time_validator import validate_listening_time, TimeValidator
 from app.utils.audit_tags import build_audit_tag, build_week_correction_tag
 from app.utils.leave_management import append_leave_system_note, get_pending_leave_makeup, record_leave_makeup_form
-from app.utils.profile_settings import PROFILE_EDITABLE_FIELD_KEYS, get_profile_editable_fields
-from app.utils.course_registration_limits import (
-    get_current_teaching_week_no,
-    parse_listening_week_no,
-    validate_course_weekly_registration_limit,
-)
 from app.utils.permission_feedback import forbidden_json, flash_forbidden
 import hashlib
 import json
-import re
 
 from . import user_bp
 
@@ -261,7 +245,8 @@ def submit_form():
                 flash('无权使用该听课登记。', 'error')
                 return render_template('user/lecture_form.html', user=user), 403
 
-            # 获取原始课程信息
+            # 获取原始课程信息（仅用于自动审核相似度计算；Course 缺失不改变
+            # HTTP 行为，也不影响 registration 绑定，audit_tag 保持默认人工审核）
             course = Course.query.filter_by(
                 course_code=registration.course_code,
                 selection_code=registration.selection_code
@@ -288,10 +273,6 @@ def submit_form():
                     audit_tag = '无需人工审核'
                 else:
                     audit_tag = '需要人工审核' # 修改较大
-
-                # 标记登记记录为已使用
-                registration.is_used = True
-                db.session.add(registration)
 
         teaching_method = request.form['teaching_method']
         courseware_quality = request.form['courseware_quality']
@@ -336,19 +317,30 @@ def submit_form():
         }
         
         try:
+            # Round 8A：is_used 是兼容 mirror，不再由 submit 直接假定置 True；
+            # 绑定事实以 LectureForm.registration_id 实际 graph 为准，在表单
+            # mutation 落库后由 form_bindings.reconcile_registration_usage_flags
+            # 统一同步（旧/新 registration 都参与，事务内、单 commit）。
+            registration_ids_to_reconcile = set()
+
             unique_id = request.form.get('unique_id')
             target_form = None
             is_new_version = True
-            
+
             if unique_id and unique_id.strip():
                 # 检查是否存在可更新的最新版本
                 latest_form = LectureForm.query.filter_by(unique_id=unique_id).order_by(LectureForm.id.desc()).first()
-                
+
                 # 如果最新版本存在，且状态为'待审核'，且属于当前用户，则更新该版本
                 if latest_form and latest_form.status == '待审核' and latest_form.listener_number == user.number:
                     target_form = latest_form
                     is_new_version = False
-                    
+
+                    # Round 8A §15：字段覆盖前先记录旧 binding——rebind 后新旧
+                    # registration 都参与 reconcile（旧 registration 可能仍被
+                    # 其它 LectureForm 引用，不得手写 old.is_used=False）。
+                    registration_ids_to_reconcile.add(target_form.registration_id)
+
                     # 更新字段
                     for key, value in form_data.items():
                         if hasattr(target_form, key):
@@ -362,6 +354,12 @@ def submit_form():
                 # 全新表单
                 duplicate_form = _find_recent_duplicate_submission(user.number, form_data, datetime.now())
                 if duplicate_form:
+                    # Outcome B（duplicate accepted）：draft DELETE + optional
+                    # leave makeup + registration mirror reconciliation →
+                    # 恰好一次 commit，不因 leave_makeup 缺失而省略（P2）。
+                    # Round 8A：duplicate 签名含 registration_id，existing form
+                    # 的 binding 与请求一致——reconciliation 在同事务内修复
+                    # legacy is_used 漂移（actual binding True → mirror True）。
                     _delete_lecture_form_draft(user.id)
                     if leave_makeup:
                         record_leave_makeup_form(
@@ -371,17 +369,28 @@ def submit_form():
                             source='auto',
                             operator_user_id=user.id,
                         )
-                        db.session.commit()
+                    db.session.flush()
+                    registration_ids_to_reconcile.add(duplicate_form.registration_id)
+                    reconcile_registration_usage_flags(registration_ids_to_reconcile)
+                    db.session.commit()
                     flash('检测到重复提交，系统已保留首次提交结果。', 'info')
                     return redirect(url_for('user.success', form_id=duplicate_form.id))
                 target_form = LectureForm(**form_data)
-            
+
+            # 新 binding 记入 reconcile 集合（rebind 时与旧 id 一并处理）。
+            registration_ids_to_reconcile.add(form_data.get('registration_id'))
+
             db.session.add(target_form)
-            
+
             if is_new_version:
                 db.session.flush() # 获取ID
                 if not target_form.unique_id:
                     target_form.unique_id = target_form.id
+
+            # Round 8A §12：显式 flush 使本事务内的 binding graph（新 form /
+            # rebind）对 reconcile 可见——不依赖偶然 autoflush。
+            db.session.flush()
+            reconcile_registration_usage_flags(registration_ids_to_reconcile)
 
             if leave_makeup:
                 record_leave_makeup_form(
@@ -393,7 +402,9 @@ def submit_form():
                 )
 
             _delete_lecture_form_draft(user.id)
-            
+
+            # Outcome A（normal accepted）：表单变更 + registration mirror
+            # reconciliation + optional leave makeup + draft DELETE → 单次业务 commit。
             db.session.commit()
             flash(f'表单提交成功！{" " if is_new_version else "原有表单已更新，等待重新审核。"}', 'success')
             # 跳转到成功页面，显示提交的表单详情
