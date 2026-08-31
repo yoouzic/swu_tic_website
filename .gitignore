@@ -53,3 +53,6 @@ scripts/
 # Local audit scratch artifacts
 .venv-audit/
 /SWU_TIC_*.zip
+
+# Local implementation worktrees
+.worktrees/
