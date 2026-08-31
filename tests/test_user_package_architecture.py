@@ -83,6 +83,119 @@ class UserPackageArchitectureTests(unittest.TestCase):
         self.assertEqual(set(functions), expected)
         self.assertEqual(len(functions), len(expected))
 
+    def test_profile_controller_delegates_statistics_to_service(self):
+        """profile() must be a thin controller; statistics live in the service."""
+        tree = ast.parse((USER_PKG / 'profile.py').read_text(encoding='utf-8'))
+        profile_defs = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == 'profile'
+        ]
+        self.assertEqual(len(profile_defs), 1)
+        profile_fn = profile_defs[0]
+
+        loaded_names = {
+            node.id for node in ast.walk(profile_fn)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+        }
+        self.assertIn('build_user_profile_stats', loaded_names)
+
+        # Controller must not orchestrate statistics itself.
+        forbidden_statistics_names = {
+            'LectureForm', 'ScoreRecord', 'ScoreItem', 'SystemSetting', 'func',
+            'effective_form_week', 'teaching_week_number',
+        }
+        self.assertEqual(loaded_names & forbidden_statistics_names, set())
+
+    def test_draft_delete_helper_remains_commit_free(self):
+        """_delete_lecture_form_draft 是纯 mutation primitive：不得自带 commit。
+
+        正常/重复提交都必须把 draft DELETE 与表单、registration、leave makeup
+        放进同一个业务 commit（Round 7C-P2）；helper 自己 commit 会制造
+        partial transaction。防止将来有人把 commit 塞回 helper。
+        """
+        tree = ast.parse((USER_PKG / 'forms.py').read_text(encoding='utf-8'))
+        helper_defs = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == '_delete_lecture_form_draft'
+        ]
+        self.assertEqual(len(helper_defs), 1)
+        helper_fn = helper_defs[0]
+
+        commit_calls = [
+            node for node in ast.walk(helper_fn)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == 'commit'
+        ]
+        self.assertEqual(commit_calls, [], 'draft delete helper must not commit')
+
+    def test_submit_form_commits_only_at_accepted_terminals(self):
+        """submit_form 内的 commit 只允许出现在两个成功终态分支。
+
+        结构性约束（非脆弱的全文 commit 计数）：duplicate accepted 分支必须
+        含显式 commit；normal accepted 尾部保留唯一一个非 duplicate 分支的
+        commit；failure (except) 路径只允许 rollback、不得 commit。
+        行为契约由 test_submit_form_transaction.py 的 fault-injection 覆盖。
+        """
+        tree = ast.parse((USER_PKG / 'forms.py').read_text(encoding='utf-8'))
+        submit_defs = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == 'submit_form'
+        ]
+        self.assertEqual(len(submit_defs), 1)
+        submit_fn = submit_defs[0]
+
+        def _is_db_session_commit(node):
+            return (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == 'commit'
+                and isinstance(node.func.value, ast.Attribute)
+                and node.func.value.attr == 'session'
+            )
+
+        # duplicate accepted 分支（`if duplicate_form:`）必须含显式 commit。
+        duplicate_branches = [
+            node for node in ast.walk(submit_fn)
+            if isinstance(node, ast.If)
+            and isinstance(node.test, ast.Name)
+            and node.test.id == 'duplicate_form'
+        ]
+        self.assertEqual(len(duplicate_branches), 1)
+        duplicate_commits = [
+            node for node in ast.walk(duplicate_branches[0])
+            if _is_db_session_commit(node)
+        ]
+        self.assertEqual(
+            len(duplicate_commits), 1,
+            'duplicate accepted branch must commit exactly once',
+        )
+
+        # normal accepted 尾部：唯一一个 duplicate 分支之外的 commit。
+        outside_commits = [
+            node for node in ast.walk(submit_fn)
+            if _is_db_session_commit(node) and node not in ast.walk(duplicate_branches[0])
+        ]
+        self.assertEqual(
+            len(outside_commits), 1,
+            'normal accepted path must keep exactly one commit',
+        )
+
+        # failure 路径：except 内只允许 rollback，不得 commit。
+        for handler in [n for n in ast.walk(submit_fn) if isinstance(n, ast.ExceptHandler)]:
+            for node in ast.walk(handler):
+                self.assertFalse(
+                    _is_db_session_commit(node),
+                    'failure path must not commit',
+                )
+        rollbacks = [
+            node for node in ast.walk(submit_fn)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == 'rollback'
+        ]
+        self.assertGreaterEqual(len(rollbacks), 1, 'failure path must rollback')
+
 
 if __name__ == '__main__':
     unittest.main()

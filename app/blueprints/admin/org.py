@@ -9,6 +9,20 @@ from app.security import role_required
 from app.utils.permission_feedback import build_forbidden_message, flash_forbidden
 from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, is_user_active
+from app.services.organization_membership import (
+    assign_user_to_group,
+    canonical_scope_group_criteria,
+    clear_user_group,
+    group_member_criteria,
+    group_member_criteria_for_identity,
+    is_group_in_canonical_scope,
+)
+from app.services.organization_policy import (
+    can_assign_group_leader,
+    can_batch_move_group_members,
+    can_create_group,
+    leader_assignment_may_migrate_department,
+)
 from werkzeug.security import check_password_hash
 from . import admin_bp
 from .shared import _active_user_query, _create_personnel_movement_record, _serialize_user_basic, _set_user_unassigned, _snapshot_user_for_movement
@@ -83,14 +97,11 @@ def manage_groups():
                 # Group表使用department名称关联，不是ID
                 groups = Group.query.filter_by(department=dept.name).all()
     elif manage_permission == '管理部门小组':
-        # 只能管理本小组
-        if user.group and user.department:
-            groups = Group.query.filter_by(department=user.department, name=user.group).all()
-        else:
-            groups = []
+        # 只能管理本小组：canonical group_id 判定，无归属时 fail closed。
+        groups = Group.query.filter(canonical_scope_group_criteria(user)).all()
     else:
         groups = []
-            
+
     return render_template('admin/manage_groups.html', groups=groups, user=user, manage_permission=manage_permission)
 
 
@@ -125,12 +136,9 @@ def get_departments():
             groups = Group.query.filter_by(department=dept.name).all()
             
             # 如果是"管理部门小组"权限，只显示自己所在的小组
+            # （授权只认 canonical group_id，legacy group 文本不参与判定）
             if manage_permission == '管理部门小组':
-                # 假设user.group存储的是小组名称
-                if user.group:
-                    groups = [g for g in groups if g.name == user.group]
-                else:
-                    groups = []
+                groups = [g for g in groups if is_group_in_canonical_scope(user, g)]
             
             # 计算部门总用户数
             total_users = _active_user_query().filter_by(department=dept.name).count()
@@ -290,16 +298,16 @@ def add_department():
         
         new_dept = Department(name=name, description=description, manager_id=manager_id, head=head_name)
         db.session.add(new_dept)
-        db.session.commit()
-        
+        # flush 取得 Department.id，负责人迁移与建部门保持在同一事务内。
+        db.session.flush()
+
         # 如果指定了负责人，更新负责人的department
-        if manager_user:
-            if manager_user.department != name:
-                manager_user.department = name
-                # 清除旧的小组关联（因为部门变了）
-                manager_user.group_id = None
-                manager_user.group = UNASSIGNED_GROUP_NAME
-                db.session.commit()
+        if manager_user and manager_user.department != name:
+            manager_user.department = name
+            # 清除旧的小组关联（因为部门变了）
+            clear_user_group(manager_user)
+
+        db.session.commit()
         
         return jsonify({'success': True, 'message': '部门添加成功', 'data': {
             'id': new_dept.id,
@@ -462,8 +470,7 @@ def update_department(dept_id):
                      if manager_user.group_id:
                          group = Group.query.get(manager_user.group_id)
                          if group and group.department != new_name:
-                             manager_user.group_id = None
-                             manager_user.group = UNASSIGNED_GROUP_NAME
+                             clear_user_group(manager_user)
 
                 dept.manager_id = manager_id
                 dept.head = manager_user.name
@@ -583,12 +590,8 @@ def get_groups_by_department():
                 }), 403
             groups = Group.query.filter_by(department=user.department).all()
         elif manage_permission == '管理部门小组':
-            # 只能查看本小组
-            if user.group:
-                # 假设user.group存储的是小组名称
-                groups = Group.query.filter_by(department=user.department, name=user.group).all()
-            else:
-                groups = []
+            # 只能查看本小组：canonical group_id 判定，无归属时 fail closed。
+            groups = Group.query.filter(canonical_scope_group_criteria(user)).all()
         
         groups_data = []
         for group in groups:
@@ -637,17 +640,16 @@ def add_group():
         if not department:
             return jsonify({'success': False, 'message': '所属部门不能为空'}), 400
             
-        # 权限检查
-        if manage_permission != '超级管理员':
-            if department != user.department:
-                return jsonify({
-                    'success': False,
-                    'message': build_forbidden_message(
-                        '小组管理',
-                        '当前账号没有在当前管理范围内添加小组的权限。',
-                        action='添加',
-                    ),
-                }), 403
+        # 权限检查：小组创建仅超级管理员/管理部门（小组级 capability 收口，与 UI 一致）
+        if not can_create_group(user, manage_permission, department):
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '小组管理',
+                    '当前账号没有在当前管理范围内添加小组的权限。',
+                    action='添加',
+                ),
+            }), 403
         
         # 检查部门是否存在
         dept = Department.query.filter_by(name=department).first()
@@ -659,24 +661,36 @@ def add_group():
         if existing_group:
             return jsonify({'success': False, 'message': '该部门内已存在同名小组'}), 400
         
-        # 处理组长ID
+        # 处理组长：leader_id 与 legacy leader 姓名解析到同一 candidate 流程
+        # （active 校验 → scope policy → 归属 mutation），杜绝两套语义漂移。
         leader_id = data.get('leader_id')
         leader_name = leader
-        
+        leader_candidate = None
+
         if leader_id:
-            leader_user = User.query.get(leader_id)
-            if leader_user and is_user_active(leader_user):
-                leader_name = leader_user.name
-                # 稍后在new_group创建后，我们需要更新leader_user的group_id
-                # 但由于new_group还没ID，我们只能在commit之后更新，或者先add再commit再更新
-            else:
+            leader_candidate = User.query.get(leader_id)
+            if not leader_candidate or not is_user_active(leader_candidate):
                 return jsonify({'success': False, 'message': '指定的小组长不存在或已离任'}), 400
+            leader_name = leader_candidate.name
         elif leader:
             # 尝试根据名字查找
-            leader_user = _active_user_query().filter_by(name=leader, department=department).first()
-            if leader_user:
-                leader_id = leader_user.id
-        
+            leader_candidate = _active_user_query().filter_by(name=leader, department=department).first()
+            if leader_candidate:
+                leader_id = leader_candidate.id
+
+        # 组长 scope policy：小组尚未创建，先按目标部门校验，拒绝任何部分创建。
+        if leader_candidate is not None and not can_assign_group_leader(
+            user, manage_permission, leader_candidate, group_department=department,
+        ):
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '小组管理',
+                    '当前账号没有指派该组长的权限。',
+                    action='添加',
+                ),
+            }), 403
+
         new_group = Group(
             name=name,
             department=department,
@@ -687,17 +701,19 @@ def add_group():
             max_members=max_members
         )
         db.session.add(new_group)
+        # flush 取得 Group.id，组长归属与建小组保持在同一事务内。
+        db.session.flush()
+
+        # 如果指定了组长，在同一事务内完成组长的 canonical membership 归属。
+        if leader_candidate is not None:
+            assign_user_to_group(leader_candidate, new_group)
+            if (
+                leader_candidate.department != department
+                and leader_assignment_may_migrate_department(manage_permission)
+            ):
+                leader_candidate.department = department
+
         db.session.commit()
-        
-        # 如果指定了组长，更新组长的group_id
-        if leader_id:
-            leader_user = User.query.get(leader_id)
-            if leader_user and is_user_active(leader_user):
-                leader_user.group_id = new_group.id
-                leader_user.group = new_group.name
-                if leader_user.department != department:
-                    leader_user.department = department
-                db.session.commit()
         
         return jsonify({'success': True, 'message': '小组添加成功', 'data': {
             'id': new_group.id,
@@ -746,8 +762,8 @@ def get_group(group_id):
                  }), 403
             
             if manage_permission == '管理部门小组':
-                # 假设user.group存储的是小组名称
-                if group.name != user.group:
+                # 授权只认 canonical group_id，legacy group 文本不参与判定。
+                if not is_group_in_canonical_scope(user, group):
                      return jsonify({
                          'success': False,
                          'message': build_forbidden_message(
@@ -803,8 +819,8 @@ def update_group(group_id):
                          ),
                      }), 403
             elif manage_permission == '管理部门小组':
-                # 假设user.group存储的是小组名称
-                if group.name != user.group or group.department != user.department:
+                # 授权只认 canonical group_id，legacy group 文本不参与判定。
+                if not is_group_in_canonical_scope(user, group):
                      return jsonify({
                          'success': False,
                          'message': build_forbidden_message(
@@ -813,7 +829,7 @@ def update_group(group_id):
                              action='修改',
                          ),
                      }), 403
-        
+
         data = request.get_json()
         
         name = data.get('name', '').strip()
@@ -830,6 +846,7 @@ def update_group(group_id):
 
         old_group_name = group.name
         old_department = group.department
+        old_group_id = group.id
             
         # 检查部门变更权限
         if manage_permission != '超级管理员':
@@ -854,37 +871,44 @@ def update_group(group_id):
             if existing_group and existing_group.id != group_id:
                 return jsonify({'success': False, 'message': '该部门内已存在同名小组'}), 400
         
-        # 处理组长ID
+        # 处理组长：leader_id 与 legacy leader 姓名解析到同一 candidate 流程
+        # （active 校验 → scope policy → 归属 mutation），杜绝两套语义漂移。
         leader_id = data.get('leader_id')
         leader_name = leader
-        
+        leader_candidate = None
+
         if leader_id:
             try:
                 # 确保leader_id是整数
                 leader_id = int(leader_id) if leader_id else None
             except ValueError:
                 leader_id = None
-                
+
             if leader_id:
-                leader_user = User.query.get(leader_id)
-                if leader_user and is_user_active(leader_user):
-                    leader_name = leader_user.name
-                    
-                    # 自动将组长分配至该小组
-                    if leader_user.group_id != group.id:
-                        leader_user.group_id = group.id
-                        leader_user.group = name # 更新组名
-                        # 同时也需确保部门一致
-                        if leader_user.department != department:
-                            leader_user.department = department
-                else:
+                leader_candidate = User.query.get(leader_id)
+                if not leader_candidate or not is_user_active(leader_candidate):
                     return jsonify({'success': False, 'message': '指定的小组长不存在或已离任'}), 400
+                leader_name = leader_candidate.name
         elif leader:
             # 尝试根据名字查找
-            leader_user = _active_user_query().filter_by(name=leader, department=department).first()
-            if leader_user:
-                leader_id = leader_user.id
-        
+            leader_candidate = _active_user_query().filter_by(name=leader, department=department).first()
+            if leader_candidate:
+                leader_id = leader_candidate.id
+
+        # 组长 scope policy：拒绝借组长指派跨部门搬人或从兄弟小组/未分组池拉人。
+        if leader_candidate is not None and not can_assign_group_leader(
+            user, manage_permission, leader_candidate,
+            group_department=department, group_id=group.id,
+        ):
+            return jsonify({
+                'success': False,
+                'message': build_forbidden_message(
+                    '小组管理',
+                    '当前账号没有指派该组长的权限。',
+                    action='修改',
+                ),
+            }), 403
+
         group.name = name
         group.department = department
         # group.department_id = dept.id # Group表无此字段
@@ -892,16 +916,30 @@ def update_group(group_id):
         group.leader_id = leader_id
         group.description = description
         group.max_members = max_members
-        
-        # 用户表仍保留 group 文本字段做兼容，改名/改部门时同步冗余字段。
+
+        # 用户表保留 group 文本/department 冗余字段做兼容：以小组旧身份对全部当前
+        # 成员（canonical + legacy）同步，legacy 成员在改名/迁移后不掉组；
+        # non-null group_id 的成员（含 stale 文本）只走 canonical 分支，不会被误改。
         member_updates = {}
         if name != old_group_name:
             member_updates['group'] = name
         if department != old_department:
             member_updates['department'] = department
+
+        # 组长归属：leader_id 与姓名路径统一在此执行（candidate 已通过 scope policy）。
+        if leader_candidate is not None and leader_candidate.group_id != group.id:
+            assign_user_to_group(leader_candidate, group)
+            if (
+                leader_candidate.department != department
+                and leader_assignment_may_migrate_department(manage_permission)
+            ):
+                leader_candidate.department = department
+
         if member_updates:
-            User.query.filter_by(group_id=group.id).update(member_updates)
-        
+            User.query.filter(
+                group_member_criteria_for_identity(old_group_id, old_department, old_group_name)
+            ).update(member_updates)
+
         db.session.commit()
         
         return jsonify({'success': True, 'message': '小组更新成功'})
@@ -959,17 +997,11 @@ def disband_group(group_id):
         if not password or not check_password_hash(user.password_hash, password):
             return jsonify({'success': False, 'message': '密码验证失败，无法解散小组'}), 403
 
-        group_users = User.query.filter(
-            db.or_(
-                User.group_id == group.id,
-                db.and_(User.department == group.department, User.group == group.name)
-            )
-        ).all()
+        group_users = User.query.filter(group_member_criteria(group)).all()
         moved_count = 0
         for target_user in group_users:
             before_snapshot = _snapshot_user_for_movement(target_user)
-            target_user.group_id = None
-            target_user.group = UNASSIGNED_GROUP_NAME
+            clear_user_group(target_user)
             after_snapshot = _snapshot_user_for_movement(target_user)
             moved_count += 1
             _create_personnel_movement_record(
@@ -1019,30 +1051,26 @@ def move_members_to_group(group_id):
              }), 403
              
         group = Group.query.get_or_404(group_id)
-        
-        # 权限检查
-        if manage_permission != '超级管理员':
-            if manage_permission == '管理部门':
-                if group.department != user.department:
-                     return jsonify({
-                         'success': False,
-                         'message': build_forbidden_message(
-                             '小组成员管理',
-                             '当前账号没有操作该小组成员的权限。',
-                             action='操作',
-                         ),
-                     }), 403
-            elif manage_permission == '管理部门小组':
-                # 假设user.group存储的是小组名称
-                if group.name != user.group or group.department != user.department:
-                     return jsonify({
-                         'success': False,
-                         'message': build_forbidden_message(
-                             '小组成员管理',
-                             '当前账号没有操作该小组成员的权限。',
-                             action='操作',
-                         ),
-                     }), 403
+
+        # 权限检查：批量移动成员仅超级管理员/管理部门（小组级无此 capability，与 UI 一致）
+        if not can_batch_move_group_members(manage_permission):
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '小组成员管理',
+                     '当前账号没有操作该小组成员的权限。',
+                     action='操作',
+                 ),
+             }), 403
+        if manage_permission != '超级管理员' and group.department != user.department:
+             return jsonify({
+                 'success': False,
+                 'message': build_forbidden_message(
+                     '小组成员管理',
+                     '当前账号没有操作该小组成员的权限。',
+                     action='操作',
+                 ),
+             }), 403
         
         data = request.get_json()
         user_ids = data.get('user_ids', [])
@@ -1063,9 +1091,8 @@ def move_members_to_group(group_id):
             if manage_permission != '超级管理员':
                 if u.department != user.department:
                     continue # 跳过非本部门用户
-            
-            u.group_id = group.id
-            u.group = group.name
+
+            assign_user_to_group(u, group)
             
             # 如果部门不一致，更新部门（注意：这可能需要更高权限，这里假设移动到小组就隐含了部门变更）
             if u.department != group.department:
@@ -1102,8 +1129,7 @@ def move_members_to_department(dept_id):
         
         for u in users:
             u.department = dept.name
-            u.group_id = None
-            u.group = UNASSIGNED_GROUP_NAME
+            clear_user_group(u)
             
         db.session.commit()
         

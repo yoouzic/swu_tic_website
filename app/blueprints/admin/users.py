@@ -3,8 +3,7 @@
 # Module: users
 
 from flask import render_template, request, redirect, url_for, flash, session, jsonify
-from app.models import User, Department, Group, LectureForm, Permission, RolePermission, Course, CourseRegistration, db, SystemSetting, ScoreRecord, ScoreItem, PersonnelMovementRecord
-from sqlalchemy import func
+from app.models import User, Department, Group, LectureForm, Permission, RolePermission, Course, CourseRegistration, db, PersonnelMovementRecord
 from datetime import datetime, timedelta
 from app.security import role_required
 from app.utils.review_permissions import get_user_review_permission
@@ -13,6 +12,13 @@ from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.password_audit import record_password_audit
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, is_user_active
 from app.services.form_bindings import get_registration_logical_form_counts
+from app.services.profile_stats import build_user_profile_stats
+from app.services.organization_membership import (
+    assign_user_to_group,
+    canonical_group_user_criteria,
+    clear_user_group,
+    is_user_in_canonical_group_scope,
+)
 from werkzeug.security import generate_password_hash, check_password_hash
 import json
 from . import admin_bp
@@ -29,258 +35,19 @@ def _can_view_managed_user(current_user, target_user, manage_permission):
     if manage_permission == '管理部门':
         return target_user.role != '超级管理员'
     if manage_permission == '管理部门小组':
-        current_group = current_user.group_id or current_user.group
-        target_group = target_user.group_id or target_user.group
-        return current_group == target_group
+        # 授权只认 canonical group_id；legacy group 文本不参与判定，无归属时 fail closed。
+        return is_user_in_canonical_group_scope(current_user, target_user)
     return False
 
 
 def _build_user_profile_stats(user):
-    stats = None
-    if not user or user.role not in ['信息员', '管理员', '超级管理员']:
-        return stats
+    """Compatibility wrapper: delegate to the canonical profile-stats service.
 
-    from app.services.teaching_calendar_settings import load_teaching_calendar_config
-    from app.services.teaching_calendar import (
-        teaching_term_end,
-        teaching_term_start,
-        teaching_week_number,
-    )
-    from app.services.form_week_semantics import effective_form_week
-
-    calendar_config, _calendar_error = load_teaching_calendar_config()
-
-    required_submission_setting = SystemSetting.query.filter_by(key='teaching_required_submission').first()
-    required_submission = int(required_submission_setting.value) if required_submission_setting and required_submission_setting.value else 1
-    required_listening = required_submission
-
-    check_dept_setting = SystemSetting.query.filter_by(key='teaching_check_dept_review').first()
-    check_dept = check_dept_setting.value == 'true' if check_dept_setting else False
-
-    check_center_setting = SystemSetting.query.filter_by(key='teaching_check_center_review').first()
-    check_center = check_center_setting.value == 'true' if check_center_setting else False
-
-    def get_form_group_week_num(versions):
-        if not versions:
-            return -1
-        latest_version = versions[-1]
-        if calendar_config is None:
-            return -1
-        week_no = effective_form_week(
-            latest_version.lecture_date,
-            latest_version.audit_tag,
-            calendar_config,
-        )
-        return week_no if week_no is not None else -1
-
-    def count_feedback_chars(form):
-        if not form:
-            return 0
-        text = f"{form.course_feedback or ''}{form.suggestions or ''}"
-        return len(''.join(str(text).split()))
-
-    current_week_num = None
-    current_week_label = '当前不在教学周内'
-    if calendar_config is not None:
-        today = datetime.now().date()
-        term_start = teaching_term_start(calendar_config)
-        term_end = teaching_term_end(calendar_config)
-        resolved_week_num = teaching_week_number(today, calendar_config)
-        if resolved_week_num is not None:
-            current_week_num = resolved_week_num
-            current_week_label = f'当前教学周（第 {resolved_week_num} 周）'
-        elif today < term_start:
-            current_week_label = '本学期教学周尚未开始'
-        else:
-            current_week_label = '当前不在教学周内'
-
-    all_forms = LectureForm.query.filter_by(listener_number=user.number).order_by(LectureForm.created_at.asc()).all()
-    form_groups = {}
-    for form in all_forms:
-        uid = form.unique_id or form.id
-        form_groups.setdefault(uid, []).append(form)
-
-    total_submitted_count = len(form_groups)
-    total_approved_count = 0
-    total_reward_count = 0
-    total_feedback_chars = 0
-    week_submitted_count = 0
-    week_approved_count = 0
-    weekly_error_free_counts = {}
-
-    for versions in form_groups.values():
-        versions.sort(key=lambda item: item.id)
-        submit_week = get_form_group_week_num(versions)
-
-        if submit_week == current_week_num:
-            week_submitted_count += 1
-
-        approved_versions = [version for version in versions if version.status == '中心已审核']
-        approved_form = approved_versions[-1] if approved_versions else None
-        if approved_form:
-            total_approved_count += 1
-            total_feedback_chars += count_feedback_chars(approved_form)
-            if submit_week == current_week_num:
-                week_approved_count += 1
-
-        has_dept_review = False
-        dept_review_ok = True
-        has_center_review = False
-        center_review_ok = True
-
-        for version in versions:
-            if version.status == '部门已审核':
-                has_dept_review = True
-                score_record = ScoreRecord.query.filter_by(form_id=version.id).first()
-                if score_record:
-                    auto_items = ScoreItem.query.filter_by(score_record_id=score_record.id, is_auto_generated=True).count()
-                    if auto_items > 0:
-                        dept_review_ok = False
-
-            if version.status == '中心已审核':
-                has_center_review = True
-                score_record = ScoreRecord.query.filter_by(form_id=version.id).first()
-                if score_record:
-                    auto_items = ScoreItem.query.filter_by(score_record_id=score_record.id, is_auto_generated=True).count()
-                    if auto_items > 0:
-                        center_review_ok = False
-
-        criteria_met = True
-        if check_dept and (not has_dept_review or not dept_review_ok):
-            criteria_met = False
-        if check_center and (not has_center_review or not center_review_ok):
-            criteria_met = False
-        if not check_dept and not check_center:
-            criteria_met = False
-
-        if criteria_met and submit_week > 0:
-            weekly_error_free_counts[submit_week] = weekly_error_free_counts.get(submit_week, 0) + 1
-
-    week_error_free_count = weekly_error_free_counts.get(current_week_num, 0)
-    week_reward_count = max(0, week_error_free_count - required_listening)
-    for count in weekly_error_free_counts.values():
-        total_reward_count += max(0, count - required_listening)
-
-    days_since_last = '无'
-    last_form_obj = LectureForm.query.filter_by(listener_number=user.number).order_by(LectureForm.created_at.desc()).first()
-    if last_form_obj and last_form_obj.created_at:
-        days_since_last = (datetime.now() - last_form_obj.created_at).days
-
-    this_month_start = datetime(datetime.now().year, datetime.now().month, 1)
-    this_month = 0
-    for versions in form_groups.values():
-        if versions and versions[0].created_at and versions[0].created_at >= this_month_start:
-            this_month += 1
-
-    last_submit = last_form_obj.created_at.strftime('%Y-%m-%d') if last_form_obj and last_form_obj.created_at else '无'
-    average_feedback_chars = total_feedback_chars / total_approved_count if total_approved_count else 0
-
-    user_form_ids = [form.id for form in all_forms]
-    if user_form_ids:
-        total_deduction = db.session.query(func.sum(ScoreRecord.total_personal_score)).filter(
-            ScoreRecord.form_id.in_(user_form_ids)
-        ).scalar() or 0.0
-    else:
-        total_deduction = 0.0
-
-    assessment_items = []
-    if user_form_ids:
-        item_rows = db.session.query(ScoreItem, ScoreRecord, LectureForm)\
-            .join(ScoreRecord, ScoreItem.score_record_id == ScoreRecord.id)\
-            .join(LectureForm, ScoreRecord.form_id == LectureForm.id)\
-            .filter(
-                LectureForm.listener_number == user.number,
-                db.or_(ScoreItem.personal_score > 0, ScoreItem.department_score > 0)
-            ).all()
-
-        for score_item, score_record, form in item_rows:
-            assessment_time = (
-                score_record.updated_at
-                or score_record.created_at
-                or score_item.created_at
-                or form.review_time
-                or form.updated_at
-                or form.created_at
-            )
-            personal_score = float(score_item.personal_score or 0.0)
-            department_score = float(score_item.department_score or 0.0)
-            assessment_items.append({
-                'reason': score_item.reason or '未填写考评原因',
-                'personal_score': personal_score,
-                'department_score': department_score,
-                'score_sort': personal_score,
-                'assessment_time': assessment_time,
-                'assessment_timestamp': assessment_time.timestamp() if assessment_time else 0,
-                'assessment_time_text': assessment_time.strftime('%Y-%m-%d %H:%M') if assessment_time else '-',
-                'course_title': form.course_title or '-',
-                'teacher_name': form.teacher_name or '-',
-                'form_id': form.id
-            })
-
-    assessment_items.sort(
-        key=lambda item: (
-            item['score_sort'],
-            item['department_score'],
-            item['assessment_timestamp'],
-            item['form_id']
-        ),
-        reverse=True
-    )
-
-    results = db.session.query(
-        LectureForm.listener_number,
-        func.sum(ScoreRecord.total_personal_score).label('total')
-    ).join(ScoreRecord, LectureForm.id == ScoreRecord.form_id).group_by(LectureForm.listener_number).all()
-
-    scores_map = {row[0]: float(row[1] or 0.0) for row in results}
-    all_scores = list(scores_map.values())
-    all_scores.sort(reverse=True)
-
-    has_evaluation_sample = user.number in scores_map
-    user_score = scores_map.get(user.number)
-    percentile = None
-    if has_evaluation_sample and all_scores:
-        try:
-            rank_index = all_scores.index(user_score)
-            percentile = (rank_index + 1) / len(all_scores)
-        except ValueError:
-            percentile = None
-
-    if percentile is None:
-        rating_label = '暂无评级'
-    elif percentile <= 0.2:
-        rating_label = '需要继续努力'
-    elif percentile <= 0.7:
-        rating_label = '表现良好'
-    else:
-        rating_label = '行为很好'
-
-    numeric_deduction = float(total_deduction or 0.0)
-    deduction_display = '0.00' if abs(numeric_deduction) < 0.005 else f'-{abs(numeric_deduction):.2f}'
-
-    stats = {
-        'total_forms': total_submitted_count,
-        'this_month': this_month,
-        'last_submit': last_submit,
-        'total_deduction': total_deduction,
-        'deduction_display': deduction_display,
-        'has_evaluation_sample': has_evaluation_sample,
-        'rating_label': rating_label,
-        'percentile': percentile,
-        'current_week': current_week_num,
-        'current_week_label': current_week_label,
-        'week_submitted': week_submitted_count,
-        'week_approved': week_approved_count,
-        'week_reward': week_reward_count,
-        'total_submitted': total_submitted_count,
-        'total_approved': total_approved_count,
-        'total_reward': total_reward_count,
-        'average_feedback_chars': average_feedback_chars,
-        'total_feedback_chars': total_feedback_chars,
-        'days_since_last': days_since_last,
-        'assessment_items': assessment_items
-    }
-    return stats
+    Existing tests patch ``app.blueprints.admin.users.datetime``; keep the
+    ``datetime.now()`` call site in this module so frozen-time tests keep
+    working without touching the whole test suite.
+    """
+    return build_user_profile_stats(user, now=datetime.now())
 
 
 def _build_user_form_groups(user, search='', date_from='', date_to=''):
@@ -456,13 +223,8 @@ def get_users():
             # 只能查看本部门
             query = query.filter_by(department=current_user.department)
         elif manage_permission == '管理部门小组':
-            # 只能查看本小组
-            if current_user.group:
-                # 假设user.group存储的是小组名称
-                query = query.filter_by(department=current_user.department, group=current_user.group)
-            else:
-                # 未分配小组的用户无法看到任何用户，或者只能看到自己？这里暂且返回空
-                return jsonify({'success': True, 'data': []})
+            # 只能查看本小组：授权只认 canonical group_id，无归属时 fail closed 返回空。
+            query = query.filter(canonical_group_user_criteria(current_user))
         
         users = query.all()
         
@@ -686,8 +448,8 @@ def get_user(user_id):
                     ),
                 }), 403
             if manage_permission == '管理部门小组':
-                # 假设user.group存储的是小组名称
-                if user.group != current_user.group:
+                # 授权只认 canonical group_id，legacy group 文本不参与判定。
+                if not is_user_in_canonical_group_scope(current_user, user):
                     return jsonify({
                         'success': False,
                         'message': build_forbidden_message(
@@ -765,11 +527,9 @@ def update_user(user_id):
                         return jsonify({'success': False, 'message': '指定的小组不存在'}), 400
                     if group.department != user.department:
                         return jsonify({'success': False, 'message': '小组不属于用户所在部门'}), 400
-                    user.group_id = group_id
-                    user.group = group.name # 同步更新名称
+                    assign_user_to_group(user, group)
                 else:
-                    user.group_id = None
-                    user.group = UNASSIGNED_GROUP_NAME # 同步更新名称
+                    clear_user_group(user)
 
             if 'new_password' in data and data['new_password']:
                 user.password_hash = generate_password_hash(data['new_password'])
@@ -824,8 +584,7 @@ def update_user(user_id):
                         return jsonify({'success': False, 'message': '指定的部门不存在'}), 400
                     user.department = new_department
                     # 如果更换部门，清除小组关联
-                    user.group_id = None
-                    user.group = UNASSIGNED_GROUP_NAME
+                    clear_user_group(user)
             
             # 小组更新
             if 'group_id' in data:
@@ -836,11 +595,9 @@ def update_user(user_id):
                         return jsonify({'success': False, 'message': '指定的小组不存在'}), 400
                     if group.department != user.department:
                         return jsonify({'success': False, 'message': '小组不属于用户所在部门'}), 400
-                    user.group_id = group_id
-                    user.group = group.name
+                    assign_user_to_group(user, group)
                 else:
-                    user.group_id = None
-                    user.group = UNASSIGNED_GROUP_NAME
+                    clear_user_group(user)
             
             # 密码更新
             if 'new_password' in data and data['new_password']:

@@ -31,7 +31,7 @@
                                     <i class="bi bi-people" aria-hidden="true"></i> {{ group.name }}
                                 </h2>
                                 <div class="group-card__actions">
-                                    {% if manage_permission == '超级管理员' or manage_permission == '管理部门' or (manage_permission == '管理部门小组' and group.name == user.group) %}
+                                    {% if manage_permission == '超级管理员' or manage_permission == '管理部门' or (manage_permission == '管理部门小组' and user.group_id is not none and group.id == user.group_id) %}
                                     <button class="btn btn-sm btn-outline-secondary" onclick="editGroup({{ group.id }})" aria-label="编辑小组 {{ group.name }}">
                                         <i class="bi bi-pencil" aria-hidden="true"></i> 编辑
                                     </button>

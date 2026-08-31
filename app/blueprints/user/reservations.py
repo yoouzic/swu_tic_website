@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """User blueprint domain module (Step 4 split)."""
-from flask import render_template, request, redirect, url_for, flash, session, jsonify
+from flask import render_template, request, redirect, url_for, session, jsonify
 from app.models import (
     Course,
     CourseRegistration as Reservation,
     LectureForm,
-    LectureFormDraft,
     ListeningBan,
     SystemSetting,
     Teacher,
@@ -13,26 +12,17 @@ from app.models import (
     db,
 )
 from app.security import login_required
-from app.utils.user_status import active_user_filter
 from app.services.form_bindings import (
     get_registration_logical_form_counts,
     registration_has_form_binding,
 )
-from datetime import datetime, timedelta
-from sqlalchemy import and_, func
+from sqlalchemy import and_
 from app.utils.time_validator import validate_listening_time, TimeValidator
-from app.utils.audit_tags import build_audit_tag, build_week_correction_tag
-from app.utils.leave_management import append_leave_system_note, get_pending_leave_makeup, record_leave_makeup_form
-from app.utils.profile_settings import PROFILE_EDITABLE_FIELD_KEYS, get_profile_editable_fields
 from app.utils.course_registration_limits import (
     get_current_teaching_week_no,
     parse_listening_week_no,
     validate_course_weekly_registration_limit,
 )
-from app.utils.permission_feedback import forbidden_json, flash_forbidden
-import hashlib
-import json
-import re
 
 from . import user_bp
 
@@ -233,6 +223,9 @@ def api_course_registration_history():
         data = []
         for r in registrations:
             bind_count = logical_bind_counts.get(r.id, 0)
+            # Round 8A：is_used 兼容字段的值源收敛为 canonical binding
+            # （is_bound）；字段名与 JSON shape 保留，模板消费方不受影响。
+            is_bound = bind_count > 0
             teaching_week = parse_listening_week_no(r.listening_info)
             registrant = r.user
             user_name = registrant.name if registrant else '未知用户'
@@ -246,8 +239,8 @@ def api_course_registration_history():
                 'created_at': r.created_at.strftime('%Y-%m-%d %H:%M'),
                 'teaching_week': teaching_week,
                 'is_highlighted': bool(highlight_week and teaching_week == highlight_week),
-                'is_used': r.is_used,
-                'is_bound': bind_count > 0
+                'is_used': is_bound,
+                'is_bound': is_bound
             })
         
         return jsonify({
@@ -371,45 +364,58 @@ def api_create_reservation():
 @user_bp.route('/api/cancel_reservation', methods=['POST'])
 @login_required
 def api_cancel_reservation():
-    """取消听课登记"""
+    """取消听课登记（Round 8A-R1：canonical binding guard + 确定性目标选择）"""
     try:
         user_id = session['user_id']
-        data = request.get_json()
-        
+        data = request.get_json(silent=True) or {}
+
         course_code = data.get('course_code')
         selection_code = data.get('selection_code')
-        
+
         if not all([course_code, selection_code]):
             return jsonify({
                 'success': False,
                 'message': '参数不完整'
             }), 400
-        
-        # 查找预定记录
-        reservation = Reservation.query.filter_by(
+
+        # Round 8A-R1：显式 ordering（created_at DESC, id DESC）+ canonical
+        # binding 分类。模型允许重复登记，无序 .first() 目标歧义；legacy cancel
+        # 只删除“最新的 canonical unbound registration”，绝不参考 is_used
+        # mirror，绝不删除已绑定表单的登记（binding graph 保护）。
+        matches = Reservation.query.filter_by(
             course_code=course_code,
             selection_code=selection_code,
             user_id=user_id
-        ).first()
-        
-        if not reservation:
+        ).order_by(Reservation.created_at.desc(), Reservation.id.desc()).all()
+
+        if not matches:
             return jsonify({
                 'success': False,
                 'message': '未找到预定记录'
             }), 404
-        
-        # 这里可以添加时间验证，确保只能在听课时间前取消
-        # 例如：检查听课时间是否还未到
-        
+
+        logical_bind_counts = get_registration_logical_form_counts(
+            [r.id for r in matches]
+        )
+        target = next(
+            (r for r in matches if logical_bind_counts.get(r.id, 0) == 0),
+            None,
+        )
+        if target is None:
+            return jsonify({
+                'success': False,
+                'message': '该登记已绑定听课反馈表单，不能删除'
+            }), 400
+
         # 删除预定记录
-        db.session.delete(reservation)
+        db.session.delete(target)
         db.session.commit()
-        
+
         return jsonify({
             'success': True,
             'message': '取消登记成功'
         })
-        
+
     except Exception as e:
         db.session.rollback()
         return jsonify({
@@ -531,17 +537,26 @@ def api_delete_my_reservation(reservation_id):
 @user_bp.route('/api/unused_reservations')
 @login_required
 def api_unused_reservations():
-    """获取未使用的听课登记"""
+    """获取未使用的听课登记（Round 8A：availability 以 canonical binding 为准）"""
     try:
         user_id = session['user_id']
-        # 获取未使用的登记
+        # Round 8A：availability 不再由 legacy is_used flag 过滤——查询当前
+        # 用户全部 registration，经 form_bindings 批量得到 actual binding，
+        # 只返回 actual unbound 的登记（无 N+1）。
         reservations = Reservation.query.filter_by(
             user_id=user_id,
-            is_used=False
         ).order_by(Reservation.created_at.desc()).all()
-        
+
+        logical_bind_counts = get_registration_logical_form_counts(
+            [r.id for r in reservations]
+        )
+        unbound_reservations = [
+            r for r in reservations
+            if logical_bind_counts.get(r.id, 0) == 0
+        ]
+
         result = []
-        for r in reservations:
+        for r in unbound_reservations:
             # 获取课程信息
             course = Course.query.filter_by(
                 course_code=r.course_code,

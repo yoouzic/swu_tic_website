@@ -18,7 +18,7 @@
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDepartmentModal">
                         <i class="bi bi-plus-circle"></i> 添加部门
                     </button>
-                    {% else %}
+                    {% elif manage_permission == '管理部门' %}
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addGroupModal">
                         <i class="bi bi-plus-circle"></i> 添加小组
                     </button>
@@ -1098,9 +1098,11 @@ function renderDepartments(departments) {
         const departmentBodyState = departmentExpanded === 'true' ? 'show' : '';
         const standardButtonsHtml = `
             <div class="department-card__actions">
+                {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
                 <button class="btn btn-sm btn-outline-secondary" type="button" data-department-action="edit" data-department-id="${Number(dept.id)}">
                     <i class="bi bi-pencil"></i> 编辑
                 </button>
+                {% endif %}
                 {% if manage_permission == '超级管理员' %}
                 <div class="dropdown department-card__menu">
                     <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="departmentActions${departmentKey}" data-bs-toggle="dropdown" aria-expanded="false" aria-label="更多部门操作：${escapePeopleHtml(dept.name)}">
@@ -1114,6 +1116,7 @@ function renderDepartments(departments) {
             </div>
         `;
         const emptyButtonsHtml = `
+            {% if manage_permission == '超级管理员' or manage_permission == '管理部门' %}
             <div class="dropdown department-card__menu">
                 <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="departmentActions${departmentKey}" data-bs-toggle="dropdown" aria-expanded="false" aria-label="更多部门操作：${escapePeopleHtml(dept.name)}">
                     更多
@@ -1126,6 +1129,7 @@ function renderDepartments(departments) {
                     {% endif %}
                 </ul>
             </div>
+            {% endif %}
         `;
         const buttonsHtml = isVirtualDepartment ? '' : (isEmptyDepartment ? emptyButtonsHtml : standardButtonsHtml);
 

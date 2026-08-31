@@ -10,6 +10,9 @@ SERVICE_FILES = (
     Path('app/services/review_mutation.py'),
     Path('app/services/form_bindings.py'),
     Path('app/services/review_scores.py'),
+    Path('app/services/organization_membership.py'),
+    Path('app/services/organization_policy.py'),
+    Path('app/services/profile_stats.py'),
 )
 
 TEACHING_CALENDAR_FILE = Path('app/services/teaching_calendar.py')
@@ -20,6 +23,11 @@ ACADEMIC_TERM_FILE = Path('app/services/academic_term.py')
 REVIEW_SCHEDULE_SOURCE_FILE = Path('app/services/review_schedule_source.py')
 REVIEW_SCHEDULE_MATCHER_FILE = Path('app/services/review_schedule_matcher.py')
 REVIEW_REFERENCE_DATA_FILE = Path('app/services/review_reference_data.py')
+ORGANIZATION_MEMBERSHIP_FILE = Path('app/services/organization_membership.py')
+ORGANIZATION_POLICY_FILE = Path('app/services/organization_policy.py')
+PROFILE_STATS_FILE = Path('app/services/profile_stats.py')
+
+ADMIN_USERS_FILE = Path('app/blueprints/admin/users.py')
 
 FORBIDDEN_IMPORT_PREFIXES = (
     'flask',
@@ -71,6 +79,24 @@ class ServiceArchitectureTests(unittest.TestCase):
                             alias.name, '*',
                             f'{service_file.name} contains wildcard import',
                         )
+
+    def test_form_bindings_reconcile_primitive_is_commit_free(self):
+        """Round 8A：reconcile_registration_usage_flags 是 transaction-local
+        mirror primitive——不得 commit/rollback，事务所有权留给调用方。"""
+        service_file = SERVICE_FILES[2]
+        tree = ast.parse(service_file.read_text(encoding='utf-8'))
+        reconcile_defs = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == 'reconcile_registration_usage_flags'
+        ]
+        self.assertEqual(len(reconcile_defs), 1)
+        for node in ast.walk(reconcile_defs[0]):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                self.assertNotIn(
+                    node.func.attr, {'commit', 'rollback'},
+                    'reconcile primitive must not own transaction boundaries',
+                )
 
     def test_review_mutation_service_has_no_app_import(self):
         service_file = SERVICE_FILES[1]
@@ -406,6 +432,180 @@ class ServiceArchitectureTests(unittest.TestCase):
             tree = ast.parse(path.read_text(encoding='utf-8'))
             text = path.read_text(encoding='utf-8')
             self.assertNotIn('review_reference_data', text, f'{path.name} must not import orchestration service')
+
+    def test_organization_membership_boundary_has_no_flask_or_blueprint_dependency(self):
+        tree = ast.parse(ORGANIZATION_MEMBERSHIP_FILE.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.name
+                    self.assertFalse(
+                        name.startswith('flask') or name.startswith('app.blueprints'),
+                        f'{ORGANIZATION_MEMBERSHIP_FILE.name} imports forbidden module: {name}',
+                    )
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ''
+                self.assertFalse(
+                    module.startswith('flask') or module.startswith('app.blueprints'),
+                    f'{ORGANIZATION_MEMBERSHIP_FILE.name} imports forbidden module: {module}',
+                )
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                self.assertNotIn(
+                    node.id,
+                    {'request', 'session', 'jsonify', 'render_template', 'redirect', 'url_for', 'flash', 'current_app'},
+                )
+
+    def test_organization_membership_service_does_not_register_routes_or_read_http_state(self):
+        text = ORGANIZATION_MEMBERSHIP_FILE.read_text(encoding='utf-8')
+        self.assertNotIn('Blueprint', text)
+        self.assertNotIn('session[', text)
+        self.assertNotIn('request.', text)
+        self.assertNotIn('jsonify(', text)
+
+    def test_organization_membership_exposes_canonical_api(self):
+        tree = ast.parse(ORGANIZATION_MEMBERSHIP_FILE.read_text(encoding='utf-8'))
+        functions = {
+            n.name for n in tree.body
+            if isinstance(n, ast.FunctionDef)
+        }
+        self.assertIn('is_user_in_canonical_group_scope', functions)
+        self.assertIn('is_group_in_canonical_scope', functions)
+        self.assertIn('canonical_group_user_criteria', functions)
+        self.assertIn('canonical_scope_group_criteria', functions)
+        self.assertIn('group_member_criteria', functions)
+        self.assertIn('group_member_criteria_for_identity', functions)
+        self.assertIn('assign_user_to_group', functions)
+        self.assertIn('clear_user_group', functions)
+
+    def test_organization_policy_boundary_has_no_flask_or_blueprint_dependency(self):
+        tree = ast.parse(ORGANIZATION_POLICY_FILE.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.name
+                    self.assertFalse(
+                        name.startswith('flask') or name.startswith('app.blueprints'),
+                        f'{ORGANIZATION_POLICY_FILE.name} imports forbidden module: {name}',
+                    )
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ''
+                self.assertFalse(
+                    module.startswith('flask') or module.startswith('app.blueprints'),
+                    f'{ORGANIZATION_POLICY_FILE.name} imports forbidden module: {module}',
+                )
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                self.assertNotIn(
+                    node.id,
+                    {'request', 'session', 'jsonify', 'render_template', 'redirect', 'url_for', 'flash', 'current_app'},
+                )
+
+    def test_organization_policy_exposes_capability_api(self):
+        tree = ast.parse(ORGANIZATION_POLICY_FILE.read_text(encoding='utf-8'))
+        functions = {
+            n.name for n in tree.body
+            if isinstance(n, ast.FunctionDef)
+        }
+        self.assertIn('can_create_group', functions)
+        self.assertIn('can_batch_move_group_members', functions)
+        self.assertIn('can_assign_group_leader', functions)
+        self.assertIn('leader_assignment_may_migrate_department', functions)
+
+    def test_profile_stats_exposes_canonical_builder_and_rating_bands(self):
+        tree = ast.parse(PROFILE_STATS_FILE.read_text(encoding='utf-8'))
+        functions = {
+            n.name for n in tree.body
+            if isinstance(n, ast.FunctionDef)
+        }
+        constants = {
+            n.targets[0].id for n in tree.body
+            if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)
+        }
+        self.assertIn('build_user_profile_stats', functions)
+        self.assertIn('RATING_BAND_NONE', constants)
+        self.assertIn('RATING_BAND_ATTENTION', constants)
+        self.assertIn('RATING_BAND_GOOD', constants)
+        self.assertIn('RATING_BAND_EXCELLENT', constants)
+
+    def test_profile_stats_service_boundary_has_no_flask_or_blueprint_dependency(self):
+        tree = ast.parse(PROFILE_STATS_FILE.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.name
+                    self.assertFalse(
+                        name.startswith('flask') or name.startswith('app.blueprints'),
+                        f'{PROFILE_STATS_FILE.name} imports forbidden module: {name}',
+                    )
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ''
+                self.assertFalse(
+                    module.startswith('flask') or module.startswith('app.blueprints'),
+                    f'{PROFILE_STATS_FILE.name} imports forbidden module: {module}',
+                )
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                self.assertNotIn(
+                    node.id,
+                    {'request', 'session', 'jsonify', 'render_template', 'redirect', 'url_for', 'flash', 'current_app'},
+                )
+
+    def test_profile_stats_ranking_population_and_tie_contract(self):
+        """Ranking pool must filter by active+eligible-role users; ties use right edge."""
+        tree = ast.parse(PROFILE_STATS_FILE.read_text(encoding='utf-8'))
+
+        imported_names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                imported_names.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.Import):
+                imported_names.update(
+                    (alias.asname or alias.name).split('.')[0] for alias in node.names
+                )
+        self.assertIn('active_user_filter', imported_names)
+        self.assertIn('User', imported_names)
+
+        constants = {
+            n.targets[0].id for n in tree.body
+            if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)
+        }
+        self.assertIn('PROFILE_STATS_ELIGIBLE_ROLES', constants)
+
+        functions = {
+            n.name: n for n in tree.body
+            if isinstance(n, ast.FunctionDef)
+        }
+        self.assertIn('_aggregate_listener_scores', functions)
+        aggregator_text = ast.get_source_segment(
+            PROFILE_STATS_FILE.read_text(encoding='utf-8'), functions['_aggregate_listener_scores'],
+        )
+        self.assertIn('PROFILE_STATS_ELIGIBLE_ROLES', aggregator_text)
+        self.assertIn('active_user_filter()', aggregator_text)
+
+        # percentile 不得再用 first-index tie bias（list.index）。
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                self.assertNotEqual(
+                    node.func.attr, 'index',
+                    f'{PROFILE_STATS_FILE.name} must not rank via list.index (first-index tie bias)',
+                )
+
+    def test_admin_profile_wrapper_is_compatibility_only(self):
+        """_build_user_profile_stats must be a thin delegation, not a stats engine."""
+        tree = ast.parse(ADMIN_USERS_FILE.read_text(encoding='utf-8'))
+        wrapper_defs = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == '_build_user_profile_stats'
+        ]
+        self.assertEqual(len(wrapper_defs), 1)
+        wrapper = wrapper_defs[0]
+
+        loaded_names = {
+            node.id for node in ast.walk(wrapper)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+        }
+        self.assertIn('build_user_profile_stats', loaded_names)
+        self.assertIn('datetime', loaded_names)
+        forbidden_statistics_names = {'LectureForm', 'ScoreRecord', 'ScoreItem', 'SystemSetting', 'func', 'effective_form_week', 'teaching_week_number'}
+        self.assertEqual(loaded_names & forbidden_statistics_names, set())
 
 
 if __name__ == '__main__':

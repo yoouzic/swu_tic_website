@@ -5,10 +5,15 @@ Distinguish:
 - logical form count (UI/user-facing "bound feedback forms")
 - reference existence (is a reservation bound at all)
 - physical row count (deletion cleanup)
+
+Canonical contract (Round 8A): the authoritative binding state is the
+existence of ``LectureForm.registration_id == registration.id``.
+``CourseRegistration.is_used`` is a compatibility / denormalized mirror only
+and never decides availability, editability or display semantics.
 """
 from sqlalchemy import func
 
-from app.models import LectureForm, db
+from app.models import CourseRegistration, LectureForm, db
 
 
 def get_registration_logical_form_counts(registration_ids):
@@ -45,3 +50,28 @@ def registration_has_form_binding(registration_id):
         .first()
         is not None
     )
+
+
+def reconcile_registration_usage_flags(registration_ids):
+    """Sync the ``CourseRegistration.is_used`` mirror with actual bindings.
+
+    Round 8A transaction-local mirror primitive: for each given id, set
+    ``is_used`` to whether at least one LectureForm currently references it
+    (reference existence, not logical-form count).  Pending form mutations
+    must be flushed by the caller first (explicit flush strategy — never rely
+    on hidden autoflush).  No commit / no rollback / no Flask: transaction
+    ownership stays with the caller.
+    """
+    ids = sorted({int(rid) for rid in registration_ids if rid is not None})
+    if not ids:
+        return {}
+
+    bound_counts = get_registration_logical_form_counts(ids)
+    flags = {}
+    for registration_id in ids:
+        bound = bound_counts.get(registration_id, 0) > 0
+        flags[registration_id] = bound
+        registration = db.session.get(CourseRegistration, registration_id)
+        if registration is not None and registration.is_used != bound:
+            registration.is_used = bound
+    return flags

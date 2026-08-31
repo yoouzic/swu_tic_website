@@ -162,7 +162,7 @@
             </div>
             <div class="profile-section__body">
                 <!-- 本周统计 -->
-                <h3 class="profile-subheading">当前教学周（第 {{ stats.current_week }} 周）</h3>
+                <h3 class="profile-subheading">{{ stats.current_week_label }}</h3>
                 <div class="row text-center mb-4">
                     <div class="col-md-4">
                         <div class="border-end">
@@ -235,23 +235,15 @@
             <div class="profile-section__body">
                 <div class="row align-items-center text-center">
                     <div class="col-md-6 border-end">
-                        <h3 class="mb-1 text-danger">-{{ '%.2f'|format(stats.total_deduction or 0) }}</h3>
+                        <h3 class="mb-1 text-danger">{{ stats.deduction_display }}</h3>
                         <small class="text-muted">个人累计扣分</small>
                     </div>
                     <div class="col-md-6">
-                        {% if stats.percentile <= 0.2 %}
-                            <div class="alert alert-danger mb-0 py-2">
-                                <i class="bi bi-exclamation-triangle-fill"></i> <strong>需要继续努力</strong>
-                            </div>
-                        {% elif stats.percentile <= 0.7 %}
-                            <div class="alert alert-warning mb-0 py-2">
-                                <i class="bi bi-info-circle-fill"></i> <strong>表现良好</strong>
-                            </div>
-                        {% else %}
-                            <div class="alert alert-success mb-0 py-2">
-                                <i class="bi bi-trophy-fill"></i> <strong>行为很好</strong>
-                            </div>
-                        {% endif %}
+                        {% set rating_class = {'attention': 'danger', 'good': 'warning', 'excellent': 'success'}.get(stats.rating_band, 'secondary') %}
+                        {% set rating_icon = {'attention': 'bi-exclamation-triangle-fill', 'good': 'bi-info-circle-fill', 'excellent': 'bi-trophy-fill'}.get(stats.rating_band, 'bi-dash-circle-fill') %}
+                        <div class="alert alert-{{ rating_class }} mb-0 py-2">
+                            <i class="bi {{ rating_icon }}"></i> <strong>{{ stats.rating_label }}</strong>
+                        </div>
                         <small class="text-muted d-block mt-2">综合表现评级</small>
                     </div>
                 </div>
