@@ -53,7 +53,8 @@
     --focus-ring: 0 0 0 .2rem rgb(70 90 112 / .2);
     --shadow-surface: 0 3px 16px rgb(41 51 62 / .035);
     --shadow-overlay: 0 18px 48px rgb(41 51 62 / .13);
-    --texture-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' opacity='.055' filter='url(%23grain)'/%3E%3C/svg%3E");
+    --texture-paper: url("../images/textures/cotton-paper.webp");
+    --texture-paper-size: 640px 640px;
     --texture-ruling: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cpath d='M0 31.5H32' fill='none' stroke='%23465a70' stroke-opacity='.07'/%3E%3C/svg%3E");
     --z-sticky: 20;
     --z-backdrop: 40;
@@ -111,7 +112,7 @@ a { color: var(--color-accent-strong); }
 .app-messages:empty { display: none; }
 .auth-layout { width: min(1120px,100%); display: grid; grid-template-columns: 1.05fr minmax(360px,.9fr); border: 1px solid var(--color-border); border-radius: 26px; overflow: hidden; background: var(--color-surface); box-shadow: 0 24px 64px rgb(41 51 62 / .07); }
 .auth-intro { position: relative; isolation: isolate; min-height: 620px; display: flex; flex-direction: column; justify-content: center; padding: 52px; color: var(--color-accent-strong); background: var(--color-nav); }
-.auth-intro::before { position: absolute; z-index: -1; inset: 0; background-image: var(--texture-ruling),var(--texture-paper); pointer-events: none; content: ''; }
+.auth-intro::before { position: absolute; z-index: -1; inset: 0; background-color: var(--color-nav); background-image: var(--texture-ruling),var(--texture-paper); background-size: 32px 32px,var(--texture-paper-size); background-blend-mode: multiply; pointer-events: none; content: ''; }
 .auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 64px; }
 .auth-brand .app-brand__mark { width: 44px; height: 48px; flex-basis: 44px; font-size: 1.4rem; }
 .auth-kicker { color: var(--color-accent-strong); font-size: .8rem; letter-spacing: .1em; }
@@ -216,6 +217,9 @@ a { color: var(--color-accent-strong); }
 .workspace-eyebrow { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; color: var(--color-text-muted); font-size: .75rem; letter-spacing: .1em; }
 .workspace-eyebrow i { color: var(--color-highlight-strong); font-size: 1rem; }
 .workspace > .page-header { padding: 28px 30px; border: 1px solid var(--color-border); border-radius: 20px; background: var(--color-nav) var(--texture-paper); }
+/* Fine cotton fibres are limited to framing surfaces, never data or controls.
+   Multiply retains the theme colour; the static background cannot intercept input. */
+body,.public-shell,.app-sidebar,.workspace > .page-header { background-size: var(--texture-paper-size); background-blend-mode: multiply; }
 .workspace > .page-header h1 { font-size: clamp(1.6rem,2.3vw,2.1rem); }
 .workspace > .page-header .btn { min-height: 44px; display: inline-flex; align-items: center; padding-inline: 20px; }
 .workspace-metrics { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,14rem),1fr)); gap: 14px; margin-bottom: 24px; }
