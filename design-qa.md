@@ -67,3 +67,11 @@ UI 相关回归：163 passed、352 subtests passed，无 skipped。最终替换 
 更新真实 Chromium 回归契约：卡片应加载纸纹，输入框与主按钮仍无纹理，点击命中检查继续通过。修改前新断言失败，应用 B 后相关 UI 回归 163 passed、352 subtests passed，无 skipped；`git diff --check` 通过。CSS 静态材质变更，本轮未重复全后端回归，未部署服务器。
 
 截图目录：`docs/ui/screenshots/2026-09-19-cards-b/`。本次 scoped design QA: passed。
+
+## 2026-09-19 — approved detail B and mobile navigation button
+
+User selected the detail B comparison. Applied warm inset backgrounds for neutral light panels and tables, softer nested group borders, intact course heading words, finer table separators, and clearer sort / restriction controls. Removed superseded page-local course background declarations so shared styles win.
+
+The mobile navigation button now reveals the existing paper topbar through a transparent background with a subtle border; hover/open states use the warm inset tone. The 44px hit target and keyboard focus outline remain.
+
+Validation: UI regression 163 passed, 352 subtests passed (37 warnings; 18.83s). Removed empty CSS rules afterward (no behavior change). Main preview inspected at 1600x1000 and 390x844; mobile navigation opens, Escape closes it and restores focus to the trigger. Local preview template cache was refreshed by restarting the preview against the same isolated synthetic database. Screenshots: `docs/ui/screenshots/2026-09-19-details-b/`. No production deployment or full backend regression in this CSS-focused round.

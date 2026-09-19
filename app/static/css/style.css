@@ -95,7 +95,7 @@ a { color: var(--color-accent-strong); }
 .app-frame { min-width: 0; }
 .app-topbar { position: sticky; top: 12px; z-index: var(--z-sticky); min-height: var(--topbar-height); display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 20px 32px 0; padding: 0 20px; border: 1px solid var(--color-border); border-radius: 20px; background: var(--color-nav) var(--texture-paper); background-size: var(--texture-paper-size); background-blend-mode: multiply; box-shadow: 0 2px 8px rgb(41 51 62 / .025); }
 .app-page-context { color: var(--color-text-muted); font-size: .84rem; }
-.app-topbar__menu { display: none; align-items: center; justify-content: center; flex: 0 0 44px; height: 44px; border: 0; border-radius: var(--control-radius); color: var(--color-accent-strong); background: var(--color-accent-soft); font-size: 1.25rem; }
+.app-topbar__menu { display: none; align-items: center; justify-content: center; flex: 0 0 44px; height: 44px; border: 1px solid var(--color-border); border-radius: var(--control-radius); color: var(--color-accent-strong); background: transparent; font-size: 1.25rem; }
 .app-topbar__actions { display: flex; gap: 16px; align-items: center; }
 .app-user-menu__toggle { display: inline-flex; align-items: center; gap: 7px; padding: 6px 8px; border-color: transparent; color: var(--color-text); }
 .app-user-menu__toggle:hover,.app-user-menu__toggle:focus-visible { color: var(--color-accent-strong); background: var(--color-accent-soft); border-color: var(--color-border); }
@@ -753,3 +753,38 @@ body,.public-shell,.app-sidebar,.workspace > .page-header { background-size: var
 :is(.card,.modal-content,.auth-layout,.app-message,.surface-panel,.metric:not(.metric--plain),.workspace-metric,.workspace-panel,.activity-panel,.automation-dataset-card,.version-history__inner,.activity-feedback,.profile-section,.review-queue,.review-preview,.review-queue__list,.review-statistics-card,.review-form-surface,.reference-result-item,.member-detail-section,.people-contact-tools,.statistics-secondary,.course-summary-card):not(.is-selected) {background-color:var(--color-nav);background-image:var(--texture-paper);background-size:var(--texture-paper-size);background-blend-mode:multiply;}
 .card-header:not([class*="bg-"]),.card-header.bg-light,.section-heading {background-color:transparent!important;}
 @media(max-width:768px){.form-list-table > tbody > tr:not(.version-history){background:var(--color-nav) var(--texture-paper);background-size:var(--texture-paper-size);background-blend-mode:multiply;}}
+
+/* Approved detail variant B: warm inset surfaces and readable table controls. */
+:root {--paper-inset:rgba(216,197,162,.16);--paper-line:#d4d3c9;}
+.bg-light:not(.badge):not(.btn):not(input):not(select):not(textarea):not(.card-header) {background-color:var(--paper-inset)!important;}
+.department-card__body .bg-light:has(>.department-evaluation__summary) {padding:12px 16px!important;border-radius:12px!important;border-color:var(--paper-line)!important;}
+.group-card > .card {border-color:#c9c9bf!important;box-shadow:none;}
+.table {--bs-table-bg:transparent;--bs-table-striped-bg:rgba(216,197,162,.10);--bs-table-hover-bg:rgba(70,90,112,.07);--bs-table-active-bg:rgba(70,90,112,.12);border-color:var(--paper-line);}
+.table > thead,.table-light {--bs-table-bg:rgba(216,197,162,.18);--bs-table-striped-bg:rgba(216,197,162,.10);color:var(--color-text-muted);border-color:var(--paper-line);}
+.table > :not(:first-child) {border-top:1px solid var(--paper-line);}
+.course-feedback-page .table th {background-color:transparent;}
+.course-feedback-page .course-group-main {background-color:rgba(216,197,162,.08);}
+.course-feedback-page .course-detail-row {background-color:transparent;}
+.course-feedback-page :is(.course-group-main,.course-detail-row):hover {background-color:rgba(70,90,112,.06);}
+.course-feedback-page .table-active {background-color:var(--color-accent-soft);}
+.course-detail-row td {border-color:var(--paper-line);}
+#coursesTable th {vertical-align:middle;padding:12px 8px;}
+#coursesTable th > .d-flex > .d-flex {gap:6px;}
+#coursesTable th > .d-flex > .d-flex > span {white-space:nowrap;}
+#coursesTable .sort-controls {display:flex;gap:8px;}
+#coursesTable .sort-controls .btn {padding:2px 4px!important;}
+#coursesTable td {padding:12px 8px;vertical-align:top;}
+#coursesTable td:nth-child(4) {min-width:180px;}
+#coursesTable td:last-child {white-space:nowrap;}
+.department-card {box-shadow:0 2px 5px rgb(41 51 62 / .025);}
+#coursesTable {font-size:15px;}
+#coursesTable .sort-controls {opacity:1;}
+#coursesTable .sort-controls .btn {opacity:1;font-size:13px;color:var(--color-accent)!important;}
+.course-feedback-page .btn-outline-warning {color:#85601f;border-color:#ad8543;}
+.course-feedback-page .btn-outline-warning:hover {background:#efe3c9;color:#5d441a;}
+.course-feedback-page :is(.department-item,.group-item,.tree-user-item:not(.selected)) {background-color:rgba(216,197,162,.09);border-color:var(--paper-line);}
+.course-feedback-page :is(.department-header,.group-header) {background-color:var(--paper-inset);border-color:var(--paper-line);}
+.course-feedback-page :is(.department-header,.group-header,.tree-user-item):hover {background-color:rgba(70,90,112,.07);}
+
+.app-topbar__menu:hover,.app-topbar__menu[aria-expanded="true"] { background: var(--paper-inset); border-color: var(--paper-line); }
+.app-topbar__menu:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
