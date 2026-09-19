@@ -46,3 +46,14 @@ final result: passed
 UI 相关回归：163 passed、352 subtests passed，无 skipped。最终替换 B 后再运行真实 Chromium 主题测试和导航交互测试：14 passed、2 subtests passed。`git diff --check` 通过。
 
 本轮为 CSS 和静态图片改动，未重新运行前一轮的全后端测试，也未进行正式服务器部署。
+
+## 顶栏 B 版落地 — 2026-09-19
+
+用户明确选择 A/B 预览中的 B 版。公共顶栏改为内收圆角纸纹条：桌面 20px 圆角、顶部 12px 粘性定位；手机 16px 圆角、56px 最小高度。保留原有导航按钮、搜索、账户菜单和页面标签，正文顶部留白与预览一致。
+
+主版本实际检查 390 / 768 / 960 / 1024 / 1440px，无文档横向溢出。桌面用户菜单可打开关闭；手机导航打开、Escape 关闭及焦点返回“打开导航”通过。相关 UI 回归：163 passed、352 subtests passed，无 skipped；`git diff --check` 通过。本轮没有后端改动或正式服务器部署。
+
+- [主版本桌面截图](docs/ui/screenshots/2026-09-19-topbar-b/desktop.png)
+- [主版本手机截图](docs/ui/screenshots/2026-09-19-topbar-b/mobile.png)
+
+本次 scoped design QA: passed。
