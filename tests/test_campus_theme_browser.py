@@ -180,11 +180,13 @@ window.addEventListener('load', () => {
             self.assertEqual(metric['paddingLeft'], metric['paddingRight'])
             self.assertGreater(float(metric['left'].removesuffix('px')), 0)
 
-    def test_paper_texture_cannot_intercept_controls_or_cover_data_surfaces(self):
+    def test_paper_cards_keep_controls_clear_and_clickable(self):
         result = self.results[False]
         self.assertEqual(result['texture']['pointerEvents'], 'none')
         self.assertNotEqual(result['texture']['backgroundImage'], 'none')
-        self.assertEqual(result['surface']['backgroundImage'], 'none')
+        self.assertIn('cotton-paper.webp', result['surface']['backgroundImage'])
+        self.assertEqual(result['account']['backgroundImage'], 'none')
+        self.assertEqual(result['primary']['backgroundImage'], 'none')
         self.assertTrue(result['clickable'])
 
     def test_card_sections_follow_surface_radius_without_clipping_menus(self):
