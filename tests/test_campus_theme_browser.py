@@ -34,6 +34,10 @@ class CampusThemeBrowserTest(unittest.TestCase):
             raise unittest.SkipTest('Set UI_TEST_BROWSER to a Chromium browser executable')
         bootstrap = (ROOT / 'app/static/vendor/bootstrap/css/bootstrap.min.css').as_uri()
         stylesheet = (ROOT / 'app/static/css/style.css').as_uri()
+        service_template = (ROOT / 'app/templates/admin/_settings_automation.html').read_text(encoding='utf-8')
+        service_script = (ROOT / 'app/static/js/automation-center.js').read_text(encoding='utf-8')
+        initial_badge = re.search(r'class="([^"]+)" data-service-value', service_template).group(1)
+        runtime_badge = re.search(r'badge.className = `([^`]+)`', service_script).group(1).replace('${variant}', 'success')
         mobile_fixture = ('<!doctype html><html><head><link rel="stylesheet" href="BOOTSTRAP">'
                           '<link rel="stylesheet" href="STYLESHEET"></head><body><main class="app-content">'
                           '<section class="workspace-metrics">' +
@@ -57,13 +61,15 @@ class CampusThemeBrowserTest(unittest.TestCase):
 </section></div><table class="table table-sm"><tbody><tr><td id="compact-cell">课程</td></tr></tbody></table>
 <div class="offcanvas offcanvas-end" id="drawer"></div>
 <iframe id="mobile-probe" style="width:390px;height:500px;border:0" srcdoc="MOBILE_FIXTURE"></iframe>
+<div class="card" id="round-card"><div class="card-header" id="round-header">部门</div><div class="card-body">成员</div><div class="card-footer" id="round-footer">操作</div></div>
+<span id="service-initial" class="INITIAL_BADGE">检查中</span><span id="service-ready" class="RUNTIME_BADGE">ready</span>
 <pre id="probe"></pre><script>
 window.addEventListener('load', () => {
     const read = (selector, pseudo = null) => {
         const style = getComputedStyle(document.querySelector(selector), pseudo);
         return Object.fromEntries(['color', 'backgroundColor', 'backgroundImage', 'animationName',
             'animationDuration', 'animationDelay', 'animationIterationCount', 'transitionDuration', 'transform',
-            'pointerEvents', 'minHeight', 'opacity', 'paddingTop', 'paddingBottom'].map(key => [key, style[key]]));
+            'borderTopLeftRadius', 'borderBottomLeftRadius', 'overflow', 'pointerEvents', 'minHeight', 'opacity', 'paddingTop', 'paddingBottom'].map(key => [key, style[key]]));
     };
     const mobile = document.getElementById('mobile-probe').contentDocument;
     const metrics = [...mobile.querySelectorAll('.workspace-metric')].map(el => {
@@ -77,7 +83,7 @@ window.addEventListener('load', () => {
     const box = primary.getBoundingClientRect();
     const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
     document.getElementById('probe').textContent = JSON.stringify({
-        sidebar: read('.app-sidebar'), nav: read('.app-nav__link'), primary: read('#primary'),
+        serviceInitial: read('#service-initial'), serviceReady: read('#service-ready'), card: read('#round-card'), cardHeader: read('#round-header'), cardFooter: read('#round-footer'), sidebar: read('.app-sidebar'), nav: read('.app-nav__link'), primary: read('#primary'),
         badge: read('#badge'), surface: read('#surface'), account: read('#account'),
         headlineMotion: before, headlineAfter: read('.auth-intro h1'),
         supportingMotion: read('.auth-intro > p'),
@@ -90,7 +96,7 @@ window.addEventListener('load', () => {
         reduced: matchMedia('(prefers-reduced-motion: reduce)').matches
     });
 });
-</script></body></html>'''.replace('MOBILE_FIXTURE', html.escape(mobile_fixture, quote=True)).replace('BOOTSTRAP', bootstrap).replace('STYLESHEET', stylesheet)
+</script></body></html>'''.replace('MOBILE_FIXTURE', html.escape(mobile_fixture, quote=True)).replace('BOOTSTRAP', bootstrap).replace('STYLESHEET', stylesheet).replace('INITIAL_BADGE', initial_badge).replace('RUNTIME_BADGE', runtime_badge)
         cls.results = {}
         for reduced in (False, True):
             with tempfile.TemporaryDirectory(prefix='swu-ui-test-', ignore_cleanup_errors=True) as folder:
@@ -180,6 +186,19 @@ window.addEventListener('load', () => {
         self.assertNotEqual(result['texture']['backgroundImage'], 'none')
         self.assertEqual(result['surface']['backgroundImage'], 'none')
         self.assertTrue(result['clickable'])
+
+    def test_card_sections_follow_surface_radius_without_clipping_menus(self):
+        result = self.results[False]
+        radius = float(result['card']['borderTopLeftRadius'].removesuffix('px'))
+        self.assertGreaterEqual(float(result['cardHeader']['borderTopLeftRadius'].removesuffix('px')), radius - 1)
+        self.assertGreaterEqual(float(result['cardFooter']['borderBottomLeftRadius'].removesuffix('px')), radius - 1)
+        self.assertEqual(result['card']['overflow'], 'visible')
+
+    def test_automation_badges_use_supported_readable_status_backgrounds(self):
+        for key in ('serviceInitial', 'serviceReady'):
+            style = self.results[False][key]
+            self.assertNotEqual(style['backgroundColor'], 'rgba(0, 0, 0, 0)')
+            self.assertGreaterEqual(contrast(style['color'], style['backgroundColor']), 4.5)
 
 
 if __name__ == '__main__':
