@@ -821,3 +821,8 @@ body,.public-shell,.app-sidebar,.workspace > .page-header { background-size: var
 .btn-outline-warning:disabled,.btn-outline-warning.disabled {color:var(--color-status-warning);background:transparent;}
 .btn-outline-success:disabled,.btn-outline-success.disabled {color:var(--color-status-success);background:transparent;}
 .btn-outline-danger:disabled,.btn-outline-danger.disabled {color:var(--color-status-danger);background:transparent;}
+
+/* Informational feedback uses the shared ink-blue palette, not Bootstrap cyan. */
+.alert-info { color:var(--color-accent-strong); background-color:var(--color-accent-soft); border-color:var(--color-border); border-left:3px solid var(--color-accent); }
+.alert-info .alert-link { color:var(--color-accent-strong); }
+.table-info { --bs-table-bg:var(--color-accent-soft); --bs-table-striped-bg:var(--color-nav); --bs-table-hover-bg:var(--color-border); --bs-table-active-bg:var(--color-border); color:var(--color-text); border-color:var(--color-border); }
