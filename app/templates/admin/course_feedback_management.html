@@ -1411,7 +1411,7 @@ function renderRecentHistory(data) {
         const statusBadge = item.is_used ? 
             '<span class="badge bg-success float-end">已填表</span>' : 
             '<span class="badge bg-secondary float-end">未填表</span>';
-        const highlightStyle = item.is_highlighted ? 'style="background-color:#fff1f1;border-left:4px solid #dc3545;"' : '';
+        const highlightStyle = item.is_highlighted ? 'style="background-color:var(--status-danger-soft);border-left:4px solid var(--color-status-danger);"' : '';
         const weekBadge = item.teaching_week ?
             `<span class="badge ${item.is_highlighted ? 'bg-danger' : 'bg-light text-dark border'}">${item.is_highlighted ? '当前' : ''}第${item.teaching_week}周</span>` :
             '<span class="badge bg-light text-muted border">未识别周次</span>';

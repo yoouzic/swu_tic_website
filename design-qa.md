@@ -75,3 +75,12 @@ User selected the detail B comparison. Applied warm inset backgrounds for neutra
 The mobile navigation button now reveals the existing paper topbar through a transparent background with a subtle border; hover/open states use the warm inset tone. The 44px hit target and keyboard focus outline remain.
 
 Validation: UI regression 163 passed, 352 subtests passed (37 warnings; 18.83s). Removed empty CSS rules afterward (no behavior change). Main preview inspected at 1600x1000 and 390x844; mobile navigation opens, Escape closes it and restores focus to the trigger. Local preview template cache was refreshed by restarting the preview against the same isolated synthetic database. Screenshots: `docs/ui/screenshots/2026-09-19-details-b/`. No production deployment or full backend regression in this CSS-focused round.
+
+## 2026-09-19 — semantic palette consistency
+
+Replaced the remaining default saturated yellow/green/red palette with paper-compatible ochre, grey-green and brick tones. Shared status tokens now cover Bootstrap badges, alerts, solid/outline buttons and their interaction/disabled states, table status backgrounds, progress bars, and validation accents. Badges use light backgrounds and dark text; warning/success/danger meanings remain distinct. Statistics and legacy dashboard chart colours read the same chart tokens. Import-user validation rows and course-record highlight styles now use shared tokens.
+
+Scope: searched application-owned templates and scripts for the default palette; vendor Bootstrap remains untouched. This is not a claim that every possible dynamic screen was visually inspected.
+
+Live browser checks on the synthetic statistics page confirmed badge/alert computed colours, disabled leave action, chart token values, and no document horizontal overflow. Screenshot capture repeatedly failed in the in-app browser even after a fresh tab and viewport reset; no new screenshot evidence or full visual-QA claim is attached to this round. Previous screenshots show older colours. UI/statistics regression results recorded below.
+Final validation: 165 passed, 371 subtests passed, 37 warnings (17.93s); git diff --check passed. No full backend suite or production deployment.

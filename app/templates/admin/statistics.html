@@ -672,11 +672,12 @@ const statusChart = new Chart(statusCtx, {
         datasets: [{
             data: [{{ pending_forms }}, {{ approved_forms }}, {{ rejected_forms }}],
             backgroundColor: [
-                '#ffc107',
-                '#28a745',
-                '#dc3545'
+                getComputedStyle(document.documentElement).getPropertyValue('--chart-warning').trim(),
+                getComputedStyle(document.documentElement).getPropertyValue('--chart-success').trim(),
+                getComputedStyle(document.documentElement).getPropertyValue('--chart-danger').trim()
             ],
-            borderWidth: 2
+            borderWidth: 2,
+            borderColor: '#f4f2ec'
         }]
     },
     options: {
@@ -700,8 +701,8 @@ const trendChart = new Chart(trendCtx, {
         datasets: [{
             label: '提交数量',
             data: {{ trend_data|safe }},
-            borderColor: '#9b493c',
-            backgroundColor: 'rgba(155, 73, 60, 0.1)',
+            borderColor: '#465a70',
+            backgroundColor: 'rgba(70, 90, 112, 0.1)',
             tension: 0.4,
             fill: true
         }]
