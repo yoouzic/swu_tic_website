@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from datetime import date
 from functools import wraps
@@ -12,7 +13,12 @@ from flask import jsonify, request, session
 
 from app.models import User, db
 from app.services.listening_assistant import ListeningAssistantService
-from app.services.listening_assistant_contracts import AssistantQuery
+from app.services.listening_assistant_contracts import (
+    AssistantQuery,
+    normalize_class_for_display,
+    normalize_room,
+    parse_period,
+)
 from app.services.listening_assistant_evidence import (
     AssistantSelectionError,
     revalidate_selection,
@@ -49,6 +55,14 @@ _SNAPSHOT_FIELDS = frozenset({
     'student_grade_class',
 })
 _MISSING = object()
+_EXPECTED_BACKUP_SOURCE_ERRORS = frozenset({
+    'backup source batch id must be a positive integer',
+    'backup source requires an explicit retired batch id',
+    'backup source batch does not exist',
+    'backup source batch must be retired',
+    'backup source batch semester does not match requested semester',
+    'source_batch_id and batch_id must match',
+})
 
 
 def _envelope(success: bool, data: Any = None, message: str = ''):
@@ -165,14 +179,11 @@ def _json_object() -> Mapping[str, Any]:
 
 
 def _required_batch_id(value: object) -> int | str:
-    if isinstance(value, bool) or not isinstance(value, (str, int)):
-        raise TypeError('source_batch_id is required')
-    if isinstance(value, str):
-        normalized = _clean_text(value, 'source_batch_id', required=True)
-        return normalized
-    if value <= 0:
-        raise ValueError('source_batch_id is required')
-    return value
+    if type(value) is int and value > 0:
+        return value
+    if isinstance(value, str) and re.fullmatch(r'[1-9][0-9]*', value):
+        return value
+    raise ValueError('source_batch_id must be a positive integer')
 
 
 def _build_query(
@@ -253,9 +264,38 @@ def _normalize_confirm_query(payload: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError('query and top-level teacher values conflict')
         query.setdefault('teacher_name', top_teacher)
 
+    def _canonical_query_field(key: str, value: object):
+        if key == 'room':
+            normalized = _clean_text(value, 'query.room')
+            canonical = normalize_room(normalized) or None
+            return ('room', canonical), canonical
+        if key == 'period':
+            parsed = parse_period(value)
+            if parsed is not None:
+                return ('period', parsed), list(parsed)
+            return ('raw_period', value), value
+        if key == 'student_grade_class':
+            normalized = _clean_text(value, 'query.student_grade_class')
+            canonical = normalize_class_for_display(normalized) or None
+            return ('student_grade_class', canonical), canonical
+        normalized = _clean_text(value, 'query.semester', required=True)
+        return ('semester', normalized), normalized
+
     for key in ('room', 'period', 'student_grade_class', 'semester'):
-        if key in payload and key not in query:
-            query[key] = payload[key]
+        nested_present = key in query
+        top_level_present = key in payload
+        if not nested_present and not top_level_present:
+            continue
+        if nested_present and top_level_present:
+            nested_identity, nested_value = _canonical_query_field(key, query[key])
+            top_identity, top_value = _canonical_query_field(key, payload[key])
+            if nested_identity != top_identity:
+                raise ValueError(f'query and top-level {key} values conflict')
+            query[key] = nested_value
+        elif nested_present:
+            query[key] = _canonical_query_field(key, query[key])[1]
+        else:
+            query[key] = _canonical_query_field(key, payload[key])[1]
 
     if 'lecture_date' not in query:
         raise ValueError('date is required')
@@ -290,6 +330,12 @@ def _normalize_selection_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
 
     if 'semester' in selection and selection['semester'] is not None:
         selection['semester'] = _clean_text(selection['semester'], 'semester', required=True)
+    if (
+        isinstance(selection.get('source_kind'), str)
+        and selection['source_kind'].strip().lower() == 'backup'
+        and 'source_batch_id' in selection
+    ):
+        selection['source_batch_id'] = _required_batch_id(selection['source_batch_id'])
     if 'reason' in payload and 'fallback_reason' in payload:
         if payload['reason'] != payload['fallback_reason']:
             raise ValueError('reason and fallback_reason must match')
@@ -401,14 +447,19 @@ def listening_assistant_fallback(user):
     except (AssistantSelectionError, ValueError, TypeError) as error:
         return _error_response(str(error) or '请求参数无效', 400)
 
-    result = ListeningAssistantService(semester=semester).search_backup(
-        query,
-        source_batch_id=source_batch_id,
-        semester=semester,
-        rejected_ids=rejected_ids,
-        explicit_fallback=True,
-        reason=reason,
-    )
+    try:
+        result = ListeningAssistantService(semester=semester).search_backup(
+            query,
+            source_batch_id=source_batch_id,
+            semester=semester,
+            rejected_ids=rejected_ids,
+            explicit_fallback=True,
+            reason=reason,
+        )
+    except ValueError as error:
+        if str(error) in _EXPECTED_BACKUP_SOURCE_ERRORS:
+            return _error_response(str(error), 400)
+        raise
 
     data = result.to_public_dict()
     data.update({
@@ -445,6 +496,10 @@ def listening_assistant_confirm(user):
     except AssistantSelectionError as error:
         status, message = _expected_selection_error(error)
         return _error_response(message, status)
+    except ValueError as error:
+        if str(error) in _EXPECTED_BACKUP_SOURCE_ERRORS:
+            return _error_response(str(error), 400)
+        raise
 
     return _envelope(True, _public_confirmation(normalized), '候选已重新验证，请继续提交表单')
 

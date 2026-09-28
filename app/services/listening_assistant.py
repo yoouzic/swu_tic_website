@@ -486,11 +486,18 @@ class ListeningAssistantSearchResult:
     source_label: str = PRIMARY_SOURCE_LABEL
     backup_rescue_available: bool = False
     fallback_reason: str | None = None
+    skipped_invalid_rows: int = 0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, 'candidates', tuple(self.candidates))
         if self.always_show_none is not True:
             raise ValueError('always_show_none must be True')
+        if (
+            isinstance(self.skipped_invalid_rows, bool)
+            or not isinstance(self.skipped_invalid_rows, int)
+            or self.skipped_invalid_rows < 0
+        ):
+            raise ValueError('skipped_invalid_rows must be a non-negative integer')
         if self.fallback_reason is not None:
             object.__setattr__(
                 self,
@@ -511,6 +518,7 @@ class ListeningAssistantSearchResult:
         return {
             'candidates': [candidate.to_public_dict() for candidate in self.candidates],
             'always_show_none': True,
+            'skipped_invalid_rows': self.skipped_invalid_rows,
             'source_kind': self.source_kind,
             'source_label': self.source_label,
             'backup_rescue_available': self.backup_rescue_available,
@@ -696,6 +704,7 @@ class ListeningAssistantService:
             calendar = _load_calendar(self._calendar, semester)
 
         candidates: list[Candidate] = []
+        skipped_invalid_rows = 0
         for row in rows:
             date_match = _match_date(row, query.lecture_date, calendar)
             if not date_match.matched:
@@ -720,6 +729,7 @@ class ListeningAssistantService:
 
             period = _entry_period(row)
             if period is None:
+                skipped_invalid_rows += 1
                 continue
 
             conflicts: list[str] = []
@@ -737,6 +747,7 @@ class ListeningAssistantService:
             source_batch_id = _optional_text(_value(row, 'source_batch_id', 'batch_id'))
             source_row = _value(row, 'source_row')
             entry_id = _text(_value(row, 'entry_id'))
+            row_candidate_failed = False
             for room in room_tokens:
                 identity_source_row = _identity_source_row(
                     source_batch_id=source_batch_id,
@@ -791,9 +802,12 @@ class ListeningAssistantService:
                     # A malformed row must not break a later route's complete
                     # result.  Candidate construction remains the final safety
                     # boundary for required fields such as date and period.
+                    row_candidate_failed = True
                     continue
 
                 candidates.append(candidate)
+            if row_candidate_failed:
+                skipped_invalid_rows += 1
 
         candidates.sort(
             key=lambda candidate: (
@@ -832,6 +846,7 @@ class ListeningAssistantService:
         return ListeningAssistantSearchResult(
             candidates=tuple(deduplicated),
             always_show_none=True,
+            skipped_invalid_rows=skipped_invalid_rows,
             source_kind=source_kind,
             source_label=source_label,
             backup_rescue_available=(

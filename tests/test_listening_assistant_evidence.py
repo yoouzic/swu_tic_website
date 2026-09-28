@@ -488,12 +488,19 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
         form_data = self._valid_form_payload()
         form_data['assistant_payload'] = json.dumps({'stage': 'confirmed'})
 
-        with mock.patch(
-            'app.blueprints.user.forms.revalidate_selection',
-            side_effect=RuntimeError('database unavailable'),
+        for error in (
+            RuntimeError('database unavailable'),
+            ValueError('loader returned an invalid value'),
+            TypeError('loader contract failure'),
         ):
-            with self.assertRaises(RuntimeError):
-                self.client.post('/user/submit_form', data=form_data)
+            with self.subTest(error=type(error).__name__):
+                with mock.patch(
+                    'app.blueprints.user.forms.revalidate_selection',
+                    side_effect=error,
+                ):
+                    with self.assertRaises(type(error)) as raised:
+                        self.client.post('/user/submit_form', data=form_data)
+                self.assertIs(type(raised.exception), type(error))
 
         self.assertEqual(LectureForm.query.filter_by(listener_number=self.user.number).count(), 0)
         self.assertEqual(ListeningAssistantEvidence.query.filter_by(user_id=self.user.id).count(), 0)

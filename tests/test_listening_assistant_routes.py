@@ -20,7 +20,7 @@ from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_datab
 LOOKUP_DATE = date(2026, 9, 18)
 SEMESTER = '2026-2027-1'
 PRIMARY_BATCH = 'batch-current'
-BACKUP_BATCH = 'retired-7'
+BACKUP_BATCH = '7'
 
 
 def schedule_entry(
@@ -329,6 +329,56 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self._assert_envelope(response, success=False)
 
+        for invalid_batch in (0, -1, True, '0', '01', '+7', ' retired-7', 'retired-7'):
+            invalid = dict(base)
+            invalid['source_batch_id'] = invalid_batch
+            with self.subTest(invalid_batch=invalid_batch):
+                response = self.client.post(
+                    '/user/api/listening-assistant/fallback',
+                    json=invalid,
+                )
+                self.assertEqual(response.status_code, 400)
+                self._assert_envelope(response, success=False)
+
+    def test_fallback_wraps_expected_batch_errors_but_not_operational_errors(self):
+        self._login()
+        payload = {
+            'date': '2026-09-18',
+            'teacher': '备用老师',
+            'rejected_ids': [],
+            'reason': 'no_result',
+            'source_batch_id': BACKUP_BATCH,
+            'semester': SEMESTER,
+        }
+
+        for error_message in (
+            'backup source batch does not exist',
+            'backup source batch must be retired',
+            'backup source batch semester does not match requested semester',
+        ):
+            with self.subTest(error_message=error_message):
+                with mock.patch(
+                    'app.blueprints.user.listening_assistant.ListeningAssistantService.search_backup',
+                    side_effect=ValueError(error_message),
+                ):
+                    response = self.client.post(
+                        '/user/api/listening-assistant/fallback',
+                        json=payload,
+                    )
+                self.assertEqual(response.status_code, 400)
+                self._assert_envelope(response, success=False)
+
+        with mock.patch(
+            'app.blueprints.user.listening_assistant.ListeningAssistantService.search_backup',
+            side_effect=ValueError('database unavailable'),
+        ):
+            with self.assertRaises(ValueError) as raised:
+                self.client.post(
+                    '/user/api/listening-assistant/fallback',
+                    json=payload,
+                )
+            self.assertIs(type(raised.exception), ValueError)
+
     def test_fallback_rejects_an_explicit_false_fallback_flag(self):
         self._login()
         response = self.client.post(
@@ -456,6 +506,54 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         self.assertNotIn('date', query)
         self.assertNotIn('teacher', query)
 
+    def test_confirm_rejects_nested_top_level_field_conflicts_and_canonicalizes_equal_values(self):
+        self._login()
+        candidate = self._primary_candidate()
+        base = self._confirm_payload(candidate)
+        base['query'].update({
+            'room': '8-309',
+            'period': [3, 4],
+            'student_grade_class': '2024级计算机1班',
+            'semester': SEMESTER,
+        })
+
+        for field, value in (
+            ('room', '9-101'),
+            ('period', [5, 6]),
+            ('student_grade_class', '2025级计算机1班'),
+            ('semester', '2025-2026-2'),
+        ):
+            payload = dict(base)
+            payload['query'] = dict(base['query'])
+            payload[field] = value
+            with self.subTest(field=field):
+                response = self.client.post(
+                    '/user/api/listening-assistant/confirm',
+                    json=payload,
+                )
+                self.assertEqual(response.status_code, 400)
+                self._assert_envelope(response, success=False)
+
+        equal = dict(base)
+        equal['query'] = dict(base['query'])
+        equal['query']['room'] = '08-0309'
+        equal['query']['period'] = '第3-4节'
+        equal['room'] = '8-309'
+        equal['period'] = [3, 4]
+        equal['student_grade_class'] = '2024级计算机1班'
+        equal['semester'] = SEMESTER
+
+        response = self.client.post(
+            '/user/api/listening-assistant/confirm',
+            json=equal,
+        )
+        result = self._assert_envelope(response, success=True)
+        query = result['data']['query']
+        self.assertEqual(query['room'], '8-309')
+        self.assertEqual(query['period'], [3, 4])
+        self.assertEqual(query['student_grade_class'], '2024级计算机1班')
+        self.assertEqual(query['semester'], SEMESTER)
+
     def test_confirm_requires_explicit_semester_provenance(self):
         self._login()
         candidate = self._primary_candidate()
@@ -529,6 +627,26 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         self.assertTrue(result['data']['confirmation']['acknowledged_source'])
         self.assertTrue(result['data']['confirmation']['explicit_fallback'])
         self.assertEqual(result['data']['confirmation']['fallback_reason'], 'rejected_candidates')
+
+        payload['source_batch_id'] = 'retired-7'
+        response = self.client.post(
+            '/user/api/listening-assistant/confirm',
+            json=payload,
+        )
+        self.assertEqual(response.status_code, 400)
+        self._assert_envelope(response, success=False)
+
+        payload['source_batch_id'] = BACKUP_BATCH
+        with mock.patch(
+            'app.blueprints.user.listening_assistant.ListeningAssistantService.search_backup',
+            side_effect=ValueError('backup source batch must be retired'),
+        ):
+            response = self.client.post(
+                '/user/api/listening-assistant/confirm',
+                json=payload,
+            )
+        self.assertEqual(response.status_code, 400)
+        self._assert_envelope(response, success=False)
 
     def test_confirm_rejects_unsafe_overrides_without_db_or_evidence_side_effects(self):
         self._login()

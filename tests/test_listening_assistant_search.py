@@ -255,6 +255,9 @@ def test_period_mismatch_is_kept_with_a_stable_warning_and_invalid_rows_are_skip
     assert len(result.candidates) == 1
     assert result.candidates[0].conflicts == ('period_mismatch',)
     assert result.candidates[0].needs_confirmation is True
+    assert result.skipped_invalid_rows == 1
+    assert result.always_show_none is True
+    assert result.to_public_dict()['skipped_invalid_rows'] == 1
 
 
 def test_search_prefers_room_specific_venue_period_when_both_period_values_are_valid():

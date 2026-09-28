@@ -349,7 +349,7 @@ def submit_form():
         if assistant_payload is not None:
             try:
                 assistant_selection = revalidate_selection(user, assistant_payload)
-            except (AssistantSelectionError, ValueError, TypeError):
+            except AssistantSelectionError:
                 # Revalidation happens before any form mutation.  Keep the
                 # route's normal HTML/flash error shape and fail closed.
                 db.session.rollback()
