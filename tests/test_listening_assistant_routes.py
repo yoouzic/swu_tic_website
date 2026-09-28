@@ -531,6 +531,27 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         self.assertEqual(LectureForm.query.count(), before_forms)
         self.assertEqual(ListeningAssistantEvidence.query.count(), before_evidence)
 
+    def test_confirm_returns_unavailable_json_when_primary_authority_is_not_ready(self):
+        self._login()
+        candidate = self._primary_candidate()
+        unavailable = ScheduleSourceUnavailable(
+            status='INVALID_AUTHORITY',
+        )
+
+        with mock.patch(
+            'app.services.listening_assistant.load_schedule_entries',
+            side_effect=unavailable,
+        ):
+            response = self.client.post(
+                '/user/api/listening-assistant/confirm',
+                json=self._confirm_payload(candidate),
+            )
+
+        self.assertEqual(response.status_code, 503)
+        payload = self._assert_envelope(response, success=False)
+        self.assertIsNone(payload['data'])
+        self.assertIn('unavailable', payload['message'])
+
     def test_confirm_requires_explicit_override_for_fresh_primary_period_conflict(self):
         self._login()
         response = self.client.get(

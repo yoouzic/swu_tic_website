@@ -519,6 +519,8 @@ def listening_assistant_confirm(user):
     except AssistantSelectionError as error:
         status, message = _expected_selection_error(error)
         return _error_response(message, status)
+    except ScheduleSourceUnavailable as error:
+        return _envelope(False, None, error.message), 503
     except ValueError as error:
         if str(error) in _EXPECTED_BACKUP_SOURCE_ERRORS:
             return _error_response(str(error), 400)
