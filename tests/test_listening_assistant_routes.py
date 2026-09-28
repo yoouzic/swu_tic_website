@@ -20,6 +20,7 @@ from app.models import (
     User,
     db,
 )
+from app.services.listening_assistant import ListeningAssistantService
 from app.services.listening_assistant_contracts import ScheduleEntry
 from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
@@ -418,6 +419,68 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
                 response = self.client.post(
                     '/user/api/listening-assistant/fallback',
                     json=invalid,
+                )
+                self.assertEqual(response.status_code, 400)
+                self._assert_envelope(response, success=False)
+
+    def test_fallback_passes_optional_period_and_class_filters_to_search(self):
+        self._login()
+        payload = {
+            'date': '2026-09-18',
+            'teacher': '备用老师',
+            'period': '第3-4节',
+            'student_grade_class': '2024级计算机1班',
+            'rejected_ids': [],
+            'reason': 'no_result',
+            'source_batch_id': BACKUP_BATCH,
+            'semester': SEMESTER,
+        }
+        captured = {}
+        original_search_backup = ListeningAssistantService.search_backup
+
+        def capture_search(service, query, **kwargs):
+            captured['query'] = query
+            captured['kwargs'] = kwargs
+            return original_search_backup(service, query, **kwargs)
+
+        with mock.patch(
+            'app.blueprints.user.listening_assistant.ListeningAssistantService.search_backup',
+            new=capture_search,
+        ):
+            response = self.client.post(
+                '/user/api/listening-assistant/fallback',
+                json=payload,
+            )
+
+        result = self._assert_envelope(response, success=True)
+        self.assertEqual(captured['query'].period, (3, 4))
+        self.assertEqual(
+            captured['query'].student_grade_class,
+            '2024级计算机1班',
+        )
+        self.assertEqual(captured['kwargs']['source_batch_id'], BACKUP_BATCH)
+        self.assertTrue(result['data']['needs_confirmation'])
+
+    def test_fallback_rejects_malformed_optional_period_and_class_filters(self):
+        self._login()
+        base = {
+            'date': '2026-09-18',
+            'teacher': '备用老师',
+            'rejected_ids': [],
+            'reason': 'no_result',
+            'source_batch_id': BACKUP_BATCH,
+            'semester': SEMESTER,
+        }
+        for field, value in (
+            ('period', 'not-a-period'),
+            ('student_grade_class', 123),
+        ):
+            payload = dict(base)
+            payload[field] = value
+            with self.subTest(field=field):
+                response = self.client.post(
+                    '/user/api/listening-assistant/fallback',
+                    json=payload,
                 )
                 self.assertEqual(response.status_code, 400)
                 self._assert_envelope(response, success=False)

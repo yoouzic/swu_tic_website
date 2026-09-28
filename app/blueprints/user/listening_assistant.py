@@ -465,7 +465,16 @@ def listening_assistant_fallback(user):
             raise ValueError('reason must be one of: no_result, rejected_candidates')
         if payload.get('explicit_fallback', True) is not True:
             raise ValueError('fallback requires an explicit fallback')
-        query = _build_query(lecture_date=lecture_date, teacher=teacher)
+        student_grade_class = _clean_text(
+            payload.get('student_grade_class'),
+            'student_grade_class',
+        )
+        query = _build_query(
+            lecture_date=lecture_date,
+            teacher=teacher,
+            period=payload.get('period'),
+            student_grade_class=student_grade_class,
+        )
         rejected_ids = _normalize_rejected_ids(payload.get('rejected_ids'))
     except (AssistantSelectionError, ValueError, TypeError) as error:
         return _error_response(str(error) or '请求参数无效', 400)
