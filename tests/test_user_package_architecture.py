@@ -65,8 +65,10 @@ class UserPackageArchitectureTests(unittest.TestCase):
             for node in tree.body:
                 if isinstance(node, ast.FunctionDef):
                     functions[node.name] = path.name
-        self.assertEqual(len(functions), 28)
+        self.assertEqual(len(functions), 48)
         expected = {
+            '_is_draft_scalar', '_normalize_assistant_draft_payload',
+            '_extract_assistant_submission_payload',
             '_load_lecture_form_draft', '_delete_lecture_form_draft',
             '_parse_draft_payload', '_normalize_draft_payload',
             '_normalize_submission_value', '_build_submission_signature',
@@ -78,7 +80,13 @@ class UserPackageArchitectureTests(unittest.TestCase):
             'api_create_reservation', 'api_cancel_reservation',
             'api_my_reservations', 'api_update_my_reservation',
             'api_delete_my_reservation', 'api_unused_reservations',
-            'api_time_suggestion',
+            'api_time_suggestion', '_envelope', '_error_response',
+            '_assistant_login_required', '_clean_text', '_parse_date',
+            '_normalize_rejected_ids', '_query_rejected_ids', '_json_object',
+            '_required_batch_id', '_build_query', '_normalize_confirm_query',
+            '_normalize_selection_payload', '_public_confirmation',
+            '_expected_selection_error', 'listening_assistant_candidates',
+            'listening_assistant_fallback', 'listening_assistant_confirm',
         }
         self.assertEqual(set(functions), expected)
         self.assertEqual(len(functions), len(expected))
