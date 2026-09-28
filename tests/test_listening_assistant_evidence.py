@@ -232,6 +232,36 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
         self.assertNotIn('真实签名', stored)
         self.assertNotIn('课程反馈内容', stored)
 
+    def test_revalidation_requires_an_explicit_confirmed_stage(self):
+        service, _loader = self._service(primary=[schedule_entry()])
+        payload, _candidate = self._payload(service)
+
+        payload.pop('stage')
+        with self.assertRaises(ValueError):
+            revalidate_selection(self.user, payload, service=service, semester=SEMESTER)
+
+        payload['stage'] = 'review'
+        with self.assertRaises(ValueError):
+            revalidate_selection(self.user, payload, service=service, semester=SEMESTER)
+
+    def test_revalidation_propagates_operational_search_errors(self):
+        service, _loader = self._service(primary=[schedule_entry()])
+        payload, _candidate = self._payload(service)
+
+        class OperationalFailureService:
+            _semester = None
+
+            def search(self, *args, **kwargs):
+                raise RuntimeError('database unavailable')
+
+        with self.assertRaises(RuntimeError):
+            revalidate_selection(
+                self.user,
+                payload,
+                service=OperationalFailureService(),
+                semester=SEMESTER,
+            )
+
     def test_stale_or_unknown_candidate_is_rejected_against_fresh_results(self):
         service, loader = self._service(primary=[schedule_entry()])
         payload, _candidate = self._payload(service)
@@ -381,6 +411,70 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
         self.assertEqual(form.teacher_name, '张老师')
         self.assertEqual(form.course_title, '数据结构')
         self.assertEqual(ListeningAssistantEvidence.query.filter_by(user_id=self.user.id).count(), 1)
+
+    def test_submit_preserves_explicitly_cleared_assistant_overrides(self):
+        service, _loader = self._service(primary=[schedule_entry()])
+        assistant_payload, _candidate = self._payload(service)
+        assistant_payload['overrides'] = {
+            'lecture_date': None,
+            'room': None,
+            'period': None,
+            'teacher_name': None,
+            'teacher_college': None,
+            'course_title': None,
+            'student_grade_class': None,
+        }
+        form_data = self._valid_form_payload()
+        form_data.update({
+            'lecture_date': '',
+            'lecture_date_display': '',
+            'start_period': '',
+            'end_period': '',
+            'class_period': '',
+            'lecture_location': '',
+            'teacher_name': '',
+            'teacher_college': '',
+            'course_title': '',
+            'student_grade_class': '',
+            'assistant_payload': json.dumps(assistant_payload, ensure_ascii=False),
+        })
+        with mock.patch(
+            'app.blueprints.user.forms.revalidate_selection',
+            side_effect=lambda user, payload, **kwargs: revalidate_selection(
+                user,
+                payload,
+                service=service,
+                semester=SEMESTER,
+            ),
+        ):
+            response = self.client.post('/user/submit_form', data=form_data)
+
+        self.assertEqual(response.status_code, 302)
+        form = LectureForm.query.filter_by(listener_number=self.user.number).first()
+        for field_name in (
+            'lecture_date',
+            'class_period',
+            'lecture_location',
+            'teacher_name',
+            'teacher_college',
+            'course_title',
+            'student_grade_class',
+        ):
+            self.assertEqual(getattr(form, field_name), '')
+
+    def test_submit_does_not_hide_operational_revalidation_errors(self):
+        form_data = self._valid_form_payload()
+        form_data['assistant_payload'] = json.dumps({'stage': 'confirmed'})
+
+        with mock.patch(
+            'app.blueprints.user.forms.revalidate_selection',
+            side_effect=RuntimeError('database unavailable'),
+        ):
+            with self.assertRaises(RuntimeError):
+                self.client.post('/user/submit_form', data=form_data)
+
+        self.assertEqual(LectureForm.query.filter_by(listener_number=self.user.number).count(), 0)
+        self.assertEqual(ListeningAssistantEvidence.query.filter_by(user_id=self.user.id).count(), 0)
 
     def test_legacy_submit_without_assistant_keeps_existing_path_without_evidence(self):
         response = self.client.post('/user/submit_form', data=self._valid_form_payload())

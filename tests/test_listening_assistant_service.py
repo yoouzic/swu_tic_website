@@ -295,7 +295,6 @@ def test_confirmation_result_accepts_only_safe_json_override_payloads():
         {'period': {'start': 3, 'end': 4}},
         {'period': [3, '4']},
         {'period': 'bad'},
-        {'period': None},
         {'lecture_date': 'not-a-date'},
         {'lecture_date': '2026-02-30'},
         {'lecture_date': '2026-9-18'},
@@ -305,6 +304,55 @@ def test_confirmation_result_accepts_only_safe_json_override_payloads():
     for overrides in invalid_overrides:
         with pytest.raises(ValueError, match='overrides'):
             ConfirmationResult(confirmed=True, overrides=overrides)
+
+
+def test_confirmation_result_normalizes_text_overrides_and_rejects_controls_and_oversized_values():
+    normalized = ConfirmationResult(
+        confirmed=True,
+        overrides={
+            'course_title': '  数据\u3000结构  ',
+            'teacher_name': ' 张老师 ',
+        },
+    )
+    assert normalized.overrides == {
+        'course_title': '数据 结构',
+        'teacher_name': '张老师',
+    }
+
+    with pytest.raises(ValueError, match='control'):
+        ConfirmationResult(
+            confirmed=True,
+            overrides={'teacher_name': '张\n老师'},
+        )
+    with pytest.raises(ValueError, match='100'):
+        ConfirmationResult(
+            confirmed=True,
+            overrides={'teacher_name': '张' * 101},
+        )
+    with pytest.raises(ValueError, match='200'):
+        ConfirmationResult(
+            confirmed=True,
+            overrides={'course_title': '课' * 201},
+        )
+
+
+def test_confirmation_result_preserves_explicit_none_for_safe_clear_overrides():
+    normalized = ConfirmationResult(
+        confirmed=True,
+        overrides={
+            'lecture_date': None,
+            'room': None,
+            'period': None,
+            'course_title': None,
+        },
+    )
+
+    assert normalized.overrides == {
+        'lecture_date': None,
+        'room': None,
+        'period': None,
+        'course_title': None,
+    }
 
 
 def test_confirmation_result_rejects_duplicate_override_aliases_even_when_equal():

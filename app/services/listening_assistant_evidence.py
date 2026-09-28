@@ -337,11 +337,11 @@ def revalidate_selection(
     if unknown:
         raise AssistantSelectionError('assistant payload contains unsupported fields')
 
-    stage = None
-    if 'stage' in selection_payload:
-        stage = _text(selection_payload.get('stage'), field_name='stage', required=True)
-        if stage not in CONFIRMED_STAGES:
-            raise AssistantSelectionError('assistant selection is not confirmed')
+    if 'stage' not in selection_payload:
+        raise AssistantSelectionError('assistant selection stage is required')
+    stage = _text(selection_payload.get('stage'), field_name='stage', required=True)
+    if stage not in CONFIRMED_STAGES:
+        raise AssistantSelectionError('assistant selection is not confirmed')
 
     source_kind = _text(
         selection_payload.get('source_kind'),
@@ -432,7 +432,7 @@ def revalidate_selection(
                 semester=selected_semester,
                 rejected_ids=rejected_ids,
             )
-    except Exception as error:
+    except (AssistantSelectionError, ValueError, TypeError) as error:
         raise AssistantSelectionError(
             'assistant source could not be revalidated',
             code='source_revalidation_failed',

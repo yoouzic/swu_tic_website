@@ -12,7 +12,11 @@ from app.models import (
 from app.security import login_required
 from app.services.form_bindings import reconcile_registration_usage_flags
 from app.services.listening_assistant_contracts import SAFE_OVERRIDE_KEYS
-from app.services.listening_assistant_evidence import create_evidence, revalidate_selection
+from app.services.listening_assistant_evidence import (
+    AssistantSelectionError,
+    create_evidence,
+    revalidate_selection,
+)
 from datetime import datetime, timedelta
 from app.utils.audit_tags import build_audit_tag, build_week_correction_tag
 from app.utils.leave_management import append_leave_system_note, get_pending_leave_makeup, record_leave_makeup_form
@@ -345,7 +349,7 @@ def submit_form():
         if assistant_payload is not None:
             try:
                 assistant_selection = revalidate_selection(user, assistant_payload)
-            except Exception:
+            except (AssistantSelectionError, ValueError, TypeError):
                 # Revalidation happens before any form mutation.  Keep the
                 # route's normal HTML/flash error shape and fail closed.
                 db.session.rollback()
@@ -354,11 +358,21 @@ def submit_form():
 
         if assistant_selection is not None:
             snapshot = assistant_selection.field_snapshot
+            assistant_overrides = assistant_selection.overrides
 
-            def _assistant_or_form(field_name):
+            def _assistant_override_is_clear(*field_names):
+                return any(
+                    field_name in assistant_overrides
+                    and assistant_overrides[field_name] is None
+                    for field_name in field_names
+                )
+
+            def _assistant_or_form(field_name, *override_aliases):
                 manual_value = request.form.get(field_name)
                 if manual_value is not None and str(manual_value).strip():
                     return manual_value
+                if _assistant_override_is_clear(field_name, *override_aliases):
+                    return ''
                 assistant_value = snapshot.get(field_name)
                 if assistant_value is not None and str(assistant_value).strip():
                     return assistant_value
@@ -367,11 +381,12 @@ def submit_form():
             manual_date = request.form.get('lecture_date_display')
             if manual_date is None or not str(manual_date).strip():
                 manual_date = request.form.get('lecture_date')
-            lecture_date = (
-                manual_date
-                if manual_date is not None and str(manual_date).strip()
-                else snapshot.get('lecture_date') or ''
-            )
+            if manual_date is not None and str(manual_date).strip():
+                lecture_date = manual_date
+            elif _assistant_override_is_clear('lecture_date'):
+                lecture_date = ''
+            else:
+                lecture_date = snapshot.get('lecture_date') or ''
 
             manual_period = request.form.get('class_period')
             if manual_period is not None and str(manual_period).strip():
@@ -384,10 +399,12 @@ def submit_form():
                     f"第{request.form.get('start_period', '')}-"
                     f"{request.form.get('end_period', '')}节"
                 )
+            elif _assistant_override_is_clear('class_period', 'period'):
+                class_period = ''
             else:
                 class_period = snapshot.get('class_period') or ''
 
-            lecture_location = _assistant_or_form('lecture_location')
+            lecture_location = _assistant_or_form('lecture_location', 'room')
             teacher_name = _assistant_or_form('teacher_name')
             teacher_college = _assistant_or_form('teacher_college')
             course_title = _assistant_or_form('course_title')

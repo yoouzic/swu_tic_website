@@ -41,6 +41,19 @@ _TEXT_OVERRIDE_KEYS = frozenset({
     'teacher_college',
     'student_grade_class',
 })
+# Keep assistant text overrides within the corresponding LectureForm column
+# widths.  These are finite safety limits, not validation of the final form;
+# the existing LectureForm fields remain the authoritative submission boundary.
+TEXT_OVERRIDE_MAX_LENGTHS = {
+    'lecture_date': 100,
+    'lecture_location': 100,
+    'room': 100,
+    'class_period': 50,
+    'course_title': 200,
+    'teacher_name': 100,
+    'teacher_college': 100,
+    'student_grade_class': 100,
+}
 _OVERRIDE_ALIAS_PAIRS = (
     ('room', 'lecture_location'),
     ('period', 'class_period'),
@@ -133,7 +146,18 @@ def _normalize_text_override(key: str, value: object) -> str | None:
         return None
     if not isinstance(value, str):
         raise ValueError(f'overrides.{key} must be text or None')
-    return value
+    if any(unicodedata.category(char) == 'Cc' for char in value):
+        raise ValueError(f'overrides.{key} contains a control character')
+    normalized = unicodedata.normalize('NFKC', value).replace('\u3000', ' ')
+    if any(unicodedata.category(char) == 'Cc' for char in normalized):
+        raise ValueError(f'overrides.{key} contains a control character')
+    normalized = re.sub(r'\s+', ' ', normalized).strip()
+    maximum = TEXT_OVERRIDE_MAX_LENGTHS[key]
+    if len(normalized) > maximum:
+        raise ValueError(
+            f'overrides.{key} exceeds maximum length {maximum}'
+        )
+    return normalized
 
 
 def _normalize_lecture_date_override(value: object) -> str | None:
@@ -148,7 +172,9 @@ def _normalize_lecture_date_override(value: object) -> str | None:
     return value
 
 
-def _normalize_period_override(value: object) -> str | int | list[int]:
+def _normalize_period_override(value: object) -> str | int | list[int] | None:
+    if value is None:
+        return None
     if isinstance(value, str):
         if parse_period(value) is None:
             raise ValueError('overrides.period must be a valid period')
@@ -735,6 +761,7 @@ __all__ = [
     'Period',
     'SAFE_OVERRIDE_KEYS',
     'ScheduleEntry',
+    'TEXT_OVERRIDE_MAX_LENGTHS',
     'normalize_class_for_display',
     'normalize_room',
     'overlap_periods',
