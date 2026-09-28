@@ -352,6 +352,24 @@ def test_confirmation_result_preserves_valid_boolean_flags():
     assert result.acknowledged_source is True
 
 
+def test_confirmation_result_overrides_are_deep_copy_isolated():
+    source_overrides = {
+        'period': [3, 4],
+        'student_grade_class': '2024级计算机科学与技术1班',
+    }
+    result = ConfirmationResult(confirmed=True, overrides=source_overrides)
+
+    source_overrides['period'][0] = 20
+    exposed = result.overrides
+    exposed['period'][1] = 20
+    exposed['student_grade_class'] = '被修改'
+
+    assert result.overrides == {
+        'period': [3, 4],
+        'student_grade_class': '2024级计算机科学与技术1班',
+    }
+
+
 @pytest.mark.parametrize(
     ('field_name', 'value'),
     (
@@ -379,6 +397,37 @@ def test_schedule_entry_accepts_valid_weekday_and_one_based_source_row():
 
     assert entry.weekday == 7
     assert entry.source_row == 1
+
+
+def test_schedule_entry_keeps_original_and_normalized_provenance_values():
+    original_room = ' 第1教学楼 A101 '
+    original_period = ' 第3-4节 '
+    original_class = ' ２０２４ 级 计算机科学与技术 1 班 '
+    entry = ScheduleEntry(
+        entry_id='primary:batch-1:row-2',
+        room=original_room,
+        period=original_period,
+        student_grade_class=original_class,
+    )
+    explicit = ScheduleEntry(
+        entry_id='primary:batch-1:row-3',
+        room='第1教学楼A101',
+        period='第3-4节',
+        student_grade_class='2024级计算机科学与技术1班',
+        location_raw=' explicit room ',
+        period_raw=' explicit period ',
+        class_raw=' explicit class ',
+    )
+
+    assert entry.room == '1教A101'
+    assert entry.period == (3, 4)
+    assert entry.student_grade_class == '2024级计算机科学与技术1班'
+    assert entry.location_raw == original_room
+    assert entry.period_raw == original_period
+    assert entry.class_raw == original_class
+    assert explicit.location_raw == ' explicit room '
+    assert explicit.period_raw == ' explicit period '
+    assert explicit.class_raw == ' explicit class '
 
 
 @pytest.mark.parametrize('weekday', (0, 8, '1', True))
@@ -463,3 +512,28 @@ def test_stable_candidate_id_distinguishes_invalid_period_from_missing_period():
     invalid_period = stable_candidate_id(**common, period='bad')
 
     assert missing_period != invalid_period
+
+
+def test_stable_candidate_id_marks_nonfinite_and_malformed_periods():
+    common = {
+        'source_kind': 'primary',
+        'source_batch_id': 'batch-1',
+        'source_row': 2,
+        'lecture_date': date(2026, 9, 18),
+        'room': '8-309',
+        'course_code': 'CS101',
+        'course_title': '数据结构',
+        'teacher_name': '张老师',
+        'student_grade_class': '2024级计算机科学与技术1班',
+    }
+    missing_period = stable_candidate_id(**common, period=None)
+    nan_period = stable_candidate_id(**common, period=float('nan'))
+    positive_infinity = stable_candidate_id(**common, period=float('inf'))
+    negative_infinity = stable_candidate_id(**common, period=float('-inf'))
+    malformed_list = stable_candidate_id(**common, period=[3, 'bad'])
+
+    assert nan_period != missing_period
+    assert positive_infinity != missing_period
+    assert negative_infinity != missing_period
+    assert malformed_list != missing_period
+    assert len({nan_period, positive_infinity, negative_infinity, malformed_list}) == 4

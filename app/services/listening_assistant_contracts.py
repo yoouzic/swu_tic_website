@@ -12,6 +12,7 @@ import json
 import math
 import re
 import unicodedata
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from numbers import Real
@@ -45,6 +46,7 @@ _OVERRIDE_ALIAS_PAIRS = (
     ('room', 'lecture_location'),
     ('period', 'class_period'),
 )
+_RAW_VALUE_UNSET = object()
 
 
 def _text(value: object) -> str:
@@ -297,6 +299,39 @@ def _identity_date(value: object) -> str | None:
     return normalized.isoformat() if normalized else None
 
 
+def _period_raw_identity(value: object) -> str:
+    """Return a deterministic, typed marker for an invalid non-None period."""
+    if isinstance(value, str):
+        return f'str:{value!r}'
+    if isinstance(value, bool):
+        return f'bool:{value!r}'
+    if isinstance(value, int):
+        return f'int:{value}'
+    if isinstance(value, float):
+        if math.isnan(value):
+            return 'float:nan'
+        if math.isinf(value):
+            return 'float:+inf' if value > 0 else 'float:-inf'
+        return f'float:{value!r}'
+    if isinstance(value, list):
+        parts = ','.join(_period_raw_identity(item) for item in value)
+        return f'list:[{parts}]'
+    if isinstance(value, tuple):
+        parts = ','.join(_period_raw_identity(item) for item in value)
+        return f'tuple:[{parts}]'
+    if isinstance(value, Mapping):
+        pairs = sorted(
+            (
+                _period_raw_identity(key),
+                _period_raw_identity(item),
+            )
+            for key, item in value.items()
+        )
+        return f'mapping:{pairs!r}'
+    value_type = f'{type(value).__module__}.{type(value).__qualname__}'
+    return f'{value_type}:invalid'
+
+
 def stable_candidate_id(
     *,
     source_kind: str,
@@ -324,10 +359,8 @@ def stable_candidate_id(
         'teacher_name': _identity_text(teacher_name),
         'student_grade_class': normalize_class_for_display(student_grade_class),
     }
-    if normalized_period is None:
-        raw_period = _text(period)
-        if raw_period:
-            identity['period_raw'] = raw_period
+    if normalized_period is None and period is not None:
+        identity['period_raw'] = _period_raw_identity(period)
     serialized = json.dumps(
         identity,
         ensure_ascii=False,
@@ -410,11 +443,19 @@ class ScheduleEntry:
     source_label: str = ''
     source_batch_id: str | None = None
     source_row: int | None = None
-    location_raw: str | None = None
-    period_raw: str | None = None
-    class_raw: str | None = None
+    location_raw: Any = _RAW_VALUE_UNSET
+    period_raw: Any = _RAW_VALUE_UNSET
+    class_raw: Any = _RAW_VALUE_UNSET
 
     def __post_init__(self) -> None:
+        original_room = self.room
+        original_period = self.period
+        original_class = self.student_grade_class
+        raw_location = (
+            original_room if self.location_raw is _RAW_VALUE_UNSET else self.location_raw
+        )
+        raw_period = original_period if self.period_raw is _RAW_VALUE_UNSET else self.period_raw
+        raw_class = original_class if self.class_raw is _RAW_VALUE_UNSET else self.class_raw
         entry_id = _text(self.entry_id)
         if not entry_id:
             raise ValueError('entry_id is required')
@@ -467,8 +508,9 @@ class ScheduleEntry:
             normalize_class_for_display(self.student_grade_class),
         )
         object.__setattr__(self, 'source_batch_id', _optional_text(self.source_batch_id))
-        for field_name in ('location_raw', 'period_raw', 'class_raw'):
-            object.__setattr__(self, field_name, _optional_text(getattr(self, field_name)))
+        object.__setattr__(self, 'location_raw', raw_location)
+        object.__setattr__(self, 'period_raw', raw_period)
+        object.__setattr__(self, 'class_raw', raw_class)
 
 
 @dataclass(frozen=True)
@@ -576,7 +618,7 @@ class Candidate:
         }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class ConfirmationResult:
     """Result of server-side confirmation with closed, JSON-safe overrides.
 
@@ -589,22 +631,39 @@ class ConfirmationResult:
     candidate_id: str | None = None
     source_kind: str | None = None
     source_batch_id: str | None = None
-    overrides: Mapping[str, Any] = field(default_factory=dict)
     acknowledged_source: bool = False
     message: str = ''
     error_code: str | None = None
+    _overrides: dict[str, Any] = field(default_factory=dict, repr=False)
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.confirmed, bool):
+    def __init__(
+        self,
+        confirmed: bool,
+        candidate_id: str | None = None,
+        source_kind: str | None = None,
+        source_batch_id: str | None = None,
+        overrides: Mapping[str, Any] | None = None,
+        acknowledged_source: bool = False,
+        message: str = '',
+        error_code: str | None = None,
+    ) -> None:
+        if not isinstance(confirmed, bool):
             raise ValueError('confirmed must be a bool')
-        if not isinstance(self.acknowledged_source, bool):
+        if not isinstance(acknowledged_source, bool):
             raise ValueError('acknowledged_source must be a bool')
-        object.__setattr__(self, 'candidate_id', _optional_text(self.candidate_id))
-        object.__setattr__(self, 'source_kind', _optional_text(self.source_kind))
-        object.__setattr__(self, 'source_batch_id', _optional_text(self.source_batch_id))
-        object.__setattr__(self, 'overrides', _normalize_overrides(self.overrides))
-        object.__setattr__(self, 'message', _text(self.message))
-        object.__setattr__(self, 'error_code', _optional_text(self.error_code))
+        object.__setattr__(self, 'confirmed', confirmed)
+        object.__setattr__(self, 'candidate_id', _optional_text(candidate_id))
+        object.__setattr__(self, 'source_kind', _optional_text(source_kind))
+        object.__setattr__(self, 'source_batch_id', _optional_text(source_batch_id))
+        object.__setattr__(self, '_overrides', deepcopy(_normalize_overrides(overrides)))
+        object.__setattr__(self, 'acknowledged_source', acknowledged_source)
+        object.__setattr__(self, 'message', _text(message))
+        object.__setattr__(self, 'error_code', _optional_text(error_code))
+
+    @property
+    def overrides(self) -> dict[str, Any]:
+        """Return a copy so callers cannot mutate validated contract state."""
+        return deepcopy(self._overrides)
 
 
 __all__ = [
