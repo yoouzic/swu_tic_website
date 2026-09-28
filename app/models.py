@@ -652,6 +652,12 @@ class ScheduleImportBatch(db.Model):
         cascade='all, delete-orphan',
         order_by='ScheduleImportRow.source_row',
     )
+    listening_assistant_entries = db.relationship(
+        'ListeningAssistantScheduleEntry',
+        backref='batch',
+        cascade='all, delete-orphan',
+        order_by='ListeningAssistantScheduleEntry.source_row',
+    )
 
     __table_args__ = (
         db.Index('ix_schedule_import_batch_semester_status', 'semester', 'status'),
@@ -696,6 +702,92 @@ class ScheduleImportRow(db.Model):
 
     def __repr__(self):
         return f'<ScheduleImportRow {self.id} batch={self.batch_id} row={self.source_row}>'
+
+
+class ListeningAssistantScheduleEntry(db.Model):
+    """Additive, batch-linked index for universal listening-assistant reads.
+
+    The searchable text is normalized at write time, while the ``*_raw``
+    columns retain the source cells needed to explain a recommendation.  This
+    table is deliberately separate from the legacy ``Course`` aggregate so a
+    schedule import can be replaced or retired without rewriting that model.
+    """
+
+    __tablename__ = 'listening_assistant_schedule_entries'
+
+    id = db.Column(db.Integer, primary_key=True)
+    batch_id = db.Column(
+        db.Integer,
+        db.ForeignKey('schedule_import_batches.id'),
+        nullable=False,
+        index=True,
+    )
+    source_row = db.Column(db.Integer, nullable=False)
+
+    semester = db.Column(db.String(50), nullable=False, index=True)
+    academic_year = db.Column(db.String(20), nullable=True)
+
+    course_code = db.Column(db.String(100), nullable=True)
+    selection_code = db.Column(db.String(100), nullable=True)
+    teacher_name = db.Column(db.Text, nullable=True)
+    teacher_college = db.Column(db.Text, nullable=True)
+    course_title = db.Column(db.Text, nullable=True)
+    student_grade_class = db.Column(db.Text, nullable=True)
+    student_grade_class_raw = db.Column(db.Text, nullable=True)
+
+    venue_id = db.Column(db.String(100), nullable=True)
+    location_normalized = db.Column(db.Text, nullable=True)
+    location_raw = db.Column(db.Text, nullable=True)
+
+    start_week_raw = db.Column(db.Text, nullable=True)
+    weekday_raw = db.Column(db.Text, nullable=True)
+    period_raw = db.Column(db.Text, nullable=True)
+    venue_start_week_raw = db.Column(db.Text, nullable=True)
+    venue_period_raw = db.Column(db.Text, nullable=True)
+
+    # Parsed lookup values are additive conveniences; raw columns remain the
+    # source of truth when a workbook value is malformed or ambiguous.
+    weekday = db.Column(db.Integer, nullable=True)
+    period_start = db.Column(db.Integer, nullable=True)
+    period_end = db.Column(db.Integer, nullable=True)
+    venue_period_start = db.Column(db.Integer, nullable=True)
+    venue_period_end = db.Column(db.Integer, nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            'batch_id',
+            'source_row',
+            name='uq_listening_assistant_schedule_batch_source',
+        ),
+        db.Index(
+            'ix_listening_assistant_schedule_batch_semester',
+            'batch_id',
+            'semester',
+        ),
+        db.Index(
+            'ix_listening_assistant_schedule_batch_location_raw',
+            'batch_id',
+            'location_raw',
+        ),
+        db.Index(
+            'ix_listening_assistant_schedule_batch_location',
+            'batch_id',
+            'location_normalized',
+        ),
+        db.Index(
+            'ix_listening_assistant_schedule_batch_teacher',
+            'batch_id',
+            'teacher_name',
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f'<ListeningAssistantScheduleEntry batch={self.batch_id} '
+            f'row={self.source_row}>'
+        )
 
 
 class ScheduleSemesterSelection(db.Model):

@@ -7,6 +7,7 @@ from app.models import Teacher, Venue, Course, db
 from app.security import role_required
 from app.utils.env_config import env_path
 from app.services.schedule_snapshots import persist_import_snapshot
+from app.services.listening_assistant_schedule import persist_listening_assistant_entries
 import hashlib
 import pandas as pd
 import os
@@ -322,11 +323,12 @@ def import_schedule_data():
                 stats['errors'].append(f"处理课程数据时出错（课程号：{course_code}-{selection_code}）：{str(e)}")
         
         # 同步生成 canonical row-level schedule snapshot（与上述写入同一事务）。
-        persist_import_snapshot(
+        imported_batches = persist_import_snapshot(
             df,
             source_filename=file.filename or 'schedule.xlsx',
             source_sha256=source_sha256,
         )
+        persist_listening_assistant_entries(df, imported_batches)
 
         # 提交数据库更改
         db.session.commit()

@@ -169,6 +169,9 @@ def create_app(config_override: dict | None = None):
     from app.review_automation import init_review_automation
     init_review_automation(app)
 
+    from app.services.listening_assistant_cli import register_cli as register_listening_assistant_cli
+    register_listening_assistant_cli(app)
+
     # 7. Runtime directories
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
