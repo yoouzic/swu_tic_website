@@ -437,7 +437,10 @@ def _match_date(entry: object, query_date: date, calendar: object) -> _DateMatch
     if _has_date_value(raw_date):
         exact_date = _date_value(raw_date)
         if exact_date is None or exact_date != query_date:
-            return _DateMatch(False)
+            return _DateMatch(
+                False,
+                conflict='invalid_lecture_date' if exact_date is None else None,
+            )
         entry_weekday = _entry_weekday(entry)
         if entry_weekday is not None and entry_weekday != query_date.isoweekday():
             return _DateMatch(False)
@@ -449,7 +452,7 @@ def _match_date(entry: object, query_date: date, calendar: object) -> _DateMatch
 
     week_range = _entry_week_range(entry)
     if week_range is _INVALID_WEEK_DATA:
-        return _DateMatch(False)
+        return _DateMatch(False, conflict='invalid_week_data')
     if calendar is None or week_range is None:
         return _DateMatch(True, needs_confirmation=True, conflict='date_needs_confirmation')
 
@@ -707,6 +710,8 @@ class ListeningAssistantService:
         skipped_invalid_rows = 0
         for row in rows:
             date_match = _match_date(row, query.lecture_date, calendar)
+            if date_match.conflict in {'invalid_lecture_date', 'invalid_week_data'}:
+                skipped_invalid_rows += 1
             if not date_match.matched:
                 continue
 

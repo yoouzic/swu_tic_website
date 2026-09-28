@@ -1,7 +1,7 @@
 import os
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime
 from unittest import mock
 
 from werkzeug.security import generate_password_hash
@@ -12,7 +12,13 @@ os.environ['INSTANCE_DIR'] = TEST_DB_DIR.name
 os.environ['SECRET_KEY'] = 'test-secret-key'
 
 from app.app import app
-from app.models import LectureForm, ListeningAssistantEvidence, User, db
+from app.models import (
+    LectureForm,
+    ListeningAssistantEvidence,
+    ScheduleImportBatch,
+    User,
+    db,
+)
 from app.services.listening_assistant_contracts import ScheduleEntry
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
 
@@ -233,6 +239,36 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         self.assertNotIn('student_signature2', candidate)
         self.assertNotIn('course_feedback', candidate)
         self.assertNotIn('evaluation', candidate)
+
+    def test_primary_get_exposes_safe_retired_batch_discovery_for_semester(self):
+        retired_batch = ScheduleImportBatch(
+            semester=SEMESTER,
+            academic_year='2026',
+            source_filename='retired.xlsx',
+            source_sha256='a' * 64,
+            status='retired',
+            row_count=1,
+            created_at=datetime(2026, 9, 1, 12, 0, 0),
+        )
+        db.session.add(retired_batch)
+        db.session.commit()
+        self._login()
+
+        response = self.client.get(
+            '/user/api/listening-assistant/candidates',
+            query_string={
+                'date': '2026-09-18',
+                'room': '8-309',
+                'semester': SEMESTER,
+            },
+        )
+
+        payload = self._assert_envelope(response, success=True)
+        self.assertTrue(payload['data']['backup_rescue_available'])
+        self.assertEqual(
+            payload['data']['backup_source_batch_id'],
+            str(retired_batch.id),
+        )
 
     def test_get_rejects_invalid_date_or_missing_anchor_as_json(self):
         self._login()

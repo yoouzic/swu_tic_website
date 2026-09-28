@@ -19,10 +19,12 @@ from app.services.listening_assistant_contracts import (
     normalize_room,
     parse_period,
 )
+from app.services.listening_assistant_schedule import latest_retired_batch_id
 from app.services.listening_assistant_evidence import (
     AssistantSelectionError,
     revalidate_selection,
 )
+from app.services.schedule_snapshots import resolve_current_schedule_snapshot
 from app.utils.user_status import is_user_active
 
 from . import user_bp
@@ -419,12 +421,23 @@ def listening_assistant_candidates(user):
             raise ValueError('room or teacher is required')
     except (AssistantSelectionError, ValueError, TypeError) as error:
         return _error_response(str(error) or '请求参数无效', 400)
-    result = ListeningAssistantService(semester=semester).search(
+
+    resolved_semester = semester
+    if resolved_semester is None:
+        resolved_semester = resolve_current_schedule_snapshot().semester or None
+    backup_source_batch_id = latest_retired_batch_id(resolved_semester)
+    result = ListeningAssistantService(
+        semester=resolved_semester,
+        backup_source_batch_id=backup_source_batch_id,
+    ).search(
         query,
-        semester=semester,
+        semester=resolved_semester,
         rejected_ids=_query_rejected_ids(),
     )
-    return _envelope(True, result.to_public_dict(), '候选查询完成')
+    data = result.to_public_dict()
+    if backup_source_batch_id is not None:
+        data['backup_source_batch_id'] = str(backup_source_batch_id)
+    return _envelope(True, data, '候选查询完成')
 
 
 @user_bp.route('/api/listening-assistant/fallback', methods=['POST'])

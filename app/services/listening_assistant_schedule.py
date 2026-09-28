@@ -222,6 +222,29 @@ def _batch_map(batches: Iterable[ScheduleImportBatch]) -> dict[str, ScheduleImpo
     return {_semester_key(batch.semester): batch for batch in batches}
 
 
+def latest_retired_batch_id(semester: str | None) -> int | None:
+    """Return the newest retired batch id for one normalized semester.
+
+    This is a read-only discovery helper.  It never selects or mutates the
+    current snapshot, and callers must still pass the returned id explicitly
+    to the backup loader for its retired/same-semester validation.
+    """
+    requested_semester = _semester_key(semester)
+    if not requested_semester:
+        return None
+
+    batches = ScheduleImportBatch.query.filter_by(
+        status=RETIRED,
+    ).order_by(
+        ScheduleImportBatch.created_at.desc(),
+        ScheduleImportBatch.id.desc(),
+    ).all()
+    for batch in batches:
+        if _semester_key(batch.semester) == requested_semester:
+            return batch.id
+    return None
+
+
 def _period_bounds(value: object) -> tuple[int | None, int | None]:
     period = parse_period(value) if not _is_missing(value) else None
     if period is None:
@@ -506,6 +529,7 @@ __all__ = [
     'BACKUP_SOURCE_LABEL',
     'PRIMARY_SOURCE_LABEL',
     'ensure_listening_assistant_schema',
+    'latest_retired_batch_id',
     'load_schedule_entries',
     'persist_listening_assistant_entries',
 ]

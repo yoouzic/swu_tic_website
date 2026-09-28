@@ -23,6 +23,7 @@ from app.services.listening_assistant_schedule import (
     _requested_batch_id,
     _source_row,
     load_schedule_entries,
+    latest_retired_batch_id,
     ensure_listening_assistant_schema,
     persist_listening_assistant_entries,
 )
@@ -335,6 +336,26 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         self.assertEqual({entry.source_batch_id for entry in entries}, {str(current_batch.id)})
         self.assertEqual({entry.teacher_name for entry in entries}, {'当前教师'})
         self.assertNotEqual(first_batch.id, current_batch.id)
+
+    def test_latest_retired_batch_id_is_normalized_same_semester_and_deterministic(self):
+        self._persist(
+            schedule_frame(teacher='第一批次'),
+            filename='first.xlsx',
+        )
+        latest_retired = self._persist(
+            schedule_frame(teacher='第二批次'),
+            filename='second.xlsx',
+        )[0]
+        self._persist(
+            schedule_frame(teacher='当前批次'),
+            filename='current.xlsx',
+        )
+
+        self.assertEqual(
+            latest_retired_batch_id(f'  {SEMESTER}  '),
+            latest_retired.id,
+        )
+        self.assertIsNone(latest_retired_batch_id('2025-2026-2'))
 
     def test_backup_loader_requires_explicit_retired_batch_and_never_merges_history(self):
         first_batch = self._persist(

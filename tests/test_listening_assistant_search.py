@@ -260,6 +260,22 @@ def test_period_mismatch_is_kept_with_a_stable_warning_and_invalid_rows_are_skip
     assert result.to_public_dict()['skipped_invalid_rows'] == 1
 
 
+def test_unparseable_nonempty_lecture_date_is_counted_without_raw_row_data():
+    malformed_date = SimpleNamespace(
+        entry_id='primary:batch-current:malformed-date',
+        lecture_date='not-a-date',
+    )
+    service, _ = service_with(primary=[entry(1), malformed_date])
+
+    result = service.search(AssistantQuery(LOOKUP_DATE, room='8-309'))
+
+    public = result.to_public_dict()
+    assert len(result.candidates) == 1
+    assert public['skipped_invalid_rows'] == 1
+    assert public['always_show_none'] is True
+    assert 'not-a-date' not in str(public)
+
+
 def test_search_prefers_room_specific_venue_period_when_both_period_values_are_valid():
     row = SimpleNamespace(
         entry_id='primary:batch-current:1',
