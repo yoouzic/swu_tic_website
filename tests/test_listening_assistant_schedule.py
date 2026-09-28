@@ -175,6 +175,7 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         self.assertEqual(loaded[0].student_grade_class, '2023级计算机1班')
         self.assertEqual(loaded[0].location_raw, '32-302')
         self.assertEqual(loaded[0].period_raw, '第3-4节')
+        self.assertEqual(loaded[0].venue_period_raw, '第3-4节')
         self.assertEqual(loaded[0].start_week_raw, '1-16')
         self.assertEqual(loaded[0].venue_start_week_raw, '1-16')
         self.assertEqual(loaded[0].source_row, 2)
@@ -262,6 +263,18 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
 
         self.assertEqual(loaded[0].period, (5, 6))
         self.assertEqual(loaded[0].period_raw, '第5-6节')
+
+    def test_contract_preserves_malformed_venue_period_when_main_period_is_used(self):
+        frame = schedule_frame()
+        frame.loc[0, '上课节次'] = '第3-4节'
+        frame.loc[0, '场地上课节次'] = 'not-a-period'
+
+        self._persist(frame, filename='venue-period-malformed.xlsx')
+        loaded = load_schedule_entries(source_kind='primary', semester=SEMESTER)
+
+        self.assertEqual(loaded[0].period, (3, 4))
+        self.assertEqual(loaded[0].period_raw, '第3-4节')
+        self.assertEqual(loaded[0].venue_period_raw, 'not-a-period')
 
     def test_requested_batch_id_accepts_only_positive_builtin_ints_and_canonical_digit_strings(self):
         for value in (1, 7, '1', '7', '52'):

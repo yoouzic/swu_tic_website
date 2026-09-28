@@ -512,6 +512,7 @@ class ScheduleEntry:
     class_raw: Any = _RAW_VALUE_UNSET
     start_week_raw: str | None = None
     venue_start_week_raw: str | None = None
+    venue_period_raw: str | None = None
 
     def __post_init__(self) -> None:
         original_room = self.room
@@ -583,6 +584,7 @@ class ScheduleEntry:
             'venue_start_week_raw',
             _raw_string(self.venue_start_week_raw),
         )
+        object.__setattr__(self, 'venue_period_raw', _raw_string(self.venue_period_raw))
 
 
 @dataclass(frozen=True)
@@ -678,6 +680,7 @@ class Candidate:
             'period': list(self.period),
             'weekday': self.weekday,
             'course_code': self.course_code,
+            'selection_code': self.selection_code,
             'course_title': self.course_title,
             'teacher_name': self.teacher_name,
             'teacher_college': self.teacher_college,

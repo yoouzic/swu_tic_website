@@ -176,6 +176,27 @@ def test_multi_location_rows_match_any_room_token_and_keep_teacher_presentations
     assert all(';' not in candidate.room for candidate in teacher_result.candidates)
 
 
+def test_location_tokens_split_slashes_and_newlines_without_splitting_room_hyphens():
+    rows = [
+        entry(1, room='A101/B102', teacher='张三'),
+        entry(2, room='C201\nC202', teacher='张三'),
+        entry(3, room='33-0613', teacher='张三'),
+    ]
+    service, _ = service_with(primary=rows)
+
+    teacher_result = service.search(AssistantQuery(LOOKUP_DATE, teacher_name='张三'))
+    room_result = service.search(AssistantQuery(LOOKUP_DATE, room='33-0613'))
+
+    assert {candidate.room for candidate in teacher_result.candidates} == {
+        'A101',
+        'B102',
+        'C201',
+        'C202',
+        '33-613',
+    }
+    assert [candidate.room for candidate in room_result.candidates] == ['33-613']
+
+
 def test_date_matching_rejects_other_exact_dates_and_marks_weekday_only_rows_for_confirmation():
     rows = [
         entry(1, lecture_date=LOOKUP_DATE),
@@ -263,6 +284,34 @@ def test_search_prefers_room_specific_venue_period_when_both_period_values_are_v
 
     assert result.candidates[0].period == (5, 6)
     assert result.candidates[0].conflicts == ()
+
+
+def test_search_preserves_malformed_venue_period_as_confirmation_conflict():
+    row = SimpleNamespace(
+        entry_id='primary:batch-current:1',
+        lecture_date=LOOKUP_DATE,
+        room='8-309',
+        period=(3, 4),
+        period_raw='第3-4节',
+        venue_period_raw='not-a-period',
+        course_code='C001',
+        selection_code='S001',
+        course_title='数据结构',
+        teacher_name='张三',
+        teacher_college='计算机学院',
+        student_grade_class='2024级计算机1班',
+        weekday=5,
+        source_kind='primary',
+        source_batch_id='batch-current',
+        source_row=1,
+    )
+    service, _ = service_with(primary=[row])
+
+    result = service.search(AssistantQuery(LOOKUP_DATE, room='8-309'))
+
+    assert result.candidates[0].period == (3, 4)
+    assert result.candidates[0].conflicts == ('venue_period_needs_confirmation',)
+    assert result.candidates[0].needs_confirmation is True
 
 
 def test_exact_visible_duplicates_are_deduped_but_class_variants_and_rejections_remain_distinct():
@@ -646,6 +695,7 @@ def test_public_candidates_contain_no_personal_fields():
         'period',
         'weekday',
         'course_code',
+        'selection_code',
         'course_title',
         'teacher_name',
         'teacher_college',
@@ -656,3 +706,19 @@ def test_public_candidates_contain_no_personal_fields():
         'conflicts',
         'needs_confirmation',
     }
+
+
+def test_selection_code_is_public_safe_identity_for_distinct_candidate_cards():
+    service, _ = service_with(
+        primary=[
+            entry(1, selection_code='S-A'),
+            entry(2, selection_code='S-B'),
+        ],
+    )
+
+    candidates = service.search(AssistantQuery(LOOKUP_DATE, room='8-309')).candidates
+    payloads = [candidate.to_public_dict() for candidate in candidates]
+
+    assert {payload['selection_code'] for payload in payloads} == {'S-A', 'S-B'}
+    assert all('phone' not in payload for payload in payloads)
+    assert all('student_signature1' not in payload for payload in payloads)

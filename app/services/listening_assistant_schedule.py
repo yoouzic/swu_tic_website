@@ -444,6 +444,7 @@ def _as_contract(
         class_raw=entry.student_grade_class_raw,
         start_week_raw=entry.start_week_raw,
         venue_start_week_raw=entry.venue_start_week_raw,
+        venue_period_raw=entry.venue_period_raw,
     )
 
 

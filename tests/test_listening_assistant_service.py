@@ -133,6 +133,7 @@ def test_schedule_entry_and_confirmation_contracts_keep_source_identity():
         source_row=2,
         start_week_raw='1-16',
         venue_start_week_raw='1-16',
+        venue_period_raw='第3-4节',
     )
     confirmation = ConfirmationResult(
         confirmed=True,
@@ -146,6 +147,7 @@ def test_schedule_entry_and_confirmation_contracts_keep_source_identity():
     assert entry.period == (3, 4)
     assert entry.start_week_raw == '1-16'
     assert entry.venue_start_week_raw == '1-16'
+    assert entry.venue_period_raw == '第3-4节'
     assert confirmation.confirmed is True
     assert confirmation.candidate_id == 'primary:batch-1:row-2'
     assert confirmation.overrides == {'room': '1教A101'}
@@ -189,6 +191,7 @@ def test_candidate_serializes_source_and_conflicts_without_personal_data():
         'period',
         'weekday',
         'course_code',
+        'selection_code',
         'course_title',
         'teacher_name',
         'teacher_college',

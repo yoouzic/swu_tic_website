@@ -156,16 +156,24 @@ def _entry_period(entry: object) -> tuple[int, int] | None:
     return parse_period((start, end)) if start is not None and end is not None else None
 
 
-_LOCATION_SEPARATOR_RE = re.compile(r'[;；,，、]+')
+_LOCATION_SEPARATOR_RE = re.compile(r'[;；,，、/／\r\n]+')
 
 
 def _entry_room_tokens(entry: object) -> tuple[str, ...]:
     tokens: list[str] = []
+    saw_location_source = False
     for name in ('location_raw', 'location_normalized', 'room'):
+        if name == 'room' and saw_location_source:
+            continue
         value = _value(entry, name, default=None)
-        text = _text(value)
+        if isinstance(value, str):
+            text = unicodedata.normalize('NFKC', value).replace('\u3000', ' ')
+        else:
+            text = _text(value)
         if not text:
             continue
+        if name != 'room':
+            saw_location_source = True
         for part in _LOCATION_SEPARATOR_RE.split(text):
             normalized = normalize_room(part)
             if normalized and normalized not in tokens:
@@ -180,6 +188,11 @@ def _entry_room(entry: object) -> str:
 
 def _entry_teacher(entry: object) -> str:
     return _text(_value(entry, 'teacher_name', 'teacher_name_raw'))
+
+
+def _venue_period_needs_confirmation(entry: object) -> bool:
+    raw_value = _value(entry, 'venue_period_raw', default=None)
+    return bool(_text(raw_value)) and parse_period(raw_value) is None
 
 
 def _entry_class(entry: object) -> str:
@@ -710,6 +723,8 @@ class ListeningAssistantService:
             conflicts: list[str] = []
             if date_match.conflict:
                 conflicts.append(date_match.conflict)
+            if _venue_period_needs_confirmation(row):
+                conflicts.append('venue_period_needs_confirmation')
             if query.period is not None and not overlap_periods(period, query.period):
                 conflicts.append('period_mismatch')
 
