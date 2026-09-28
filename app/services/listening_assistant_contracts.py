@@ -12,7 +12,6 @@ import json
 import math
 import re
 import unicodedata
-from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from numbers import Real
@@ -47,6 +46,42 @@ _OVERRIDE_ALIAS_PAIRS = (
     ('period', 'class_period'),
 )
 _RAW_VALUE_UNSET = object()
+
+
+class FrozenList(list):
+    """JSON-compatible list that rejects all in-place mutation."""
+
+    def _reject_mutation(self, *args, **kwargs):
+        raise TypeError('FrozenList is immutable')
+
+    __setitem__ = _reject_mutation
+    __delitem__ = _reject_mutation
+    __iadd__ = _reject_mutation
+    __imul__ = _reject_mutation
+    append = _reject_mutation
+    clear = _reject_mutation
+    extend = _reject_mutation
+    insert = _reject_mutation
+    pop = _reject_mutation
+    remove = _reject_mutation
+    reverse = _reject_mutation
+    sort = _reject_mutation
+
+
+class FrozenDict(dict):
+    """JSON-compatible dict that rejects all in-place mutation."""
+
+    def _reject_mutation(self, *args, **kwargs):
+        raise TypeError('FrozenDict is immutable')
+
+    __setitem__ = _reject_mutation
+    __delitem__ = _reject_mutation
+    __ior__ = _reject_mutation
+    clear = _reject_mutation
+    pop = _reject_mutation
+    popitem = _reject_mutation
+    setdefault = _reject_mutation
+    update = _reject_mutation
 
 
 def _text(value: object) -> str:
@@ -153,6 +188,14 @@ def _normalize_overrides(value: object) -> dict[str, Any]:
         else:
             normalized[key] = _normalize_period_override(item)
     return normalized
+
+
+def _freeze_json_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return FrozenDict({key: _freeze_json_value(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return FrozenList(_freeze_json_value(item) for item in value)
+    return value
 
 
 def _normalized_date(value: object, *, field_name: str) -> date:
@@ -313,6 +356,18 @@ def _period_raw_identity(value: object) -> str:
         if math.isinf(value):
             return 'float:+inf' if value > 0 else 'float:-inf'
         return f'float:{value!r}'
+    if isinstance(value, Real):
+        value_type = f'{type(value).__module__}.{type(value).__qualname__}'
+        try:
+            numeric_value = float(value)
+        except (OverflowError, TypeError, ValueError):
+            return f'{value_type}:repr={value!r}'
+        if math.isnan(numeric_value):
+            return f'{value_type}:nan'
+        if math.isinf(numeric_value):
+            sign = '+' if numeric_value > 0 else '-'
+            return f'{value_type}:{sign}inf'
+        return f'{value_type}:repr={value!r}'
     if isinstance(value, list):
         parts = ','.join(_period_raw_identity(item) for item in value)
         return f'list:[{parts}]'
@@ -618,7 +673,7 @@ class Candidate:
         }
 
 
-@dataclass(frozen=True, init=False)
+@dataclass(frozen=True)
 class ConfirmationResult:
     """Result of server-side confirmation with closed, JSON-safe overrides.
 
@@ -631,39 +686,26 @@ class ConfirmationResult:
     candidate_id: str | None = None
     source_kind: str | None = None
     source_batch_id: str | None = None
+    overrides: Mapping[str, Any] = field(default_factory=dict)
     acknowledged_source: bool = False
     message: str = ''
     error_code: str | None = None
-    _overrides: dict[str, Any] = field(default_factory=dict, repr=False)
 
-    def __init__(
-        self,
-        confirmed: bool,
-        candidate_id: str | None = None,
-        source_kind: str | None = None,
-        source_batch_id: str | None = None,
-        overrides: Mapping[str, Any] | None = None,
-        acknowledged_source: bool = False,
-        message: str = '',
-        error_code: str | None = None,
-    ) -> None:
-        if not isinstance(confirmed, bool):
+    def __post_init__(self) -> None:
+        if not isinstance(self.confirmed, bool):
             raise ValueError('confirmed must be a bool')
-        if not isinstance(acknowledged_source, bool):
+        if not isinstance(self.acknowledged_source, bool):
             raise ValueError('acknowledged_source must be a bool')
-        object.__setattr__(self, 'confirmed', confirmed)
-        object.__setattr__(self, 'candidate_id', _optional_text(candidate_id))
-        object.__setattr__(self, 'source_kind', _optional_text(source_kind))
-        object.__setattr__(self, 'source_batch_id', _optional_text(source_batch_id))
-        object.__setattr__(self, '_overrides', deepcopy(_normalize_overrides(overrides)))
-        object.__setattr__(self, 'acknowledged_source', acknowledged_source)
-        object.__setattr__(self, 'message', _text(message))
-        object.__setattr__(self, 'error_code', _optional_text(error_code))
-
-    @property
-    def overrides(self) -> dict[str, Any]:
-        """Return a copy so callers cannot mutate validated contract state."""
-        return deepcopy(self._overrides)
+        object.__setattr__(self, 'candidate_id', _optional_text(self.candidate_id))
+        object.__setattr__(self, 'source_kind', _optional_text(self.source_kind))
+        object.__setattr__(self, 'source_batch_id', _optional_text(self.source_batch_id))
+        object.__setattr__(
+            self,
+            'overrides',
+            _freeze_json_value(_normalize_overrides(self.overrides)),
+        )
+        object.__setattr__(self, 'message', _text(self.message))
+        object.__setattr__(self, 'error_code', _optional_text(self.error_code))
 
 
 __all__ = [

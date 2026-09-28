@@ -1,4 +1,7 @@
 import os
+import json
+from dataclasses import asdict, replace
+from fractions import Fraction
 from pathlib import Path
 import subprocess
 import sys
@@ -361,13 +364,34 @@ def test_confirmation_result_overrides_are_deep_copy_isolated():
 
     source_overrides['period'][0] = 20
     exposed = result.overrides
-    exposed['period'][1] = 20
-    exposed['student_grade_class'] = '被修改'
+    with pytest.raises(TypeError):
+        exposed['period'][1] = 20
+    with pytest.raises(TypeError):
+        exposed['student_grade_class'] = '被修改'
 
     assert result.overrides == {
         'period': [3, 4],
         'student_grade_class': '2024级计算机科学与技术1班',
     }
+
+
+def test_confirmation_result_keeps_standard_dataclass_interop_and_json_shape():
+    result = ConfirmationResult(
+        confirmed=True,
+        acknowledged_source=True,
+        overrides={'period': [3, 4]},
+    )
+
+    serialized = asdict(result)
+    replaced = replace(result, confirmed=False)
+
+    assert 'overrides' in serialized
+    assert '_overrides' not in serialized
+    assert serialized['overrides'] == {'period': [3, 4]}
+    assert json.dumps(serialized, ensure_ascii=False)
+    assert replaced.confirmed is False
+    assert replaced.acknowledged_source is True
+    assert replaced.overrides == {'period': [3, 4]}
 
 
 @pytest.mark.parametrize(
@@ -537,3 +561,22 @@ def test_stable_candidate_id_marks_nonfinite_and_malformed_periods():
     assert negative_infinity != missing_period
     assert malformed_list != missing_period
     assert len({nan_period, positive_infinity, negative_infinity, malformed_list}) == 4
+
+
+def test_stable_candidate_id_marks_distinct_non_builtin_real_values():
+    common = {
+        'source_kind': 'primary',
+        'source_batch_id': 'batch-1',
+        'source_row': 2,
+        'lecture_date': date(2026, 9, 18),
+        'room': '8-309',
+        'course_code': 'CS101',
+        'course_title': '数据结构',
+        'teacher_name': '张老师',
+        'student_grade_class': '2024级计算机科学与技术1班',
+    }
+    zero = stable_candidate_id(**common, period=Fraction(0, 1))
+    twenty_one = stable_candidate_id(**common, period=Fraction(21, 1))
+    twenty_two = stable_candidate_id(**common, period=Fraction(22, 1))
+
+    assert len({zero, twenty_one, twenty_two}) == 3
