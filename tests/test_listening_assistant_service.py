@@ -219,8 +219,9 @@ def test_candidate_conflicts_none_is_empty_and_non_iterable_is_rejected_clearly(
 
 def test_confirmation_result_accepts_only_safe_json_override_payloads():
     source_overrides = {
-        'lecture_location': {'building': '1教', 'room': 'A101'},
-        'class_period': [3, 4],
+        'lecture_location': '1教A101',
+        'class_period': '第3-4节',
+        'period': [3, 4],
         'student_grade_class': None,
     }
     confirmation = ConfirmationResult(
@@ -229,8 +230,9 @@ def test_confirmation_result_accepts_only_safe_json_override_payloads():
     )
 
     assert confirmation.overrides == {
-        'lecture_location': {'building': '1教', 'room': 'A101'},
-        'class_period': [3, 4],
+        'lecture_location': '1教A101',
+        'class_period': '第3-4节',
+        'period': [3, 4],
         'student_grade_class': None,
     }
     assert confirmation.overrides is not source_overrides
@@ -240,8 +242,15 @@ def test_confirmation_result_accepts_only_safe_json_override_payloads():
         {'contact_phone1': '13800000000'},
         {'unsupported_field': 'value'},
         {'lecture_location': {'phone': '13800000000'}},
+        {'lecture_location': ['1教A101']},
+        {'course_title': 123},
+        {'class_period': {'value': '第3-4节'}},
         {'lecture_location': object()},
         {'class_period': (3, 4)},
+        {'period': {'start': 3, 'end': 4}},
+        {'period': [3, '4']},
+        {'period': 'bad'},
+        {'period': None},
         {'class_period': float('nan')},
     )
     for overrides in invalid_overrides:
@@ -306,6 +315,20 @@ def test_candidate_weekday_is_serialized_after_validation():
     assert candidate.to_public_dict()['weekday'] == 1
 
 
+@pytest.mark.parametrize('needs_confirmation', ('true', 1, None, object()))
+def test_candidate_requires_a_real_boolean_confirmation_flag(needs_confirmation):
+    with pytest.raises(ValueError, match='needs_confirmation'):
+        Candidate(
+            candidate_id='primary:batch-1:row-2',
+            lecture_date=date(2026, 9, 18),
+            room='8-309',
+            period=(3, 4),
+            course_title='数据结构',
+            teacher_name='张老师',
+            needs_confirmation=needs_confirmation,
+        )
+
+
 def test_stable_candidate_id_is_deterministic_and_source_scoped():
     common = {
         'source_kind': 'primary',
@@ -327,3 +350,22 @@ def test_stable_candidate_id_is_deterministic_and_source_scoped():
     assert first == second
     assert first.startswith('primary:batch-1:')
     assert first != changed_row
+
+
+def test_stable_candidate_id_distinguishes_invalid_period_from_missing_period():
+    common = {
+        'source_kind': 'primary',
+        'source_batch_id': 'batch-1',
+        'source_row': 2,
+        'lecture_date': date(2026, 9, 18),
+        'room': '8-309',
+        'course_code': 'CS101',
+        'course_title': '数据结构',
+        'teacher_name': '张老师',
+        'student_grade_class': '2024级计算机科学与技术1班',
+    }
+
+    missing_period = stable_candidate_id(**common, period=None)
+    invalid_period = stable_candidate_id(**common, period='bad')
+
+    assert missing_period != invalid_period

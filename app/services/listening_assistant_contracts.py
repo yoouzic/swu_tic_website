@@ -31,16 +31,16 @@ SAFE_OVERRIDE_KEYS = frozenset({
     'teacher_college',
     'student_grade_class',
 })
-_SENSITIVE_KEY_MARKERS = (
-    'phone',
-    'signature',
-    'password',
-    'credential',
-    'token',
-    'secret',
-    'apikey',
-    'student_id',
-)
+_TEXT_OVERRIDE_KEYS = frozenset({
+    'lecture_date',
+    'lecture_location',
+    'room',
+    'class_period',
+    'course_title',
+    'teacher_name',
+    'teacher_college',
+    'student_grade_class',
+})
 
 
 def _text(value: object) -> str:
@@ -80,40 +80,33 @@ def _validated_optional_int(
     return value
 
 
-def _normalized_key_for_safety(key: str) -> str:
-    return re.sub(r'[^a-z0-9_]+', '_', key.casefold()).strip('_')
+def _normalize_text_override(key: str, value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f'overrides.{key} must be text or None')
+    return value
 
 
-def _is_sensitive_key(key: str) -> bool:
-    normalized = _normalized_key_for_safety(key)
-    return any(marker in normalized for marker in _SENSITIVE_KEY_MARKERS)
-
-
-def _normalize_json_safe_override_value(value: object, *, path: str) -> Any:
-    if value is None or isinstance(value, (str, bool, int)):
+def _normalize_period_override(value: object) -> str | int | list[int]:
+    if isinstance(value, str):
+        if parse_period(value) is None:
+            raise ValueError('overrides.period must be a valid period')
         return value
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError(f'overrides value at {path} must be JSON-safe')
+    if isinstance(value, bool):
+        raise ValueError('overrides.period must be a valid period')
+    if isinstance(value, int):
+        if parse_period(value) is None:
+            raise ValueError('overrides.period must be a valid period')
         return value
-    if isinstance(value, list):
-        return [
-            _normalize_json_safe_override_value(item, path=f'{path}[{index}]')
-            for index, item in enumerate(value)
-        ]
-    if isinstance(value, Mapping):
-        normalized: dict[str, Any] = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise ValueError(f'overrides key at {path} must be a string')
-            if _is_sensitive_key(key):
-                raise ValueError(f'overrides contains sensitive key at {path}.{key}')
-            normalized[key] = _normalize_json_safe_override_value(
-                item,
-                path=f'{path}.{key}',
-            )
-        return normalized
-    raise ValueError(f'overrides value at {path} must be JSON-safe')
+    if isinstance(value, (list, tuple)):
+        if (
+            len(value) == 2
+            and all(isinstance(item, int) and not isinstance(item, bool) for item in value)
+            and parse_period(value) is not None
+        ):
+            return [value[0], value[1]]
+    raise ValueError('overrides.period must be a valid period')
 
 
 def _normalize_overrides(value: object) -> dict[str, Any]:
@@ -128,7 +121,10 @@ def _normalize_overrides(value: object) -> dict[str, Any]:
             raise ValueError('overrides keys must be strings')
         if key not in SAFE_OVERRIDE_KEYS:
             raise ValueError(f'overrides contains unsupported key: {key}')
-        normalized[key] = _normalize_json_safe_override_value(item, path=f'overrides.{key}')
+        if key in _TEXT_OVERRIDE_KEYS:
+            normalized[key] = _normalize_text_override(key, item)
+        else:
+            normalized[key] = _normalize_period_override(item)
     return normalized
 
 
@@ -303,6 +299,10 @@ def stable_candidate_id(
         'teacher_name': _identity_text(teacher_name),
         'student_grade_class': normalize_class_for_display(student_grade_class),
     }
+    if normalized_period is None:
+        raw_period = _text(period)
+        if raw_period:
+            identity['period_raw'] = raw_period
     serialized = json.dumps(
         identity,
         ensure_ascii=False,
@@ -472,6 +472,8 @@ class Candidate:
         if not candidate_id:
             raise ValueError('candidate_id is required')
         object.__setattr__(self, 'candidate_id', candidate_id)
+        if not isinstance(self.needs_confirmation, bool):
+            raise ValueError('needs_confirmation must be a bool')
         object.__setattr__(
             self,
             'lecture_date',
@@ -547,7 +549,12 @@ class Candidate:
 
 @dataclass(frozen=True)
 class ConfirmationResult:
-    """Result of a later server-side candidate confirmation/revalidation."""
+    """Result of server-side confirmation with closed, JSON-safe overrides.
+
+    Text override fields accept a string or ``None``.  The ``period`` field
+    accepts a parseable period string, a valid single integer period, or a
+    two-integer pair and stores pairs as JSON lists.
+    """
 
     confirmed: bool
     candidate_id: str | None = None
