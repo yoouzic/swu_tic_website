@@ -180,6 +180,7 @@
                 teacher: cleanText(root.querySelector('#assistantTeacher')?.value),
                 period: cleanText(root.querySelector('#assistantPeriod')?.value),
                 semester: cleanText(root.querySelector('#assistantSemester')?.value),
+                student_grade_class: cleanText(form.querySelector('#student_grade_class')?.value),
             };
             const query = {};
             Object.keys(values).forEach((key) => {
@@ -208,6 +209,9 @@
             if (query.period) {
                 result.period = query.period;
             }
+            if (query.student_grade_class) {
+                result.student_grade_class = query.student_grade_class;
+            }
             if (query.semester) {
                 result.semester = query.semester;
             }
@@ -216,7 +220,7 @@
 
         function buildCandidateQueryParams(query) {
             const params = new URLSearchParams();
-            const queryMap = {date: 'date', room: 'room', teacher: 'teacher', period: 'period', semester: 'semester'};
+            const queryMap = {date: 'date', room: 'room', teacher: 'teacher', period: 'period', semester: 'semester', student_grade_class: 'student_grade_class'};
             Object.keys(queryMap).forEach((key) => {
                 if (query[key]) {
                     params.set(queryMap[key], query[key]);
@@ -872,7 +876,14 @@
                 setError('备用查询需要日期、授课教师、课表学期，以及服务器返回的备用来源批次。', STATES.RESCUE);
                 return;
             }
-            state.query = {date: query.date, teacher, semester};
+            const fallbackQuery = {date: query.date, teacher, semester};
+            if (query.period) {
+                fallbackQuery.period = query.period;
+            }
+            if (query.student_grade_class) {
+                fallbackQuery.student_grade_class = query.student_grade_class;
+            }
+            state.query = fallbackQuery;
             state.fallbackReason = reason === 'rejected_candidates' ? 'rejected_candidates' : 'no_result';
             state.originalRoomForFallback = query.room || '';
             state.roomDecision = '';
@@ -880,17 +891,24 @@
             setBusy(elements.rescueButton, true, '查询中…');
             const request = beginRequest();
             try {
+                const fallbackPayload = {
+                    date: state.query.date,
+                    teacher: state.query.teacher,
+                    rejected_ids: state.rejectedIds.slice(),
+                    reason: state.fallbackReason,
+                    source_batch_id: state.backupSourceBatchId,
+                    semester: state.query.semester,
+                    explicit_fallback: true,
+                };
+                if (state.query.period) {
+                    fallbackPayload.period = state.query.period;
+                }
+                if (state.query.student_grade_class) {
+                    fallbackPayload.student_grade_class = state.query.student_grade_class;
+                }
                 const data = await requestJson(ENDPOINTS.fallback, {
                     method: 'POST',
-                    body: JSON.stringify({
-                        date: state.query.date,
-                        teacher: state.query.teacher,
-                        rejected_ids: state.rejectedIds.slice(),
-                        reason: state.fallbackReason,
-                        source_batch_id: state.backupSourceBatchId,
-                        semester: state.query.semester,
-                        explicit_fallback: true,
-                    }),
+                    body: JSON.stringify(fallbackPayload),
                 }, request);
                 if (!isCurrentRequest(request.requestId)) {
                     return;
@@ -1011,6 +1029,7 @@
                 return;
             }
             if (target.closest('[data-assistant-back]')) {
+                invalidateRequests();
                 setState(state.selectedCandidate && state.selectedCandidate.source_kind === 'backup' ? STATES.RESCUE : STATES.FIND, '状态：查找。请重新选择候选。');
                 return;
             }

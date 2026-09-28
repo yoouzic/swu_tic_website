@@ -170,3 +170,24 @@ def test_assistant_tracks_filled_fields_and_writes_null_clears_on_submit():
     assert 'assistantFilledGroups.add(\'period\')' in script
     for excluded in ('student_signature1', 'student_signature2', 'contact_phone1', 'contact_phone2'):
         assert excluded not in script
+
+
+def test_back_action_invalidates_inflight_confirm_before_navigation():
+    script = SCRIPT_PATH.read_text(encoding='utf-8')
+    back_start = script.index("if (target.closest('[data-assistant-back]'))")
+    back_end = script.index("if (target.closest('[data-assistant-retry]'))", back_start)
+    back_body = script[back_start:back_end]
+    assert 'invalidateRequests();' in back_body
+    assert back_body.index('invalidateRequests();') < back_body.index('setState(')
+
+
+def test_backup_rescue_preserves_period_and_safe_query_filters():
+    script = SCRIPT_PATH.read_text(encoding='utf-8')
+    rescue_start = script.index('async function rescueFallback()')
+    rescue_end = script.index('function selectCandidate', rescue_start)
+    rescue_body = script[rescue_start:rescue_end]
+    assert 'fallbackQuery.period = query.period' in rescue_body
+    assert 'fallbackQuery.student_grade_class = query.student_grade_class' in rescue_body
+    assert 'fallbackPayload.period = state.query.period' in rescue_body
+    assert 'fallbackPayload.student_grade_class = state.query.student_grade_class' in rescue_body
+    assert 'result.student_grade_class = query.student_grade_class' in script
