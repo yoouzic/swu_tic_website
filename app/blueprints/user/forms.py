@@ -11,6 +11,8 @@ from app.models import (
 )
 from app.security import login_required
 from app.services.form_bindings import reconcile_registration_usage_flags
+from app.services.listening_assistant_contracts import SAFE_OVERRIDE_KEYS
+from app.services.listening_assistant_evidence import create_evidence, revalidate_selection
 from datetime import datetime, timedelta
 from app.utils.audit_tags import build_audit_tag, build_week_correction_tag
 from app.utils.leave_management import append_leave_system_note, get_pending_leave_makeup, record_leave_makeup_form
@@ -22,6 +24,76 @@ from . import user_bp
 
 
 LECTURE_FORM_DRAFT_KEY = 'submit_form'
+
+_ASSISTANT_DRAFT_KEYS = frozenset({
+    'stage',
+    'query',
+    'rejected_ids',
+    'source_kind',
+    'source_batch_id',
+    'semester',
+    'candidate_id',
+    'overrides',
+    'template_version',
+    'fallback_reason',
+    'reason',
+    'explicit_fallback',
+    'acknowledged_source',
+})
+_ASSISTANT_QUERY_DRAFT_KEYS = frozenset({
+    'lecture_date',
+    'room',
+    'teacher_name',
+    'period',
+    'student_grade_class',
+    'semester',
+})
+
+
+def _is_draft_scalar(value):
+    return isinstance(value, (str, int, float, bool)) or value is None
+
+
+def _normalize_assistant_draft_payload(raw_payload):
+    if not isinstance(raw_payload, dict):
+        return None
+
+    normalized = {}
+    for key, value in raw_payload.items():
+        if not isinstance(key, str) or key not in _ASSISTANT_DRAFT_KEYS:
+            continue
+
+        if key in {'query', 'overrides'}:
+            if not isinstance(value, dict):
+                continue
+            nested = {}
+            allowed_keys = (
+                _ASSISTANT_QUERY_DRAFT_KEYS
+                if key == 'query'
+                else SAFE_OVERRIDE_KEYS
+            )
+            for nested_key, nested_value in value.items():
+                if not isinstance(nested_key, str) or nested_key not in allowed_keys:
+                    continue
+                if _is_draft_scalar(nested_value):
+                    nested[nested_key] = nested_value
+                elif isinstance(nested_value, list):
+                    nested[nested_key] = [
+                        item for item in nested_value if _is_draft_scalar(item)
+                    ]
+            normalized[key] = nested
+            continue
+
+        if key == 'rejected_ids':
+            if not isinstance(value, list):
+                continue
+            normalized[key] = [item for item in value if _is_draft_scalar(item)]
+            continue
+
+        if _is_draft_scalar(value):
+            normalized[key] = value
+
+    return normalized
 
 
 def _load_lecture_form_draft(user_id):
@@ -56,6 +128,11 @@ def _normalize_draft_payload(raw_payload):
     for key, value in raw_payload.items():
         if not isinstance(key, str):
             continue
+        if key == 'assistant':
+            assistant_payload = _normalize_assistant_draft_payload(value)
+            if assistant_payload:
+                normalized[key] = assistant_payload
+            continue
         if isinstance(value, (str, int, float, bool)) or value is None:
             normalized[key] = value
         elif isinstance(value, list):
@@ -64,6 +141,39 @@ def _normalize_draft_payload(raw_payload):
                 if isinstance(item, (str, int, float, bool)) or item is None
             ]
     return normalized
+
+
+def _extract_assistant_submission_payload():
+    """Decode the optional form field used by Task 4 submit integration."""
+    raw_values = [
+        request.form.get('assistant_payload'),
+        request.form.get('assistant'),
+    ]
+    if request.is_json:
+        body = request.get_json(silent=True) or {}
+        if isinstance(body, dict):
+            raw_values.extend([
+                body.get('assistant_payload'),
+                body.get('assistant'),
+            ])
+
+    raw_values = [value for value in raw_values if value not in (None, '')]
+    if not raw_values:
+        return None
+    if len(raw_values) > 1 and raw_values[0] != raw_values[1]:
+        raise ValueError('assistant payload was provided more than once')
+
+    raw_value = raw_values[0]
+    if isinstance(raw_value, str):
+        try:
+            payload = json.loads(raw_value)
+        except (TypeError, ValueError) as error:
+            raise ValueError('assistant payload must be valid JSON') from error
+    else:
+        payload = raw_value
+    if not isinstance(payload, dict):
+        raise ValueError('assistant payload must be a JSON object')
+    return payload
 
 
 def _normalize_submission_value(value):
@@ -223,12 +333,76 @@ def submit_form():
         from app.models import LectureForm
         from datetime import datetime
         import difflib
-        
-        # 获取听课时间（优先使用带星期几的显示格式）
-        lecture_date = request.form.get('lecture_date_display') or request.form['lecture_date']
-        
-        # 获取节次（优先使用自动补全的格式）
-        class_period = request.form.get('class_period') or f"第{request.form.get('start_period', '')}-{request.form.get('end_period', '')}节"
+
+        assistant_selection = None
+        try:
+            assistant_payload = _extract_assistant_submission_payload()
+        except ValueError:
+            db.session.rollback()
+            flash('听课助手数据格式错误，请重新确认课程信息后提交。', 'error')
+            return render_template('user/lecture_form.html', user=user), 400
+
+        if assistant_payload is not None:
+            try:
+                assistant_selection = revalidate_selection(user, assistant_payload)
+            except Exception:
+                # Revalidation happens before any form mutation.  Keep the
+                # route's normal HTML/flash error shape and fail closed.
+                db.session.rollback()
+                flash('听课助手信息已失效，请重新搜索并确认课程后提交。', 'error')
+                return render_template('user/lecture_form.html', user=user), 400
+
+        if assistant_selection is not None:
+            snapshot = assistant_selection.field_snapshot
+
+            def _assistant_or_form(field_name):
+                manual_value = request.form.get(field_name)
+                if manual_value is not None and str(manual_value).strip():
+                    return manual_value
+                assistant_value = snapshot.get(field_name)
+                if assistant_value is not None and str(assistant_value).strip():
+                    return assistant_value
+                return manual_value or ''
+
+            manual_date = request.form.get('lecture_date_display')
+            if manual_date is None or not str(manual_date).strip():
+                manual_date = request.form.get('lecture_date')
+            lecture_date = (
+                manual_date
+                if manual_date is not None and str(manual_date).strip()
+                else snapshot.get('lecture_date') or ''
+            )
+
+            manual_period = request.form.get('class_period')
+            if manual_period is not None and str(manual_period).strip():
+                class_period = manual_period
+            elif (
+                str(request.form.get('start_period') or '').strip()
+                or str(request.form.get('end_period') or '').strip()
+            ):
+                class_period = (
+                    f"第{request.form.get('start_period', '')}-"
+                    f"{request.form.get('end_period', '')}节"
+                )
+            else:
+                class_period = snapshot.get('class_period') or ''
+
+            lecture_location = _assistant_or_form('lecture_location')
+            teacher_name = _assistant_or_form('teacher_name')
+            teacher_college = _assistant_or_form('teacher_college')
+            course_title = _assistant_or_form('course_title')
+            student_grade_class = _assistant_or_form('student_grade_class')
+        else:
+            # Preserve the legacy direct-submission path byte-for-byte in its
+            # field access and fallback behavior when no assistant payload is
+            # present.
+            lecture_date = request.form.get('lecture_date_display') or request.form['lecture_date']
+            class_period = request.form.get('class_period') or f"第{request.form.get('start_period', '')}-{request.form.get('end_period', '')}节"
+            lecture_location = request.form['lecture_location']
+            teacher_name = request.form['teacher_name']
+            teacher_college = request.form['teacher_college']
+            course_title = request.form['course_title']
+            student_grade_class = request.form['student_grade_class']
         
         # 获取关联的登记ID
         registration_id = request.form.get('registration_id')
@@ -255,16 +429,16 @@ def submit_form():
             if course:
                 # 比较关键字段差异
                 # 1. 课程名称
-                s1 = difflib.SequenceMatcher(None, course.course_name, request.form['course_title'])
+                s1 = difflib.SequenceMatcher(None, course.course_name, course_title)
                 ratio_title = s1.ratio()
 
                 # 2. 教师姓名
                 teacher_name_orig = course.teacher.name if course.teacher else ''
-                s2 = difflib.SequenceMatcher(None, teacher_name_orig, request.form['teacher_name'])
+                s2 = difflib.SequenceMatcher(None, teacher_name_orig, teacher_name)
                 ratio_teacher = s2.ratio()
 
                 # 3. 上课地点
-                s3 = difflib.SequenceMatcher(None, str(course.class_location or ''), request.form['lecture_location'])
+                s3 = difflib.SequenceMatcher(None, str(course.class_location or ''), lecture_location)
                 ratio_location = s3.ratio()
 
                 # 综合判断：如果关键信息相似度较高，则无需人工审核
@@ -293,11 +467,11 @@ def submit_form():
             'course_changes': request.form.get('course_changes', '无'),
             'lecture_date': lecture_date,
             'class_period': class_period,
-            'lecture_location': request.form['lecture_location'],
-            'teacher_name': request.form['teacher_name'],
-            'teacher_college': request.form['teacher_college'],
-            'course_title': request.form['course_title'],
-            'student_grade_class': request.form['student_grade_class'],
+            'lecture_location': lecture_location,
+            'teacher_name': teacher_name,
+            'teacher_college': teacher_college,
+            'course_title': course_title,
+            'student_grade_class': student_grade_class,
             'abnormal_situation': request.form.get('abnormal_situation', '无'),
             'teaching_method': teaching_method,
             'classroom_discipline': request.form['classroom_discipline'],
@@ -370,6 +544,8 @@ def submit_form():
                             operator_user_id=user.id,
                         )
                     db.session.flush()
+                    if assistant_selection is not None:
+                        create_evidence(user, duplicate_form, assistant_selection)
                     registration_ids_to_reconcile.add(duplicate_form.registration_id)
                     reconcile_registration_usage_flags(registration_ids_to_reconcile)
                     db.session.commit()
@@ -390,6 +566,8 @@ def submit_form():
             # Round 8A §12：显式 flush 使本事务内的 binding graph（新 form /
             # rebind）对 reconcile 可见——不依赖偶然 autoflush。
             db.session.flush()
+            if assistant_selection is not None:
+                create_evidence(user, target_form, assistant_selection)
             reconcile_registration_usage_flags(registration_ids_to_reconcile)
 
             if leave_makeup:

@@ -134,6 +134,45 @@ class LectureFormDraftTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.get_json()['exists'])
 
+    def test_assistant_draft_is_strictly_namespaced_and_legacy_fields_are_preserved(self):
+        self._login_as(self.user)
+        payload = {
+            'course_title': 'Legacy Course',
+            'rejected_ids': ['legacy-id', 7, {'drop': 'nested'}],
+            'assistant': {
+                'stage': 'confirmed',
+                'query': {
+                    'lecture_date': '2026-09-18',
+                    'room': '8-309',
+                    'unknown_query_key': 'drop me',
+                },
+                'rejected_ids': ['candidate-1', {'phone': '13800000000'}],
+                'source_kind': 'primary',
+                'source_batch_id': 'batch-current',
+                'semester': '2026-2027-1',
+                'candidate_id': 'primary:batch-current:abc',
+                'overrides': {
+                    'lecture_location': '9-101',
+                    'contact_phone1': '13800000000',
+                    'student_signature1': 'signature',
+                },
+                'template_version': 'task4-v1',
+                'arbitrary_nested_key': 'must be dropped',
+            },
+        }
+
+        response = self.client.put('/user/api/lecture_form_draft', json={'data': payload})
+        self.assertEqual(response.status_code, 200)
+        saved = self.client.get('/user/api/lecture_form_draft').get_json()['data']
+        self.assertEqual(saved['course_title'], 'Legacy Course')
+        self.assertEqual(saved['rejected_ids'], ['legacy-id', 7])
+        self.assertEqual(saved['assistant']['stage'], 'confirmed')
+        self.assertNotIn('arbitrary_nested_key', saved['assistant'])
+        self.assertNotIn('unknown_query_key', saved['assistant']['query'])
+        self.assertNotIn('contact_phone1', saved['assistant']['overrides'])
+        self.assertNotIn('student_signature1', saved['assistant']['overrides'])
+        self.assertEqual(saved['assistant']['overrides']['lecture_location'], '9-101')
+
     def test_successful_form_submit_clears_current_user_draft(self):
         self._login_as(self.user)
         self.client.put('/user/api/lecture_form_draft', json={'data': {'course_title': 'Old Draft'}})

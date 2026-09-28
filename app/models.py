@@ -449,6 +449,78 @@ class LectureFormDraft(db.Model):
     def __repr__(self):
         return f'<LectureFormDraft user={self.user_id} key={self.draft_key}>'
 
+
+class ListeningAssistantEvidence(db.Model):
+    """Safe provenance for a confirmed listening-assistant selection.
+
+    JSON columns are intentionally stored as text so this additive model keeps
+    the same SQLite/PostgreSQL portability as the older application tables.
+    The evidence service is the write boundary and serializes only normalized
+    schedule/course data plus explicit user confirmation actions; form
+    evaluation text, signatures, phone numbers, credentials, and arbitrary
+    request payloads do not belong in this table.
+    """
+
+    __tablename__ = 'listening_assistant_evidence'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey('users.id'),
+        nullable=False,
+        index=True,
+    )
+    lecture_form_id = db.Column(
+        db.Integer,
+        db.ForeignKey('lecture_forms.id'),
+        nullable=True,
+        index=True,
+    )
+
+    source_kind = db.Column(db.String(16), nullable=False)
+    source_batch_id = db.Column(db.String(100), nullable=False)
+    semester = db.Column(db.String(50), nullable=False)
+    template_version = db.Column(db.String(100), nullable=False)
+
+    query_json = db.Column(db.Text, nullable=False, default='{}')
+    candidate_json = db.Column(db.Text, nullable=False, default='{}')
+    overrides_json = db.Column(db.Text, nullable=False, default='{}')
+    confirmation_json = db.Column(db.Text, nullable=False, default='{}')
+
+    confirmed_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now, index=True)
+
+    user = db.relationship('User', backref='listening_assistant_evidence')
+    lecture_form = db.relationship(
+        'LectureForm',
+        backref='listening_assistant_evidence',
+    )
+
+    __table_args__ = (
+        db.Index(
+            'ix_listening_assistant_evidence_user_created',
+            'user_id',
+            'created_at',
+        ),
+        db.Index(
+            'ix_listening_assistant_evidence_form_created',
+            'lecture_form_id',
+            'created_at',
+        ),
+        db.Index(
+            'ix_listening_assistant_evidence_source',
+            'source_kind',
+            'source_batch_id',
+            'semester',
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f'<ListeningAssistantEvidence user={self.user_id} '
+            f'form={self.lecture_form_id} source={self.source_kind}>'
+        )
+
 # 系统设置：用于保存学期第一周星期一日期等键值
 class SystemSetting(db.Model):
     __tablename__ = 'system_settings'
