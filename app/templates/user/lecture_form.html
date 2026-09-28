@@ -3,6 +3,10 @@
 
 {% block title %}填写听课表单{% endblock %}
 
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/listening-assistant.css') }}">
+{% endblock %}
+
 {% block content %}
 {{ page_header('填写听课表单', '按分区完成听课信息、课堂评价和签名，系统会持续保存草稿。') }}
 <div class="lecture-form-layout">
@@ -117,6 +121,116 @@
                         <input type="hidden" id="registration_id" name="registration_id">
                         <!-- 唯一ID (用于版本控制，编辑/驳回重填时使用) -->
                         <input type="hidden" id="unique_id" name="unique_id" value="{{ form.unique_id if form else '' }}">
+                        <input type="hidden" id="assistant_payload" name="assistant_payload" data-payload-namespace="listening-assistant" value="">
+
+                        <!-- 听课助手：独立的查询/确认路径，不替换下面的手工填写流程 -->
+                        <section class="listening-assistant mb-4" data-listening-assistant data-assistant-state="find" aria-labelledby="listeningAssistantTitle">
+                            <div class="listening-assistant__header">
+                                <button type="button" class="listening-assistant__toggle" data-assistant-toggle aria-expanded="true" aria-controls="listeningAssistantPanel">
+                                    <span class="listening-assistant__title" id="listeningAssistantTitle"><i class="bi bi-compass" aria-hidden="true"></i> 听课助手</span>
+                                    <span class="listening-assistant__toggle-hint" data-assistant-toggle-hint>收起</span>
+                                </button>
+                                <span class="listening-assistant__state-badge" data-assistant-state-label>查找</span>
+                            </div>
+                            <div id="listeningAssistantPanel" class="listening-assistant__panel" data-assistant-panel>
+                                <p class="listening-assistant__intro">先用日期和教室或教师缩小范围，再由你选择并确认课程。助手只推荐课表信息，不会自动提交表单。</p>
+                                <div class="listening-assistant__status" data-assistant-status role="status" aria-live="polite">状态：查找。请输入日期，并填写教室或教师。</div>
+
+                                <div class="listening-assistant__view" data-assistant-view="find">
+                                    <div class="listening-assistant__query-grid">
+                                        <div class="listening-assistant__field">
+                                            <label for="assistantDate" class="form-label">听课日期</label>
+                                            <input type="date" class="form-control" id="assistantDate" data-assistant-query="date" autocomplete="off">
+                                        </div>
+                                        <div class="listening-assistant__field">
+                                            <label for="assistantRoom" class="form-label">教室（可选）</label>
+                                            <input type="text" class="form-control" id="assistantRoom" data-assistant-query="room" placeholder="如 8-309" autocomplete="off">
+                                        </div>
+                                        <div class="listening-assistant__field">
+                                            <label for="assistantTeacher" class="form-label">授课教师（可选）</label>
+                                            <input type="text" class="form-control" id="assistantTeacher" data-assistant-query="teacher" placeholder="如 张老师" autocomplete="off">
+                                        </div>
+                                        <div class="listening-assistant__field">
+                                            <label for="assistantPeriod" class="form-label">节次（可选）</label>
+                                            <input type="text" class="form-control" id="assistantPeriod" data-assistant-query="period" placeholder="如 第3-4节" autocomplete="off">
+                                        </div>
+                                        <div class="listening-assistant__field listening-assistant__field--wide">
+                                            <label for="assistantSemester" class="form-label">课表学期（确认时需要）</label>
+                                            <input type="text" class="form-control" id="assistantSemester" data-assistant-query="semester" placeholder="如 2026-2027-1" autocomplete="off">
+                                            <small class="form-text">只在你填写时作为查询参数发送；备用课表查询和最终确认需要明确学期。</small>
+                                        </div>
+                                    </div>
+                                    <div class="listening-assistant__actions">
+                                        <button type="button" class="btn btn-primary" data-assistant-search><i class="bi bi-search" aria-hidden="true"></i> 查找课表候选</button>
+                                    </div>
+                                </div>
+
+                                <div class="listening-assistant__candidate-list" data-assistant-candidates role="list" aria-label="课表候选" tabindex="0">
+                                    <div class="listening-assistant__empty" data-assistant-candidates-empty>输入查询条件后，这里会显示候选课程。</div>
+                                    <template data-assistant-candidate-template>
+                                        <article data-assistant-card tabindex="0"><button type="button" data-assistant-select>选择此候选</button><button type="button" data-assistant-reject>排除</button></article>
+                                    </template>
+                                </div>
+
+                                <div class="listening-assistant__none-action">
+                                    <p>候选可能不完整或不准确，请由你判断。</p>
+                                    <button type="button" class="btn btn-outline-secondary" data-assistant-none><i class="bi bi-slash-circle" aria-hidden="true"></i> 都不是 / 手动填写</button>
+                                </div>
+
+                                <div class="listening-assistant__view" data-assistant-view="rescue" hidden>
+                                    <div class="listening-assistant__state-heading"><span class="listening-assistant__state-icon" aria-hidden="true"><i class="bi bi-life-preserver"></i></span><div><h3 class="h6 mb-1">救援查询</h3><p class="mb-0">当前课表没有合适结果，或你已排除这些候选。</p></div></div>
+                                    <div class="alert alert-warning listening-assistant__backup-explanation" data-assistant-backup-explanation>
+                                        <strong>请注意：</strong>下一步会查询你明确选择的备用课表来源。备用课表只是线索，必须核对来源和课程后才能确认。
+                                        <div class="mt-2">备用来源批次：<code data-assistant-source-batch>尚未获得</code></div>
+                                    </div>
+                                    <div class="listening-assistant__rescue-fields">
+                                        <div class="listening-assistant__field">
+                                            <label for="assistantFallbackReason" class="form-label">救援原因</label>
+                                            <select class="form-select" id="assistantFallbackReason" data-assistant-fallback-reason>
+                                                <option value="no_result">当前课表无结果</option>
+                                                <option value="rejected_candidates">我已排除当前候选</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <p class="listening-assistant__inline-message" data-assistant-rescue-message role="status" aria-live="polite"></p>
+                                    <div class="listening-assistant__actions">
+                                        <button type="button" class="btn btn-primary" data-assistant-rescue disabled><i class="bi bi-arrow-repeat" aria-hidden="true"></i> 查询已选择的备用课表</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-manual>直接手动填写</button>
+                                        <button type="button" class="btn btn-link" data-assistant-find-again>返回查找</button>
+                                    </div>
+                                </div>
+
+                                <div class="listening-assistant__view" data-assistant-view="review" hidden>
+                                    <div class="listening-assistant__state-heading"><span class="listening-assistant__state-icon" aria-hidden="true"><i class="bi bi-check2-square"></i></span><div><h3 class="h6 mb-1">复核并确认</h3><p class="mb-0">确认后只补充现有表单中的空白基础字段；已有手工内容不会被覆盖。</p></div></div>
+                                    <div class="listening-assistant__review" data-assistant-review></div>
+                                    <div class="listening-assistant__override-fields" data-assistant-override-fields></div>
+                                    <div class="listening-assistant__backup-ack form-check" data-assistant-backup-ack-wrap hidden>
+                                        <input class="form-check-input" type="checkbox" id="assistantBackupAck" data-assistant-backup-ack>
+                                        <label class="form-check-label" for="assistantBackupAck">我已知道这是备用课表线索，并已人工核对来源和课程信息。</label>
+                                    </div>
+                                    <p class="listening-assistant__review-hint" data-assistant-review-hint role="status" aria-live="polite"></p>
+                                    <div class="listening-assistant__actions">
+                                        <button type="button" class="btn btn-primary" data-assistant-confirm disabled><i class="bi bi-check2" aria-hidden="true"></i> 确认并补充空白字段</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-back>返回候选</button>
+                                    </div>
+                                </div>
+
+                                <div class="listening-assistant__view" data-assistant-view="manual" hidden>
+                                    <div class="listening-assistant__state-heading"><span class="listening-assistant__state-icon" aria-hidden="true"><i class="bi bi-pencil-square"></i></span><div><h3 class="h6 mb-1">手动填写</h3><p class="mb-0">已保留原有表单流程。请在下方课程信息和其他分区中继续填写，助手不会提交表单。</p></div></div>
+                                    <div class="listening-assistant__actions"><button type="button" class="btn btn-outline-secondary" data-assistant-find-again>返回助手查找</button></div>
+                                </div>
+
+                                <div class="listening-assistant__view" data-assistant-view="done" hidden>
+                                    <div class="alert alert-success mb-0" data-assistant-done-message role="status" aria-live="polite">已确认课表信息。空白基础字段已补充，请继续完成评价和签名后再提交。</div>
+                                    <div class="listening-assistant__actions"><button type="button" class="btn btn-outline-secondary" data-assistant-find-again>重新查找</button></div>
+                                </div>
+
+                                <div class="listening-assistant__view" data-assistant-view="error" hidden>
+                                    <div class="alert alert-danger" data-assistant-error-message role="alert">听课助手暂时无法完成这一步。</div>
+                                    <div class="listening-assistant__actions"><button type="button" class="btn btn-primary" data-assistant-retry>重试</button><button type="button" class="btn btn-outline-secondary" data-assistant-manual>改为手动填写</button></div>
+                                </div>
+                            </div>
+                        </section>
 
                         <!-- 基本信息 -->
                         <div id="basic-information" class="row mb-4 form-section">
@@ -916,4 +1030,5 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+<script src="{{ url_for('static', filename='js/listening-assistant.js') }}"></script>
 {% endblock %}
