@@ -471,24 +471,21 @@ class ListeningAssistantService:
         *,
         semester: str | None = None,
         rejected_ids: Iterable[object] | object | None = None,
-        explicit_fallback: bool = True,
+        explicit_fallback: bool = False,
         reason: str | None = None,
     ) -> ListeningAssistantSearchResult:
         """Search exactly one caller-selected retired batch.
 
-        The source batch id is intentionally required here (unless one was
-        explicitly configured on construction).  No-result primary searches
-        never call this method implicitly.
+        The fallback flag and retired source batch id must be supplied on
+        every call.  Constructor metadata can describe availability but
+        cannot authorize or select a retired batch.  No-result primary
+        searches never call this method implicitly.
         """
         self._validate_query(query)
         if explicit_fallback is not True:
             raise ValueError('backup search requires an explicit fallback')
         normalized_reason = _normalize_backup_reason(reason)
-        selected_batch_id = (
-            source_batch_id
-            if source_batch_id is not None
-            else self._backup_source_batch_id
-        )
+        selected_batch_id = source_batch_id
         if selected_batch_id is None or not _text(selected_batch_id):
             raise ValueError('backup source requires an explicit retired batch id')
         selected_semester = self._semester if semester is None else semester

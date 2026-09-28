@@ -239,7 +239,12 @@ def test_primary_search_never_queries_backup_or_legacy_rows_and_backup_is_explic
     assert [call['source_kind'] for call in loader.calls] == ['primary']
 
     with pytest.raises(ValueError, match='retired batch'):
-        service.search_backup(query, semester=SEMESTER, reason='no_result')
+        service.search_backup(
+            query,
+            semester=SEMESTER,
+            explicit_fallback=True,
+            reason='no_result',
+        )
     assert [call['source_kind'] for call in loader.calls] == ['primary']
 
     backup_result = service.search_backup(
@@ -260,6 +265,44 @@ def test_primary_search_never_queries_backup_or_legacy_rows_and_backup_is_explic
         'source_batch_id': 'retired-7',
         'batch_id': None,
     }
+
+
+def test_backup_requires_explicit_fallback_flag_even_with_valid_reason_and_batch():
+    backup = entry(
+        1,
+        teacher='备用教师',
+        source_kind='backup',
+        source_batch_id='retired-7',
+    )
+    service, loader = service_with(backup=[backup])
+
+    with pytest.raises(ValueError, match='explicit fallback'):
+        service.search_backup(
+            AssistantQuery(LOOKUP_DATE, teacher_name='备用教师'),
+            source_batch_id='retired-7',
+            semester=SEMESTER,
+            reason='no_result',
+        )
+
+    assert loader.calls == []
+
+
+def test_backup_requires_per_call_batch_id_and_never_uses_constructor_metadata():
+    loader = LoaderSpy()
+    service = ListeningAssistantService(
+        schedule_loader=loader,
+        backup_source_batch_id='retired-configured-only',
+    )
+
+    with pytest.raises(ValueError, match='explicit retired batch id'):
+        service.search_backup(
+            AssistantQuery(LOOKUP_DATE, teacher_name='备用教师'),
+            semester=SEMESTER,
+            explicit_fallback=True,
+            reason='no_result',
+        )
+
+    assert loader.calls == []
 
 
 @pytest.mark.parametrize(
