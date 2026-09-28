@@ -8,6 +8,7 @@ boundary for the later HTTP and form layers.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import unicodedata
@@ -158,6 +159,89 @@ def _entry_teacher(entry: object) -> str:
 def _entry_class(entry: object) -> str:
     value = _value(entry, 'student_grade_class', 'class_raw')
     return normalize_class_for_display(value)
+
+
+def _identity_token(value: object) -> str:
+    """Return a typed, deterministic marker for a hashed identity input."""
+    if value is None:
+        return 'none:'
+    if isinstance(value, bool):
+        return f'bool:{value!r}'
+    if isinstance(value, int):
+        return f'int:{value}'
+    if isinstance(value, float):
+        if math.isnan(value):
+            return 'float:nan'
+        if math.isinf(value):
+            return 'float:+inf' if value > 0 else 'float:-inf'
+        return f'float:{value!r}'
+    value_type = f'{type(value).__module__}.{type(value).__qualname__}'
+    return f'{value_type}:{_text(value)}'
+
+
+def _is_canonical_db_entry(
+    entry_id: str,
+    source_batch_id: str | None,
+    source_row: object,
+) -> bool:
+    if not entry_id or source_batch_id is None or source_row is None:
+        return False
+    if not _text(source_row):
+        return False
+    return entry_id == f'listening-assistant:{source_batch_id}:{source_row}'
+
+
+def _identity_source_row(
+    *,
+    source_batch_id: str | None,
+    source_row: object,
+    entry_id: str,
+    selection_code: str,
+    course_code: str,
+    course_title: str,
+    teacher: str,
+    teacher_college: str,
+    room: str,
+    period: tuple[int, int],
+    student_grade_class: str,
+) -> object:
+    """Build the source-row input without changing existing DB-backed IDs."""
+    if source_row is not None and _text(source_row):
+        if _is_canonical_db_entry(entry_id, source_batch_id, source_row):
+            return source_row
+        if not selection_code:
+            return source_row
+        return (
+            f'source_row:{_identity_token(source_row)}'
+            f'|selection_code:{_identity_token(selection_code)}'
+        )
+
+    if entry_id:
+        return (
+            f'entry_id:{_identity_token(entry_id)}'
+            f'|selection_code:{_identity_token(selection_code)}'
+        )
+
+    # ScheduleEntry normally requires an entry_id.  Keep a deterministic,
+    # typed fallback for duck-typed injected rows rather than using a process
+    # address or exposing any of these values in the public candidate.
+    fallback = {
+        'course_code': course_code,
+        'course_title': course_title,
+        'period': period,
+        'room': room,
+        'selection_code': selection_code,
+        'source_batch_id': source_batch_id,
+        'student_grade_class': student_grade_class,
+        'teacher': teacher,
+        'teacher_college': teacher_college,
+    }
+    return 'fallback:' + json.dumps(
+        fallback,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(',', ':'),
+    )
 
 
 def _parse_week_set(value: object) -> frozenset[int] | None:
@@ -451,13 +535,16 @@ class ListeningAssistantService:
     ) -> ListeningAssistantSearchResult:
         """Use the normal search path with a teacher anchor."""
         self._validate_query(query)
-        if teacher_name is not None:
-            normalized_teacher = _text(teacher_name)
-            if not normalized_teacher:
-                raise ValueError('teacher_name is required')
-            query = replace(query, teacher_name=normalized_teacher)
-        if not query.teacher_name:
+        normalized_teacher = _text(
+            teacher_name if teacher_name is not None else query.teacher_name
+        )
+        if not normalized_teacher:
             raise ValueError('teacher_name is required')
+        query = replace(
+            query,
+            room=None,
+            teacher_name=normalized_teacher,
+        )
         return self.search(
             query,
             semester=semester,
@@ -562,10 +649,24 @@ class ListeningAssistantService:
             teacher_college = _text(_value(row, 'teacher_college', 'teacher_college_raw'))
             source_batch_id = _optional_text(_value(row, 'source_batch_id', 'batch_id'))
             source_row = _value(row, 'source_row')
+            entry_id = _text(_value(row, 'entry_id'))
+            identity_source_row = _identity_source_row(
+                source_batch_id=source_batch_id,
+                source_row=source_row,
+                entry_id=entry_id,
+                selection_code=selection_code,
+                course_code=course_code,
+                course_title=course_title,
+                teacher=teacher,
+                teacher_college=teacher_college,
+                room=room,
+                period=period,
+                student_grade_class=student_grade_class,
+            )
             candidate_id = stable_candidate_id(
                 source_kind=source_kind,
                 source_batch_id=source_batch_id,
-                source_row=source_row,
+                source_row=identity_source_row,
                 lecture_date=query.lecture_date,
                 room=room,
                 period=period,

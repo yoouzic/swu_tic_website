@@ -3,13 +3,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.listening_assistant_contracts import AssistantQuery, ScheduleEntry
+from app.services.listening_assistant_contracts import (
+    AssistantQuery,
+    ScheduleEntry,
+    stable_candidate_id,
+)
 from app.services.teaching_calendar import TeachingCalendarConfig
 from app.services.listening_assistant import ListeningAssistantService
 
 
 LOOKUP_DATE = date(2026, 9, 18)  # Friday, teaching week 2 in the configured fixture.
 SEMESTER = '2026-2027-1'
+MISSING_SOURCE_ROW = object()
 
 
 class LoaderSpy:
@@ -44,10 +49,12 @@ def entry(
     course_code='C001',
     student_class='2024级计算机1班',
     period=(3, 4),
+    selection_code='',
     lecture_date=LOOKUP_DATE,
     weekday=5,
     source_kind='primary',
     source_batch_id='batch-current',
+    source_row=MISSING_SOURCE_ROW,
 ):
     return ScheduleEntry(
         entry_id=f'{source_kind}:{source_batch_id}:{row}',
@@ -55,6 +62,7 @@ def entry(
         room=room,
         period=period,
         course_code=course_code,
+        selection_code=selection_code,
         course_title=course,
         teacher_name=teacher,
         teacher_college='计算机学院',
@@ -63,7 +71,7 @@ def entry(
         semester=SEMESTER,
         source_kind=source_kind,
         source_batch_id=source_batch_id,
-        source_row=row,
+        source_row=row if source_row is MISSING_SOURCE_ROW else source_row,
     )
 
 
@@ -221,6 +229,69 @@ def test_exact_visible_duplicates_are_deduped_but_class_variants_and_rejections_
     assert rejected_id not in {candidate.candidate_id for candidate in after_rejection.candidates}
 
 
+def test_missing_source_rows_use_injected_identity_and_reject_only_one_candidate():
+    rows = [
+        entry(
+            1,
+            selection_code='S-A',
+            source_row=None,
+        ),
+        entry(
+            2,
+            selection_code='S-B',
+            source_row=None,
+        ),
+    ]
+    rows[0] = replace_entry_id(rows[0], 'injected-row-a')
+    rows[1] = replace_entry_id(rows[1], 'injected-row-b')
+    service, _ = service_with(primary=rows)
+    query = AssistantQuery(LOOKUP_DATE, room='8-309')
+
+    result = service.search(query)
+
+    assert len(result.candidates) == 2
+    assert len({candidate.candidate_id for candidate in result.candidates}) == 2
+
+    rejected_id = result.candidates[0].candidate_id
+    remaining = service.search(query, rejected_ids=[rejected_id])
+    assert len(remaining.candidates) == 1
+    assert remaining.candidates[0].candidate_id != rejected_id
+
+
+def test_canonical_db_backed_source_row_keeps_existing_candidate_id_with_selection_code():
+    row = replace_entry_id(
+        entry(2, selection_code='S-DB'),
+        'listening-assistant:batch-current:2',
+    )
+    service, _ = service_with(primary=[row])
+
+    result = service.search(AssistantQuery(LOOKUP_DATE, room='8-309'))
+
+    expected_id = stable_candidate_id(
+        source_kind='primary',
+        source_batch_id='batch-current',
+        source_row=2,
+        lecture_date=LOOKUP_DATE,
+        room='8-309',
+        period=(3, 4),
+        course_code='C001',
+        course_title='数据结构',
+        teacher_name='张三',
+        student_grade_class='2024级计算机1班',
+    )
+    assert result.candidates[0].candidate_id == expected_id
+    assert result.candidates[0].selection_code == 'S-DB'
+
+
+def replace_entry_id(entry_value, entry_id):
+    return ScheduleEntry(
+        **{
+            **entry_value.__dict__,
+            'entry_id': entry_id,
+        },
+    )
+
+
 def test_primary_search_never_queries_backup_or_legacy_rows_and_backup_is_explicit():
     primary = entry(1, teacher='当前教师')
     backup = entry(
@@ -265,6 +336,52 @@ def test_primary_search_never_queries_backup_or_legacy_rows_and_backup_is_explic
         'source_batch_id': 'retired-7',
         'batch_id': None,
     }
+
+
+def test_search_by_teacher_clears_room_but_normal_search_keeps_room_teacher_and():
+    rows = [
+        entry(1, room='8-309', teacher='张三'),
+        entry(2, room='9-101', teacher='张三'),
+        entry(3, room='10-202', teacher='张三', student_class='2024级计算机2班'),
+        entry(4, room='11-303', teacher='张三', period=(7, 8)),
+    ]
+    service, _ = service_with(primary=rows)
+    present_query = AssistantQuery(
+        LOOKUP_DATE,
+        room='8-309',
+        teacher_name='张三',
+        period=(3, 4),
+        student_grade_class='2024级计算机1班',
+    )
+
+    teacher_result = service.search_by_teacher(present_query)
+    supplied_result = service.search_by_teacher(
+        AssistantQuery(
+            LOOKUP_DATE,
+            room='8-309',
+            period=(3, 4),
+            student_grade_class='2024级计算机1班',
+        ),
+        '张三',
+    )
+    normal_result = service.search(present_query)
+
+    assert {candidate.room for candidate in teacher_result.candidates} == {
+        '8-309',
+        '9-101',
+        '11-303',
+    }
+    assert {candidate.room for candidate in supplied_result.candidates} == {
+        '8-309',
+        '9-101',
+        '11-303',
+    }
+    assert any(
+        candidate.room == '11-303'
+        and 'period_mismatch' in candidate.conflicts
+        for candidate in teacher_result.candidates
+    )
+    assert [candidate.room for candidate in normal_result.candidates] == ['8-309']
 
 
 def test_backup_requires_explicit_fallback_flag_even_with_valid_reason_and_batch():
