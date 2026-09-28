@@ -36,6 +36,7 @@ from app.services.teaching_calendar import TeachingCalendarConfig, parse_lecture
 
 _INVALID_WEEK_DATA = object()
 _UNSET = object()
+BACKUP_FALLBACK_REASONS = frozenset({'no_result', 'rejected_candidates'})
 
 
 def _text(value: object) -> str:
@@ -55,6 +56,19 @@ def _text(value: object) -> str:
 def _optional_text(value: object) -> str | None:
     normalized = _text(value)
     return normalized or None
+
+
+def _normalize_backup_reason(reason: object) -> str:
+    if not isinstance(reason, str):
+        raise ValueError(
+            'backup reason must be one of: no_result, rejected_candidates'
+        )
+    normalized = _text(reason)
+    if normalized not in BACKUP_FALLBACK_REASONS:
+        raise ValueError(
+            'backup reason must be one of: no_result, rejected_candidates'
+        )
+    return normalized
 
 
 def _value(entry: object, *names: str, default: object = None) -> object:
@@ -348,11 +362,18 @@ class ListeningAssistantSearchResult:
     source_kind: str = 'primary'
     source_label: str = PRIMARY_SOURCE_LABEL
     backup_rescue_available: bool = False
+    fallback_reason: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, 'candidates', tuple(self.candidates))
         if self.always_show_none is not True:
             raise ValueError('always_show_none must be True')
+        if self.fallback_reason is not None:
+            object.__setattr__(
+                self,
+                'fallback_reason',
+                _normalize_backup_reason(self.fallback_reason),
+            )
 
     @property
     def backup_available(self) -> bool:
@@ -371,6 +392,7 @@ class ListeningAssistantSearchResult:
             'source_label': self.source_label,
             'backup_rescue_available': self.backup_rescue_available,
             'backup_available': self.backup_rescue_available,
+            'fallback_reason': self.fallback_reason,
         }
 
     def __getitem__(self, key: str) -> object:
@@ -461,6 +483,7 @@ class ListeningAssistantService:
         self._validate_query(query)
         if explicit_fallback is not True:
             raise ValueError('backup search requires an explicit fallback')
+        normalized_reason = _normalize_backup_reason(reason)
         selected_batch_id = (
             source_batch_id
             if source_batch_id is not None
@@ -468,9 +491,6 @@ class ListeningAssistantService:
         )
         if selected_batch_id is None or not _text(selected_batch_id):
             raise ValueError('backup source requires an explicit retired batch id')
-        # ``reason`` is intentionally accepted for the future route contract;
-        # it is metadata, not a permission shortcut or a source selector.
-        del reason
         selected_semester = self._semester if semester is None else semester
         entries = self._schedule_loader(
             source_kind='backup',
@@ -484,6 +504,7 @@ class ListeningAssistantService:
             source_label=BACKUP_SOURCE_LABEL,
             semester=selected_semester,
             rejected_ids=rejected_ids,
+            fallback_reason=normalized_reason,
         )
 
     @staticmethod
@@ -500,6 +521,7 @@ class ListeningAssistantService:
         source_label: str,
         semester: str | None,
         rejected_ids: Iterable[object] | object | None,
+        fallback_reason: str | None = None,
     ) -> ListeningAssistantSearchResult:
         rows = tuple(entries or ())
         rejected = _normalize_rejected_ids(rejected_ids)
@@ -629,6 +651,7 @@ class ListeningAssistantService:
             backup_rescue_available=(
                 source_kind == 'primary' and self._backup_source_batch_id is not None
             ),
+            fallback_reason=fallback_reason,
         )
 
 
@@ -638,5 +661,6 @@ SearchResult = ListeningAssistantSearchResult
 __all__ = [
     'ListeningAssistantSearchResult',
     'ListeningAssistantService',
+    'BACKUP_FALLBACK_REASONS',
     'SearchResult',
 ]

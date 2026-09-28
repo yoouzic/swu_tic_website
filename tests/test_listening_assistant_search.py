@@ -239,7 +239,7 @@ def test_primary_search_never_queries_backup_or_legacy_rows_and_backup_is_explic
     assert [call['source_kind'] for call in loader.calls] == ['primary']
 
     with pytest.raises(ValueError, match='retired batch'):
-        service.search_backup(query, semester=SEMESTER)
+        service.search_backup(query, semester=SEMESTER, reason='no_result')
     assert [call['source_kind'] for call in loader.calls] == ['primary']
 
     backup_result = service.search_backup(
@@ -247,6 +247,7 @@ def test_primary_search_never_queries_backup_or_legacy_rows_and_backup_is_explic
         source_batch_id='retired-7',
         semester=SEMESTER,
         explicit_fallback=True,
+        reason='no_result',
     )
     assert len(backup_result.candidates) == 1
     candidate = backup_result.candidates[0]
@@ -259,6 +260,57 @@ def test_primary_search_never_queries_backup_or_legacy_rows_and_backup_is_explic
         'source_batch_id': 'retired-7',
         'batch_id': None,
     }
+
+
+@pytest.mark.parametrize(
+    ('reason', 'normalized_reason'),
+    (
+        ('no_result', 'no_result'),
+        ('rejected_candidates', 'rejected_candidates'),
+        ('  no_result  ', 'no_result'),
+    ),
+)
+def test_backup_accepts_only_approved_fallback_reasons_after_normalization(
+    reason,
+    normalized_reason,
+):
+    backup = entry(
+        1,
+        teacher='备用教师',
+        source_kind='backup',
+        source_batch_id='retired-7',
+    )
+    service, loader = service_with(backup=[backup])
+
+    result = service.search_backup(
+        AssistantQuery(LOOKUP_DATE, teacher_name='备用教师'),
+        source_batch_id='retired-7',
+        semester=SEMESTER,
+        explicit_fallback=True,
+        reason=reason,
+    )
+
+    assert result.fallback_reason == normalized_reason
+    assert loader.calls[-1]['source_kind'] == 'backup'
+
+
+@pytest.mark.parametrize(
+    'reason',
+    (None, '', 'unknown', 'NO_RESULT', 'no result', 123, object()),
+)
+def test_backup_rejects_missing_or_invalid_fallback_reasons_before_loading(reason):
+    service, loader = service_with()
+
+    with pytest.raises(ValueError, match='reason'):
+        service.search_backup(
+            AssistantQuery(LOOKUP_DATE, teacher_name='备用教师'),
+            source_batch_id='retired-7',
+            semester=SEMESTER,
+            explicit_fallback=True,
+            reason=reason,
+        )
+
+    assert loader.calls == []
 
 
 def test_search_by_teacher_delegates_to_search_and_result_is_always_safe_to_decline():
