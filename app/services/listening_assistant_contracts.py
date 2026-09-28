@@ -25,6 +25,27 @@ from app.review_automation.schedules.normalization import (
 
 Period = tuple[int, int]
 PeriodInput = Period | str | int | float | list[int] | None
+SAFE_OVERRIDE_KEYS = frozenset({
+    'lecture_date',
+    'lecture_location',
+    'room',
+    'class_period',
+    'period',
+    'course_title',
+    'teacher_name',
+    'teacher_college',
+    'student_grade_class',
+})
+_SENSITIVE_KEY_MARKERS = (
+    'phone',
+    'signature',
+    'password',
+    'credential',
+    'token',
+    'secret',
+    'apikey',
+    'student_id',
+)
 
 
 def _text(value: object) -> str:
@@ -44,6 +65,76 @@ def _text(value: object) -> str:
 def _optional_text(value: object) -> str | None:
     normalized = _text(value)
     return normalized or None
+
+
+def _validated_optional_int(
+    value: object,
+    *,
+    field_name: str,
+    minimum: int,
+    maximum: int | None = None,
+) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f'{field_name} must be an integer')
+    if value < minimum or (maximum is not None and value > maximum):
+        if maximum is None:
+            raise ValueError(f'{field_name} must be at least {minimum}')
+        raise ValueError(f'{field_name} must be between {minimum} and {maximum}')
+    return value
+
+
+def _normalized_key_for_safety(key: str) -> str:
+    return re.sub(r'[^a-z0-9_]+', '_', key.casefold()).strip('_')
+
+
+def _is_sensitive_key(key: str) -> bool:
+    normalized = _normalized_key_for_safety(key)
+    return any(marker in normalized for marker in _SENSITIVE_KEY_MARKERS)
+
+
+def _normalize_json_safe_override_value(value: object, *, path: str) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f'overrides value at {path} must be JSON-safe')
+        return value
+    if isinstance(value, list):
+        return [
+            _normalize_json_safe_override_value(item, path=f'{path}[{index}]')
+            for index, item in enumerate(value)
+        ]
+    if isinstance(value, Mapping):
+        normalized: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f'overrides key at {path} must be a string')
+            if _is_sensitive_key(key):
+                raise ValueError(f'overrides contains sensitive key at {path}.{key}')
+            normalized[key] = _normalize_json_safe_override_value(
+                item,
+                path=f'{path}.{key}',
+            )
+        return normalized
+    raise ValueError(f'overrides value at {path} must be JSON-safe')
+
+
+def _normalize_overrides(value: object) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValueError('overrides must be a mapping')
+
+    normalized: dict[str, Any] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise ValueError('overrides keys must be strings')
+        if key not in SAFE_OVERRIDE_KEYS:
+            raise ValueError(f'overrides contains unsupported key: {key}')
+        normalized[key] = _normalize_json_safe_override_value(item, path=f'overrides.{key}')
+    return normalized
 
 
 def _normalized_date(value: object, *, field_name: str) -> date:
@@ -281,6 +372,25 @@ class ScheduleEntry:
             _normalized_optional_date(self.lecture_date, field_name='lecture_date'),
         )
         object.__setattr__(self, 'room', normalize_room(self.room))
+        object.__setattr__(
+            self,
+            'weekday',
+            _validated_optional_int(
+                self.weekday,
+                field_name='weekday',
+                minimum=1,
+                maximum=7,
+            ),
+        )
+        object.__setattr__(
+            self,
+            'source_row',
+            _validated_optional_int(
+                self.source_row,
+                field_name='source_row',
+                minimum=1,
+            ),
+        )
         if self.period is not None:
             normalized_period = parse_period(self.period)
             if normalized_period is None:
@@ -340,6 +450,16 @@ class Candidate:
             _normalized_date(self.lecture_date, field_name='lecture_date'),
         )
         object.__setattr__(self, 'room', normalize_room(self.room))
+        object.__setattr__(
+            self,
+            'weekday',
+            _validated_optional_int(
+                self.weekday,
+                field_name='weekday',
+                minimum=1,
+                maximum=7,
+            ),
+        )
         normalized_period = parse_period(self.period)
         if normalized_period is None:
             raise ValueError('period is invalid')
@@ -360,7 +480,15 @@ class Candidate:
             normalize_class_for_display(self.student_grade_class),
         )
         object.__setattr__(self, 'source_batch_id', _optional_text(self.source_batch_id))
-        raw_conflicts = (self.conflicts,) if isinstance(self.conflicts, str) else self.conflicts
+        if self.conflicts is None:
+            raw_conflicts = ()
+        elif isinstance(self.conflicts, str):
+            raw_conflicts = (self.conflicts,)
+        else:
+            try:
+                raw_conflicts = tuple(self.conflicts)
+            except TypeError as error:
+                raise ValueError('conflicts must be iterable or None') from error
         conflicts: list[str] = []
         for conflict in raw_conflicts:
             normalized = _text(conflict)
@@ -406,7 +534,7 @@ class ConfirmationResult:
         object.__setattr__(self, 'candidate_id', _optional_text(self.candidate_id))
         object.__setattr__(self, 'source_kind', _optional_text(self.source_kind))
         object.__setattr__(self, 'source_batch_id', _optional_text(self.source_batch_id))
-        object.__setattr__(self, 'overrides', dict(self.overrides))
+        object.__setattr__(self, 'overrides', _normalize_overrides(self.overrides))
         object.__setattr__(self, 'message', _text(self.message))
         object.__setattr__(self, 'error_code', _optional_text(self.error_code))
 
@@ -416,6 +544,7 @@ __all__ = [
     'Candidate',
     'ConfirmationResult',
     'Period',
+    'SAFE_OVERRIDE_KEYS',
     'ScheduleEntry',
     'normalize_class_for_display',
     'normalize_room',

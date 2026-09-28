@@ -159,6 +159,119 @@ def test_candidate_serializes_source_and_conflicts_without_personal_data():
     }
 
 
+def test_candidate_conflicts_none_is_empty_and_non_iterable_is_rejected_clearly():
+    candidate = Candidate(
+        candidate_id='primary:batch-1:row-2',
+        lecture_date=date(2026, 9, 18),
+        room='8-309',
+        period=(3, 4),
+        course_title='数据结构',
+        teacher_name='张老师',
+        conflicts=None,
+    )
+
+    assert candidate.conflicts == ()
+    with pytest.raises(ValueError, match='conflicts'):
+        Candidate(
+            candidate_id='primary:batch-1:row-2',
+            lecture_date=date(2026, 9, 18),
+            room='8-309',
+            period=(3, 4),
+            course_title='数据结构',
+            teacher_name='张老师',
+            conflicts=123,
+        )
+
+
+def test_confirmation_result_accepts_only_safe_json_override_payloads():
+    source_overrides = {
+        'lecture_location': {'building': '1教', 'room': 'A101'},
+        'class_period': [3, 4],
+        'student_grade_class': None,
+    }
+    confirmation = ConfirmationResult(
+        confirmed=True,
+        overrides=source_overrides,
+    )
+
+    assert confirmation.overrides == {
+        'lecture_location': {'building': '1教', 'room': 'A101'},
+        'class_period': [3, 4],
+        'student_grade_class': None,
+    }
+    assert confirmation.overrides is not source_overrides
+
+    invalid_overrides = (
+        {'student_signature1': '签名'},
+        {'contact_phone1': '13800000000'},
+        {'unsupported_field': 'value'},
+        {'lecture_location': {'phone': '13800000000'}},
+        {'lecture_location': object()},
+        {'class_period': (3, 4)},
+        {'class_period': float('nan')},
+    )
+    for overrides in invalid_overrides:
+        with pytest.raises(ValueError, match='overrides'):
+            ConfirmationResult(confirmed=True, overrides=overrides)
+
+
+@pytest.mark.parametrize(
+    ('field_name', 'value'),
+    (
+        ('weekday', 0),
+        ('weekday', 8),
+        ('weekday', '1'),
+        ('weekday', True),
+        ('source_row', 0),
+        ('source_row', -1),
+        ('source_row', '2'),
+        ('source_row', True),
+    ),
+)
+def test_schedule_entry_rejects_malformed_weekday_and_source_row(field_name, value):
+    with pytest.raises(ValueError, match=field_name):
+        ScheduleEntry(entry_id='primary:batch-1:row-2', **{field_name: value})
+
+
+def test_schedule_entry_accepts_valid_weekday_and_one_based_source_row():
+    entry = ScheduleEntry(
+        entry_id='primary:batch-1:row-2',
+        weekday=7,
+        source_row=1,
+    )
+
+    assert entry.weekday == 7
+    assert entry.source_row == 1
+
+
+@pytest.mark.parametrize('weekday', (0, 8, '1', True))
+def test_candidate_rejects_malformed_weekday(weekday):
+    with pytest.raises(ValueError, match='weekday'):
+        Candidate(
+            candidate_id='primary:batch-1:row-2',
+            lecture_date=date(2026, 9, 18),
+            room='8-309',
+            period=(3, 4),
+            course_title='数据结构',
+            teacher_name='张老师',
+            weekday=weekday,
+        )
+
+
+def test_candidate_weekday_is_serialized_after_validation():
+    candidate = Candidate(
+        candidate_id='primary:batch-1:row-2',
+        lecture_date=date(2026, 9, 18),
+        room='8-309',
+        period=(3, 4),
+        course_title='数据结构',
+        teacher_name='张老师',
+        weekday=1,
+    )
+
+    assert candidate.to_public_dict()['weekday'] == 1
+
+
 def test_stable_candidate_id_is_deterministic_and_source_scoped():
     common = {
         'source_kind': 'primary',
