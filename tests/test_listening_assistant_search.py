@@ -151,6 +151,31 @@ def test_search_matches_room_or_teacher_exactly_and_requires_both_anchors():
     assert loader.calls[0]['semester'] == SEMESTER
 
 
+def test_multi_location_rows_match_any_room_token_and_keep_teacher_presentations_distinct():
+    rows = [
+        entry(
+            1,
+            room='室外实践教学1;33-0613，室外实践教学1',
+            teacher='张三',
+        ),
+    ]
+    service, _ = service_with(primary=rows)
+
+    room_result = service.search(
+        AssistantQuery(LOOKUP_DATE, room='33-0613'),
+    )
+    teacher_result = service.search(
+        AssistantQuery(LOOKUP_DATE, teacher_name='张三'),
+    )
+
+    assert [candidate.room for candidate in room_result.candidates] == ['33-613']
+    assert {candidate.room for candidate in teacher_result.candidates} == {
+        '室外实践教学1',
+        '33-613',
+    }
+    assert all(';' not in candidate.room for candidate in teacher_result.candidates)
+
+
 def test_date_matching_rejects_other_exact_dates_and_marks_weekday_only_rows_for_confirmation():
     rows = [
         entry(1, lecture_date=LOOKUP_DATE),
@@ -209,6 +234,35 @@ def test_period_mismatch_is_kept_with_a_stable_warning_and_invalid_rows_are_skip
     assert len(result.candidates) == 1
     assert result.candidates[0].conflicts == ('period_mismatch',)
     assert result.candidates[0].needs_confirmation is True
+
+
+def test_search_prefers_room_specific_venue_period_when_both_period_values_are_valid():
+    row = SimpleNamespace(
+        entry_id='primary:batch-current:1',
+        lecture_date=LOOKUP_DATE,
+        room='8-309',
+        period='第3-4节',
+        period_raw='第3-4节',
+        venue_period_raw='第5-6节',
+        course_code='C001',
+        selection_code='S001',
+        course_title='数据结构',
+        teacher_name='张三',
+        teacher_college='计算机学院',
+        student_grade_class='2024级计算机1班',
+        weekday=5,
+        source_kind='primary',
+        source_batch_id='batch-current',
+        source_row=1,
+    )
+    service, _ = service_with(primary=[row])
+
+    result = service.search(
+        AssistantQuery(LOOKUP_DATE, room='8-309', period=(5, 6)),
+    )
+
+    assert result.candidates[0].period == (5, 6)
+    assert result.candidates[0].conflicts == ()
 
 
 def test_exact_visible_duplicates_are_deduped_but_class_variants_and_rejections_remain_distinct():

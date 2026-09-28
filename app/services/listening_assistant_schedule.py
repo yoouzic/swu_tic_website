@@ -355,21 +355,32 @@ def _requested_batch_id(
     source_batch_id: int | str | None,
     batch_id: int | str | None,
 ) -> int:
-    if source_batch_id is not None and batch_id is not None:
-        try:
-            if int(source_batch_id) != int(batch_id):
-                raise ValueError('source_batch_id and batch_id must match')
-        except (TypeError, ValueError) as error:
-            if isinstance(error, ValueError) and str(error) == 'source_batch_id and batch_id must match':
-                raise
-            raise ValueError('backup source batch id must be an integer') from error
-    selected = source_batch_id if source_batch_id is not None else batch_id
-    if selected is None:
-        raise ValueError('backup source requires an explicit retired batch id')
-    try:
-        return int(selected)
-    except (TypeError, ValueError, OverflowError) as error:
-        raise ValueError('backup source batch id must be an integer') from error
+    def _coerce(value: int | str) -> int:
+        if type(value) is int and value > 0:
+            return value
+        if type(value) is str and re.fullmatch(r'[1-9][0-9]*', value):
+            return int(value)
+        raise ValueError('backup source batch id must be a positive integer')
+
+    normalized_source = (
+        _coerce(source_batch_id)
+        if source_batch_id is not None
+        else None
+    )
+    normalized_batch = (
+        _coerce(batch_id)
+        if batch_id is not None
+        else None
+    )
+    if normalized_source is not None and normalized_batch is not None:
+        if normalized_source != normalized_batch:
+            raise ValueError('source_batch_id and batch_id must match')
+        return normalized_source
+    if normalized_source is not None:
+        return normalized_source
+    if normalized_batch is not None:
+        return normalized_batch
+    raise ValueError('backup source requires an explicit retired batch id')
 
 
 def _rows_for_batch(batch_id: int) -> list[ListeningAssistantScheduleEntry]:
@@ -387,27 +398,29 @@ def _as_contract(
     source_kind: str,
     source_label: str,
 ) -> ScheduleEntry:
-    period = parse_period(entry.period_raw) if entry.period_raw is not None else None
-    period_raw = entry.period_raw
-    if period is None:
+    main_period = parse_period(entry.period_raw) if entry.period_raw is not None else None
+    venue_period = (
+        parse_period(entry.venue_period_raw)
+        if entry.venue_period_raw is not None
+        else None
+    )
+    if venue_period is None and (
+        entry.venue_period_start is not None
+        and entry.venue_period_end is not None
+    ):
         venue_period = (
-            parse_period(entry.venue_period_raw)
-            if entry.venue_period_raw is not None
-            else None
+            entry.venue_period_start,
+            entry.venue_period_end,
         )
-        if venue_period is None and (
-            entry.venue_period_start is not None
-            and entry.venue_period_end is not None
-        ):
-            venue_period = (
-                entry.venue_period_start,
-                entry.venue_period_end,
-            )
-        if venue_period is not None:
-            period = venue_period
-            period_raw = entry.venue_period_raw
-        elif entry.period_start is not None and entry.period_end is not None:
-            period = (entry.period_start, entry.period_end)
+    if venue_period is not None:
+        period = venue_period
+        period_raw = entry.venue_period_raw
+    else:
+        period = main_period
+        period_raw = entry.period_raw
+        if period is None:
+            if entry.period_start is not None and entry.period_end is not None:
+                period = (entry.period_start, entry.period_end)
 
     return ScheduleEntry(
         entry_id=f'listening-assistant:{entry.batch_id}:{entry.source_row}',

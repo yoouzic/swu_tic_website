@@ -131,7 +131,16 @@ def _entry_weekday(entry: object) -> int | None:
 
 
 def _entry_period(entry: object) -> tuple[int, int] | None:
-    for name in ('period', 'period_raw', 'venue_period_raw', 'class_period_raw'):
+    venue_period = parse_period(_value(entry, 'venue_period_raw'))
+    if venue_period is None:
+        venue_start = _value(entry, 'venue_period_start')
+        venue_end = _value(entry, 'venue_period_end')
+        if venue_start is not None and venue_end is not None:
+            venue_period = parse_period((venue_start, venue_end))
+    if venue_period is not None:
+        return venue_period
+
+    for name in ('period', 'period_raw', 'class_period_raw'):
         parsed = parse_period(_value(entry, name))
         if parsed is not None:
             return parsed
@@ -147,9 +156,26 @@ def _entry_period(entry: object) -> tuple[int, int] | None:
     return parse_period((start, end)) if start is not None and end is not None else None
 
 
+_LOCATION_SEPARATOR_RE = re.compile(r'[;；,，、]+')
+
+
+def _entry_room_tokens(entry: object) -> tuple[str, ...]:
+    tokens: list[str] = []
+    for name in ('location_raw', 'location_normalized', 'room'):
+        value = _value(entry, name, default=None)
+        text = _text(value)
+        if not text:
+            continue
+        for part in _LOCATION_SEPARATOR_RE.split(text):
+            normalized = normalize_room(part)
+            if normalized and normalized not in tokens:
+                tokens.append(normalized)
+    return tuple(tokens) if tokens else ('',)
+
+
 def _entry_room(entry: object) -> str:
-    value = _value(entry, 'room', 'location_normalized', 'location_raw')
-    return normalize_room(value)
+    """Return the first room token for compatibility with older callers."""
+    return _entry_room_tokens(entry)[0]
 
 
 def _entry_teacher(entry: object) -> str:
@@ -660,10 +686,13 @@ class ListeningAssistantService:
             if not date_match.matched:
                 continue
 
-            room = _entry_room(row)
-            teacher = _entry_teacher(row)
-            if query.room and room != query.room:
+            room_tokens = _entry_room_tokens(row)
+            if query.room:
+                room_tokens = tuple(room for room in room_tokens if room == query.room)
+            if not room_tokens:
                 continue
+
+            teacher = _entry_teacher(row)
             if query.teacher_name and teacher != _text(query.teacher_name):
                 continue
 
@@ -691,62 +720,63 @@ class ListeningAssistantService:
             source_batch_id = _optional_text(_value(row, 'source_batch_id', 'batch_id'))
             source_row = _value(row, 'source_row')
             entry_id = _text(_value(row, 'entry_id'))
-            identity_source_row = _identity_source_row(
-                source_batch_id=source_batch_id,
-                source_row=source_row,
-                entry_id=entry_id,
-                selection_code=selection_code,
-                course_code=course_code,
-                course_title=course_title,
-                teacher=teacher,
-                teacher_college=teacher_college,
-                room=room,
-                period=period,
-                student_grade_class=student_grade_class,
-            )
-            candidate_id = stable_candidate_id(
-                source_kind=source_kind,
-                source_batch_id=source_batch_id,
-                source_row=identity_source_row,
-                lecture_date=query.lecture_date,
-                room=room,
-                period=period,
-                course_code=course_code,
-                course_title=course_title,
-                teacher_name=teacher,
-                student_grade_class=student_grade_class,
-            )
-
-            try:
-                candidate = Candidate(
-                    candidate_id=candidate_id,
+            for room in room_tokens:
+                identity_source_row = _identity_source_row(
+                    source_batch_id=source_batch_id,
+                    source_row=source_row,
+                    entry_id=entry_id,
+                    selection_code=selection_code,
+                    course_code=course_code,
+                    course_title=course_title,
+                    teacher=teacher,
+                    teacher_college=teacher_college,
+                    room=room,
+                    period=period,
+                    student_grade_class=student_grade_class,
+                )
+                candidate_id = stable_candidate_id(
+                    source_kind=source_kind,
+                    source_batch_id=source_batch_id,
+                    source_row=identity_source_row,
                     lecture_date=query.lecture_date,
                     room=room,
                     period=period,
                     course_code=course_code,
-                    selection_code=selection_code,
                     course_title=course_title,
                     teacher_name=teacher,
-                    teacher_college=teacher_college,
                     student_grade_class=student_grade_class,
-                    source_kind=source_kind,
-                    source_label=source_label,
-                    source_batch_id=source_batch_id,
-                    weekday=_entry_weekday(row) or query.lecture_date.isoweekday(),
-                    conflicts=tuple(conflicts),
-                    needs_confirmation=(
-                        source_kind == 'backup'
-                        or date_match.needs_confirmation
-                        or bool(conflicts)
-                    ),
                 )
-            except (TypeError, ValueError):
-                # A malformed row must not break a later route's complete
-                # result.  Candidate construction remains the final safety
-                # boundary for required fields such as date and period.
-                continue
 
-            candidates.append(candidate)
+                try:
+                    candidate = Candidate(
+                        candidate_id=candidate_id,
+                        lecture_date=query.lecture_date,
+                        room=room,
+                        period=period,
+                        course_code=course_code,
+                        selection_code=selection_code,
+                        course_title=course_title,
+                        teacher_name=teacher,
+                        teacher_college=teacher_college,
+                        student_grade_class=student_grade_class,
+                        source_kind=source_kind,
+                        source_label=source_label,
+                        source_batch_id=source_batch_id,
+                        weekday=_entry_weekday(row) or query.lecture_date.isoweekday(),
+                        conflicts=tuple(conflicts),
+                        needs_confirmation=(
+                            source_kind == 'backup'
+                            or date_match.needs_confirmation
+                            or bool(conflicts)
+                        ),
+                    )
+                except (TypeError, ValueError):
+                    # A malformed row must not break a later route's complete
+                    # result.  Candidate construction remains the final safety
+                    # boundary for required fields such as date and period.
+                    continue
+
+                candidates.append(candidate)
 
         candidates.sort(
             key=lambda candidate: (

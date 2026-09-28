@@ -20,6 +20,7 @@ from app.models import (
     db,
 )
 from app.services.listening_assistant_schedule import (
+    _requested_batch_id,
     _source_row,
     load_schedule_entries,
     ensure_listening_assistant_schema,
@@ -250,6 +251,31 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
             [entry.period_raw for entry in entries],
             ['第5-6节', '第7-8节'],
         )
+
+    def test_contract_prefers_valid_venue_period_when_main_period_also_exists(self):
+        frame = schedule_frame()
+        frame.loc[0, '上课节次'] = '第3-4节'
+        frame.loc[0, '场地上课节次'] = '第5-6节'
+
+        self._persist(frame, filename='venue-period-precedence.xlsx')
+        loaded = load_schedule_entries(source_kind='primary', semester=SEMESTER)
+
+        self.assertEqual(loaded[0].period, (5, 6))
+        self.assertEqual(loaded[0].period_raw, '第5-6节')
+
+    def test_requested_batch_id_accepts_only_positive_builtin_ints_and_canonical_digit_strings(self):
+        for value in (1, 7, '1', '7', '52'):
+            with self.subTest(value=value):
+                self.assertEqual(_requested_batch_id(value, None), int(value))
+
+        for value in (True, False, 0, -1, 1.0, 1.9, '', '0', '01', ' 1', '+1', '1.0'):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    _requested_batch_id(value, None)
+
+        self.assertEqual(_requested_batch_id('7', 7), 7)
+        with self.assertRaises(ValueError):
+            _requested_batch_id('7', 8)
 
     def test_source_row_rejects_nonnumeric_index_instead_of_using_position(self):
         with self.assertRaisesRegex(ValueError, 'source index.*numeric'):
