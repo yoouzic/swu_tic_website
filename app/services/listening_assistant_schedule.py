@@ -191,9 +191,13 @@ def _source_row(
     source_row_offset: int,
 ) -> int:
     try:
-        return int(source_index) + source_row_offset
-    except (TypeError, ValueError, OverflowError):
-        return position + source_row_offset
+        normalized_index = int(source_index)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError(
+            f'source index {source_index!r} must be numeric to align with '
+            'canonical schedule snapshots'
+        ) from error
+    return normalized_index + source_row_offset
 
 
 def _weekday(value: object) -> int | None:
@@ -383,11 +387,27 @@ def _as_contract(
     source_kind: str,
     source_label: str,
 ) -> ScheduleEntry:
-    period = None
-    if entry.period_start is not None and entry.period_end is not None:
-        period = (entry.period_start, entry.period_end)
-    else:
-        period = parse_period(entry.period_raw) if entry.period_raw is not None else None
+    period = parse_period(entry.period_raw) if entry.period_raw is not None else None
+    period_raw = entry.period_raw
+    if period is None:
+        venue_period = (
+            parse_period(entry.venue_period_raw)
+            if entry.venue_period_raw is not None
+            else None
+        )
+        if venue_period is None and (
+            entry.venue_period_start is not None
+            and entry.venue_period_end is not None
+        ):
+            venue_period = (
+                entry.venue_period_start,
+                entry.venue_period_end,
+            )
+        if venue_period is not None:
+            period = venue_period
+            period_raw = entry.venue_period_raw
+        elif entry.period_start is not None and entry.period_end is not None:
+            period = (entry.period_start, entry.period_end)
 
     return ScheduleEntry(
         entry_id=f'listening-assistant:{entry.batch_id}:{entry.source_row}',
@@ -407,7 +427,7 @@ def _as_contract(
         source_batch_id=str(entry.batch_id),
         source_row=entry.source_row,
         location_raw=entry.location_raw,
-        period_raw=entry.period_raw,
+        period_raw=period_raw,
         class_raw=entry.student_grade_class_raw,
     )
 

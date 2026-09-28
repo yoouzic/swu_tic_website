@@ -11,7 +11,6 @@ from app.services.schedule_snapshots import (
     persist_import_snapshot,
 )
 from app.services.listening_assistant_schedule import (
-    ensure_listening_assistant_schema,
     persist_listening_assistant_entries,
 )
 import hashlib
@@ -206,7 +205,6 @@ def import_schedule_data():
 
         # 读取文件
         df = pd.read_excel(file)
-        ensure_listening_assistant_schema()
         
         # 统计信息
         stats = {

@@ -3,6 +3,7 @@
 
 import tempfile
 import unittest
+import inspect as python_inspect
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +12,7 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import OperationalError
 
 from app.app import app
+from app.blueprints.admin import schedule as admin_schedule
 from app.models import (
     Course,
     ListeningAssistantScheduleEntry,
@@ -18,6 +20,7 @@ from app.models import (
     db,
 )
 from app.services.listening_assistant_schedule import (
+    _source_row,
     load_schedule_entries,
     ensure_listening_assistant_schema,
     persist_listening_assistant_entries,
@@ -218,6 +221,38 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         self.assertEqual(assistant_entry.batch_id, batches[0].id)
         self.assertEqual(assistant_entry.source_row, source_row_offset)
 
+    def test_admin_import_defers_assistant_schema_to_post_snapshot_persistence(self):
+        source = python_inspect.getsource(admin_schedule.import_schedule_data)
+
+        self.assertNotIn('ensure_listening_assistant_schema()', source)
+        self.assertLess(
+            source.index('persist_import_snapshot('),
+            source.index('persist_listening_assistant_entries('),
+        )
+
+    def test_contract_uses_valid_venue_period_when_main_period_is_unusable(self):
+        frame = pd.concat(
+            [schedule_frame(), schedule_frame(teacher='李四')],
+            ignore_index=True,
+        )
+        frame.loc[0, '上课节次'] = None
+        frame.loc[0, '场地上课节次'] = '第5-6节'
+        frame.loc[1, '上课节次'] = 'not-a-period'
+        frame.loc[1, '场地上课节次'] = '第7-8节'
+
+        self._persist(frame, filename='venue-period-fallback.xlsx')
+        entries = load_schedule_entries(source_kind='primary', semester=SEMESTER)
+
+        self.assertEqual([entry.period for entry in entries], [(5, 6), (7, 8)])
+        self.assertEqual(
+            [entry.period_raw for entry in entries],
+            ['第5-6节', '第7-8节'],
+        )
+
+    def test_source_row_rejects_nonnumeric_index_instead_of_using_position(self):
+        with self.assertRaisesRegex(ValueError, 'source index.*numeric'):
+            _source_row('excel-row-a', 0, DEFAULT_SOURCE_ROW_OFFSET)
+
     def test_row_academic_year_overrides_batch_value_and_preserves_fallback(self):
         frame = pd.concat(
             [
@@ -364,7 +399,7 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         ))
         self.assertEqual(ListeningAssistantScheduleEntry.query.count(), 1)
 
-    def test_import_auto_ensures_with_flushed_snapshot_rows_in_same_session(self):
+    def test_import_auto_ensures_after_snapshot_flush_and_rolls_back_with_it(self):
         ListeningAssistantScheduleEntry.__table__.drop(
             bind=db.engine,
             checkfirst=True,
@@ -377,9 +412,12 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         )
 
         persist_listening_assistant_entries(frame, batches)
-        db.session.commit()
+        db.session.rollback()
 
-        self.assertEqual(ListeningAssistantScheduleEntry.query.count(), 1)
+        self.assertFalse(inspect(db.engine).has_table(
+            'listening_assistant_schedule_entries',
+        ))
+        self.assertEqual(ScheduleImportRow.query.count(), 0)
 
     def test_cli_wraps_database_ddl_failure_as_actionable_click_error(self):
         from app.services import listening_assistant_cli
