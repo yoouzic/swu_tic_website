@@ -140,3 +140,33 @@ def test_assistant_payload_is_namespaced_hidden_json_field():
     script = SCRIPT_PATH.read_text(encoding='utf-8')
     assert 'JSON.stringify' in script
     assert 'assistant_payload' in script
+
+
+def test_rescue_and_manual_transitions_invalidate_stale_requests_before_state_change():
+    script = SCRIPT_PATH.read_text(encoding='utf-8')
+    rescue_start = script.index('function openRescue()')
+    rescue_end = script.index('function handleClick', rescue_start)
+    rescue_body = script[rescue_start:rescue_end]
+    assert 'invalidateRequests();' in rescue_body
+    assert rescue_body.index('invalidateRequests();') < rescue_body.index('state.fallbackReason')
+
+    manual_start = script.index('function openManual()')
+    manual_end = script.index('function returnToFind', manual_start)
+    manual_body = script[manual_start:manual_end]
+    assert 'invalidateRequests();' in manual_body
+    assert manual_body.index('invalidateRequests();') < manual_body.index('state.selectedCandidate')
+
+
+def test_assistant_tracks_filled_fields_and_writes_null_clears_on_submit():
+    script = SCRIPT_PATH.read_text(encoding='utf-8')
+    for marker in (
+        'assistantFilledFields',
+        'assistantFilledGroups',
+        'form.addEventListener(\'submit\'',
+        'JSON.parse',
+        'overrides[fieldName] = null',
+    ):
+        assert marker in script
+    assert 'assistantFilledGroups.add(\'period\')' in script
+    for excluded in ('student_signature1', 'student_signature2', 'contact_phone1', 'contact_phone2'):
+        assert excluded not in script

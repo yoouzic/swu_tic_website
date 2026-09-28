@@ -93,6 +93,8 @@
             errorReturnState: STATES.FIND,
             requestId: 0,
             controller: null,
+            assistantFilledFields: new Set(),
+            assistantFilledGroups: new Set(),
         };
 
         function setStatus(message, tone) {
@@ -700,6 +702,7 @@
             }
             element.value = String(value);
             changed.push(element);
+            state.assistantFilledFields.add(id);
         }
 
         function applyFieldSnapshot(snapshot) {
@@ -721,6 +724,7 @@
                     endPeriod.value = match[2] || match[1];
                     classPeriod.value = snapshot.class_period;
                     changed.push(startPeriod, endPeriod, classPeriod);
+                    state.assistantFilledGroups.add('period');
                 }
             }
             [
@@ -771,6 +775,54 @@
                 stored.fallback_reason = fallbackReason;
             }
             elements.payload.value = JSON.stringify(stored);
+        }
+
+        function syncAssistantClearsBeforeSubmit() {
+            if (!elements.payload || !cleanText(elements.payload.value)) {
+                return;
+            }
+            let payload;
+            try {
+                payload = JSON.parse(elements.payload.value);
+            } catch (error) {
+                return;
+            }
+            if (!isObject(payload)) {
+                return;
+            }
+            const overrides = isObject(payload.overrides) ? {...payload.overrides} : {};
+            let changed = false;
+            state.assistantFilledFields.forEach((fieldName) => {
+                const field = form.querySelector(`#${fieldName}`);
+                if (field && fieldIsBlank(field) && overrides[fieldName] !== null) {
+                    overrides[fieldName] = null;
+                    changed = true;
+                    if (fieldName === 'lecture_date') {
+                        const dateDisplay = form.querySelector('#lecture_date_display');
+                        if (dateDisplay) {
+                            dateDisplay.value = '';
+                        }
+                    }
+                }
+            });
+            if (state.assistantFilledGroups.has('period')) {
+                const startPeriod = form.querySelector('#start_period');
+                const endPeriod = form.querySelector('#end_period');
+                if (fieldIsBlank(startPeriod) && fieldIsBlank(endPeriod)) {
+                    const classPeriod = form.querySelector('#class_period');
+                    if (classPeriod) {
+                        classPeriod.value = '';
+                    }
+                    if (overrides.period !== null) {
+                        overrides.period = null;
+                        changed = true;
+                    }
+                }
+            }
+            if (changed) {
+                payload.overrides = overrides;
+                elements.payload.value = JSON.stringify(payload);
+            }
         }
 
         async function confirmSelection() {
@@ -913,6 +965,7 @@
         }
 
         function openRescue() {
+            invalidateRequests();
             state.fallbackReason = state.primaryHadCandidates || state.rejectedIds.length ? 'rejected_candidates' : 'no_result';
             if (elements.rescueReason) {
                 elements.rescueReason.value = state.fallbackReason;
@@ -1024,6 +1077,7 @@
         root.addEventListener('keydown', handleKeydown);
         root.addEventListener('input', handleInput);
         root.addEventListener('change', handleChange);
+        form.addEventListener('submit', syncAssistantClearsBeforeSubmit, true);
         root.querySelector('[data-assistant-fallback-reason]')?.addEventListener('change', () => {
             state.fallbackReason = elements.rescueReason.value === 'rejected_candidates' ? 'rejected_candidates' : 'no_result';
         });
