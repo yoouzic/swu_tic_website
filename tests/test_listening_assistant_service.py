@@ -1,3 +1,7 @@
+import os
+from pathlib import Path
+import subprocess
+import sys
 from datetime import date
 
 import pytest
@@ -13,6 +17,36 @@ from app.services.listening_assistant_contracts import (
     parse_period,
     stable_candidate_id,
 )
+
+
+def test_contract_module_imports_without_site_packages_or_review_automation_runtime():
+    repo_root = Path(__file__).resolve().parents[1]
+    child_environment = os.environ.copy()
+    child_environment['PYTHONPATH'] = os.pathsep.join(
+        filter(None, [str(repo_root), child_environment.get('PYTHONPATH')])
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            '-S',
+            '-c',
+            (
+                'from app.services.listening_assistant_contracts import parse_period; '
+                "assert parse_period('第3-4节') == (3, 4)"
+            ),
+        ],
+        cwd=repo_root,
+        env=child_environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert result.returncode == 0, (
+        f'contract import failed without site-packages:\n'
+        f'STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}'
+    )
 
 
 def test_room_normalization_handles_approved_building_variants_without_inventing_values():

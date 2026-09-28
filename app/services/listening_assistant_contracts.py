@@ -17,11 +17,6 @@ from datetime import date, datetime
 from numbers import Real
 from typing import Any, Mapping, Sequence
 
-from app.review_automation.schedules.normalization import (
-    NormalizationError,
-    parse_period_range,
-)
-
 
 Period = tuple[int, int]
 PeriodInput = Period | str | int | float | list[int] | None
@@ -168,6 +163,15 @@ def _normalize_period_pair(value: Sequence[object]) -> Period | None:
     return start, end
 
 
+def _period_from_integer(number: int) -> Period | None:
+    if 1 <= number <= 20:
+        return number, number
+    if 100 <= number <= 9999:
+        padded = f'{number:04d}'
+        return _normalize_period_pair((int(padded[:2]), int(padded[2:])))
+    return None
+
+
 def normalize_room(value: object) -> str:
     """Normalize room punctuation and known building-name variants.
 
@@ -206,18 +210,42 @@ def parse_period(value: object) -> Period | None:
     """Parse one period or an inclusive period range without raising.
 
     ``None`` is the safe rejection value for empty, malformed, reversed, or
-    out-of-range input.  The existing schedule parser supplies the repository
-    semantics for strings such as ``第3-4节`` and ``0102``.
+    out-of-range input.  The accepted forms intentionally match the existing
+    schedule semantics for strings such as ``第3-4节`` and ``0102`` without
+    importing that application package.
     """
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (tuple, list)):
         return _normalize_period_pair(value)
-    try:
-        parsed = parse_period_range(value)
-    except (NormalizationError, TypeError, ValueError, OverflowError):
+    if isinstance(value, Real):
+        try:
+            number = float(value)
+        except (OverflowError, ValueError, TypeError):
+            return None
+        if not math.isfinite(number) or not number.is_integer():
+            return None
+        return _period_from_integer(int(number))
+
+    text = _text(value)
+    if not text:
         return None
-    return _normalize_period_pair(parsed)
+    text = text.replace('第', '').replace('节', '')
+    text = text.replace('－', '-').replace('～', '~')
+    text = text.replace('至', '-').replace('到', '-')
+
+    pair_match = re.fullmatch(
+        r'(\d{1,2})\s*(?:-|~|、|,|，)\s*(\d{1,2})',
+        text,
+    )
+    if pair_match:
+        return _normalize_period_pair(tuple(map(int, pair_match.groups())))
+    if re.fullmatch(r'\d{4}', text):
+        return _normalize_period_pair((int(text[:2]), int(text[2:])))
+    if text.isdigit():
+        number = int(text)
+        return (number, number) if 1 <= number <= 20 else None
+    return None
 
 
 def normalize_class_for_display(value: object) -> str:
