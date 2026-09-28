@@ -19,7 +19,10 @@ from app.services.listening_assistant_contracts import (
     normalize_room,
     parse_period,
 )
-from app.services.listening_assistant_schedule import latest_retired_batch_id
+from app.services.listening_assistant_schedule import (
+    ScheduleSourceUnavailable,
+    latest_retired_batch_id,
+)
 from app.services.listening_assistant_evidence import (
     AssistantSelectionError,
     revalidate_selection,
@@ -426,14 +429,21 @@ def listening_assistant_candidates(user):
     if resolved_semester is None:
         resolved_semester = resolve_current_schedule_snapshot().semester or None
     backup_source_batch_id = latest_retired_batch_id(resolved_semester)
-    result = ListeningAssistantService(
-        semester=resolved_semester,
-        backup_source_batch_id=backup_source_batch_id,
-    ).search(
-        query,
-        semester=resolved_semester,
-        rejected_ids=_query_rejected_ids(),
-    )
+    try:
+        result = ListeningAssistantService(
+            semester=resolved_semester,
+            backup_source_batch_id=backup_source_batch_id,
+        ).search(
+            query,
+            semester=resolved_semester,
+            rejected_ids=_query_rejected_ids(),
+        )
+    except ScheduleSourceUnavailable as error:
+        return _envelope(
+            False,
+            {'status': error.status, 'code': error.code},
+            error.message,
+        ), 503
     data = result.to_public_dict()
     if backup_source_batch_id is not None:
         data['backup_source_batch_id'] = str(backup_source_batch_id)

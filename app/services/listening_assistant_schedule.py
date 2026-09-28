@@ -36,6 +36,22 @@ BACKUP_SOURCE_LABEL = '备用课表线索 · 需核对'
 
 _MISSING = object()
 
+
+class ScheduleSourceUnavailable(RuntimeError):
+    """Raised when the canonical primary schedule is not safely readable."""
+
+    def __init__(
+        self,
+        *,
+        status: str,
+        code: str = 'schedule_source_unavailable',
+        message: str = 'authoritative schedule source is unavailable',
+    ) -> None:
+        super().__init__(message)
+        self.status = str(status)
+        self.code = str(code)
+        self.message = str(message)
+
 # The Chinese aliases are the current admin workbook names.  The short
 # English aliases keep this service usable with normalized workbook fixtures
 # without manufacturing values for columns that are absent.
@@ -490,7 +506,7 @@ def load_schedule_entries(
     if normalized_kind == 'primary':
         snapshot = resolve_current_schedule_snapshot(semester)
         if snapshot.status != READY or snapshot.batch is None:
-            return []
+            raise ScheduleSourceUnavailable(status=snapshot.status)
         rows = _rows_for_batch(snapshot.batch.id)
         return [
             _as_contract(
@@ -528,6 +544,7 @@ def load_schedule_entries(
 __all__ = [
     'BACKUP_SOURCE_LABEL',
     'PRIMARY_SOURCE_LABEL',
+    'ScheduleSourceUnavailable',
     'ensure_listening_assistant_schema',
     'latest_retired_batch_id',
     'load_schedule_entries',

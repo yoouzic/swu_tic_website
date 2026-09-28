@@ -20,6 +20,7 @@ from app.models import (
     db,
 )
 from app.services.listening_assistant_schedule import (
+    ScheduleSourceUnavailable,
     _requested_batch_id,
     _source_row,
     load_schedule_entries,
@@ -28,6 +29,8 @@ from app.services.listening_assistant_schedule import (
     persist_listening_assistant_entries,
 )
 from app.services.schedule_snapshots import (
+    CURRENT_SEMESTER_CONFIGURED_BUT_NO_ACTIVE_SNAPSHOT,
+    CURRENT_SEMESTER_UNSET,
     DEFAULT_SOURCE_ROW_OFFSET,
     persist_import_snapshot,
 )
@@ -424,9 +427,27 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         ))
         db.session.commit()
 
+        with self.assertRaises(ScheduleSourceUnavailable) as raised:
+            load_schedule_entries(source_kind='primary', semester=SEMESTER)
+
         self.assertEqual(
-            load_schedule_entries(source_kind='primary', semester=SEMESTER),
-            [],
+            raised.exception.status,
+            CURRENT_SEMESTER_CONFIGURED_BUT_NO_ACTIVE_SNAPSHOT,
+        )
+        self.assertEqual(raised.exception.code, 'schedule_source_unavailable')
+        self.assertNotIn('LEGACY-CODE', raised.exception.message)
+
+    def test_primary_loader_reports_typed_unavailable_states_without_history_fallback(self):
+        with self.assertRaises(ScheduleSourceUnavailable) as unset:
+            load_schedule_entries(source_kind='primary')
+        self.assertEqual(unset.exception.status, CURRENT_SEMESTER_UNSET)
+        self.assertEqual(unset.exception.code, 'schedule_source_unavailable')
+
+        with self.assertRaises(ScheduleSourceUnavailable) as missing:
+            load_schedule_entries(source_kind='primary', semester=SEMESTER)
+        self.assertEqual(
+            missing.exception.status,
+            CURRENT_SEMESTER_CONFIGURED_BUT_NO_ACTIVE_SNAPSHOT,
         )
 
     def test_schema_command_creates_only_assistant_table_and_is_idempotent(self):

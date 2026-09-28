@@ -22,6 +22,7 @@ from app.models import (
 from app.services.listening_assistant import ListeningAssistantService
 from app.services.listening_assistant_contracts import AssistantQuery, ScheduleEntry
 from app.services.listening_assistant_evidence import (
+    AssistantSelectionError,
     NormalizedAssistantSelection,
     create_evidence,
     revalidate_selection,
@@ -231,6 +232,67 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
         self.assertNotIn('13800000000', stored)
         self.assertNotIn('真实签名', stored)
         self.assertNotIn('课程反馈内容', stored)
+
+    def test_revalidation_requires_valid_overrides_for_candidate_conflicts(self):
+        period_entry = schedule_entry()
+        service, _loader = self._service(primary=[period_entry])
+        payload, _candidate = self._payload(service)
+        payload['query']['period'] = [5, 6]
+
+        with self.assertRaises(AssistantSelectionError) as raised:
+            revalidate_selection(
+                self.user,
+                payload,
+                service=service,
+                semester=SEMESTER,
+            )
+        self.assertEqual(raised.exception.code, 'conflict_requires_override')
+
+        payload['overrides'] = {'period': [3, 4]}
+        normalized = revalidate_selection(
+            self.user,
+            payload,
+            service=service,
+            semester=SEMESTER,
+        )
+        self.assertEqual(normalized.field_snapshot['class_period'], '第3-4节')
+
+        date_entry = ScheduleEntry(
+            entry_id='primary:batch-current:date-confirmation',
+            lecture_date=None,
+            room='8-309',
+            period=(3, 4),
+            course_code='CS101',
+            selection_code='S102',
+            course_title='数据结构',
+            teacher_name='张老师',
+            teacher_college='计算机学院',
+            student_grade_class='2024级计算机1班',
+            weekday=5,
+            semester=SEMESTER,
+            source_kind='primary',
+            source_batch_id='batch-current',
+            source_row=2,
+        )
+        date_service, _loader = self._service(primary=[date_entry])
+        date_payload, _candidate = self._payload(date_service)
+        with self.assertRaises(AssistantSelectionError) as raised:
+            revalidate_selection(
+                self.user,
+                date_payload,
+                service=date_service,
+                semester=SEMESTER,
+            )
+        self.assertEqual(raised.exception.code, 'conflict_requires_override')
+
+        date_payload['overrides'] = {'lecture_date': LOOKUP_DATE.isoformat()}
+        normalized = revalidate_selection(
+            self.user,
+            date_payload,
+            service=date_service,
+            semester=SEMESTER,
+        )
+        self.assertEqual(normalized.field_snapshot['lecture_date'], LOOKUP_DATE.isoformat())
 
     def test_revalidation_requires_an_explicit_confirmed_stage(self):
         service, _loader = self._service(primary=[schedule_entry()])

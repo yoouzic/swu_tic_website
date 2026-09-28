@@ -20,6 +20,7 @@ from app.models import (
     db,
 )
 from app.services.listening_assistant_contracts import ScheduleEntry
+from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
 
 
@@ -270,6 +271,35 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
             str(retired_batch.id),
         )
 
+    def test_primary_get_returns_unavailable_json_when_authoritative_source_is_not_ready(self):
+        self._login()
+        unavailable = ScheduleSourceUnavailable(
+            status='CURRENT_SEMESTER_CONFIGURED_BUT_NO_ACTIVE_SNAPSHOT',
+        )
+        with mock.patch(
+            'app.services.listening_assistant.load_schedule_entries',
+            side_effect=unavailable,
+        ):
+            response = self.client.get(
+                '/user/api/listening-assistant/candidates',
+                query_string={
+                    'date': '2026-09-18',
+                    'room': '8-309',
+                    'semester': SEMESTER,
+                },
+            )
+
+        self.assertEqual(response.status_code, 503)
+        payload = self._assert_envelope(response, success=False)
+        self.assertEqual(
+            payload['data'],
+            {
+                'status': 'CURRENT_SEMESTER_CONFIGURED_BUT_NO_ACTIVE_SNAPSHOT',
+                'code': 'schedule_source_unavailable',
+            },
+        )
+        self.assertNotIn('candidates', payload['data'])
+
     def test_get_rejects_invalid_date_or_missing_anchor_as_json(self):
         self._login()
         for query in (
@@ -500,6 +530,46 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         self.assertNotIn('course_feedback', str(payload['data']))
         self.assertEqual(LectureForm.query.count(), before_forms)
         self.assertEqual(ListeningAssistantEvidence.query.count(), before_evidence)
+
+    def test_confirm_requires_explicit_override_for_fresh_primary_period_conflict(self):
+        self._login()
+        response = self.client.get(
+            '/user/api/listening-assistant/candidates',
+            query_string={
+                'date': '2026-09-18',
+                'room': '8-309',
+                'period': '5-6',
+                'semester': SEMESTER,
+            },
+        )
+        candidate = self._assert_envelope(response, success=True)['data']['candidates'][0]
+        self.assertIn('period_mismatch', candidate['conflicts'])
+
+        payload = self._confirm_payload(candidate)
+        payload['query']['period'] = [5, 6]
+        before_forms = LectureForm.query.count()
+        before_evidence = ListeningAssistantEvidence.query.count()
+
+        rejected = self.client.post(
+            '/user/api/listening-assistant/confirm',
+            json=payload,
+        )
+        rejected_payload = self._assert_envelope(rejected, success=False)
+        self.assertEqual(rejected.status_code, 400)
+        self.assertIn('conflict requires an explicit override', rejected_payload['message'])
+        self.assertEqual(LectureForm.query.count(), before_forms)
+        self.assertEqual(ListeningAssistantEvidence.query.count(), before_evidence)
+
+        payload['overrides'] = {'period': [3, 4]}
+        accepted = self.client.post(
+            '/user/api/listening-assistant/confirm',
+            json=payload,
+        )
+        accepted_payload = self._assert_envelope(accepted, success=True)
+        self.assertEqual(
+            accepted_payload['data']['field_snapshot']['class_period'],
+            '第3-4节',
+        )
 
     def test_confirm_rejects_conflicting_top_level_aliases_and_canonicalizes_equal_aliases(self):
         self._login()

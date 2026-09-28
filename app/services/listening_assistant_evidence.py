@@ -318,6 +318,48 @@ def _fresh_candidates(result: object) -> tuple[Candidate, ...]:
         raise AssistantSelectionError('search returned an invalid candidate list') from error
 
 
+def _has_non_empty_override(overrides: Mapping[str, Any], *keys: str) -> bool:
+    for key in keys:
+        if key not in overrides:
+            continue
+        value = overrides[key]
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return True
+    return False
+
+
+def _require_candidate_conflict_overrides(
+    candidate: Candidate,
+    overrides: Mapping[str, Any],
+) -> None:
+    conflicts = set(candidate.conflicts)
+    missing: list[str] = []
+    if (
+        'period_mismatch' in conflicts
+        or 'venue_period_needs_confirmation' in conflicts
+    ) and not _has_non_empty_override(overrides, 'period', 'class_period'):
+        missing.append('period')
+    if 'date_needs_confirmation' in conflicts and not _has_non_empty_override(
+        overrides,
+        'lecture_date',
+    ):
+        missing.append('lecture_date')
+    if any('location' in conflict for conflict in conflicts) and not _has_non_empty_override(
+        overrides,
+        'room',
+        'lecture_location',
+    ):
+        missing.append('room')
+    if missing:
+        raise AssistantSelectionError(
+            'assistant candidate conflict requires an explicit override',
+            code='conflict_requires_override',
+        )
+
+
 def revalidate_selection(
     user: object,
     selection_payload: Mapping[str, Any],
@@ -467,6 +509,7 @@ def revalidate_selection(
         raise AssistantSelectionError(f'invalid assistant overrides: {error}') from error
 
     overrides = _json_safe_copy(confirmation.overrides)
+    _require_candidate_conflict_overrides(selected, overrides)
     candidate_payload = _json_safe_copy(selected.to_public_dict())
     field_snapshot = safe_field_snapshot(selected, overrides=overrides)
     confirmation_payload = {
