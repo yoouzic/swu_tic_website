@@ -159,6 +159,13 @@ class LectureFormDraftTest(unittest.TestCase):
                     'student_signature1': 'signature',
                 },
                 'template_version': 'task4-v1',
+                'assistant_filled_fields': [
+                    'lecture_date',
+                    'course_title',
+                    'contact_phone1',
+                    {'drop': 'nested'},
+                ],
+                'assistant_filled_groups': ['period', 'phones'],
                 'arbitrary_nested_key': 'must be dropped',
             },
         }
@@ -174,6 +181,11 @@ class LectureFormDraftTest(unittest.TestCase):
         self.assertNotIn('contact_phone1', saved['assistant']['overrides'])
         self.assertNotIn('student_signature1', saved['assistant']['overrides'])
         self.assertEqual(saved['assistant']['overrides']['lecture_location'], '9-101')
+        self.assertEqual(
+            saved['assistant']['assistant_filled_fields'],
+            ['lecture_date', 'course_title'],
+        )
+        self.assertEqual(saved['assistant']['assistant_filled_groups'], ['period'])
 
     def test_successful_form_submit_clears_current_user_draft(self):
         self._login_as(self.user)

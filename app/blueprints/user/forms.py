@@ -44,7 +44,18 @@ _ASSISTANT_DRAFT_KEYS = frozenset({
     'reason',
     'explicit_fallback',
     'acknowledged_source',
+    'assistant_filled_fields',
+    'assistant_filled_groups',
 })
+_ASSISTANT_FILLED_FIELD_KEYS = frozenset({
+    'lecture_date',
+    'lecture_location',
+    'teacher_name',
+    'teacher_college',
+    'course_title',
+    'student_grade_class',
+})
+_ASSISTANT_FILLED_GROUP_KEYS = frozenset({'period'})
 _ASSISTANT_QUERY_DRAFT_KEYS = frozenset({
     'lecture_date',
     'room',
@@ -89,6 +100,20 @@ def _normalize_assistant_draft_payload(raw_payload):
             normalized[key] = nested
             continue
 
+        if key in {'assistant_filled_fields', 'assistant_filled_groups'}:
+            if not isinstance(value, list):
+                continue
+            allowed_keys = (
+                _ASSISTANT_FILLED_FIELD_KEYS
+                if key == 'assistant_filled_fields'
+                else _ASSISTANT_FILLED_GROUP_KEYS
+            )
+            normalized[key] = [
+                item for item in value
+                if isinstance(item, str) and item in allowed_keys
+            ]
+            continue
+
         if key == 'rejected_ids':
             if not isinstance(value, list):
                 continue
@@ -123,7 +148,10 @@ def _parse_draft_payload(draft):
         payload = json.loads(draft.payload_json)
     except (TypeError, ValueError):
         return {}
-    return payload if isinstance(payload, dict) else {}
+    if not isinstance(payload, dict):
+        return {}
+    normalized = _normalize_draft_payload(payload)
+    return normalized if normalized is not None else {}
 
 
 def _normalize_draft_payload(raw_payload):
@@ -132,6 +160,22 @@ def _normalize_draft_payload(raw_payload):
     normalized = {}
     for key, value in raw_payload.items():
         if not isinstance(key, str):
+            continue
+        if key == 'assistant_payload':
+            legacy_payload = None
+            if isinstance(value, dict):
+                legacy_payload = value
+            elif isinstance(value, str):
+                try:
+                    parsed = json.loads(value)
+                except (TypeError, ValueError):
+                    parsed = None
+                if isinstance(parsed, dict):
+                    legacy_payload = parsed
+            if legacy_payload is not None:
+                assistant_payload = _normalize_assistant_draft_payload(legacy_payload)
+                if assistant_payload:
+                    normalized['assistant'] = assistant_payload
             continue
         if key == 'assistant':
             assistant_payload = _normalize_assistant_draft_payload(value)

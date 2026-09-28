@@ -165,7 +165,7 @@
                                     </div>
                                 </div>
 
-                                <div class="listening-assistant__candidate-list" data-assistant-candidates role="list" aria-label="课表候选" tabindex="0">
+                                <div class="listening-assistant__candidate-list" data-assistant-candidates role="region" aria-live="polite" aria-label="课表候选结果" tabindex="0">
                                     <div class="listening-assistant__empty" data-assistant-candidates-empty>输入查询条件后，这里会显示候选课程。</div>
                                     <template data-assistant-candidate-template>
                                         <article data-assistant-card tabindex="0"><button type="button" data-assistant-select>选择此候选</button><button type="button" data-assistant-reject>排除</button></article>
@@ -751,6 +751,21 @@ function formatLectureDraftTime(timestamp) {
     return new Date().toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'});
 }
 
+function parseAssistantPayloadObject(value) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return value;
+    }
+    if (typeof value !== 'string' || !value.trim()) {
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(value);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch (error) {
+        return null;
+    }
+}
+
 function collectLectureFormDraftData() {
     const form = document.getElementById('lectureForm');
     const data = {};
@@ -780,6 +795,11 @@ function collectLectureFormDraftData() {
     formData.forEach((value, key) => {
         data[key] = value;
     });
+    const assistantPayload = parseAssistantPayloadObject(data.assistant_payload);
+    delete data.assistant_payload;
+    if (assistantPayload) {
+        data.assistant = assistantPayload;
+    }
     data.teaching_method = tmValues.join('、');
     data.start_period = document.getElementById('start_period')?.value || '';
     data.end_period = document.getElementById('end_period')?.value || '';
@@ -790,7 +810,16 @@ function applyLectureFormDraftData(data) {
     if (!data || typeof data !== 'object') {
         return;
     }
+    const assistantSource = data.assistant || data.assistant_payload;
+    const assistantPayload = parseAssistantPayloadObject(assistantSource);
+    const assistantInput = document.getElementById('assistant_payload');
+    if (assistantInput) {
+        assistantInput.value = assistantPayload ? JSON.stringify(assistantPayload) : '';
+    }
     Object.keys(data).forEach(key => {
+        if (key === 'assistant' || key === 'assistant_payload') {
+            return;
+        }
         const selector = `[name="${CSS.escape(key)}"]`;
         document.querySelectorAll(selector).forEach(element => {
             if (element.type === 'checkbox' || element.type === 'radio') {

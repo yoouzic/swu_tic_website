@@ -228,3 +228,26 @@ def test_assistant_filled_provenance_is_persisted_and_safely_merged_after_reload
         assert marker in script
     for excluded in ('student_signature1', 'student_signature2', 'contact_phone1', 'contact_phone2'):
         assert excluded not in script
+
+
+def test_lecture_form_draft_bridges_namespaced_assistant_payload_safely():
+    draft_source = TEMPLATE + SCRIPT_PATH.read_text(encoding='utf-8')
+    for marker in (
+        'parseAssistantPayloadObject',
+        'data.assistant = assistantPayload',
+        'delete data.assistant_payload',
+        'data.assistant || data.assistant_payload',
+        'assistant_payload',
+        'JSON.stringify(assistantPayload)',
+        'assistant_filled_fields',
+        'assistant_filled_groups',
+    ):
+        assert marker in draft_source
+
+
+def test_candidate_results_use_a_semantically_valid_region_container():
+    start = TEMPLATE.index('data-assistant-candidates')
+    end = TEMPLATE.index('data-assistant-none', start)
+    candidate_region = TEMPLATE[start:end]
+    assert 'role="region"' in candidate_region
+    assert 'role="list"' not in candidate_region
