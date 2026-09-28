@@ -45,6 +45,8 @@ SELECTION_KEYS = frozenset({
     'reason',
     'explicit_fallback',
     'acknowledged_source',
+    'assistant_filled_fields',
+    'assistant_filled_groups',
 })
 QUERY_KEYS = frozenset({
     'lecture_date',
@@ -64,6 +66,15 @@ SNAPSHOT_FIELDS = (
     'course_title',
     'student_grade_class',
 )
+ASSISTANT_FILLED_FIELD_KEYS = frozenset({
+    'lecture_date',
+    'lecture_location',
+    'teacher_name',
+    'teacher_college',
+    'course_title',
+    'student_grade_class',
+})
+ASSISTANT_FILLED_GROUP_KEYS = frozenset({'period'})
 MAX_TEMPLATE_VERSION_LENGTH = 100
 MAX_SEMESTER_LENGTH = 50
 
@@ -134,6 +145,22 @@ def _required_bool(payload: Mapping[str, Any], key: str, *, default: bool = Fals
     if not isinstance(value, bool):
         raise AssistantSelectionError(f'{key} must be a boolean')
     return value
+
+
+def _validate_assistant_filled_provenance(payload: Mapping[str, Any]) -> None:
+    """Validate client-side fill provenance without treating it as authority."""
+    for key, allowed in (
+        ('assistant_filled_fields', ASSISTANT_FILLED_FIELD_KEYS),
+        ('assistant_filled_groups', ASSISTANT_FILLED_GROUP_KEYS),
+    ):
+        value = payload.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, list):
+            raise AssistantSelectionError(f'{key} must be a list')
+        for item in value:
+            if not isinstance(item, str) or item not in allowed:
+                raise AssistantSelectionError(f'{key} contains an unsupported value')
 
 
 def _json_safe_copy(value: Any) -> Any:
@@ -378,6 +405,7 @@ def revalidate_selection(
     unknown = set(selection_payload) - SELECTION_KEYS
     if unknown:
         raise AssistantSelectionError('assistant payload contains unsupported fields')
+    _validate_assistant_filled_provenance(selection_payload)
 
     if 'stage' not in selection_payload:
         raise AssistantSelectionError('assistant selection stage is required')

@@ -294,6 +294,39 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
         )
         self.assertEqual(normalized.field_snapshot['lecture_date'], LOOKUP_DATE.isoformat())
 
+    def test_revalidation_accepts_only_safe_assistant_filled_provenance(self):
+        service, _loader = self._service(primary=[schedule_entry()])
+        payload, _candidate = self._payload(service)
+        payload.update({
+            'assistant_filled_fields': ['lecture_date', 'course_title'],
+            'assistant_filled_groups': ['period'],
+        })
+
+        normalized = revalidate_selection(
+            self.user,
+            payload,
+            service=service,
+            semester=SEMESTER,
+        )
+        self.assertEqual(normalized.candidate.course_title, '数据结构')
+
+        for bad_fields, bad_groups in (
+            (['contact_phone1'], []),
+            (['student_signature1'], []),
+            (['lecture_date'], ['phones']),
+        ):
+            invalid = dict(payload)
+            invalid['assistant_filled_fields'] = bad_fields
+            invalid['assistant_filled_groups'] = bad_groups
+            with self.subTest(bad_fields=bad_fields, bad_groups=bad_groups):
+                with self.assertRaises(AssistantSelectionError):
+                    revalidate_selection(
+                        self.user,
+                        invalid,
+                        service=service,
+                        semester=SEMESTER,
+                    )
+
     def test_revalidation_requires_an_explicit_confirmed_stage(self):
         service, _loader = self._service(primary=[schedule_entry()])
         payload, _candidate = self._payload(service)

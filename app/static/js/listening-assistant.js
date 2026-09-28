@@ -32,6 +32,15 @@
         venue_period_needs_confirmation: '场地节次需要人工核对。',
         date_needs_confirmation: '日期由星期或周次推断，需人工核对。',
     });
+    const ASSISTANT_FILLED_FIELD_WHITELIST = Object.freeze([
+        'lecture_date',
+        'lecture_location',
+        'teacher_name',
+        'teacher_college',
+        'course_title',
+        'student_grade_class',
+    ]);
+    const ASSISTANT_FILLED_GROUP_WHITELIST = Object.freeze(['period']);
 
     function cleanText(value) {
         return value == null ? '' : String(value).trim();
@@ -466,8 +475,8 @@
                     setError(error.message || '当前课表查询失败，请稍后重试。', STATES.FIND);
                 }
             } finally {
-                setBusy(root.querySelector('[data-assistant-search]'), false);
                 if (isCurrentRequest(request.requestId)) {
+                    setBusy(root.querySelector('[data-assistant-search]'), false);
                     state.controller = null;
                 }
             }
@@ -762,6 +771,10 @@
                 source_kind: cleanText(confirmation.source_kind || requestPayload.source_kind),
                 candidate_id: cleanText(confirmation.candidate_id || requestPayload.candidate_id),
                 overrides: isObject(responseData.overrides) ? responseData.overrides : requestPayload.overrides,
+                assistant_filled_fields: Array.from(state.assistantFilledFields)
+                    .filter((fieldName) => ASSISTANT_FILLED_FIELD_WHITELIST.includes(fieldName)),
+                assistant_filled_groups: Array.from(state.assistantFilledGroups)
+                    .filter((groupName) => ASSISTANT_FILLED_GROUP_WHITELIST.includes(groupName)),
                 template_version: cleanText(responseData.template_version || requestPayload.template_version),
                 explicit_fallback: confirmation.explicit_fallback === true,
                 acknowledged_source: confirmation.acknowledged_source === true,
@@ -781,6 +794,25 @@
             elements.payload.value = JSON.stringify(stored);
         }
 
+        function mergePersistedAssistantProvenance(payload) {
+            const persistedFields = Array.isArray(payload.assistant_filled_fields)
+                ? payload.assistant_filled_fields
+                : [];
+            persistedFields.forEach((fieldName) => {
+                if (ASSISTANT_FILLED_FIELD_WHITELIST.includes(fieldName)) {
+                    state.assistantFilledFields.add(fieldName);
+                }
+            });
+            const persistedGroups = Array.isArray(payload.assistant_filled_groups)
+                ? payload.assistant_filled_groups
+                : [];
+            persistedGroups.forEach((groupName) => {
+                if (ASSISTANT_FILLED_GROUP_WHITELIST.includes(groupName)) {
+                    state.assistantFilledGroups.add(groupName);
+                }
+            });
+        }
+
         function syncAssistantClearsBeforeSubmit() {
             if (!elements.payload || !cleanText(elements.payload.value)) {
                 return;
@@ -794,6 +826,7 @@
             if (!isObject(payload)) {
                 return;
             }
+            mergePersistedAssistantProvenance(payload);
             const overrides = isObject(payload.overrides) ? {...payload.overrides} : {};
             let changed = false;
             state.assistantFilledFields.forEach((fieldName) => {
@@ -860,8 +893,8 @@
                     setError(error.message || '确认失败，请重新选择并确认。', STATES.REVIEW);
                 }
             } finally {
-                setBusy(elements.confirmButton, false);
                 if (isCurrentRequest(request.requestId)) {
+                    setBusy(elements.confirmButton, false);
                     state.controller = null;
                 }
             }
@@ -931,8 +964,8 @@
                     setError(error.message || '备用课表查询失败，请手动填写。', STATES.RESCUE);
                 }
             } finally {
-                setBusy(elements.rescueButton, false);
                 if (isCurrentRequest(request.requestId)) {
+                    setBusy(elements.rescueButton, false);
                     state.controller = null;
                 }
             }

@@ -191,3 +191,40 @@ def test_backup_rescue_preserves_period_and_safe_query_filters():
     assert 'fallbackPayload.period = state.query.period' in rescue_body
     assert 'fallbackPayload.student_grade_class = state.query.student_grade_class' in rescue_body
     assert 'result.student_grade_class = query.student_grade_class' in script
+
+
+def test_async_request_finally_only_releases_current_request_controls():
+    script = SCRIPT_PATH.read_text(encoding='utf-8')
+    function_ranges = (
+        ('async function searchCandidates()', 'function updateRescueControls'),
+        ('async function rescueFallback()', 'function selectCandidate'),
+        ('async function confirmSelection()', 'async function rescueFallback'),
+    )
+    guarded_finally = re.compile(
+        r"finally\s*\{\s*"
+        r"if \(isCurrentRequest\(request\.requestId\)\) \{\s*"
+        r"setBusy\([\s\S]*?false\);\s*"
+        r"state\.controller = null;\s*\}",
+    )
+    for start_marker, end_marker in function_ranges:
+        start = script.index(start_marker)
+        end = script.index(end_marker, start)
+        assert guarded_finally.search(script[start:end]), start_marker
+
+
+def test_assistant_filled_provenance_is_persisted_and_safely_merged_after_reload():
+    script = SCRIPT_PATH.read_text(encoding='utf-8')
+    for marker in (
+        'assistant_filled_fields:',
+        'assistant_filled_groups:',
+        'Array.from(state.assistantFilledFields)',
+        'Array.from(state.assistantFilledGroups)',
+        'mergePersistedAssistantProvenance',
+        'ASSISTANT_FILLED_FIELD_WHITELIST',
+        'ASSISTANT_FILLED_GROUP_WHITELIST',
+        'payload.assistant_filled_fields',
+        'payload.assistant_filled_groups',
+    ):
+        assert marker in script
+    for excluded in ('student_signature1', 'student_signature2', 'contact_phone1', 'contact_phone2'):
+        assert excluded not in script
