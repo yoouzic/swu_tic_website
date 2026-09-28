@@ -102,6 +102,8 @@
             errorReturnState: STATES.FIND,
             requestId: 0,
             controller: null,
+            activeButton: null,
+            activeRequestId: null,
             assistantFilledFields: new Set(),
             assistantFilledGroups: new Set(),
         };
@@ -141,6 +143,11 @@
 
         function invalidateRequests() {
             state.requestId += 1;
+            if (state.activeButton) {
+                setBusy(state.activeButton, false);
+                state.activeButton = null;
+            }
+            state.activeRequestId = null;
             if (state.controller) {
                 state.controller.abort();
                 state.controller = null;
@@ -148,9 +155,11 @@
             return state.requestId;
         }
 
-        function beginRequest() {
+        function beginRequest(button) {
             const requestId = invalidateRequests();
             state.controller = new AbortController();
+            state.activeButton = button || null;
+            state.activeRequestId = requestId;
             return {requestId, signal: state.controller.signal};
         }
 
@@ -448,8 +457,9 @@
             state.fallbackReason = state.rejectedIds.length ? 'rejected_candidates' : 'no_result';
             renderCandidates([]);
             setState(STATES.FIND, '状态：查找。正在查询当前权威课表……');
-            setBusy(root.querySelector('[data-assistant-search]'), true, '查询中…');
-            const request = beginRequest();
+            const searchButton = root.querySelector('[data-assistant-search]');
+            const request = beginRequest(searchButton);
+            setBusy(searchButton, true, '查询中…');
             try {
                 const params = buildCandidateQueryParams(query);
                 const data = await requestJson(`${ENDPOINTS.candidates}?${params.toString()}`, {method: 'GET'}, request);
@@ -476,8 +486,10 @@
                 }
             } finally {
                 if (isCurrentRequest(request.requestId)) {
-                    setBusy(root.querySelector('[data-assistant-search]'), false);
+                    setBusy(searchButton, false);
                     state.controller = null;
+                    state.activeButton = null;
+                    state.activeRequestId = null;
                 }
             }
         }
@@ -872,8 +884,8 @@
                 return;
             }
             const requestPayload = buildConfirmationPayload();
+            const request = beginRequest(elements.confirmButton);
             setBusy(elements.confirmButton, true, '确认中…');
-            const request = beginRequest();
             try {
                 const data = await requestJson(ENDPOINTS.confirm, {
                     method: 'POST',
@@ -896,6 +908,8 @@
                 if (isCurrentRequest(request.requestId)) {
                     setBusy(elements.confirmButton, false);
                     state.controller = null;
+                    state.activeButton = null;
+                    state.activeRequestId = null;
                 }
             }
         }
@@ -921,8 +935,8 @@
             state.originalRoomForFallback = query.room || '';
             state.roomDecision = '';
             setState(STATES.RESCUE, '状态：救援。正在查询你明确选择的备用课表……');
+            const request = beginRequest(elements.rescueButton);
             setBusy(elements.rescueButton, true, '查询中…');
-            const request = beginRequest();
             try {
                 const fallbackPayload = {
                     date: state.query.date,
@@ -967,6 +981,8 @@
                 if (isCurrentRequest(request.requestId)) {
                     setBusy(elements.rescueButton, false);
                     state.controller = null;
+                    state.activeButton = null;
+                    state.activeRequestId = null;
                 }
             }
         }
@@ -1015,8 +1031,18 @@
             root.querySelector('#assistantDate')?.focus();
         }
 
+        function rejectDisplayedCandidates() {
+            state.candidates.forEach((candidate) => {
+                const candidateId = cleanText(candidate && candidate.candidate_id);
+                if (candidateId && !state.rejectedIds.includes(candidateId)) {
+                    state.rejectedIds.push(candidateId);
+                }
+            });
+        }
+
         function openRescue() {
             invalidateRequests();
+            rejectDisplayedCandidates();
             state.fallbackReason = state.primaryHadCandidates || state.rejectedIds.length ? 'rejected_candidates' : 'no_result';
             if (elements.rescueReason) {
                 elements.rescueReason.value = state.fallbackReason;

@@ -204,7 +204,7 @@ def test_async_request_finally_only_releases_current_request_controls():
         r"finally\s*\{\s*"
         r"if \(isCurrentRequest\(request\.requestId\)\) \{\s*"
         r"setBusy\([\s\S]*?false\);\s*"
-        r"state\.controller = null;\s*\}",
+        r"[\s\S]*?state\.controller = null;[\s\S]*?\}",
     )
     for start_marker, end_marker in function_ranges:
         start = script.index(start_marker)
@@ -251,3 +251,44 @@ def test_candidate_results_use_a_semantically_valid_region_container():
     candidate_region = TEMPLATE[start:end]
     assert 'role="region"' in candidate_region
     assert 'role="list"' not in candidate_region
+
+
+def test_request_cancellation_restores_only_the_old_button_and_reorders_begin_request():
+    script = SCRIPT_PATH.read_text(encoding='utf-8')
+    assert 'activeButton' in script
+    assert 'activeRequestId' in script
+    invalidate_start = script.index('function invalidateRequests()')
+    invalidate_end = script.index('function beginRequest', invalidate_start)
+    invalidate_body = script[invalidate_start:invalidate_end]
+    assert 'setBusy(state.activeButton, false)' in invalidate_body
+    assert invalidate_body.index('setBusy(state.activeButton, false)') < invalidate_body.index('state.controller.abort()')
+    assert 'function beginRequest(button)' in script
+    assert 'state.activeButton = button' in script
+
+    function_ranges = (
+        ('async function searchCandidates()', 'function updateRescueControls'),
+        ('async function rescueFallback()', 'function selectCandidate'),
+        ('async function confirmSelection()', 'async function rescueFallback'),
+    )
+    for start_marker, end_marker in function_ranges:
+        start = script.index(start_marker)
+        end = script.index(end_marker, start)
+        body = script[start:end]
+        assert body.index('const request = beginRequest(') < body.index('setBusy(', body.index('const request = beginRequest('))
+
+
+def test_none_action_rejects_displayed_candidates_before_rescue_and_manual_stays_separate():
+    script = SCRIPT_PATH.read_text(encoding='utf-8')
+    assert 'function rejectDisplayedCandidates()' in script
+    reject_start = script.index('function rejectDisplayedCandidates()')
+    reject_end = script.index('function openRescue()', reject_start)
+    reject_body = script[reject_start:reject_end]
+    for marker in ('state.candidates.forEach', 'state.rejectedIds.includes', 'state.rejectedIds.push'):
+        assert marker in reject_body
+    rescue_start = script.index('function openRescue()')
+    rescue_end = script.index('function handleClick', rescue_start)
+    rescue_body = script[rescue_start:rescue_end]
+    assert 'rejectDisplayedCandidates();' in rescue_body
+    assert rescue_body.index('rejectDisplayedCandidates();') < rescue_body.index('state.fallbackReason')
+    assert "if (target.closest('[data-assistant-manual]'))" in script
+    assert 'openManual();' in script
