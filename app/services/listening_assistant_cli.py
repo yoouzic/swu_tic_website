@@ -1,9 +1,8 @@
 """Flask CLI registration for the additive listening-assistant schema."""
 
 import click
-from sqlalchemy import inspect
 
-from app.models import ListeningAssistantScheduleEntry, db
+from app.services.listening_assistant_schedule import ensure_listening_assistant_schema
 
 
 @click.group(name='listening-assistant')
@@ -14,18 +13,10 @@ def listening_assistant_cli():
 @listening_assistant_cli.command('init-schema')
 def init_schema():
     """Create only the assistant index table, if it is missing."""
-    if not inspect(db.engine).has_table('schedule_import_batches'):
-        raise click.ClickException(
-            "Cannot initialize the listening-assistant schema: prerequisite "
-            "canonical table 'schedule_import_batches' is missing. Initialize "
-            "the canonical schedule snapshot schema first; this command does "
-            "not create historical data."
-        )
-
-    ListeningAssistantScheduleEntry.__table__.create(
-        bind=db.session.connection(),
-        checkfirst=True,
-    )
+    try:
+        ensure_listening_assistant_schema()
+    except RuntimeError as error:
+        raise click.ClickException(str(error)) from error
     click.echo('Listening assistant schema ready.')
 
 

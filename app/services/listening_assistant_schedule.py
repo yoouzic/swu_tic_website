@@ -10,6 +10,7 @@ from typing import Any, Iterable
 
 import pandas as pd
 from sqlalchemy import inspect
+from sqlalchemy.schema import CreateColumn
 
 from app.models import (
     ListeningAssistantScheduleEntry,
@@ -74,19 +75,57 @@ _COLUMN_ALIASES = {
 }
 
 
-def _ensure_listening_assistant_schema() -> None:
-    """Create only the assistant table after canonical parents are available."""
-    if not inspect(db.engine).has_table('schedule_import_batches'):
+def ensure_listening_assistant_schema() -> None:
+    """Idempotently create/extend only the assistant index schema.
+
+    This is deliberately additive: it requires the canonical snapshot parent,
+    creates the assistant table when absent, and adds only nullable model
+    columns and missing model indexes when an older assistant table exists.
+    """
+    engine = db.engine
+    if not inspect(engine).has_table('schedule_import_batches'):
         raise RuntimeError(
             "Cannot initialize the listening-assistant schedule index because "
             "the prerequisite canonical table 'schedule_import_batches' is "
             "missing. Initialize the canonical schedule snapshot schema first."
         )
 
-    ListeningAssistantScheduleEntry.__table__.create(
-        bind=db.session.connection(),
-        checkfirst=True,
-    )
+    table = ListeningAssistantScheduleEntry.__table__
+    with engine.begin() as connection:
+        connection_inspector = inspect(connection)
+        if not connection_inspector.has_table(table.name):
+            table.create(bind=connection, checkfirst=True)
+            return
+
+        existing_columns = {
+            column['name']
+            for column in connection_inspector.get_columns(table.name)
+        }
+        preparer = connection.dialect.identifier_preparer
+        for column in table.columns:
+            if column.name in existing_columns:
+                continue
+            if column.primary_key or not column.nullable:
+                raise RuntimeError(
+                    f"Cannot add non-nullable assistant schema column "
+                    f"'{column.name}' without a migration."
+                )
+            column_ddl = str(
+                CreateColumn(column).compile(dialect=connection.dialect)
+            )
+            connection.exec_driver_sql(
+                f'ALTER TABLE {preparer.quote(table.name)} '
+                f'ADD COLUMN {column_ddl}'
+            )
+            existing_columns.add(column.name)
+
+        existing_indexes = {
+            index['name']
+            for index in inspect(connection).get_indexes(table.name)
+        }
+        for index in table.indexes:
+            if index.name not in existing_indexes:
+                index.create(bind=connection, checkfirst=True)
 
 
 def _is_missing(value: object) -> bool:
@@ -133,11 +172,15 @@ def _semester_key(value: object) -> str:
     return _normalized_text(value) or ''
 
 
-def _source_row(source_index: object, position: int) -> int:
+def _source_row(
+    source_index: object,
+    position: int,
+    source_row_offset: int,
+) -> int:
     try:
-        return int(source_index) + DEFAULT_SOURCE_ROW_OFFSET
+        return int(source_index) + source_row_offset
     except (TypeError, ValueError, OverflowError):
-        return position + DEFAULT_SOURCE_ROW_OFFSET
+        return position + source_row_offset
 
 
 def _weekday(value: object) -> int | None:
@@ -172,6 +215,7 @@ def _period_bounds(value: object) -> tuple[int | None, int | None]:
 def persist_listening_assistant_entries(
     dataframe,
     batches: Iterable[ScheduleImportBatch],
+    source_row_offset: int = DEFAULT_SOURCE_ROW_OFFSET,
 ) -> list[ListeningAssistantScheduleEntry]:
     """Persist assistant rows for the batches created by one workbook import.
 
@@ -185,7 +229,7 @@ def persist_listening_assistant_entries(
     batch_list = list(batches or ())
     if not batch_list:
         return []
-    _ensure_listening_assistant_schema()
+    ensure_listening_assistant_schema()
     if any(batch.id is None for batch in batch_list):
         db.session.flush()
 
@@ -198,7 +242,7 @@ def persist_listening_assistant_entries(
         if batch is None:
             continue
 
-        source_row = _source_row(source_index, position)
+        source_row = _source_row(source_index, position, source_row_offset)
         key = (batch.id, source_row)
         if key in seen_keys:
             continue
@@ -403,6 +447,7 @@ def load_schedule_entries(
 __all__ = [
     'BACKUP_SOURCE_LABEL',
     'PRIMARY_SOURCE_LABEL',
+    'ensure_listening_assistant_schema',
     'load_schedule_entries',
     'persist_listening_assistant_entries',
 ]

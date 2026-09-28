@@ -9,12 +9,21 @@ import pandas as pd
 from sqlalchemy import inspect
 
 from app.app import app
-from app.models import Course, ListeningAssistantScheduleEntry, db
+from app.models import (
+    Course,
+    ListeningAssistantScheduleEntry,
+    ScheduleImportRow,
+    db,
+)
 from app.services.listening_assistant_schedule import (
     load_schedule_entries,
+    ensure_listening_assistant_schema,
     persist_listening_assistant_entries,
 )
-from app.services.schedule_snapshots import persist_import_snapshot
+from app.services.schedule_snapshots import (
+    DEFAULT_SOURCE_ROW_OFFSET,
+    persist_import_snapshot,
+)
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
 
 
@@ -61,13 +70,23 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         self.app_context.pop()
         self.temp_dir.cleanup()
 
-    def _persist(self, frame, filename='schedule.xlsx'):
+    def _persist(
+        self,
+        frame,
+        filename='schedule.xlsx',
+        source_row_offset=DEFAULT_SOURCE_ROW_OFFSET,
+    ):
         batches = persist_import_snapshot(
             frame,
             source_filename=filename,
             source_sha256='a' * 64,
+            source_row_offset=source_row_offset,
         )
-        persist_listening_assistant_entries(frame, batches)
+        persist_listening_assistant_entries(
+            frame,
+            batches,
+            source_row_offset=source_row_offset,
+        )
         db.session.commit()
         return batches
 
@@ -182,6 +201,21 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         self.assertEqual(entry.semester, SEMESTER)
         self.assertEqual(batches[0].semester, SEMESTER)
 
+    def test_non_default_source_row_offset_matches_canonical_snapshot(self):
+        source_row_offset = 11
+        batches = self._persist(
+            schedule_frame(),
+            filename='offset.xlsx',
+            source_row_offset=source_row_offset,
+        )
+
+        canonical_row = ScheduleImportRow.query.one()
+        assistant_entry = ListeningAssistantScheduleEntry.query.one()
+        self.assertEqual(canonical_row.batch_id, batches[0].id)
+        self.assertEqual(canonical_row.source_row, source_row_offset)
+        self.assertEqual(assistant_entry.batch_id, batches[0].id)
+        self.assertEqual(assistant_entry.source_row, source_row_offset)
+
     def test_primary_loader_follows_only_authoritative_current_batch(self):
         first_batch = self._persist(
             schedule_frame(teacher='旧教师'),
@@ -259,6 +293,7 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
 
         self.assertEqual(first.exit_code, 0, first.output)
         self.assertEqual(second.exit_code, 0, second.output)
+        db.session.rollback()
         inspector = inspect(db.engine)
         self.assertTrue(inspector.has_table('listening_assistant_schedule_entries'))
 
@@ -287,6 +322,7 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
             'listening_assistant_schedule_entries',
         ))
 
+        ensure_listening_assistant_schema()
         batches = persist_import_snapshot(
             schedule_frame(),
             source_filename='auto-ensure.xlsx',
@@ -298,6 +334,66 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         self.assertTrue(inspect(db.engine).has_table(
             'listening_assistant_schedule_entries',
         ))
+        self.assertEqual(ListeningAssistantScheduleEntry.query.count(), 1)
+
+    def test_schema_upgrade_adds_missing_raw_columns_and_indexes(self):
+        raw_columns = (
+            'semester_raw',
+            'academic_year_raw',
+            'course_code_raw',
+            'selection_code_raw',
+            'teacher_name_raw',
+            'teacher_college_raw',
+            'course_title_raw',
+            'venue_id_raw',
+        )
+        db.session.remove()
+        with db.engine.begin() as connection:
+            for column in raw_columns:
+                connection.exec_driver_sql(
+                    'ALTER TABLE listening_assistant_schedule_entries '
+                    f'DROP COLUMN "{column}"'
+                )
+            connection.exec_driver_sql(
+                'DROP INDEX IF EXISTS '
+                'ix_listening_assistant_schedule_batch_teacher'
+            )
+
+        before = {
+            column['name']
+            for column in inspect(db.engine).get_columns(
+                'listening_assistant_schedule_entries'
+            )
+        }
+        self.assertTrue(set(raw_columns).isdisjoint(before))
+
+        ensure_listening_assistant_schema()
+
+        after = {
+            column['name']
+            for column in inspect(db.engine).get_columns(
+                'listening_assistant_schedule_entries'
+            )
+        }
+        self.assertTrue(set(raw_columns) <= after)
+        indexes = {
+            index['name']
+            for index in inspect(db.engine).get_indexes(
+                'listening_assistant_schedule_entries'
+            )
+        }
+        self.assertIn(
+            'ix_listening_assistant_schedule_batch_teacher',
+            indexes,
+        )
+
+        batches = persist_import_snapshot(
+            schedule_frame(),
+            source_filename='upgraded.xlsx',
+            source_sha256='c' * 64,
+        )
+        persist_listening_assistant_entries(schedule_frame(), batches)
+        db.session.commit()
         self.assertEqual(ListeningAssistantScheduleEntry.query.count(), 1)
 
 
