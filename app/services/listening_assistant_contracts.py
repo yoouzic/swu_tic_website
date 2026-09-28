@@ -566,6 +566,10 @@ class ConfirmationResult:
     error_code: str | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.confirmed, bool):
+            raise ValueError('confirmed must be a bool')
+        if not isinstance(self.acknowledged_source, bool):
+            raise ValueError('acknowledged_source must be a bool')
         object.__setattr__(self, 'candidate_id', _optional_text(self.candidate_id))
         object.__setattr__(self, 'source_kind', _optional_text(self.source_kind))
         object.__setattr__(self, 'source_batch_id', _optional_text(self.source_batch_id))

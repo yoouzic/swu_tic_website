@@ -261,6 +261,34 @@ def test_confirmation_result_accepts_only_safe_json_override_payloads():
 @pytest.mark.parametrize(
     ('field_name', 'value'),
     (
+        ('confirmed', 'true'),
+        ('confirmed', 1),
+        ('confirmed', None),
+        ('confirmed', object()),
+        ('acknowledged_source', 'false'),
+        ('acknowledged_source', 0),
+        ('acknowledged_source', None),
+        ('acknowledged_source', object()),
+    ),
+)
+def test_confirmation_result_requires_real_boolean_flags(field_name, value):
+    values = {'confirmed': True, 'acknowledged_source': False}
+    values[field_name] = value
+
+    with pytest.raises(ValueError, match=field_name):
+        ConfirmationResult(**values)
+
+
+def test_confirmation_result_preserves_valid_boolean_flags():
+    result = ConfirmationResult(confirmed=False, acknowledged_source=True)
+
+    assert result.confirmed is False
+    assert result.acknowledged_source is True
+
+
+@pytest.mark.parametrize(
+    ('field_name', 'value'),
+    (
         ('weekday', 0),
         ('weekday', 8),
         ('weekday', '1'),
