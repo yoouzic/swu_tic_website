@@ -41,6 +41,10 @@ _TEXT_OVERRIDE_KEYS = frozenset({
     'teacher_college',
     'student_grade_class',
 })
+_OVERRIDE_ALIAS_PAIRS = (
+    ('room', 'lecture_location'),
+    ('period', 'class_period'),
+)
 
 
 def _text(value: object) -> str:
@@ -88,6 +92,18 @@ def _normalize_text_override(key: str, value: object) -> str | None:
     return value
 
 
+def _normalize_lecture_date_override(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or re.fullmatch(r'\d{4}-\d{2}-\d{2}', value) is None:
+        raise ValueError('overrides.lecture_date must be YYYY-MM-DD or None')
+    try:
+        date.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError('overrides.lecture_date must be YYYY-MM-DD or None') from error
+    return value
+
+
 def _normalize_period_override(value: object) -> str | int | list[int]:
     if isinstance(value, str):
         if parse_period(value) is None:
@@ -115,13 +131,22 @@ def _normalize_overrides(value: object) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError('overrides must be a mapping')
 
+    for first_alias, second_alias in _OVERRIDE_ALIAS_PAIRS:
+        if first_alias in value and second_alias in value:
+            raise ValueError(
+                f'overrides contains aliases {first_alias} and {second_alias}; '
+                'provide only one'
+            )
+
     normalized: dict[str, Any] = {}
     for key, item in value.items():
         if not isinstance(key, str):
             raise ValueError('overrides keys must be strings')
         if key not in SAFE_OVERRIDE_KEYS:
             raise ValueError(f'overrides contains unsupported key: {key}')
-        if key in _TEXT_OVERRIDE_KEYS:
+        if key == 'lecture_date':
+            normalized[key] = _normalize_lecture_date_override(item)
+        elif key in _TEXT_OVERRIDE_KEYS:
             normalized[key] = _normalize_text_override(key, item)
         else:
             normalized[key] = _normalize_period_override(item)
@@ -512,6 +537,8 @@ class Candidate:
         object.__setattr__(self, 'source_batch_id', _optional_text(self.source_batch_id))
         if self.conflicts is None:
             raw_conflicts = ()
+        elif isinstance(self.conflicts, Mapping):
+            raise ValueError('conflicts must contain only strings')
         elif isinstance(self.conflicts, str):
             raw_conflicts = (self.conflicts,)
         else:
@@ -521,6 +548,8 @@ class Candidate:
                 raise ValueError('conflicts must be iterable or None') from error
         conflicts: list[str] = []
         for conflict in raw_conflicts:
+            if not isinstance(conflict, str):
+                raise ValueError('conflicts entries must be strings')
             normalized = _text(conflict)
             if normalized and normalized not in conflicts:
                 conflicts.append(normalized)

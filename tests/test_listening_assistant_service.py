@@ -217,11 +217,34 @@ def test_candidate_conflicts_none_is_empty_and_non_iterable_is_rejected_clearly(
         )
 
 
+@pytest.mark.parametrize(
+    'conflicts',
+    (
+        [{'student_signature1': '签名'}],
+        ({'contact_phone1': '13800000000'},),
+        {'student_signature1': '签名'},
+        [object()],
+        [None],
+    ),
+)
+def test_candidate_rejects_non_string_conflict_entries_before_public_serialization(conflicts):
+    with pytest.raises(ValueError, match='conflicts'):
+        Candidate(
+            candidate_id='primary:batch-1:row-2',
+            lecture_date=date(2026, 9, 18),
+            room='8-309',
+            period=(3, 4),
+            course_title='数据结构',
+            teacher_name='张老师',
+            conflicts=conflicts,
+        )
+
+
 def test_confirmation_result_accepts_only_safe_json_override_payloads():
     source_overrides = {
+        'lecture_date': '2026-09-18',
         'lecture_location': '1教A101',
         'class_period': '第3-4节',
-        'period': [3, 4],
         'student_grade_class': None,
     }
     confirmation = ConfirmationResult(
@@ -230,12 +253,23 @@ def test_confirmation_result_accepts_only_safe_json_override_payloads():
     )
 
     assert confirmation.overrides == {
+        'lecture_date': '2026-09-18',
         'lecture_location': '1教A101',
         'class_period': '第3-4节',
-        'period': [3, 4],
         'student_grade_class': None,
     }
     assert confirmation.overrides is not source_overrides
+
+    period_string = ConfirmationResult(
+        confirmed=True,
+        overrides={'period': '第3-4节'},
+    )
+    period_pair = ConfirmationResult(
+        confirmed=True,
+        overrides={'period': [3, 4]},
+    )
+    assert period_string.overrides == {'period': '第3-4节'}
+    assert period_pair.overrides == {'period': [3, 4]}
 
     invalid_overrides = (
         {'student_signature1': '签名'},
@@ -251,11 +285,43 @@ def test_confirmation_result_accepts_only_safe_json_override_payloads():
         {'period': [3, '4']},
         {'period': 'bad'},
         {'period': None},
+        {'lecture_date': 'not-a-date'},
+        {'lecture_date': '2026-02-30'},
+        {'lecture_date': '2026-9-18'},
+        {'lecture_date': date(2026, 9, 18)},
         {'class_period': float('nan')},
     )
     for overrides in invalid_overrides:
         with pytest.raises(ValueError, match='overrides'):
             ConfirmationResult(confirmed=True, overrides=overrides)
+
+
+def test_confirmation_result_rejects_duplicate_override_aliases_even_when_equal():
+    with pytest.raises(ValueError, match='aliases'):
+        ConfirmationResult(
+            confirmed=True,
+            overrides={
+                'room': '1教A101',
+                'lecture_location': '1教A101',
+            },
+        )
+    with pytest.raises(ValueError, match='aliases'):
+        ConfirmationResult(
+            confirmed=True,
+            overrides={
+                'period': [3, 4],
+                'class_period': '第3-4节',
+            },
+        )
+
+
+def test_confirmation_result_allows_clearing_lecture_date_with_none():
+    confirmation = ConfirmationResult(
+        confirmed=True,
+        overrides={'lecture_date': None},
+    )
+
+    assert confirmation.overrides == {'lecture_date': None}
 
 
 @pytest.mark.parametrize(
