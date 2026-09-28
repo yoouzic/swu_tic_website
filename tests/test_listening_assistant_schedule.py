@@ -4,9 +4,11 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 from sqlalchemy import inspect
+from sqlalchemy.exc import OperationalError
 
 from app.app import app
 from app.models import (
@@ -216,6 +218,32 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         self.assertEqual(assistant_entry.batch_id, batches[0].id)
         self.assertEqual(assistant_entry.source_row, source_row_offset)
 
+    def test_row_academic_year_overrides_batch_value_and_preserves_fallback(self):
+        frame = pd.concat(
+            [
+                schedule_frame(),
+                schedule_frame(teacher='李四'),
+                schedule_frame(teacher='王五'),
+            ],
+            ignore_index=True,
+        )
+        frame.loc[0, '学年'] = 'batch-year'
+        frame.loc[1, '学年'] = 'row-year'
+        frame.loc[2, '学年'] = None
+
+        batches = self._persist(frame, filename='academic-years.xlsx')
+        entries = ListeningAssistantScheduleEntry.query.order_by(
+            ListeningAssistantScheduleEntry.source_row.asc(),
+        ).all()
+
+        self.assertEqual(batches[0].academic_year, 'batch-year')
+        self.assertEqual(entries[0].academic_year, 'batch-year')
+        self.assertEqual(entries[0].academic_year_raw, 'batch-year')
+        self.assertEqual(entries[1].academic_year, 'row-year')
+        self.assertEqual(entries[1].academic_year_raw, 'row-year')
+        self.assertEqual(entries[2].academic_year, 'batch-year')
+        self.assertIsNone(entries[2].academic_year_raw)
+
     def test_primary_loader_follows_only_authoritative_current_batch(self):
         first_batch = self._persist(
             schedule_frame(teacher='旧教师'),
@@ -335,6 +363,45 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
             'listening_assistant_schedule_entries',
         ))
         self.assertEqual(ListeningAssistantScheduleEntry.query.count(), 1)
+
+    def test_import_auto_ensures_with_flushed_snapshot_rows_in_same_session(self):
+        ListeningAssistantScheduleEntry.__table__.drop(
+            bind=db.engine,
+            checkfirst=True,
+        )
+        frame = schedule_frame()
+        batches = persist_import_snapshot(
+            frame,
+            source_filename='flushed-before-index.xlsx',
+            source_sha256='d' * 64,
+        )
+
+        persist_listening_assistant_entries(frame, batches)
+        db.session.commit()
+
+        self.assertEqual(ListeningAssistantScheduleEntry.query.count(), 1)
+
+    def test_cli_wraps_database_ddl_failure_as_actionable_click_error(self):
+        from app.services import listening_assistant_cli
+
+        ddl_error = OperationalError(
+            'CREATE TABLE failed',
+            {},
+            PermissionError('permission denied'),
+        )
+        with patch.object(
+            listening_assistant_cli,
+            'ensure_listening_assistant_schema',
+            side_effect=ddl_error,
+        ):
+            result = app.test_cli_runner().invoke(
+                args=['listening-assistant', 'init-schema'],
+            )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn('Error:', result.output)
+        self.assertIn('CREATE TABLE failed', result.output)
+        self.assertNotIn('Traceback', result.output)
 
     def test_schema_upgrade_adds_missing_raw_columns_and_indexes(self):
         raw_columns = (

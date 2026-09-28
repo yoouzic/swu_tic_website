@@ -2,6 +2,7 @@
 
 import click
 
+from app.models import db
 from app.services.listening_assistant_schedule import ensure_listening_assistant_schema
 
 
@@ -14,9 +15,12 @@ def listening_assistant_cli():
 def init_schema():
     """Create only the assistant index table, if it is missing."""
     try:
-        ensure_listening_assistant_schema()
-    except RuntimeError as error:
-        raise click.ClickException(str(error)) from error
+        with db.engine.begin() as connection:
+            ensure_listening_assistant_schema(bind=connection)
+    except Exception as error:
+        raise click.ClickException(
+            f'Cannot initialize the listening-assistant schema: {error}'
+        ) from error
     click.echo('Listening assistant schema ready.')
 
 

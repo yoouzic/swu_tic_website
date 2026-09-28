@@ -75,7 +75,45 @@ _COLUMN_ALIASES = {
 }
 
 
-def ensure_listening_assistant_schema() -> None:
+def _ensure_listening_assistant_schema_on_bind(bind) -> None:
+    table = ListeningAssistantScheduleEntry.__table__
+    connection_inspector = inspect(bind)
+    if not connection_inspector.has_table(table.name):
+        table.create(bind=bind, checkfirst=True)
+        return
+
+    existing_columns = {
+        column['name']
+        for column in connection_inspector.get_columns(table.name)
+    }
+    preparer = bind.dialect.identifier_preparer
+    for column in table.columns:
+        if column.name in existing_columns:
+            continue
+        if column.primary_key or not column.nullable:
+            raise RuntimeError(
+                f"Cannot add non-nullable assistant schema column "
+                f"'{column.name}' without a migration."
+            )
+        column_ddl = str(
+            CreateColumn(column).compile(dialect=bind.dialect)
+        )
+        bind.exec_driver_sql(
+            f'ALTER TABLE {preparer.quote(table.name)} '
+            f'ADD COLUMN {column_ddl}'
+        )
+        existing_columns.add(column.name)
+
+    existing_indexes = {
+        index['name']
+        for index in inspect(bind).get_indexes(table.name)
+    }
+    for index in table.indexes:
+        if index.name not in existing_indexes:
+            index.create(bind=bind, checkfirst=True)
+
+
+def ensure_listening_assistant_schema(bind=None) -> None:
     """Idempotently create/extend only the assistant index schema.
 
     This is deliberately additive: it requires the canonical snapshot parent,
@@ -83,49 +121,24 @@ def ensure_listening_assistant_schema() -> None:
     columns and missing model indexes when an older assistant table exists.
     """
     engine = db.engine
-    if not inspect(engine).has_table('schedule_import_batches'):
+    if bind is None and not inspect(engine).has_table('schedule_import_batches'):
         raise RuntimeError(
             "Cannot initialize the listening-assistant schedule index because "
             "the prerequisite canonical table 'schedule_import_batches' is "
             "missing. Initialize the canonical schedule snapshot schema first."
         )
+    if bind is not None:
+        if not inspect(bind).has_table('schedule_import_batches'):
+            raise RuntimeError(
+                "Cannot initialize the listening-assistant schedule index because "
+                "the prerequisite canonical table 'schedule_import_batches' is "
+                "missing. Initialize the canonical schedule snapshot schema first."
+            )
+        _ensure_listening_assistant_schema_on_bind(bind)
+        return
 
-    table = ListeningAssistantScheduleEntry.__table__
     with engine.begin() as connection:
-        connection_inspector = inspect(connection)
-        if not connection_inspector.has_table(table.name):
-            table.create(bind=connection, checkfirst=True)
-            return
-
-        existing_columns = {
-            column['name']
-            for column in connection_inspector.get_columns(table.name)
-        }
-        preparer = connection.dialect.identifier_preparer
-        for column in table.columns:
-            if column.name in existing_columns:
-                continue
-            if column.primary_key or not column.nullable:
-                raise RuntimeError(
-                    f"Cannot add non-nullable assistant schema column "
-                    f"'{column.name}' without a migration."
-                )
-            column_ddl = str(
-                CreateColumn(column).compile(dialect=connection.dialect)
-            )
-            connection.exec_driver_sql(
-                f'ALTER TABLE {preparer.quote(table.name)} '
-                f'ADD COLUMN {column_ddl}'
-            )
-            existing_columns.add(column.name)
-
-        existing_indexes = {
-            index['name']
-            for index in inspect(connection).get_indexes(table.name)
-        }
-        for index in table.indexes:
-            if index.name not in existing_indexes:
-                index.create(bind=connection, checkfirst=True)
+        _ensure_listening_assistant_schema_on_bind(connection)
 
 
 def _is_missing(value: object) -> bool:
@@ -229,7 +242,7 @@ def persist_listening_assistant_entries(
     batch_list = list(batches or ())
     if not batch_list:
         return []
-    ensure_listening_assistant_schema()
+    ensure_listening_assistant_schema(bind=db.session.connection())
     if any(batch.id is None for batch in batch_list):
         db.session.flush()
 
@@ -288,11 +301,16 @@ def persist_listening_assistant_entries(
         period_start, period_end = _period_bounds(period_value)
         venue_period_start, venue_period_end = _period_bounds(venue_period_value)
 
+        academic_year = (
+            _normalized_text(academic_year_value)
+            or _normalized_text(batch.academic_year)
+        )
+
         entry = ListeningAssistantScheduleEntry(
             batch_id=batch.id,
             source_row=source_row,
             semester=_normalized_text(batch.semester) or '',
-            academic_year=_normalized_text(batch.academic_year),
+            academic_year=academic_year,
             semester_raw=_raw_text(semester_value),
             academic_year_raw=_raw_text(academic_year_value),
             course_code=course_code,
