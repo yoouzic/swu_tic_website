@@ -370,6 +370,29 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
                 source_batch_id=current_batch.id,
             )
 
+    def test_backup_loader_requires_semester_and_rejects_retired_batch_from_other_semester(self):
+        other_semester = '2025-2026-2'
+        retired_other = self._persist(
+            schedule_frame(semester=other_semester, teacher='其他学期旧批次'),
+            filename='other-old.xlsx',
+        )[0]
+        self._persist(
+            schedule_frame(semester=other_semester, teacher='其他学期新批次'),
+            filename='other-current.xlsx',
+        )
+
+        with self.assertRaisesRegex(ValueError, 'semester'):
+            load_schedule_entries(
+                source_kind='backup',
+                source_batch_id=retired_other.id,
+            )
+        with self.assertRaisesRegex(ValueError, 'semester'):
+            load_schedule_entries(
+                source_kind='backup',
+                semester=SEMESTER,
+                source_batch_id=retired_other.id,
+            )
+
     def test_loader_never_falls_back_to_legacy_course_rows(self):
         db.session.add(Course(
             course_code='LEGACY-CODE',

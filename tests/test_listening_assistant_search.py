@@ -522,6 +522,38 @@ def test_primary_search_never_queries_backup_or_legacy_rows_and_backup_is_explic
     }
 
 
+def test_backup_search_requires_resolved_semester_before_calling_loader():
+    backup = entry(
+        1,
+        teacher='备用教师',
+        source_kind='backup',
+        source_batch_id='retired-7',
+    )
+    service, loader = service_with(backup=[backup])
+
+    with pytest.raises(ValueError, match='semester'):
+        service.search_backup(
+            AssistantQuery(LOOKUP_DATE, teacher_name='备用教师'),
+            source_batch_id='retired-7',
+            explicit_fallback=True,
+            reason='no_result',
+        )
+    assert loader.calls == []
+
+    configured_service = ListeningAssistantService(
+        schedule_loader=loader,
+        semester=SEMESTER,
+    )
+    result = configured_service.search_backup(
+        AssistantQuery(LOOKUP_DATE, teacher_name='备用教师'),
+        source_batch_id='retired-7',
+        explicit_fallback=True,
+        reason='no_result',
+    )
+    assert result.source_kind == 'backup'
+    assert loader.calls[-1]['semester'] == SEMESTER
+
+
 def test_search_by_teacher_clears_room_but_normal_search_keeps_room_teacher_and():
     rows = [
         entry(1, room='8-309', teacher='张三'),

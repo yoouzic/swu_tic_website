@@ -650,6 +650,8 @@ class ListeningAssistantService:
         if selected_batch_id is None or not _text(selected_batch_id):
             raise ValueError('backup source requires an explicit retired batch id')
         selected_semester = self._semester if semester is None else semester
+        if not _text(selected_semester):
+            raise ValueError('backup search requires a non-empty semester')
         entries = self._schedule_loader(
             source_kind='backup',
             semester=selected_semester,

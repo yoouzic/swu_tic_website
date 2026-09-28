@@ -478,14 +478,18 @@ def load_schedule_entries(
             for entry in rows
         ]
 
+    requested_semester = _semester_key(semester)
+    if not requested_semester:
+        raise ValueError('backup source requires a non-empty semester')
+
     requested_id = _requested_batch_id(source_batch_id, batch_id)
     batch = db.session.get(ScheduleImportBatch, requested_id)
     if batch is None:
         raise ValueError('backup source batch does not exist')
     if batch.status != RETIRED:
         raise ValueError('backup source batch must be retired')
-    if semester is not None and _semester_key(semester) != _semester_key(batch.semester):
-        return []
+    if requested_semester != _semester_key(batch.semester):
+        raise ValueError('backup source batch semester does not match requested semester')
 
     rows = _rows_for_batch(batch.id)
     return [
