@@ -17,6 +17,7 @@ from app.services.listening_assistant_evidence import (
     create_evidence,
     revalidate_selection,
 )
+from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
 from datetime import datetime, timedelta
 from app.utils.audit_tags import build_audit_tag, build_week_correction_tag
 from app.utils.leave_management import append_leave_system_note, get_pending_leave_makeup, record_leave_makeup_form
@@ -349,7 +350,7 @@ def submit_form():
         if assistant_payload is not None:
             try:
                 assistant_selection = revalidate_selection(user, assistant_payload)
-            except AssistantSelectionError:
+            except (AssistantSelectionError, ScheduleSourceUnavailable):
                 # Revalidation happens before any form mutation.  Keep the
                 # route's normal HTML/flash error shape and fail closed.
                 db.session.rollback()

@@ -249,12 +249,16 @@ def latest_retired_batch_id(semester: str | None) -> int | None:
     if not requested_semester:
         return None
 
-    batches = ScheduleImportBatch.query.filter_by(
-        status=RETIRED,
+    batches = ScheduleImportBatch.query.join(
+        ListeningAssistantScheduleEntry,
+        ListeningAssistantScheduleEntry.batch_id == ScheduleImportBatch.id,
+    ).filter(
+        ScheduleImportBatch.status == RETIRED,
+        ListeningAssistantScheduleEntry.semester == requested_semester,
     ).order_by(
         ScheduleImportBatch.created_at.desc(),
         ScheduleImportBatch.id.desc(),
-    ).all()
+    ).distinct().all()
     for batch in batches:
         if _semester_key(batch.semester) == requested_semester:
             return batch.id

@@ -15,6 +15,7 @@ from app.app import app
 from app.models import (
     LectureForm,
     ListeningAssistantEvidence,
+    ListeningAssistantScheduleEntry,
     ScheduleImportBatch,
     User,
     db,
@@ -242,7 +243,7 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         self.assertNotIn('evaluation', candidate)
 
     def test_primary_get_exposes_safe_retired_batch_discovery_for_semester(self):
-        retired_batch = ScheduleImportBatch(
+        indexed_batch = ScheduleImportBatch(
             semester=SEMESTER,
             academic_year='2026',
             source_filename='retired.xlsx',
@@ -251,7 +252,22 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
             row_count=1,
             created_at=datetime(2026, 9, 1, 12, 0, 0),
         )
-        db.session.add(retired_batch)
+        unindexed_batch = ScheduleImportBatch(
+            semester=SEMESTER,
+            academic_year='2026',
+            source_filename='unindexed.xlsx',
+            source_sha256='b' * 64,
+            status='retired',
+            row_count=1,
+            created_at=datetime(2026, 9, 2, 12, 0, 0),
+        )
+        db.session.add_all([indexed_batch, unindexed_batch])
+        db.session.flush()
+        db.session.add(ListeningAssistantScheduleEntry(
+            batch_id=indexed_batch.id,
+            source_row=2,
+            semester=SEMESTER,
+        ))
         db.session.commit()
         self._login()
 
@@ -268,7 +284,7 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         self.assertTrue(payload['data']['backup_rescue_available'])
         self.assertEqual(
             payload['data']['backup_source_batch_id'],
-            str(retired_batch.id),
+            str(indexed_batch.id),
         )
 
     def test_primary_get_returns_unavailable_json_when_authoritative_source_is_not_ready(self):
@@ -549,7 +565,13 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 503)
         payload = self._assert_envelope(response, success=False)
-        self.assertIsNone(payload['data'])
+        self.assertEqual(
+            payload['data'],
+            {
+                'status': 'INVALID_AUTHORITY',
+                'code': 'schedule_source_unavailable',
+            },
+        )
         self.assertIn('unavailable', payload['message'])
 
     def test_confirm_requires_explicit_override_for_fresh_primary_period_conflict(self):

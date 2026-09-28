@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from werkzeug.security import generate_password_hash
 
@@ -12,6 +13,7 @@ os.environ['SECRET_KEY'] = 'test-secret-key'
 
 from app.app import app
 from app.models import db, LectureForm, LectureFormDraft, User
+from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
 
 
@@ -183,6 +185,24 @@ class LectureFormDraftTest(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(LectureForm.query.filter_by(listener_number=self.user.number).count(), 1)
         self.assertEqual(LectureFormDraft.query.filter_by(user_id=self.user.id).count(), 0)
+
+    def test_assistant_source_unavailable_uses_normal_form_error_path(self):
+        self._login_as(self.user)
+        payload = self._valid_form_payload()
+        payload['assistant_payload'] = '{"stage":"confirmed"}'
+
+        with mock.patch(
+            'app.blueprints.user.forms.revalidate_selection',
+            side_effect=ScheduleSourceUnavailable(status='INVALID_AUTHORITY'),
+        ):
+            response = self.client.post('/user/submit_form', data=payload)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('听课助手信息已失效', response.get_data(as_text=True))
+        self.assertEqual(
+            LectureForm.query.filter_by(listener_number=self.user.number).count(),
+            0,
+        )
 
 
 if __name__ == '__main__':

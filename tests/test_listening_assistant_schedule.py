@@ -4,6 +4,7 @@
 import tempfile
 import unittest
 import inspect as python_inspect
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,6 +17,7 @@ from app.blueprints.admin import schedule as admin_schedule
 from app.models import (
     Course,
     ListeningAssistantScheduleEntry,
+    ScheduleImportBatch,
     ScheduleImportRow,
     db,
 )
@@ -353,6 +355,17 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
             schedule_frame(teacher='当前批次'),
             filename='current.xlsx',
         )
+        unindexed_batch = ScheduleImportBatch(
+            semester=SEMESTER,
+            academic_year='2026',
+            source_filename='unindexed.xlsx',
+            source_sha256='b' * 64,
+            status='retired',
+            row_count=1,
+            created_at=datetime(2026, 9, 30, 12, 0, 0),
+        )
+        db.session.add(unindexed_batch)
+        db.session.commit()
 
         self.assertEqual(
             latest_retired_batch_id(f'  {SEMESTER}  '),
