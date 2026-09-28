@@ -280,7 +280,7 @@ def _parse_week_set(value: object) -> frozenset[int] | None:
         range_match = re.fullmatch(r'(\d+)(?:-|~)(\d+)', part)
         if range_match:
             start, end = map(int, range_match.groups())
-            if start > end:
+            if start > end or start < 1 or end > 52:
                 return None
             weeks.update(range(start, end + 1))
         elif part.isdigit():
@@ -525,6 +525,29 @@ class ListeningAssistantService:
             rejected_ids=rejected_ids,
         )
 
+    @staticmethod
+    def reject(candidates: Iterable[Candidate] | Candidate | None) -> tuple[str, ...]:
+        """Return stable candidate IDs that can be passed to ``rejected_ids``."""
+        if candidates is None:
+            return ()
+        if isinstance(candidates, (Candidate, Mapping)):
+            candidates = (candidates,)
+        try:
+            iterator = iter(candidates)
+        except TypeError as error:
+            raise ValueError('candidates must be iterable') from error
+
+        rejected: list[str] = []
+        for candidate in iterator:
+            if isinstance(candidate, Mapping):
+                candidate_id = candidate.get('candidate_id')
+            else:
+                candidate_id = getattr(candidate, 'candidate_id', None)
+            normalized = _text(candidate_id)
+            if normalized and normalized not in rejected:
+                rejected.append(normalized)
+        return tuple(rejected)
+
     def search_by_teacher(
         self,
         query: AssistantQuery,
@@ -532,9 +555,13 @@ class ListeningAssistantService:
         *,
         semester: str | None = None,
         rejected_ids: Iterable[object] | object | None = None,
+        source_kind: str = 'primary',
+        source_batch_id: int | str | None = None,
+        explicit_fallback: bool = False,
+        reason: str | None = None,
     ) -> ListeningAssistantSearchResult:
-        """Use the normal search path with a teacher anchor."""
-        self._validate_query(query)
+        """Search by teacher, optionally through the explicit backup path."""
+        self._validate_query(query, require_anchor=False)
         normalized_teacher = _text(
             teacher_name if teacher_name is not None else query.teacher_name
         )
@@ -545,11 +572,19 @@ class ListeningAssistantService:
             room=None,
             teacher_name=normalized_teacher,
         )
-        return self.search(
-            query,
-            semester=semester,
-            rejected_ids=rejected_ids,
-        )
+        normalized_source_kind = _text(source_kind).lower()
+        if normalized_source_kind == 'backup':
+            return self.search_backup(
+                query,
+                source_batch_id=source_batch_id,
+                semester=semester,
+                rejected_ids=rejected_ids,
+                explicit_fallback=explicit_fallback,
+                reason=reason,
+            )
+        if normalized_source_kind != 'primary':
+            raise ValueError("source_kind must be 'primary' or 'backup'")
+        return self.search(query, semester=semester, rejected_ids=rejected_ids)
 
     def search_backup(
         self,
@@ -592,9 +627,15 @@ class ListeningAssistantService:
         )
 
     @staticmethod
-    def _validate_query(query: AssistantQuery) -> None:
+    def _validate_query(
+        query: AssistantQuery,
+        *,
+        require_anchor: bool = True,
+    ) -> None:
         if not isinstance(query, AssistantQuery):
             raise TypeError('query must be an AssistantQuery')
+        if require_anchor and not query.lookup_anchors:
+            raise ValueError('room or teacher_name anchor is required')
 
     def _search_entries(
         self,

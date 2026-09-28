@@ -9,7 +9,11 @@ from app.services.listening_assistant_contracts import (
     stable_candidate_id,
 )
 from app.services.teaching_calendar import TeachingCalendarConfig
-from app.services.listening_assistant import ListeningAssistantService
+import app.services.listening_assistant as listening_assistant_module
+from app.services.listening_assistant import (
+    ListeningAssistantService,
+    _parse_week_set,
+)
 
 
 LOOKUP_DATE = date(2026, 9, 18)  # Friday, teaching week 2 in the configured fixture.
@@ -83,7 +87,7 @@ def raw_week_entry(
     lecture_date=None,
     course='数据结构',
 ):
-    return SimpleNamespace(
+    return ScheduleEntry(
         entry_id=f'primary:batch-current:{row}',
         lecture_date=lecture_date,
         room='8-309',
@@ -256,6 +260,83 @@ def test_missing_source_rows_use_injected_identity_and_reject_only_one_candidate
     remaining = service.search(query, rejected_ids=[rejected_id])
     assert len(remaining.candidates) == 1
     assert remaining.candidates[0].candidate_id != rejected_id
+
+
+def test_reject_returns_stable_ids_usable_as_rejected_ids():
+    service, _ = service_with(primary=[entry(1), entry(2, student_class='2024级计算机2班')])
+    query = AssistantQuery(LOOKUP_DATE, room='8-309')
+    result = service.search(query)
+
+    rejected = service.reject(result.candidates[:1])
+
+    assert rejected == (result.candidates[0].candidate_id,)
+    assert service.search(query, rejected_ids=rejected).candidates == (
+        result.candidates[1],
+    )
+
+
+def test_week_parser_rejects_huge_range_before_allocating(monkeypatch):
+    def fail_if_range_is_called(*args):
+        raise AssertionError('range allocation should be bounded before construction')
+
+    monkeypatch.setattr(
+        listening_assistant_module,
+        'range',
+        fail_if_range_is_called,
+        raising=False,
+    )
+
+    assert _parse_week_set('1-1000000000') is None
+
+
+def test_search_rejects_anchorless_queries_but_teacher_wrapper_injects_teacher():
+    rows = [
+        entry(1, room='8-309', teacher='张三'),
+        entry(2, room='9-101', teacher='张三'),
+    ]
+    service, _ = service_with(primary=rows)
+    date_only = AssistantQuery(LOOKUP_DATE)
+
+    with pytest.raises(ValueError, match='anchor'):
+        service.search(date_only)
+    with pytest.raises(ValueError, match='anchor'):
+        service.search_backup(
+            date_only,
+            source_batch_id='retired-7',
+            explicit_fallback=True,
+            reason='no_result',
+        )
+
+    result = service.search_by_teacher(date_only, '张三')
+    assert {candidate.room for candidate in result.candidates} == {'8-309', '9-101'}
+
+
+def test_search_by_teacher_forwards_backup_source_and_fallback_arguments():
+    backup = entry(
+        1,
+        teacher='备用教师',
+        source_kind='backup',
+        source_batch_id='retired-7',
+    )
+    service, loader = service_with(backup=[backup])
+
+    result = service.search_by_teacher(
+        AssistantQuery(LOOKUP_DATE),
+        '备用教师',
+        semester=SEMESTER,
+        source_kind='backup',
+        source_batch_id='retired-7',
+        explicit_fallback=True,
+        reason='rejected_candidates',
+    )
+
+    assert result.candidates[0].source_kind == 'backup'
+    assert loader.calls[-1] == {
+        'source_kind': 'backup',
+        'semester': SEMESTER,
+        'source_batch_id': 'retired-7',
+        'batch_id': None,
+    }
 
 
 def test_canonical_db_backed_source_row_keeps_existing_candidate_id_with_selection_code():

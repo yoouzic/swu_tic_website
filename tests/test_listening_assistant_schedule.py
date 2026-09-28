@@ -174,6 +174,8 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         self.assertEqual(loaded[0].student_grade_class, '2023级计算机1班')
         self.assertEqual(loaded[0].location_raw, '32-302')
         self.assertEqual(loaded[0].period_raw, '第3-4节')
+        self.assertEqual(loaded[0].start_week_raw, '1-16')
+        self.assertEqual(loaded[0].venue_start_week_raw, '1-16')
         self.assertEqual(loaded[0].source_row, 2)
 
     def test_persist_retains_raw_identity_cells_alongside_normalized_fields(self):

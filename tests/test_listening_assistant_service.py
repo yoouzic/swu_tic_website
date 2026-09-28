@@ -88,6 +88,7 @@ def test_period_overlap_is_inclusive_and_rejects_unparsed_values():
 def test_query_requires_date_and_at_least_one_lookup_anchor():
     room_query = AssistantQuery(lecture_date=date(2026, 9, 18), room='第1教学楼A101')
     teacher_query = AssistantQuery(lecture_date=date(2026, 9, 18), teacher_name=' 张老师 ')
+    date_only_query = AssistantQuery(lecture_date=date(2026, 9, 18))
     both_query = AssistantQuery(
         lecture_date=date(2026, 9, 18),
         room='1教A101',
@@ -98,11 +99,11 @@ def test_query_requires_date_and_at_least_one_lookup_anchor():
     assert room_query.room == '1教A101'
     assert teacher_query.anchor == 'teacher'
     assert teacher_query.teacher_name == '张老师'
+    assert date_only_query.anchor is None
+    assert date_only_query.lookup_anchors == ()
     assert both_query.anchor == 'room'
     assert both_query.lookup_anchors == ('room', 'teacher')
 
-    with pytest.raises(ValueError):
-        AssistantQuery(lecture_date=date(2026, 9, 18))
     with pytest.raises(ValueError):
         AssistantQuery(lecture_date=None)
 
@@ -130,6 +131,8 @@ def test_schedule_entry_and_confirmation_contracts_keep_source_identity():
         source_kind='primary',
         source_batch_id='batch-1',
         source_row=2,
+        start_week_raw='1-16',
+        venue_start_week_raw='1-16',
     )
     confirmation = ConfirmationResult(
         confirmed=True,
@@ -141,6 +144,8 @@ def test_schedule_entry_and_confirmation_contracts_keep_source_identity():
 
     assert entry.room == '1教A101'
     assert entry.period == (3, 4)
+    assert entry.start_week_raw == '1-16'
+    assert entry.venue_start_week_raw == '1-16'
     assert confirmation.confirmed is True
     assert confirmation.candidate_id == 'primary:batch-1:row-2'
     assert confirmation.overrides == {'room': '1教A101'}

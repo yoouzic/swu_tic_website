@@ -103,6 +103,13 @@ def _optional_text(value: object) -> str | None:
     return normalized or None
 
 
+def _raw_string(value: object) -> str | None:
+    """Keep optional source provenance as a portable string/raw value."""
+    if value is None:
+        return None
+    return value if isinstance(value, str) else str(value)
+
+
 def _validated_optional_int(
     value: object,
     *,
@@ -446,8 +453,6 @@ class AssistantQuery:
         )
         normalized_room = normalize_room(self.room)
         normalized_teacher = _optional_text(self.teacher_name)
-        if not normalized_room and not normalized_teacher:
-            raise ValueError('room or teacher_name is required')
         object.__setattr__(self, 'room', normalized_room or None)
         object.__setattr__(self, 'teacher_name', normalized_teacher)
 
@@ -463,9 +468,13 @@ class AssistantQuery:
         )
 
     @property
-    def anchor(self) -> str:
+    def anchor(self) -> str | None:
         """Return the primary anchor, preferring room when both are present."""
-        return 'room' if self.room else 'teacher'
+        if self.room:
+            return 'room'
+        if self.teacher_name:
+            return 'teacher'
+        return None
 
     @property
     def lookup_anchors(self) -> tuple[str, ...]:
@@ -501,6 +510,8 @@ class ScheduleEntry:
     location_raw: Any = _RAW_VALUE_UNSET
     period_raw: Any = _RAW_VALUE_UNSET
     class_raw: Any = _RAW_VALUE_UNSET
+    start_week_raw: str | None = None
+    venue_start_week_raw: str | None = None
 
     def __post_init__(self) -> None:
         original_room = self.room
@@ -566,6 +577,12 @@ class ScheduleEntry:
         object.__setattr__(self, 'location_raw', raw_location)
         object.__setattr__(self, 'period_raw', raw_period)
         object.__setattr__(self, 'class_raw', raw_class)
+        object.__setattr__(self, 'start_week_raw', _raw_string(self.start_week_raw))
+        object.__setattr__(
+            self,
+            'venue_start_week_raw',
+            _raw_string(self.venue_start_week_raw),
+        )
 
 
 @dataclass(frozen=True)
