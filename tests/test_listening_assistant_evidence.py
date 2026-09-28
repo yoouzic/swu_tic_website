@@ -248,19 +248,41 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
         service, _loader = self._service(primary=[schedule_entry()])
         payload, _candidate = self._payload(service)
 
-        class OperationalFailureService:
-            _semester = None
+        for error in (
+            RuntimeError('database unavailable'),
+            ValueError('loader returned an invalid value'),
+            TypeError('loader contract failure'),
+        ):
+            class OperationalFailureService:
+                _semester = None
 
-            def search(self, *args, **kwargs):
-                raise RuntimeError('database unavailable')
+                def search(self, *args, _error=error, **kwargs):
+                    raise _error
 
-        with self.assertRaises(RuntimeError):
-            revalidate_selection(
-                self.user,
-                payload,
-                service=OperationalFailureService(),
-                semester=SEMESTER,
-            )
+            with self.subTest(error=type(error).__name__):
+                with self.assertRaises(type(error)) as raised:
+                    revalidate_selection(
+                        self.user,
+                        payload,
+                        service=OperationalFailureService(),
+                        semester=SEMESTER,
+                    )
+                self.assertIs(type(raised.exception), type(error))
+
+    def test_revalidation_requires_explicit_semester_provenance(self):
+        service, _loader = self._service(primary=[schedule_entry()])
+        payload, _candidate = self._payload(service)
+        payload.pop('semester')
+
+        with self.assertRaises(ValueError):
+            revalidate_selection(self.user, payload, service=service)
+
+        configured_service = ListeningAssistantService(
+            schedule_loader=LoaderSpy(primary=[schedule_entry()]),
+            semester=SEMESTER,
+        )
+        with self.assertRaises(ValueError):
+            revalidate_selection(self.user, payload, service=configured_service)
 
     def test_stale_or_unknown_candidate_is_rejected_against_fresh_results(self):
         service, loader = self._service(primary=[schedule_entry()])

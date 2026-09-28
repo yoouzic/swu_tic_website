@@ -48,6 +48,7 @@ _SNAPSHOT_FIELDS = frozenset({
     'teacher_college',
     'student_grade_class',
 })
+_MISSING = object()
 
 
 def _envelope(success: bool, data: Any = None, message: str = ''):
@@ -101,6 +102,34 @@ def _parse_date(value: object, field_name: str = 'date') -> date:
         return date.fromisoformat(normalized)
     except (TypeError, ValueError) as error:
         raise ValueError(f'{field_name} must be YYYY-MM-DD') from error
+
+
+def _coalesce_alias_values(
+    values_by_name: Mapping[str, object],
+    canonical_name: str,
+    alias_name: str,
+    normalizer,
+    field_name: str,
+):
+    """Normalize one canonical/alias pair and reject conflicting values."""
+    normalized_values = []
+    for name in (canonical_name, alias_name):
+        if name not in values_by_name:
+            continue
+        raw_values = values_by_name[name]
+        if isinstance(raw_values, (list, tuple)):
+            raw_values = tuple(raw_values)
+        else:
+            raw_values = (raw_values,)
+        for raw_value in raw_values:
+            normalized_values.append(normalizer(raw_value, field_name))
+
+    if not normalized_values:
+        return _MISSING
+    first = normalized_values[0]
+    if any(value != first for value in normalized_values[1:]):
+        raise ValueError(f'{field_name} aliases contain conflicting values')
+    return first
 
 
 def _normalize_rejected_ids(value: object) -> list[str]:
@@ -170,31 +199,66 @@ def _normalize_confirm_query(payload: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(raw_query, Mapping):
         raise TypeError('query must be an object')
 
-    query: dict[str, Any] = {}
-    for key, value in raw_query.items():
+    for key in raw_query:
         if key not in _QUERY_FIELDS:
             raise ValueError('query contains unsupported fields')
-        canonical_key = _QUERY_ALIASES.get(key, key)
-        if canonical_key in query and query[canonical_key] != value:
-            raise ValueError(f'query contains conflicting {canonical_key} values')
-        query[canonical_key] = value
 
-    top_level_values = {
-        'lecture_date': payload.get('lecture_date', payload.get('date')),
-        'room': payload.get('room'),
-        'teacher_name': payload.get('teacher_name', payload.get('teacher')),
-        'period': payload.get('period'),
-        'student_grade_class': payload.get('student_grade_class'),
-        'semester': payload.get('semester'),
-    }
-    for key, value in top_level_values.items():
-        if value is None or key in query:
-            continue
-        query[key] = value
+    query: dict[str, Any] = {}
+    query_date = _coalesce_alias_values(
+        raw_query,
+        'lecture_date',
+        'date',
+        _parse_date,
+        'query.date',
+    )
+    if query_date is not _MISSING:
+        query['lecture_date'] = query_date.isoformat()
+
+    query_teacher = _coalesce_alias_values(
+        raw_query,
+        'teacher_name',
+        'teacher',
+        _clean_text,
+        'query.teacher',
+    )
+    if query_teacher is not _MISSING:
+        query['teacher_name'] = query_teacher
+
+    for key in ('room', 'period', 'student_grade_class', 'semester'):
+        if key in raw_query:
+            query[key] = raw_query[key]
+
+    top_date = _coalesce_alias_values(
+        payload,
+        'lecture_date',
+        'date',
+        _parse_date,
+        'date',
+    )
+    if top_date is not _MISSING:
+        top_date = top_date.isoformat()
+        if 'lecture_date' in query and query['lecture_date'] != top_date:
+            raise ValueError('query and top-level date values conflict')
+        query.setdefault('lecture_date', top_date)
+
+    top_teacher = _coalesce_alias_values(
+        payload,
+        'teacher_name',
+        'teacher',
+        _clean_text,
+        'teacher',
+    )
+    if top_teacher is not _MISSING:
+        if 'teacher_name' in query and query['teacher_name'] != top_teacher:
+            raise ValueError('query and top-level teacher values conflict')
+        query.setdefault('teacher_name', top_teacher)
+
+    for key in ('room', 'period', 'student_grade_class', 'semester'):
+        if key in payload and key not in query:
+            query[key] = payload[key]
 
     if 'lecture_date' not in query:
         raise ValueError('date is required')
-    query['lecture_date'] = _parse_date(query['lecture_date']).isoformat()
 
     for key in ('room', 'teacher_name', 'student_grade_class'):
         if key in query and query[key] is not None:
@@ -268,12 +332,31 @@ def _expected_selection_error(error: AssistantSelectionError) -> tuple[int, str]
 @_assistant_login_required
 def listening_assistant_candidates(user):
     try:
-        lecture_date = _parse_date(request.args.get('date'))
+        query_args = {
+            'date': request.args.getlist('date'),
+            'lecture_date': request.args.getlist('lecture_date'),
+            'teacher': request.args.getlist('teacher'),
+            'teacher_name': request.args.getlist('teacher_name'),
+        }
+        lecture_date = _coalesce_alias_values(
+            query_args,
+            'date',
+            'lecture_date',
+            _parse_date,
+            'date',
+        )
+        if lecture_date is _MISSING:
+            raise ValueError('date is required')
         room = _clean_text(request.args.get('room'), 'room')
-        teacher = _clean_text(
-            request.args.get('teacher', request.args.get('teacher_name')),
+        teacher = _coalesce_alias_values(
+            query_args,
+            'teacher',
+            'teacher_name',
+            _clean_text,
             'teacher',
         )
+        if teacher is _MISSING:
+            teacher = None
         student_grade_class = _clean_text(
             request.args.get('student_grade_class'),
             'student_grade_class',
@@ -286,13 +369,15 @@ def listening_assistant_candidates(user):
             period=request.args.get('period'),
             student_grade_class=student_grade_class,
         )
-        result = ListeningAssistantService(semester=semester).search(
-            query,
-            semester=semester,
-            rejected_ids=_query_rejected_ids(),
-        )
+        if not query.lookup_anchors:
+            raise ValueError('room or teacher is required')
     except (AssistantSelectionError, ValueError, TypeError) as error:
         return _error_response(str(error) or '请求参数无效', 400)
+    result = ListeningAssistantService(semester=semester).search(
+        query,
+        semester=semester,
+        rejected_ids=_query_rejected_ids(),
+    )
     return _envelope(True, result.to_public_dict(), '候选查询完成')
 
 
@@ -312,16 +397,18 @@ def listening_assistant_fallback(user):
         if payload.get('explicit_fallback', True) is not True:
             raise ValueError('fallback requires an explicit fallback')
         query = _build_query(lecture_date=lecture_date, teacher=teacher)
-        result = ListeningAssistantService(semester=semester).search_backup(
-            query,
-            source_batch_id=source_batch_id,
-            semester=semester,
-            rejected_ids=_normalize_rejected_ids(payload.get('rejected_ids')),
-            explicit_fallback=True,
-            reason=reason,
-        )
+        rejected_ids = _normalize_rejected_ids(payload.get('rejected_ids'))
     except (AssistantSelectionError, ValueError, TypeError) as error:
         return _error_response(str(error) or '请求参数无效', 400)
+
+    result = ListeningAssistantService(semester=semester).search_backup(
+        query,
+        source_batch_id=source_batch_id,
+        semester=semester,
+        rejected_ids=rejected_ids,
+        explicit_fallback=True,
+        reason=reason,
+    )
 
     data = result.to_public_dict()
     data.update({
@@ -341,7 +428,14 @@ def listening_assistant_confirm(user):
         payload = _json_object()
         selection_payload = _normalize_selection_payload(payload)
         selected_semester = selection_payload.get('semester') or selection_payload['query'].get('semester')
-        service = ListeningAssistantService(semester=selected_semester)
+    except AssistantSelectionError as error:
+        status, message = _expected_selection_error(error)
+        return _error_response(message, status)
+    except (ValueError, TypeError) as error:
+        return _error_response(str(error) or '请求参数无效', 400)
+
+    service = ListeningAssistantService(semester=selected_semester)
+    try:
         normalized = revalidate_selection(
             user,
             selection_payload,
@@ -351,8 +445,6 @@ def listening_assistant_confirm(user):
     except AssistantSelectionError as error:
         status, message = _expected_selection_error(error)
         return _error_response(message, status)
-    except (ValueError, TypeError) as error:
-        return _error_response(str(error) or '请求参数无效', 400)
 
     return _envelope(True, _public_confirmation(normalized), '候选已重新验证，请继续提交表单')
 

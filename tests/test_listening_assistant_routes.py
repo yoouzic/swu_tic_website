@@ -248,6 +248,43 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self._assert_envelope(response, success=False)
 
+    def test_get_rejects_conflicting_aliases_and_accepts_equal_aliases(self):
+        self._login()
+        conflicting_queries = (
+            [
+                ('date', '2026-09-18'),
+                ('lecture_date', '2026-09-19'),
+                ('room', '8-309'),
+            ],
+            [
+                ('date', '2026-09-18'),
+                ('room', '8-309'),
+                ('teacher', '张老师'),
+                ('teacher_name', '李老师'),
+            ],
+        )
+        for query in conflicting_queries:
+            with self.subTest(query=query):
+                response = self.client.get(
+                    '/user/api/listening-assistant/candidates',
+                    query_string=query,
+                )
+                self.assertEqual(response.status_code, 400)
+                self._assert_envelope(response, success=False)
+
+        response = self.client.get(
+            '/user/api/listening-assistant/candidates',
+            query_string=[
+                ('date', '2026-09-18'),
+                ('lecture_date', '2026-09-18'),
+                ('room', '8-309'),
+                ('teacher', '张老师'),
+                ('teacher_name', '张老师'),
+            ],
+        )
+        payload = self._assert_envelope(response, success=True)
+        self.assertEqual(len(payload['data']['candidates']), 1)
+
     def test_fallback_requires_approved_reason_and_explicit_retired_batch(self):
         self._login()
         base = {
@@ -378,6 +415,81 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         self.assertEqual(LectureForm.query.count(), before_forms)
         self.assertEqual(ListeningAssistantEvidence.query.count(), before_evidence)
 
+    def test_confirm_rejects_conflicting_top_level_aliases_and_canonicalizes_equal_aliases(self):
+        self._login()
+        candidate = self._primary_candidate()
+        payload = self._confirm_payload(candidate)
+        payload.pop('query')
+        payload.update({
+            'room': candidate['room'],
+            'teacher': candidate['teacher_name'],
+            'teacher_name': candidate['teacher_name'],
+            'date': '2026-09-18',
+            'lecture_date': '2026-09-19',
+        })
+
+        response = self.client.post(
+            '/user/api/listening-assistant/confirm',
+            json=payload,
+        )
+        self.assertEqual(response.status_code, 400)
+        self._assert_envelope(response, success=False)
+
+        payload['lecture_date'] = '2026-09-18'
+        payload['teacher'] = '李老师'
+        response = self.client.post(
+            '/user/api/listening-assistant/confirm',
+            json=payload,
+        )
+        self.assertEqual(response.status_code, 400)
+        self._assert_envelope(response, success=False)
+
+        payload['teacher'] = candidate['teacher_name']
+        response = self.client.post(
+            '/user/api/listening-assistant/confirm',
+            json=payload,
+        )
+        result = self._assert_envelope(response, success=True)
+        query = result['data']['query']
+        self.assertEqual(query['lecture_date'], '2026-09-18')
+        self.assertEqual(query['teacher_name'], candidate['teacher_name'])
+        self.assertNotIn('date', query)
+        self.assertNotIn('teacher', query)
+
+    def test_confirm_requires_explicit_semester_provenance(self):
+        self._login()
+        candidate = self._primary_candidate()
+        payload = self._confirm_payload(candidate)
+        payload.pop('semester')
+
+        response = self.client.post(
+            '/user/api/listening-assistant/confirm',
+            json=payload,
+        )
+        self.assertEqual(response.status_code, 400)
+        self._assert_envelope(response, success=False)
+
+        payload['query']['semester'] = SEMESTER
+        response = self.client.post(
+            '/user/api/listening-assistant/confirm',
+            json=payload,
+        )
+        result = self._assert_envelope(response, success=True)
+        self.assertEqual(result['data']['confirmation']['semester'], SEMESTER)
+
+    def test_confirm_missing_lookup_anchor_is_a_json_client_error(self):
+        self._login()
+        candidate = self._primary_candidate()
+        payload = self._confirm_payload(candidate)
+        payload['query'] = {'date': '2026-09-18', 'semester': SEMESTER}
+
+        response = self.client.post(
+            '/user/api/listening-assistant/confirm',
+            json=payload,
+        )
+        self.assertEqual(response.status_code, 400)
+        self._assert_envelope(response, success=False)
+
     def test_confirm_rejects_stale_candidate_against_fresh_search(self):
         self._login()
         candidate = self._primary_candidate()
@@ -441,13 +553,26 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         self._login()
         with mock.patch(
             'app.services.listening_assistant.load_schedule_entries',
-            side_effect=RuntimeError('database unavailable'),
+            side_effect=ValueError('database unavailable'),
         ):
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(ValueError) as raised:
                 self.client.get(
                     '/user/api/listening-assistant/candidates',
                     query_string={'date': '2026-09-18', 'room': '8-309'},
                 )
+            self.assertIs(type(raised.exception), ValueError)
+
+        candidate = self._primary_candidate()
+        with mock.patch(
+            'app.services.listening_assistant.load_schedule_entries',
+            side_effect=TypeError('loader contract failure'),
+        ):
+            with self.assertRaises(TypeError) as raised:
+                self.client.post(
+                    '/user/api/listening-assistant/confirm',
+                    json=self._confirm_payload(candidate),
+                )
+            self.assertIs(type(raised.exception), TypeError)
 
 
 if __name__ == '__main__':

@@ -352,6 +352,8 @@ def revalidate_selection(
         raise AssistantSelectionError('source_kind must be primary or backup')
 
     query, query_payload, query_semester = _normalize_query(selection_payload.get('query'))
+    if not query.lookup_anchors:
+        raise AssistantSelectionError('query requires a room or teacher_name anchor')
     requested_semester = _normalize_semester(semester, field_name='semester')
     payload_semester = _normalize_semester(
         selection_payload.get('semester'),
@@ -362,14 +364,10 @@ def revalidate_selection(
     if query_semester and payload_semester and query_semester != payload_semester:
         raise AssistantSelectionError('query semester does not match selection semester')
     selected_semester = payload_semester or query_semester or requested_semester
+    if not selected_semester:
+        raise AssistantSelectionError('selection requires an explicit semester')
 
     service = service or ListeningAssistantService(semester=selected_semester)
-    configured_semester = _normalize_semester(
-        getattr(service, '_semester', None),
-        field_name='service semester',
-    )
-    if selected_semester is None:
-        selected_semester = configured_semester
 
     source_batch_id = _optional_text(
         selection_payload.get('source_batch_id'),
@@ -416,27 +414,21 @@ def revalidate_selection(
     )
     rejected_ids = _normalize_rejected_ids(selection_payload.get('rejected_ids'))
 
-    try:
-        if source_kind == 'backup':
-            fresh_result = service.search_backup(
-                query,
-                source_batch_id=source_batch_id,
-                semester=selected_semester,
-                rejected_ids=rejected_ids,
-                explicit_fallback=True,
-                reason=fallback_reason,
-            )
-        else:
-            fresh_result = service.search(
-                query,
-                semester=selected_semester,
-                rejected_ids=rejected_ids,
-            )
-    except (AssistantSelectionError, ValueError, TypeError) as error:
-        raise AssistantSelectionError(
-            'assistant source could not be revalidated',
-            code='source_revalidation_failed',
-        ) from error
+    if source_kind == 'backup':
+        fresh_result = service.search_backup(
+            query,
+            source_batch_id=source_batch_id,
+            semester=selected_semester,
+            rejected_ids=rejected_ids,
+            explicit_fallback=True,
+            reason=fallback_reason,
+        )
+    else:
+        fresh_result = service.search(
+            query,
+            semester=selected_semester,
+            rejected_ids=rejected_ids,
+        )
 
     candidates = _fresh_candidates(fresh_result)
     selected = next(
@@ -496,7 +488,7 @@ def revalidate_selection(
         candidate_payload=candidate_payload,
         source_kind=source_kind,
         source_batch_id=selected_batch_id,
-        semester=selected_semester or '',
+        semester=selected_semester,
         template_version=template_version,
         overrides=overrides,
         confirmation=confirmation,

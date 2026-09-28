@@ -65,7 +65,7 @@ class UserPackageArchitectureTests(unittest.TestCase):
             for node in tree.body:
                 if isinstance(node, ast.FunctionDef):
                     functions[node.name] = path.name
-        self.assertEqual(len(functions), 48)
+        self.assertEqual(len(functions), 49)
         expected = {
             '_is_draft_scalar', '_normalize_assistant_draft_payload',
             '_extract_assistant_submission_payload',
@@ -82,6 +82,7 @@ class UserPackageArchitectureTests(unittest.TestCase):
             'api_delete_my_reservation', 'api_unused_reservations',
             'api_time_suggestion', '_envelope', '_error_response',
             '_assistant_login_required', '_clean_text', '_parse_date',
+            '_coalesce_alias_values',
             '_normalize_rejected_ids', '_query_rejected_ids', '_json_object',
             '_required_batch_id', '_build_query', '_normalize_confirm_query',
             '_normalize_selection_payload', '_public_confirmation',
