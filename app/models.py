@@ -726,16 +726,24 @@ class ListeningAssistantScheduleEntry(db.Model):
 
     semester = db.Column(db.String(50), nullable=False, index=True)
     academic_year = db.Column(db.String(20), nullable=True)
+    semester_raw = db.Column(db.Text, nullable=True)
+    academic_year_raw = db.Column(db.Text, nullable=True)
 
     course_code = db.Column(db.String(100), nullable=True)
+    course_code_raw = db.Column(db.Text, nullable=True)
     selection_code = db.Column(db.String(100), nullable=True)
+    selection_code_raw = db.Column(db.Text, nullable=True)
     teacher_name = db.Column(db.Text, nullable=True)
+    teacher_name_raw = db.Column(db.Text, nullable=True)
     teacher_college = db.Column(db.Text, nullable=True)
+    teacher_college_raw = db.Column(db.Text, nullable=True)
     course_title = db.Column(db.Text, nullable=True)
+    course_title_raw = db.Column(db.Text, nullable=True)
     student_grade_class = db.Column(db.Text, nullable=True)
     student_grade_class_raw = db.Column(db.Text, nullable=True)
 
     venue_id = db.Column(db.String(100), nullable=True)
+    venue_id_raw = db.Column(db.Text, nullable=True)
     location_normalized = db.Column(db.Text, nullable=True)
     location_raw = db.Column(db.Text, nullable=True)
 

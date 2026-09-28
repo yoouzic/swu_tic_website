@@ -9,6 +9,7 @@ from numbers import Real
 from typing import Any, Iterable
 
 import pandas as pd
+from sqlalchemy import inspect
 
 from app.models import (
     ListeningAssistantScheduleEntry,
@@ -71,6 +72,21 @@ _COLUMN_ALIASES = {
         'venue_class_period',
     ),
 }
+
+
+def _ensure_listening_assistant_schema() -> None:
+    """Create only the assistant table after canonical parents are available."""
+    if not inspect(db.engine).has_table('schedule_import_batches'):
+        raise RuntimeError(
+            "Cannot initialize the listening-assistant schedule index because "
+            "the prerequisite canonical table 'schedule_import_batches' is "
+            "missing. Initialize the canonical schedule snapshot schema first."
+        )
+
+    ListeningAssistantScheduleEntry.__table__.create(
+        bind=db.session.connection(),
+        checkfirst=True,
+    )
 
 
 def _is_missing(value: object) -> bool:
@@ -169,6 +185,7 @@ def persist_listening_assistant_entries(
     batch_list = list(batches or ())
     if not batch_list:
         return []
+    _ensure_listening_assistant_schema()
     if any(batch.id is None for batch in batch_list):
         db.session.flush()
 
@@ -195,15 +212,24 @@ def persist_listening_assistant_entries(
             persisted.append(existing)
             continue
 
-        course_code = _normalized_text(_cell(row, 'course_code'))
-        selection_code = _normalized_text(_cell(row, 'selection_code'))
-        teacher_name = _normalized_text(_cell(row, 'teacher_name'))
-        teacher_college = _normalized_text(_cell(row, 'teacher_college'))
-        course_title = _normalized_text(_cell(row, 'course_title'))
+        semester_value = _cell(row, 'semester')
+        academic_year_value = _cell(row, 'academic_year')
+        course_code_value = _cell(row, 'course_code')
+        selection_code_value = _cell(row, 'selection_code')
+        teacher_name_value = _cell(row, 'teacher_name')
+        teacher_college_value = _cell(row, 'teacher_college')
+        course_title_value = _cell(row, 'course_title')
         class_value = _cell(row, 'student_grade_class')
+        venue_id_value = _cell(row, 'venue_id')
+
+        course_code = _normalized_text(course_code_value)
+        selection_code = _normalized_text(selection_code_value)
+        teacher_name = _normalized_text(teacher_name_value)
+        teacher_college = _normalized_text(teacher_college_value)
+        course_title = _normalized_text(course_title_value)
         class_raw = _raw_text(class_value)
         class_normalized = normalize_class_for_display(class_value) or None
-        venue_id = _normalized_text(_cell(row, 'venue_id'))
+        venue_id = _normalized_text(venue_id_value)
         location_value = _cell(row, 'location_raw')
         location_raw = _raw_text(location_value)
         location_normalized = normalize_room(location_value) or None
@@ -223,14 +249,22 @@ def persist_listening_assistant_entries(
             source_row=source_row,
             semester=_normalized_text(batch.semester) or '',
             academic_year=_normalized_text(batch.academic_year),
+            semester_raw=_raw_text(semester_value),
+            academic_year_raw=_raw_text(academic_year_value),
             course_code=course_code,
+            course_code_raw=_raw_text(course_code_value),
             selection_code=selection_code,
+            selection_code_raw=_raw_text(selection_code_value),
             teacher_name=teacher_name,
+            teacher_name_raw=_raw_text(teacher_name_value),
             teacher_college=teacher_college,
+            teacher_college_raw=_raw_text(teacher_college_value),
             course_title=course_title,
+            course_title_raw=_raw_text(course_title_value),
             student_grade_class=class_normalized,
             student_grade_class_raw=class_raw,
             venue_id=venue_id,
+            venue_id_raw=_raw_text(venue_id_value),
             location_normalized=location_normalized,
             location_raw=location_raw,
             start_week_raw=start_week_raw,

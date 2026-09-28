@@ -84,13 +84,22 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
             'source_row',
             'semester',
             'academic_year',
+            'semester_raw',
+            'academic_year_raw',
             'course_code',
+            'course_code_raw',
             'selection_code',
+            'selection_code_raw',
             'teacher_name',
+            'teacher_name_raw',
             'teacher_college',
+            'teacher_college_raw',
             'course_title',
+            'course_title_raw',
             'student_grade_class',
+            'student_grade_class_raw',
             'venue_id',
+            'venue_id_raw',
             'location_raw',
             'start_week_raw',
             'weekday_raw',
@@ -142,6 +151,36 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         self.assertEqual(loaded[0].location_raw, '32-302')
         self.assertEqual(loaded[0].period_raw, '第3-4节')
         self.assertEqual(loaded[0].source_row, 2)
+
+    def test_persist_retains_raw_identity_cells_alongside_normalized_fields(self):
+        frame = schedule_frame()
+        frame.loc[0, '学期'] = f' {SEMESTER} '
+        frame.loc[0, '学年'] = ' 2026 '
+        frame.loc[0, '课程号'] = ' C001 '
+        frame.loc[0, '选课课号'] = ' S001 '
+        frame.loc[0, '姓名'] = ' 张三 '
+        frame.loc[0, '教师所属学院'] = ' 计算机学院 '
+        frame.loc[0, '课程名称'] = ' 数据结构 '
+        frame.loc[0, '场地编号'] = ' V001 '
+
+        batches = self._persist(frame)
+        entry = ListeningAssistantScheduleEntry.query.one()
+
+        self.assertEqual(entry.semester_raw, f' {SEMESTER} ')
+        self.assertEqual(entry.academic_year_raw, ' 2026 ')
+        self.assertEqual(entry.course_code_raw, ' C001 ')
+        self.assertEqual(entry.selection_code_raw, ' S001 ')
+        self.assertEqual(entry.teacher_name_raw, ' 张三 ')
+        self.assertEqual(entry.teacher_college_raw, ' 计算机学院 ')
+        self.assertEqual(entry.course_title_raw, ' 数据结构 ')
+        self.assertEqual(entry.venue_id_raw, ' V001 ')
+        self.assertEqual(entry.student_grade_class_raw, '2023级 计算机1班')
+        self.assertEqual(entry.course_code, 'C001')
+        self.assertEqual(entry.teacher_name, '张三')
+        self.assertEqual(entry.course_title, '数据结构')
+        self.assertEqual(entry.venue_id, 'V001')
+        self.assertEqual(entry.semester, SEMESTER)
+        self.assertEqual(batches[0].semester, SEMESTER)
 
     def test_primary_loader_follows_only_authoritative_current_batch(self):
         first_batch = self._persist(
@@ -209,7 +248,10 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         )
 
     def test_schema_command_creates_only_assistant_table_and_is_idempotent(self):
-        db.drop_all()
+        ListeningAssistantScheduleEntry.__table__.drop(
+            bind=db.engine,
+            checkfirst=True,
+        )
 
         runner = app.test_cli_runner()
         first = runner.invoke(args=['listening-assistant', 'init-schema'])
@@ -219,7 +261,44 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         self.assertEqual(second.exit_code, 0, second.output)
         inspector = inspect(db.engine)
         self.assertTrue(inspector.has_table('listening_assistant_schedule_entries'))
-        self.assertFalse(inspector.has_table('schedule_import_batches'))
+
+    def test_schema_command_fails_actionably_without_canonical_parent_table(self):
+        db.drop_all()
+
+        result = app.test_cli_runner().invoke(
+            args=['listening-assistant', 'init-schema'],
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIsNotNone(result.exception)
+        self.assertEqual(result.exception.code, 1)
+        self.assertIn('Error:', result.output)
+        self.assertIn('schedule_import_batches', result.output)
+        self.assertFalse(inspect(db.engine).has_table(
+            'listening_assistant_schedule_entries',
+        ))
+
+    def test_import_auto_ensures_assistant_table_when_canonical_schema_exists(self):
+        ListeningAssistantScheduleEntry.__table__.drop(
+            bind=db.engine,
+            checkfirst=True,
+        )
+        self.assertFalse(inspect(db.engine).has_table(
+            'listening_assistant_schedule_entries',
+        ))
+
+        batches = persist_import_snapshot(
+            schedule_frame(),
+            source_filename='auto-ensure.xlsx',
+            source_sha256='b' * 64,
+        )
+        persist_listening_assistant_entries(schedule_frame(), batches)
+        db.session.commit()
+
+        self.assertTrue(inspect(db.engine).has_table(
+            'listening_assistant_schedule_entries',
+        ))
+        self.assertEqual(ListeningAssistantScheduleEntry.query.count(), 1)
 
 
 if __name__ == '__main__':
