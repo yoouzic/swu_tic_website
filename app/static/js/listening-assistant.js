@@ -229,8 +229,9 @@
         function knownFactsFromHistory(history) {
             const facts = {};
             history.forEach((entry) => {
-                if (FACT_KINDS.includes(entry.kind) && entry.value) {
-                    facts[entry.kind] = entry.value;
+                const value = cleanText(entry.custom_value || entry.value);
+                if (FACT_KINDS.includes(entry.kind) && value) {
+                    facts[entry.kind] = value;
                 }
             });
             return facts;
@@ -274,7 +275,8 @@
             list.className = 'listening-assistant__history-list';
             guideState.history.forEach((entry) => {
                 const item = document.createElement('li');
-                item.textContent = `${FACT_LABELS[entry.kind] || '答案'}：${entry.value}`;
+                const value = cleanText(entry.custom_value || entry.value || entry.answer_code);
+                item.textContent = `${FACT_LABELS[entry.kind] || '答案'}：${value}`;
                 list.appendChild(item);
             });
             elements.history.appendChild(list);
@@ -825,6 +827,8 @@
             }
             await sendAnswer(code, null, {
                 kind: question.kind === 'candidate' ? 'candidate' : question.kind,
+                answer_code: code,
+                custom_value: null,
                 value: answerValue(option),
             });
         }
@@ -847,16 +851,28 @@
             const question = guideState.question;
             await sendAnswer(null, value, {
                 kind: question.kind,
+                answer_code: 'D',
+                custom_value: value,
                 value,
             });
         }
 
+        function clearAssistantConfirmation() {
+            if (elements.payload) {
+                elements.payload.value = '';
+            }
+            guideState.assistantFilledFields.clear();
+            guideState.assistantFilledGroups.clear();
+        }
+
         function openManual() {
             invalidateRequests();
+            clearAssistantConfirmation();
+            guideState.history = [];
             guideState.backupSelectionMode = false;
             guideState.state = {
                 known_facts: guideState.state && guideState.state.known_facts ? guideState.state.known_facts : {},
-                candidate_ids: guideState.state && Array.isArray(guideState.state.candidate_ids) ? guideState.state.candidate_ids : [],
+                candidate_ids: [],
                 asked_question_kinds: guideState.state && Array.isArray(guideState.state.asked_question_kinds) ? guideState.state.asked_question_kinds : [],
                 question_count: guideState.state && Number.isInteger(guideState.state.question_count) ? guideState.state.question_count : 0,
                 stage: 'manual',
@@ -872,6 +888,7 @@
                 return;
             }
             invalidateRequests();
+            clearAssistantConfirmation();
             guideState.history.pop();
             const facts = knownFactsFromHistory(guideState.history);
             guideState.state = null;
@@ -1017,6 +1034,23 @@
                 explicit_fallback: confirmation.explicit_fallback === true,
                 acknowledged_source: confirmation.acknowledged_source === true,
             };
+            if (isObject(guideState.state)) {
+                stored.guide_state = {
+                    known_facts: isObject(guideState.state.known_facts) ? guideState.state.known_facts : {},
+                    candidate_ids: Array.isArray(guideState.state.candidate_ids)
+                        ? guideState.state.candidate_ids : [],
+                    asked_question_kinds: Array.isArray(guideState.state.asked_question_kinds)
+                        ? guideState.state.asked_question_kinds : [],
+                    question_count: Number.isInteger(guideState.state.question_count)
+                        ? guideState.state.question_count : 0,
+                    stage: cleanText(guideState.state.stage) || 'done',
+                };
+                stored.history = guideState.history.map((entry) => ({
+                    kind: cleanText(entry.kind),
+                    answer_code: cleanText(entry.answer_code),
+                    custom_value: entry.custom_value == null ? null : cleanText(entry.custom_value),
+                }));
+            }
             const sourceBatchId = cleanText(confirmation.source_batch_id || requestPayload.source_batch_id);
             const semester = cleanText(confirmation.semester || requestPayload.semester || requestPayload.query.semester);
             const fallbackReason = cleanText(confirmation.fallback_reason || requestPayload.fallback_reason);
@@ -1158,6 +1192,7 @@
             }
             if (target.closest('[data-assistant-restart]')) {
                 invalidateRequests();
+                clearAssistantConfirmation();
                 guideState.state = null;
                 guideState.question = initialQuestion();
                 guideState.history = [];
