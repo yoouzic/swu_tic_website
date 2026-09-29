@@ -6,6 +6,7 @@ import pytest
 from app.services.listening_assistant import ListeningAssistantService
 from app.services.listening_assistant_contracts import ScheduleEntry
 from app.services.listening_assistant_guide import ListeningAssistantGuideService
+from app.services.listening_assistant_guide_contracts import GuidedAssistantState
 
 
 LOOKUP_DATE = date(2026, 9, 29)
@@ -237,7 +238,143 @@ def test_answer_rejects_invalid_question_option_custom_value_and_state():
     with pytest.raises(ValueError):
         guide.answer(state, question_kind='memory', option_code='A', custom_value='also-set')
     with pytest.raises(ValueError):
-        guide.answer(replace(state, stage='not-a-stage'), question_kind='memory', option_code='A', custom_value=None)
+        guide.answer(
+            GuidedAssistantState({}, (), (), 0, 'confirm'),
+            question_kind='memory',
+            option_code='A',
+            custom_value=None,
+        )
+
+
+@pytest.mark.parametrize('stage', ('confirm', 'candidate', 'manual', 'done'))
+def test_answer_rejects_memory_on_every_non_question_stage(stage):
+    service, _ = make_service([entry(1), entry(2)])
+    guide = ListeningAssistantGuideService(service)
+
+    with pytest.raises(ValueError):
+        guide.answer(
+            GuidedAssistantState({}, (), ('date',), 0, stage),
+            question_kind='memory',
+            option_code='A',
+            custom_value=None,
+        )
+
+
+def test_answer_rejects_wrong_kind_before_search_on_question_stage():
+    service, loader = make_service([entry(1), entry(2, teacher='李四'), entry(3, teacher='王五'), entry(4, teacher='赵六')])
+    guide = ListeningAssistantGuideService(service)
+    state = guide.start(known_facts={'date': LOOKUP_DATE.isoformat()}).state
+    loader.calls.clear()
+
+    with pytest.raises(ValueError):
+        guide.answer(state, question_kind='room', option_code='A', custom_value=None)
+
+    assert loader.calls == []
+
+
+@pytest.mark.parametrize('option_code', ('D', 'NONE'))
+def test_option_code_and_custom_value_are_always_mutually_exclusive(option_code):
+    service, _ = make_service([entry(i, teacher=f'教师{i}') for i in range(1, 5)])
+    guide = ListeningAssistantGuideService(service)
+    state = guide.start(known_facts={'date': LOOKUP_DATE.isoformat()}).state
+
+    with pytest.raises(ValueError):
+        guide.answer(
+            state,
+            question_kind=state.asked_question_kinds[-1],
+            option_code=option_code,
+            custom_value='自定义值',
+        )
+
+
+def test_memory_d_enters_manual_without_writing_an_arbitrary_fact():
+    service, _ = make_service([entry(1)])
+    guide = ListeningAssistantGuideService(service)
+    state = guide.start().state
+
+    result = guide.answer(state, question_kind='memory', option_code='D', custom_value=None)
+
+    assert result.state.stage == 'manual'
+    assert result.state.known_facts == {}
+    assert result.question is None
+
+
+def test_memory_d_cannot_write_multiple_facts_in_one_answer():
+    service, _ = make_service([entry(1)])
+    guide = ListeningAssistantGuideService(service)
+    state = guide.start().state
+
+    with pytest.raises(ValueError):
+        guide.answer(
+            state,
+            question_kind='memory',
+            option_code='D',
+            custom_value={'date': '2026-09-29', 'teacher': '张三'},
+        )
+
+
+@pytest.mark.parametrize(
+    ('known_facts', 'question_kind', 'uncertain'),
+    (
+        ({'date': '2026-09-29'}, 'teacher', '不确定'),
+        ({'date': '2026-09-29', 'teacher': '张三'}, 'room', '未知'),
+        ({'date': '2026-09-29', 'teacher': '张三', 'room': '8-0309'}, 'period', '不清楚'),
+    ),
+)
+def test_uncertain_custom_values_are_noop_manual_paths(known_facts, question_kind, uncertain):
+    if question_kind == 'teacher':
+        entries = [entry(i, teacher=f'教师{i}', room='8-0309', period=(3, 4)) for i in range(1, 5)]
+    elif question_kind == 'room':
+        entries = [entry(i, teacher='张三', room=f'8-03{i:02d}', period=(3, 4)) for i in range(1, 5)]
+    else:
+        entries = [entry(i, teacher='张三', room='8-0309', period=(i, i)) for i in range(1, 5)]
+    service, _ = make_service(entries)
+    guide = ListeningAssistantGuideService(service)
+    result = guide.start(known_facts=known_facts)
+    original_facts = dict(result.state.known_facts)
+
+    assert result.question.kind == question_kind
+    answered = guide.answer(
+        result.state,
+        question_kind=question_kind,
+        option_code=None,
+        custom_value=uncertain,
+    )
+
+    assert answered.state.stage == 'manual'
+    assert dict(answered.state.known_facts) == original_facts
+
+
+@pytest.mark.parametrize('option_code', ('D', 'NONE'))
+def test_candidate_stage_d_and_none_are_safe_manual_paths(option_code):
+    service, _ = make_service([entry(1, course='A课'), entry(2, course='B课')])
+    guide = ListeningAssistantGuideService(service)
+    result = guide.start(known_facts={'date': LOOKUP_DATE.isoformat(), 'teacher': '张三'})
+
+    answered = guide.answer(
+        result.state,
+        question_kind=result.question.kind,
+        option_code=option_code,
+        custom_value=None,
+    )
+
+    assert answered.state.stage == 'manual'
+
+
+def test_select_kind_minimizes_largest_group_before_fixed_order_tie_breaker():
+    entries = [
+        entry(1, teacher='教师甲', room='8-0309'),
+        entry(2, teacher='教师甲', room='8-0310'),
+        entry(3, teacher='教师甲', room='8-0311'),
+        entry(4, teacher='教师乙', room='8-0311'),
+    ]
+    service, _ = make_service(entries)
+
+    result = ListeningAssistantGuideService(service).start(
+        known_facts={'date': LOOKUP_DATE.isoformat()}
+    )
+
+    assert result.question.kind == 'room'
 
 
 def test_answer_recomputes_candidates_and_does_not_trust_forged_candidate_ids():

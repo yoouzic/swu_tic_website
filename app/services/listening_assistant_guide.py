@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any, Mapping
+import unicodedata
 
 from app.services.listening_assistant import ListeningAssistantService
 from app.services.listening_assistant_contracts import (
@@ -25,6 +26,14 @@ from app.services.teaching_calendar import parse_lecture_date
 
 _FACT_KINDS = ('date', 'teacher', 'room', 'period', 'student_grade_class')
 _NO_OP_CODES = frozenset({'NONE', 'NOT_THIS', 'UNSURE', '都不是', '不确定'})
+_UNCERTAIN_VALUES = frozenset({
+    '不确定',
+    '不清楚',
+    '不知道',
+    '未知',
+    '都不是',
+    '不记得',
+})
 _PROMPTS = {
     'date': '你记得哪一天听课？',
     'teacher': '你记得授课教师吗？',
@@ -96,6 +105,13 @@ def _canonical_fact(kind: str, value: object) -> str:
     raise ValueError('question kind is not allowed')
 
 
+def _is_uncertain_value(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = unicodedata.normalize('NFKC', value).strip().casefold()
+    return normalized in _UNCERTAIN_VALUES
+
+
 def _group_candidates(candidates: tuple[Candidate, ...], kind: str) -> dict[str, list[Candidate]]:
     groups: dict[str, list[Candidate]] = {}
     for candidate in candidates:
@@ -159,6 +175,8 @@ class ListeningAssistantGuideService:
                     'question',
                 )
                 return self._render(next_state, candidates, forced_kind=target)
+            if option_code == 'D':
+                return self._manual(state, candidates)
             raise ValueError('memory answer must select A, B, or C')
 
         if state.stage == 'candidate':
@@ -179,6 +197,8 @@ class ListeningAssistantGuideService:
 
         facts = dict(state.known_facts)
         if option_code in _NO_OP_CODES:
+            return self._manual(state, candidates)
+        if option_code is None and _is_uncertain_value(custom_value):
             return self._manual(state, candidates)
         if option_code is not None and option_code != 'D':
             question = self._field_question(question_kind, candidates)
@@ -221,16 +241,32 @@ class ListeningAssistantGuideService:
     ) -> None:
         if not isinstance(state, GuidedAssistantState) or not state.is_valid:
             raise ValueError('state is invalid')
+        if state.stage not in {'question', 'candidate'}:
+            raise ValueError('state is not answerable')
         if not isinstance(question_kind, str) or question_kind not in {*_FACT_KINDS, 'memory'}:
             raise ValueError('question_kind is not allowed')
+        expected_kind = ListeningAssistantGuideService._expected_question_kind(state)
+        if question_kind != expected_kind:
+            raise ValueError('question_kind does not match the current question')
         if option_code is not None and (
             not isinstance(option_code, str) or not option_code.strip()
         ):
             raise ValueError('option_code must be a non-empty string or None')
-        if option_code is not None and option_code not in {'D', *(_NO_OP_CODES)} and custom_value is not None:
+        if option_code is not None and custom_value is not None:
             raise ValueError('option_code and custom_value cannot both be supplied')
-        if question_kind == 'memory' and custom_value is not None:
-            raise ValueError('memory does not accept custom_value')
+        if question_kind == 'memory' and option_code not in {'A', 'B', 'C', 'D'}:
+            raise ValueError('memory answer must select A, B, C, or D')
+
+    @staticmethod
+    def _expected_question_kind(state: GuidedAssistantState) -> str:
+        if state.stage == 'question' and not state.asked_question_kinds:
+            return 'memory'
+        if not state.asked_question_kinds:
+            raise ValueError('state has no current question')
+        current_kind = state.asked_question_kinds[-1]
+        if current_kind not in _FACT_KINDS:
+            raise ValueError('state has no current question')
+        return current_kind
 
     def _select_kind(
         self,
@@ -243,14 +279,16 @@ class ListeningAssistantGuideService:
             if kind not in known_facts and kind not in asked
         ]
         scored = [
-            (len(_group_candidates(candidates, kind)), -index, kind)
+            (
+                max(len(group) for group in _group_candidates(candidates, kind).values()),
+                sum(len(group) ** 2 for group in _group_candidates(candidates, kind).values()),
+                index,
+                kind,
+            )
             for index, kind in enumerate(_FACT_KINDS)
-            if kind in available
+            if kind in available and len(_group_candidates(candidates, kind)) > 1
         ]
-        useful = [item for item in scored if item[0] > 1]
-        if useful:
-            return max(useful)[2]
-        return None
+        return min(scored)[3] if scored else None
 
     def _field_question(self, kind: str, candidates: tuple[Candidate, ...]) -> GuidedQuestion:
         groups = _group_candidates(candidates, kind)
@@ -380,7 +418,9 @@ class ListeningAssistantGuideService:
             raise ValueError('question_kind does not match the candidate question')
         if option_code in _NO_OP_CODES:
             return self._manual(state, candidates)
-        if option_code is None or option_code == 'D':
+        if option_code == 'D':
+            return self._manual(state, candidates)
+        if option_code is None:
             raise ValueError('candidate selection requires A, B, or C')
         question = self._candidate_question(question_kind, candidates)
         selected_option = next((option for option in question.options if option.code == option_code), None)
