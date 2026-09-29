@@ -26,6 +26,13 @@ NAVIGATION = (
                 ),
             },
             {
+                'label': '听课助手',
+                'endpoint': 'user.submit_form',
+                'icon': 'bi-stars',
+                'authenticated': True,
+                'active_endpoints': ('user.submit_form', 'user.edit_form'),
+            },
+            {
                 'label': '表单审核',
                 'endpoint': 'admin.review_forms',
                 'icon': 'bi-clipboard-check',
@@ -136,7 +143,10 @@ def build_navigation(user, endpoint='', review_permission=None, manage_permissio
     for group_definition in NAVIGATION:
         items = []
         for definition in group_definition['items']:
-            if user.role not in definition['roles']:
+            if definition.get('authenticated'):
+                if not getattr(user, 'is_authenticated', False):
+                    continue
+            elif user.role not in definition['roles']:
                 continue
             requirement = definition.get('permission')
             if user.role != '超级管理员' and requirement == 'review' and not review_permission:
