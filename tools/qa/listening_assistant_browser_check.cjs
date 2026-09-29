@@ -38,6 +38,7 @@ const scenarios = [];
 const consoleErrors = [];
 let horizontalOverflow = null;
 let runtimePath = null;
+let browserStarted = false;
 
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, 'utf8');
@@ -59,6 +60,10 @@ function notRun(name, reason) {
 
 function blocked(name, reason) {
   scenarios.push({name, status: 'BLOCKED', reason});
+}
+
+function failed(name, reason) {
+  scenarios.push({name, status: 'FAIL', reason});
 }
 
 function hasScenario(name) {
@@ -240,9 +245,7 @@ function findPlaywrightModule() {
     candidates.push(process.env.LISTENING_ASSISTANT_PLAYWRIGHT_MODULE);
   }
   candidates.push(
-    path.join(REPO_ROOT, 'node_modules', 'playwright'),
     path.resolve(REPO_ROOT, '..', 'SWU_TIC-main', 'tmp', 'e2e_node', 'node_modules', 'playwright'),
-    path.resolve(REPO_ROOT, '..', 'SWU_TIC-main', 'node_modules', 'playwright'),
   );
   for (const modulePath of candidates) {
     try {
@@ -252,12 +255,7 @@ function findPlaywrightModule() {
       // Try the next existing runtime.
     }
   }
-  try {
-    require.resolve('playwright');
-    return 'playwright';
-  } catch (error) {
-    return null;
-  }
+  return null;
 }
 
 async function waitForCards(page, count) {
@@ -294,15 +292,15 @@ async function fillQuery(page, values) {
   await page.locator('#assistantSemester').fill(values.semester || '2026-2027-1');
 }
 
-async function search(page) {
+async function search(page, expectedCount) {
   await page.locator('[data-assistant-search]').click();
-  await waitForCards(page, 1);
+  await waitForCards(page, expectedCount);
 }
 
 async function loadBackupReview(page, baseUrl) {
   await openForm(page, baseUrl);
   await fillQuery(page, {room: '8-309'});
-  await search(page);
+  await search(page, 2);
   await page.locator('[data-assistant-none]').click();
   await waitForState(page, 'rescue');
   await page.locator('[data-assistant-rescue]').click();
@@ -316,7 +314,7 @@ async function runScenario(name, callback) {
     await callback();
     pass(name);
   } catch (error) {
-    blocked(name, error && error.message ? error.message : String(error));
+    failed(name, error && error.message ? error.message : String(error));
   }
 }
 
@@ -351,7 +349,7 @@ async function runBrowserScenarios() {
 
   runtimePath = findPlaywrightModule();
   if (!runtimePath) {
-    SCENARIO_NAMES.forEach((name) => notRun(name, 'existing Playwright runtime was not found'));
+    SCENARIO_NAMES.forEach((name) => blocked(name, 'explicit browser inputs were supplied but the bundled Playwright runtime was not found'));
     return;
   }
 
@@ -366,6 +364,7 @@ async function runBrowserScenarios() {
   let browser;
   try {
     browser = await playwright.chromium.launch({headless: true, timeout: TIMEOUT_MS});
+    browserStarted = true;
     const page = await browser.newPage({viewport: {width: 1440, height: 900}});
     page.on('console', (message) => {
       if (message.type() === 'error') {
@@ -379,7 +378,7 @@ async function runBrowserScenarios() {
     await runScenario('desktop-date-room-primary-review', async () => {
       await openForm(page, baseUrl);
       await fillQuery(page, {});
-      await search(page);
+      await search(page, 2);
       assert(await page.locator('[data-assistant-card]').count() === 2, 'expected two primary cards');
       assert(await page.locator('[data-source-kind="primary"]').count() === 2, 'primary source badges missing');
       await page.locator('[data-assistant-select]').first().click();
@@ -390,11 +389,11 @@ async function runBrowserScenarios() {
     await runScenario('singleton-and-multi-candidate-show-none', async () => {
       await openForm(page, baseUrl);
       await fillQuery(page, {room: '8-309'});
-      await search(page);
+      await search(page, 2);
       assert(await page.locator('[data-assistant-none]').isVisible(), 'multi-candidate none action missing');
       await openForm(page, baseUrl);
       await fillQuery(page, {room: '9-101'});
-      await search(page);
+      await search(page, 1);
       assert(await page.locator('[data-assistant-card]').count() === 1, 'expected singleton card');
       assert(await page.locator('[data-assistant-none]').isVisible(), 'singleton none action missing');
     });
@@ -402,7 +401,7 @@ async function runBrowserScenarios() {
     await runScenario('reject-then-teacher-fallback-and-backup-badge', async () => {
       await openForm(page, baseUrl);
       await fillQuery(page, {});
-      await search(page);
+      await search(page, 2);
       await page.locator('[data-assistant-reject]').first().click();
       assert(await page.locator('[data-assistant-card]').count() === 1, 'reject did not remove one card');
       await page.locator('[data-assistant-none]').click();
@@ -437,7 +436,7 @@ async function runBrowserScenarios() {
     await runScenario('date-room-change-clears-stale-candidates', async () => {
       await openForm(page, baseUrl);
       await fillQuery(page, {});
-      await search(page);
+      await search(page, 2);
       assert(await page.locator('[data-assistant-card]').count() === 2, 'fixture cards missing');
       await page.locator('#assistantRoom').fill('9-101');
       await waitForCards(page, 0);
@@ -448,7 +447,7 @@ async function runBrowserScenarios() {
     await runScenario('manual-period-range-and-safe-user-text', async () => {
       await openForm(page, baseUrl);
       await fillQuery(page, {room: '9-101'});
-      await search(page);
+      await search(page, 1);
       const card = page.locator('[data-assistant-card]').first();
       assert((await card.locator('.listening-assistant__candidate-title').textContent()).includes('<img'), 'fixture text was not preserved');
       assert(await card.locator('img').count() === 0, 'candidate text created an image element');
@@ -468,7 +467,7 @@ async function runBrowserScenarios() {
     await runScenario('keyboard-focus-reaches-assistant-controls', async () => {
       await openForm(page, baseUrl);
       await fillQuery(page, {});
-      await search(page);
+      await search(page, 2);
       await page.locator('#assistantDate').focus();
       await page.keyboard.press('Tab');
       assert(await page.evaluate(() => document.activeElement && document.activeElement.id === 'assistantRoom'), 'Tab did not reach room');
@@ -484,7 +483,7 @@ async function runBrowserScenarios() {
     await runScenario('320px-no-horizontal-overflow', async () => {
       await openForm(page, baseUrl);
       await fillQuery(page, {});
-      await search(page);
+      await search(page, 2);
       await page.locator('[data-assistant-select]').first().click();
       await waitForState(page, 'review');
       await page.setViewportSize({width: 320, height: 720});
@@ -523,8 +522,9 @@ async function main() {
   }
   await runBrowserScenarios();
   const hasBlocked = scenarios.some((item) => item.status === 'BLOCKED');
+  const hasFailure = scenarios.some((item) => item.status === 'FAIL');
   const hasNotRun = scenarios.some((item) => item.status === 'NOT_RUN');
-  const status = hasBlocked ? 'BLOCKED' : (hasNotRun ? 'NOT_RUN' : 'PASS');
+  const status = hasFailure ? 'FAIL' : (hasBlocked ? 'BLOCKED' : (hasNotRun ? 'NOT_RUN' : 'PASS'));
   const allowNotRun = process.env.LISTENING_ASSISTANT_ALLOW_NOT_RUN === '1';
   const summary = {
     schemaVersion: 2,
@@ -533,11 +533,11 @@ async function main() {
     runtime: runtimePath,
     mode: 'static contract plus optional isolated browser UI fixtures',
     scenarios,
-    consoleErrors: runtimePath && !hasNotRun ? consoleErrors.length : null,
+    consoleErrors: browserStarted ? consoleErrors.length : null,
     horizontalOverflow,
   };
   process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
-  process.exitCode = hasBlocked ? 2 : (hasNotRun && !allowNotRun ? 2 : 0);
+  process.exitCode = hasFailure || hasBlocked ? 2 : (hasNotRun && !allowNotRun ? 2 : 0);
 }
 
 main().catch((error) => {
