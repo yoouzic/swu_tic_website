@@ -579,6 +579,7 @@ const lectureFormDraftUrl = "{{ url_for('user.lecture_form_draft') }}";
 let lectureFormDraftTimer = null;
 let lectureFormDraftDirty = false;
 let lectureFormDraftSubmitting = false;
+let lectureFormDraftSaveController = null;
 
 // 页面加载完成后检查未使用的登记
 document.addEventListener('DOMContentLoaded', function() {
@@ -598,31 +599,47 @@ function checkUnusedRegistrations() {
 
 function renderUnusedRegistrations(data) {
     const tbody = document.getElementById('unusedRegistrationsBody');
-    tbody.innerHTML = '';
-    
+    tbody.replaceChildren();
+
     data.forEach(item => {
-        const rawDataStr = encodeURIComponent(JSON.stringify(item.raw_data));
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td><strong>${item.course_name}</strong></td>
-            <td>${item.teacher_name}</td>
-            <td><small>${item.listening_info || '无'}</small></td>
-            <td>
-                <button class="btn btn-sm btn-success" onclick="selectRegistration('${item.id}', '${rawDataStr}')">
-                    <i class="bi bi-check2"></i> 选择此课
-                </button>
-            </td>
-        `;
+
+        const courseCell = document.createElement('td');
+        const courseName = document.createElement('strong');
+        courseName.textContent = item.course_name || '';
+        courseCell.appendChild(courseName);
+
+        const teacherCell = document.createElement('td');
+        teacherCell.textContent = item.teacher_name || '';
+
+        const listeningCell = document.createElement('td');
+        const listeningInfo = document.createElement('small');
+        listeningInfo.textContent = item.listening_info || '无';
+        listeningCell.appendChild(listeningInfo);
+
+        const actionCell = document.createElement('td');
+        const selectButton = document.createElement('button');
+        selectButton.type = 'button';
+        selectButton.className = 'btn btn-sm btn-success';
+        const icon = document.createElement('i');
+        icon.className = 'bi bi-check2';
+        selectButton.append(icon, document.createTextNode(' 选择此课'));
+        selectButton.addEventListener('click', () => selectRegistration(item.id, item.raw_data));
+        actionCell.appendChild(selectButton);
+
+        tr.append(courseCell, teacherCell, listeningCell, actionCell);
         tbody.appendChild(tr);
     });
-    
+
     const modal = new bootstrap.Modal(document.getElementById('unusedRegistrationsModal'));
     modal.show();
 }
 
-function selectRegistration(id, rawDataEncoded) {
+function selectRegistration(id, rawDataInput) {
     try {
-        const rawData = JSON.parse(decodeURIComponent(rawDataEncoded));
+        const rawData = typeof rawDataInput === 'string'
+            ? JSON.parse(decodeURIComponent(rawDataInput))
+            : (rawDataInput && typeof rawDataInput === 'object' ? rawDataInput : {});
         
         // 设置隐藏域
         document.getElementById('registration_id').value = id;
@@ -888,10 +905,13 @@ async function saveLectureFormDraft() {
     const data = collectLectureFormDraftData();
     lectureFormDraftDirty = false;
     setLectureDraftStatus('正在保存', 'saving');
+    const saveController = new AbortController();
+    lectureFormDraftSaveController = saveController;
     try {
         const response = await fetch(lectureFormDraftUrl, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
+            signal: saveController.signal,
             body: JSON.stringify({data})
         });
         const result = await response.json();
@@ -900,9 +920,16 @@ async function saveLectureFormDraft() {
         }
         setLectureDraftStatus(`已保存 ${formatLectureDraftTime(result.updated_at)}`, 'success');
     } catch (error) {
+        if (error.name === 'AbortError') {
+            return;
+        }
         lectureFormDraftDirty = true;
         setLectureDraftStatus('保存失败，请检查网络后重试', 'error');
         console.error('Failed to save lecture form draft:', error);
+    } finally {
+        if (lectureFormDraftSaveController === saveController) {
+            lectureFormDraftSaveController = null;
+        }
     }
 }
 
@@ -917,8 +944,19 @@ function scheduleLectureFormDraftSave() {
 }
 
 async function deleteLectureFormDraft() {
+    window.clearTimeout(lectureFormDraftTimer);
+    lectureFormDraftTimer = null;
+    lectureFormDraftDirty = false;
+    if (lectureFormDraftSaveController) {
+        lectureFormDraftSaveController.abort();
+        lectureFormDraftSaveController = null;
+    }
     try {
-        await fetch(lectureFormDraftUrl, {method: 'DELETE'});
+        const response = await fetch(lectureFormDraftUrl, {method: 'DELETE'});
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || 'delete failed');
+        }
         setLectureDraftStatus('草稿已清除', 'pending');
     } catch (error) {
         console.error('Failed to delete lecture form draft:', error);

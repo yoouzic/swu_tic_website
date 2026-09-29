@@ -311,3 +311,40 @@ def test_rescue_clears_primary_cards_and_rejects_ids_before_backup_rendering():
     select_body = script[select_start:select_end]
     assert 'state.rejectedIds.includes(candidateId)' in select_body
     assert 'setError(' in select_body
+
+
+def test_unused_registration_rows_use_safe_dom_text_and_click_listeners():
+    start = TEMPLATE.index('function renderUnusedRegistrations')
+    end = TEMPLATE.index('function selectRegistration', start)
+    body = TEMPLATE[start:end]
+    assert 'createElement' in body
+    assert 'textContent' in body
+    assert 'addEventListener' in body
+    assert 'selectRegistration(item.id, item.raw_data)' in body
+    assert 'onclick' not in body
+    assert 'tr.innerHTML' not in body
+    assert '${item.' not in body
+
+
+def test_delete_draft_cancels_pending_save_and_validates_delete_result():
+    start = TEMPLATE.index('async function deleteLectureFormDraft')
+    end = TEMPLATE.index('// 表单验证', start)
+    body = TEMPLATE[start:end]
+    assert 'window.clearTimeout(lectureFormDraftTimer)' in body
+    assert 'lectureFormDraftTimer = null' in body
+    assert 'lectureFormDraftDirty = false' in body
+    assert 'const response = await fetch' in body
+    assert 'const result = await response.json()' in body
+    assert 'response.ok' in body
+    assert 'result.success' in body
+
+
+def test_assistant_busy_state_restores_original_button_markup_safely():
+    script = SCRIPT_PATH.read_text(encoding='utf-8')
+    start = script.index('function setBusy(')
+    end = script.index('function setError(', start)
+    body = script[start:end]
+    assert 'button.dataset.originalHtml = button.innerHTML' in body
+    assert 'button.innerHTML = button.dataset.originalHtml' in body
+    assert 'button.textContent = label' in body
+    assert 'originalLabel' not in body

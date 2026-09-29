@@ -422,11 +422,11 @@
             }
             button.disabled = busy;
             if (busy) {
-                button.dataset.originalLabel = button.textContent;
+                button.dataset.originalHtml = button.innerHTML;
                 button.textContent = label;
-            } else if (button.dataset.originalLabel) {
-                button.textContent = button.dataset.originalLabel;
-                delete button.dataset.originalLabel;
+            } else if (button.dataset.originalHtml) {
+                button.innerHTML = button.dataset.originalHtml;
+                delete button.dataset.originalHtml;
             }
         }
 
