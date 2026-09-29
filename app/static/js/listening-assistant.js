@@ -988,6 +988,10 @@
         }
 
         function selectCandidate(candidateId) {
+            if (state.rejectedIds.includes(candidateId)) {
+                setError('该候选已被排除，请重新查询。', state.current === STATES.RESCUE ? STATES.RESCUE : STATES.FIND);
+                return;
+            }
             const candidate = state.candidates.find((item) => cleanText(item.candidate_id) === candidateId);
             if (!candidate) {
                 setError('候选已失效，请重新查询。', state.current === STATES.RESCUE ? STATES.RESCUE : STATES.FIND);
@@ -1040,9 +1044,20 @@
             });
         }
 
+        function clearPrimaryCandidatesForRescue() {
+            const backupCandidates = state.candidates.filter(
+                (candidate) => candidate && candidate.source_kind === 'backup',
+            );
+            if (backupCandidates.length !== state.candidates.length) {
+                state.candidates = backupCandidates;
+                renderCandidates(state.candidates);
+            }
+        }
+
         function openRescue() {
             invalidateRequests();
             rejectDisplayedCandidates();
+            clearPrimaryCandidatesForRescue();
             state.fallbackReason = state.primaryHadCandidates || state.rejectedIds.length ? 'rejected_candidates' : 'no_result';
             if (elements.rescueReason) {
                 elements.rescueReason.value = state.fallbackReason;

@@ -292,3 +292,22 @@ def test_none_action_rejects_displayed_candidates_before_rescue_and_manual_stays
     assert rescue_body.index('rejectDisplayedCandidates();') < rescue_body.index('state.fallbackReason')
     assert "if (target.closest('[data-assistant-manual]'))" in script
     assert 'openManual();' in script
+
+
+def test_rescue_clears_primary_cards_and_rejects_ids_before_backup_rendering():
+    script = SCRIPT_PATH.read_text(encoding='utf-8')
+    clear_start = script.index('function clearPrimaryCandidatesForRescue()')
+    clear_end = script.index('function openRescue()', clear_start)
+    clear_body = script[clear_start:clear_end]
+    assert "candidate.source_kind === 'backup'" in clear_body
+    assert 'state.candidates = backupCandidates' in clear_body
+    assert 'renderCandidates(state.candidates)' in clear_body
+    rescue_start = script.index('function openRescue()')
+    rescue_end = script.index('function handleClick', rescue_start)
+    rescue_body = script[rescue_start:rescue_end]
+    assert 'clearPrimaryCandidatesForRescue();' in rescue_body
+    select_start = script.index('function selectCandidate(candidateId)')
+    select_end = script.index('function rejectCandidate', select_start)
+    select_body = script[select_start:select_end]
+    assert 'state.rejectedIds.includes(candidateId)' in select_body
+    assert 'setError(' in select_body
