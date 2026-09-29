@@ -39,6 +39,7 @@ const consoleErrors = [];
 let horizontalOverflow = null;
 let runtimePath = null;
 let browserStarted = false;
+let runtimeSelectionError = null;
 
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, 'utf8');
@@ -120,6 +121,15 @@ function isLoopbackUrl(value) {
   } catch (error) {
     return false;
   }
+}
+
+function isWithin(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '' || (
+    relative !== '..' &&
+    !relative.startsWith('..' + path.sep) &&
+    !path.isAbsolute(relative)
+  );
 }
 
 function candidate(overrides) {
@@ -242,7 +252,16 @@ async function installApiFixtures(page) {
 function findPlaywrightModule() {
   const candidates = [];
   if (process.env.LISTENING_ASSISTANT_PLAYWRIGHT_MODULE) {
-    candidates.push(process.env.LISTENING_ASSISTANT_PLAYWRIGHT_MODULE);
+    const override = path.resolve(process.env.LISTENING_ASSISTANT_PLAYWRIGHT_MODULE);
+    const bundledRoots = [
+      path.join(REPO_ROOT, 'node_modules'),
+      path.resolve(REPO_ROOT, '..', 'SWU_TIC-main', 'tmp', 'e2e_node'),
+    ];
+    if (!bundledRoots.some((root) => isWithin(root, override))) {
+      runtimeSelectionError = 'LISTENING_ASSISTANT_PLAYWRIGHT_MODULE must be inside a repository bundled runtime directory';
+      return null;
+    }
+    candidates.push(override);
   }
   candidates.push(
     path.resolve(REPO_ROOT, '..', 'SWU_TIC-main', 'tmp', 'e2e_node', 'node_modules', 'playwright'),
@@ -326,7 +345,11 @@ async function login(page, baseUrl, username, password) {
   await page.locator('#student_id').fill(username);
   await page.locator('#password').fill(password);
   await page.locator('form button[type="submit"]').first().click();
-  await page.waitForTimeout(300);
+  try {
+    await page.waitForURL((url) => !url.toString().includes('/auth/login'), {timeout: TIMEOUT_MS});
+  } catch (error) {
+    // The assertion below reports a concise authentication failure.
+  }
   assert(!page.url().includes('/auth/login'), 'explicit browser credentials did not authenticate');
 }
 
@@ -349,7 +372,8 @@ async function runBrowserScenarios() {
 
   runtimePath = findPlaywrightModule();
   if (!runtimePath) {
-    SCENARIO_NAMES.forEach((name) => blocked(name, 'explicit browser inputs were supplied but the bundled Playwright runtime was not found'));
+    const reason = runtimeSelectionError || 'explicit browser inputs were supplied but the bundled Playwright runtime was not found';
+    SCENARIO_NAMES.forEach((name) => blocked(name, reason));
     return;
   }
 
@@ -498,7 +522,7 @@ async function runBrowserScenarios() {
     if (consoleErrors.length === 0) {
       pass('browser-console-errors-zero', {consoleErrors: 0});
     } else {
-      blocked('browser-console-errors-zero', 'browser emitted ' + consoleErrors.length + ' console/page errors');
+      failed('browser-console-errors-zero', 'browser emitted ' + consoleErrors.length + ' console/page errors');
     }
   } catch (error) {
     const reason = error && error.message ? error.message : String(error);
