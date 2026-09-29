@@ -191,7 +191,7 @@ function stateFor(facts, count, stage, candidates) {
 }
 
 function candidatesFor(facts) {
-  if (facts.teacher === 'Conflict') return CONFLICT;
+  if (facts.teacher === 'Conflict' && facts.date) return CONFLICT;
   if (facts.room === '9-101') return PRIMARY_SINGLE;
   if (facts.date && (facts.teacher || facts.room)) return PRIMARY_MULTI;
   return [];
@@ -205,7 +205,15 @@ function nextQuestion(facts) {
 }
 
 function guideResult(facts, count) {
+  if (count === 0 && Object.keys(facts).length === 0) return {
+    state: stateFor(facts, count, 'question', []),
+    question: memoryQuestion(), candidates: [], needs_confirmation: false,
+  };
   const items = candidatesFor(facts);
+  if (items.length === 1 && !items[0].conflicts.length) return {
+    state: stateFor(facts, count, 'confirm', items),
+    question: null, candidates: items, needs_confirmation: true,
+  };
   if (items.length) return {
     state: stateFor(facts, count, 'candidate', items),
     question: candidateQuestion(items),
@@ -256,6 +264,7 @@ async function installApiFixtures(page) {
       const request = parseRequestBody(route);
       assert(route.request().method() === 'POST', 'guide answer must use POST');
       assert(request.semester === '2026-2027-1', 'guide answer semester is missing');
+      assert(['memory', 'date', 'teacher', 'room', 'period'].includes(request.question_kind), 'guide question kind is invalid');
       assert(request.state && Number.isInteger(request.state.question_count), 'guide answer state is missing');
       assert(Boolean(request.option_code) !== Boolean(request.custom_value), 'option/custom answer must be exclusive');
       const facts = {...(request.state.known_facts || {})};
@@ -284,6 +293,18 @@ async function installApiFixtures(page) {
         await fulfillJson(route, {
           success: true,
           data: {...result, backup_source_batch_id: 'backup-fixture-1', backup_rescue_available: true},
+          message: '',
+        });
+        return;
+      }
+      if (request.custom_value === '不确定') {
+        await fulfillJson(route, {
+          success: true,
+          data: {
+            state: stateFor(facts, count, 'manual', []),
+            question: null, candidates: [], needs_confirmation: false,
+            backup_source_batch_id: 'backup-fixture-1', backup_rescue_available: true,
+          },
           message: '',
         });
         return;
@@ -347,6 +368,8 @@ async function installApiFixtures(page) {
         assert(request.explicit_fallback === true, 'backup fallback flag is missing');
         assert(request.source_batch_id === 'backup-fixture-1', 'backup source batch is missing');
         assert(request.overrides && (request.overrides.room || request.overrides.lecture_location), 'backup room choice is missing');
+      } else {
+        assert(!request.source_batch_id || request.source_batch_id === 'primary-fixture-1', 'primary source batch is invalid');
       }
       if (selected.conflicts.includes('date_needs_confirmation')) {
         assert(request.overrides?.lecture_date, 'date override is missing');
@@ -478,6 +501,9 @@ async function runBrowserScenarios() {
       await openForm(page, baseUrl); await fillSemester(page);
       await page.locator('[data-assistant-option="B"]').click();
       await waitForText(page, '[data-assistant-question]', '教师');
+      await openForm(page, baseUrl); await fillSemester(page);
+      await page.locator('[data-assistant-option="C"]').click();
+      await waitForText(page, '[data-assistant-question]', '教室');
     });
 
     await runScenario('custom-answer-renders-as-safe-text', async () => {
@@ -514,7 +540,8 @@ async function runBrowserScenarios() {
       await page.locator('#lecture_date').fill('2026-09-18');
       await page.locator('#lecture_location').fill('9-101');
       await page.locator('[data-assistant-option="A"]').click();
-      assert(await page.locator('[data-assistant-option="D"]').count() === 1, 'singleton must still expose D/manual');
+      await page.locator('[data-assistant-candidate-confirm]').waitFor({state: 'visible'});
+      assert(await page.locator('[data-assistant-none]').isVisible(), 'singleton must still expose none/manual');
     });
 
     await runScenario('back-clears-later-guide-state', async () => {
