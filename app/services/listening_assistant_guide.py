@@ -241,6 +241,8 @@ class ListeningAssistantGuideService:
     ) -> None:
         if not isinstance(state, GuidedAssistantState) or not state.is_valid:
             raise ValueError('state is invalid')
+        if state.stage == 'question' and state.question_count >= MAX_GUIDED_QUESTIONS:
+            raise ValueError('question budget is exhausted')
         if state.stage not in {'question', 'candidate'}:
             raise ValueError('state is not answerable')
         if not isinstance(question_kind, str) or question_kind not in {*_FACT_KINDS, 'memory'}:

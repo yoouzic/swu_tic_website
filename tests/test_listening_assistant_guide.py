@@ -246,6 +246,39 @@ def test_answer_rejects_invalid_question_option_custom_value_and_state():
         )
 
 
+@pytest.mark.parametrize(
+    ('state', 'question_kind', 'option_code'),
+    (
+        (GuidedAssistantState({}, (), (), 4, 'question'), 'memory', 'A'),
+        (
+            GuidedAssistantState(
+                {'date': LOOKUP_DATE.isoformat()},
+                (),
+                ('teacher',),
+                4,
+                'question',
+            ),
+            'teacher',
+            'A',
+        ),
+    ),
+)
+def test_answer_rejects_question_state_at_budget_before_recomputing(state, question_kind, option_code):
+    service, loader = make_service([entry(1), entry(2, teacher='李四')])
+    guide = ListeningAssistantGuideService(service)
+
+    with pytest.raises(ValueError, match='question budget is exhausted'):
+        guide.answer(
+            state,
+            question_kind=question_kind,
+            option_code=option_code,
+            custom_value=None,
+            semester=SEMESTER,
+        )
+
+    assert loader.calls == []
+
+
 @pytest.mark.parametrize('stage', ('confirm', 'candidate', 'manual', 'done'))
 def test_answer_rejects_memory_on_every_non_question_stage(stage):
     service, _ = make_service([entry(1), entry(2)])

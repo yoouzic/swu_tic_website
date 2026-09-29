@@ -218,6 +218,26 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         self.assertEqual(payload['data']['candidates'], [])
         self.assertFalse(payload['data']['needs_confirmation'])
 
+    def test_guide_start_rejects_non_string_semester_and_known_fact_values(self):
+        self._login()
+        for label, body in (
+            (
+                'non-string semester',
+                {'known_facts': {}, 'semester': 123},
+            ),
+            (
+                'non-string known fact',
+                {'known_facts': {'date': 123}, 'semester': SEMESTER},
+            ),
+        ):
+            with self.subTest(label=label):
+                response = self.client.post(
+                    '/user/api/listening-assistant/guide/start',
+                    json=body,
+                )
+                self.assertEqual(response.status_code, 400)
+                self._assert_envelope(response, success=False)
+
     def test_guide_all_active_roles_are_allowed(self):
         for index, role in enumerate(('信息员', '管理员', '超级管理员'), start=10):
             with self.subTest(role=role):
@@ -282,7 +302,30 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
             ('option and custom conflict', {**valid, 'custom_value': '2026-09-18'}),
             ('invalid question kind', {**valid, 'question_kind': 'phone'}),
             ('budget overflow', {**valid, 'state': {**valid['state'], 'question_count': 5}}),
+            ('budget exhausted memory', {**valid, 'state': {**valid['state'], 'question_count': 4}}),
+            (
+                'budget exhausted ordinary question',
+                {
+                    **valid,
+                    'state': {
+                        'known_facts': {'date': LOOKUP_DATE.isoformat()},
+                        'candidate_ids': [],
+                        'asked_question_kinds': ['teacher'],
+                        'question_count': 4,
+                        'stage': 'question',
+                    },
+                    'question_kind': 'teacher',
+                },
+            ),
             ('overlong semester', {**valid, 'semester': 'x' * 121}),
+            ('non-string question kind', {**valid, 'question_kind': 123}),
+            ('non-string option code', {**valid, 'option_code': 123}),
+            ('non-string custom value', {**valid, 'option_code': None, 'custom_value': 123}),
+            ('non-string semester', {**valid, 'semester': 123}),
+            (
+                'non-string state candidate id',
+                {**valid, 'state': {**valid['state'], 'candidate_ids': [123]}},
+            ),
         )
         for label, body in cases:
             with self.subTest(label=label):

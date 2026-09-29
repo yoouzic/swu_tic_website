@@ -446,7 +446,7 @@ def listening_assistant_guide_start(user):
         if not isinstance(known_facts, Mapping):
             raise ValueError('known_facts must be a mapping')
         semester = _guide_text(payload['semester'], 'semester')
-    except (AssistantSelectionError, ValueError) as error:
+    except (AssistantSelectionError, ValueError, TypeError) as error:
         return _error_response(str(error) or '请求参数无效', 400)
 
     try:
@@ -479,7 +479,7 @@ def listening_assistant_guide_answer(user):
         semester = _guide_text(payload['semester'], 'semester')
         if option_code is not None and custom_value is not None:
             raise ValueError('option_code and custom_value cannot both be supplied')
-    except (AssistantSelectionError, ValueError) as error:
+    except (AssistantSelectionError, ValueError, TypeError) as error:
         return _error_response(str(error) or '请求参数无效', 400)
 
     try:
