@@ -99,6 +99,7 @@ GUIDE_HISTORY_KEYS = frozenset({'kind', 'answer_code', 'custom_value'})
 GUIDE_KINDS = frozenset({'memory', 'date', 'teacher', 'room', 'period', 'student_grade_class'})
 GUIDE_ANSWER_CODES = frozenset({'A', 'B', 'C', 'D', 'NONE'})
 GUIDE_CANDIDATE_ID_PATTERN = re.compile(r'^[0-9A-Za-z._:~\-]+$')
+GUIDE_PHONE_PATTERN = re.compile(r'1[3-9]\d{9}')
 
 
 class AssistantSelectionError(ValueError):
@@ -191,9 +192,10 @@ def _normalize_guide_text(value: object, *, field_name: str) -> str | None:
     normalized = _optional_text(value, field_name=field_name, maximum=MAX_GUIDED_FACT_LENGTH)
     if normalized is None:
         return None
+    compact = re.sub(r'[\s\-‐‑–—_+()（）]', '', unicodedata.normalize('NFKC', normalized))
     if re.search(r'(?i)(password|passwd|token|secret|credential|凭据|密码|口令|签名|评价|反馈)', normalized):
         raise AssistantSelectionError(f'{field_name} contains private or evaluation text')
-    if re.search(r'(?<!\d)\d{7,}(?!\d)', normalized):
+    if GUIDE_PHONE_PATTERN.search(compact) or re.search(r'(?<!\d)\d{7,}(?!\d)', normalized):
         raise AssistantSelectionError(f'{field_name} contains a phone-like value')
     return normalized
 
@@ -312,7 +314,11 @@ def _normalize_query(raw_query: object) -> tuple[AssistantQuery, dict[str, Any],
         if key in raw_query and raw_query[key] is not None:
             if not isinstance(raw_query[key], str):
                 raise AssistantSelectionError(f'query.{key} must be text or None')
-            values[key] = raw_query[key]
+            values[key] = _text(
+                raw_query[key],
+                field_name=f'query.{key}',
+                maximum=MAX_GUIDED_FACT_LENGTH,
+            ) or None
         else:
             values[key] = None
 

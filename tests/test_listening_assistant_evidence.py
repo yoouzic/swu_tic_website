@@ -337,9 +337,11 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
             revalidate_selection(self.user, payload, service=service, semester=SEMESTER)
 
         payload['guide_state']['candidate_ids'] = ['primary:batch-current:1']
-        payload['history'][0]['custom_value'] = '13800000000'
-        with self.assertRaises(AssistantSelectionError):
-            revalidate_selection(self.user, payload, service=service, semester=SEMESTER)
+        for phone_like in ('13800000000', '138 0000 0000', '１３８－００００－００００'):
+            with self.subTest(phone_like=phone_like):
+                payload['history'][0]['custom_value'] = phone_like
+                with self.assertRaises(AssistantSelectionError):
+                    revalidate_selection(self.user, payload, service=service, semester=SEMESTER)
 
     def test_revalidation_requires_valid_overrides_for_candidate_conflicts(self):
         period_entry = schedule_entry()

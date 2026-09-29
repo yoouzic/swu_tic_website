@@ -30,6 +30,7 @@ from app.utils.permission_feedback import forbidden_json, flash_forbidden
 import hashlib
 import json
 import re
+import unicodedata
 
 from . import user_bp
 
@@ -80,6 +81,17 @@ _GUIDE_CANDIDATE_ID_PATTERN = re.compile(r'^[0-9A-Za-z._:~\-]+$')
 _GUIDE_PRIVATE_TEXT_PATTERN = re.compile(
     r'(?i)(password|passwd|token|secret|credential|凭据|密码|口令|签名|评价|反馈)'
 )
+_GUIDE_PHONE_PATTERN = re.compile(r'1[3-9]\d{9}')
+
+
+def _contains_guide_sensitive_text(value):
+    normalized = unicodedata.normalize('NFKC', value)
+    compact = re.sub(r'[\s\-‐‑–—_+()（）]', '', normalized)
+    return bool(
+        _GUIDE_PRIVATE_TEXT_PATTERN.search(normalized)
+        or _GUIDE_PHONE_PATTERN.search(compact)
+        or re.search(r'(?<!\d)\d{7,}(?!\d)', normalized)
+    )
 
 
 def _is_draft_scalar(value):
@@ -111,9 +123,7 @@ def _normalize_guide_history(value):
                 raise ValueError(f'assistant.history[{index}].custom_value is invalid')
             if any(ord(char) < 32 or ord(char) == 127 for char in custom_value):
                 raise ValueError(f'assistant.history[{index}].custom_value contains control characters')
-            if _GUIDE_PRIVATE_TEXT_PATTERN.search(custom_value) or re.search(
-                r'(?<!\d)\d{7,}(?!\d)', custom_value
-            ):
+            if _contains_guide_sensitive_text(custom_value):
                 raise ValueError(f'assistant.history[{index}].custom_value contains private text')
         normalized.append({
             'kind': kind,
@@ -166,9 +176,11 @@ def _normalize_assistant_draft_payload(raw_payload):
                 if _is_draft_scalar(nested_value):
                     nested[nested_key] = nested_value
                 elif isinstance(nested_value, list):
-                    nested[nested_key] = [
-                        item for item in nested_value if _is_draft_scalar(item)
-                    ]
+                    if not all(_is_draft_scalar(item) for item in nested_value):
+                        raise ValueError(f'assistant.{key}.{nested_key} contains unsupported values')
+                    nested[nested_key] = nested_value[:20]
+                else:
+                    raise ValueError(f'assistant.{key}.{nested_key} must be scalar or list')
             normalized[key] = nested
             continue
 
@@ -259,7 +271,16 @@ def _parse_draft_payload(draft):
     try:
         normalized = _normalize_draft_payload(payload)
     except ValueError:
-        return {}
+        # Preserve ordinary form fields when an older assistant payload has
+        # keys that the current strict assistant namespace no longer accepts.
+        # A stale assistant snapshot is disposable; the user's draft is not.
+        legacy_payload = dict(payload)
+        legacy_payload.pop('assistant', None)
+        legacy_payload.pop('assistant_payload', None)
+        try:
+            normalized = _normalize_draft_payload(legacy_payload)
+        except ValueError:
+            return {}
     return normalized if normalized is not None else {}
 
 

@@ -240,6 +240,12 @@ class LectureFormDraftTest(unittest.TestCase):
             ({**base_state, 'candidate_ids': ['primary:batch:1']}, [
                 {'kind': 'room', 'answer_code': 'D', 'custom_value': '13800000000'},
             ]),
+            ({**base_state, 'candidate_ids': ['primary:batch:1']}, [
+                {'kind': 'room', 'answer_code': 'D', 'custom_value': '138 0000 0000'},
+            ]),
+            ({**base_state, 'candidate_ids': ['primary:batch:1']}, [
+                {'kind': 'room', 'answer_code': 'D', 'custom_value': '１３８－００００－００００'},
+            ]),
         ):
             with self.subTest(state=state, history=history):
                 response = self.client.put(
@@ -247,6 +253,40 @@ class LectureFormDraftTest(unittest.TestCase):
                     json={'data': {'assistant': {'guide_state': state, 'history': history}}},
                 )
                 self.assertEqual(response.status_code, 400)
+
+    def test_assistant_draft_rejects_known_nested_values_with_unsupported_types(self):
+        self._login_as(self.user)
+        response = self.client.put(
+            '/user/api/lecture_form_draft',
+            json={
+                'data': {
+                    'assistant': {
+                        'overrides': {'course_title': {'secret': 'x'}},
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_legacy_assistant_unknown_fields_do_not_hide_form_draft(self):
+        self._login_as(self.user)
+        db.session.add(LectureFormDraft(
+            user_id=self.user.id,
+            draft_key='submit_form',
+            payload_json=json.dumps({
+                'course_title': 'Keep this form draft',
+                'assistant': {'stage': 'confirmed', 'obsolete_key': 'drop only this snapshot'},
+            }),
+        ))
+        db.session.commit()
+
+        response = self.client.get('/user/api/lecture_form_draft')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()['data']
+        self.assertEqual(payload['course_title'], 'Keep this form draft')
+        self.assertNotIn('assistant', payload)
 
     def test_rewound_guide_draft_clears_old_confirmation_and_fill_provenance(self):
         self._login_as(self.user)
