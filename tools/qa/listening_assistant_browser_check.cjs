@@ -110,7 +110,7 @@ function staticContractChecks() {
   assert(assistantScript.includes('textContent'), 'user text should be rendered as text');
   assert(style.includes('min-width: 0'), 'assistant style should constrain narrow layouts');
   assert(style.includes('@media'), 'assistant style should include responsive rules');
-  pass('static-dom-contracts', {checks: templateHooks.length + 10});
+  pass('static-dom-contracts', {checks: templateHooks.length + 15});
 }
 
 function isLoopbackUrl(value) {
@@ -182,9 +182,29 @@ async function fulfillJson(route, payload, status) {
   });
 }
 
+async function rejectFixture(route, error) {
+  await fulfillJson(route, {
+    success: false,
+    data: {},
+    message: 'browser fixture contract: ' + error.message,
+  }, 400);
+}
+
+function parseRequestBody(route) {
+  return JSON.parse(route.request().postData() || '{}');
+}
+
 async function installApiFixtures(page) {
   await page.route('**/user/api/listening-assistant/candidates*', async (route) => {
     const query = new URL(route.request().url()).searchParams;
+    try {
+      assert(route.request().method() === 'GET', 'candidate lookup must use GET');
+      assert(query.get('date') === '2026-09-18', 'candidate lookup date is missing or invalid');
+      assert(query.get('room') || query.get('teacher'), 'candidate lookup anchor is missing');
+    } catch (error) {
+      await rejectFixture(route, error);
+      return;
+    }
     const candidates = query.get('room') === '9-101' ? PRIMARY_SINGLETON : PRIMARY_MULTI;
     await fulfillJson(route, {
       success: true,
@@ -200,6 +220,19 @@ async function installApiFixtures(page) {
   });
 
   await page.route('**/user/api/listening-assistant/fallback*', async (route) => {
+    let request;
+    try {
+      request = parseRequestBody(route);
+      assert(route.request().method() === 'POST', 'fallback lookup must use POST');
+      assert(request.date === '2026-09-18', 'fallback date is missing or invalid');
+      assert(request.teacher === '张老师', 'fallback teacher is missing or invalid');
+      assert(request.explicit_fallback === true, 'fallback must be explicitly requested');
+      assert(request.source_batch_id === 'backup-fixture-1', 'fallback batch provenance is missing');
+      assert(['no_result', 'rejected_candidates'].includes(request.reason), 'fallback reason is invalid');
+    } catch (error) {
+      await rejectFixture(route, error);
+      return;
+    }
     await fulfillJson(route, {
       success: true,
       data: {
@@ -213,39 +246,54 @@ async function installApiFixtures(page) {
   });
 
   await page.route('**/user/api/listening-assistant/confirm*', async (route) => {
-    let request = {};
     try {
-      request = JSON.parse(route.request().postData() || '{}');
+      const request = parseRequestBody(route);
+      assert(route.request().method() === 'POST', 'confirmation must use POST');
+      assert(request.stage === 'confirmed', 'confirmation stage is missing');
+      assert(request.query && request.query.lecture_date === '2026-09-18', 'confirmation query is missing date');
+      assert(request.candidate_id, 'confirmation candidate ID is missing');
+      const allowedIds = new Set(['primary-fixture-1', 'primary-fixture-2', 'backup-fixture-1']);
+      assert(allowedIds.has(request.candidate_id), 'confirmation candidate ID is not from the fixture');
+      assert(request.source_kind === 'primary' || request.source_kind === 'backup', 'confirmation source kind is invalid');
+      assert(
+        request.source_kind === 'backup'
+          ? request.candidate_id === 'backup-fixture-1'
+          : request.candidate_id !== 'backup-fixture-1',
+        'confirmation source kind and candidate ID do not match',
+      );
+      const selected = request.source_kind === 'backup' ? BACKUP[0] : PRIMARY_MULTI.find(
+        (item) => item.candidate_id === request.candidate_id,
+      );
+      assert(selected, 'confirmation candidate/source mismatch');
+      const location = request.overrides && (
+        request.overrides.lecture_location || request.overrides.room
+      ) || selected.room;
+      await fulfillJson(route, {
+        success: true,
+        data: {
+          candidate: selected,
+          query: request.query || {},
+          field_snapshot: {
+            lecture_date: selected.lecture_date,
+            lecture_location: location,
+            teacher_name: selected.teacher_name,
+            teacher_college: selected.teacher_college,
+            course_title: selected.course_title,
+            student_grade_class: selected.student_grade_class,
+            class_period: '第3-4节',
+          },
+          confirmation: {
+            confirmed: true,
+            source_kind: selected.source_kind,
+            acknowledged_source: request.acknowledged_source === true,
+            explicit_fallback: request.explicit_fallback === true,
+          },
+        },
+        message: '',
+      });
     } catch (error) {
-      request = {};
+      await rejectFixture(route, error);
     }
-    const selected = request.source_kind === 'backup' ? BACKUP[0] : PRIMARY_MULTI[0];
-    const location = request.overrides && (
-      request.overrides.lecture_location || request.overrides.room
-    ) || selected.room;
-    await fulfillJson(route, {
-      success: true,
-      data: {
-        candidate: selected,
-        query: request.query || {},
-        field_snapshot: {
-          lecture_date: selected.lecture_date,
-          lecture_location: location,
-          teacher_name: selected.teacher_name,
-          teacher_college: selected.teacher_college,
-          course_title: selected.course_title,
-          student_grade_class: selected.student_grade_class,
-          class_period: '第3-4节',
-        },
-        confirmation: {
-          confirmed: true,
-          source_kind: selected.source_kind,
-          acknowledged_source: request.acknowledged_source === true,
-          explicit_fallback: request.explicit_fallback === true,
-        },
-      },
-      message: '',
-    });
   });
 }
 
@@ -533,7 +581,11 @@ async function runBrowserScenarios() {
     });
   } finally {
     if (browser) {
-      await browser.close().catch(() => {});
+      try {
+        await browser.close();
+      } catch (error) {
+        failed('browser-resource-close', 'browser close failed: ' + error.message);
+      }
     }
   }
 }
@@ -542,7 +594,7 @@ async function main() {
   try {
     staticContractChecks();
   } catch (error) {
-    blocked('static-dom-contracts', error.message);
+    failed('static-dom-contracts', error.message);
   }
   await runBrowserScenarios();
   const hasBlocked = scenarios.some((item) => item.status === 'BLOCKED');
