@@ -38,6 +38,24 @@ class NavigationTest(unittest.TestCase):
         self.assertTrue(registration['active'])
         self.assertFalse(assistant['active'])
 
+    def test_submit_form_only_highlights_the_listening_assistant(self):
+        groups = build_navigation(self.user('信息员'), 'user.submit_form')
+
+        registration = self.item(groups, '听课与填报')
+        assistant = self.item(groups, '听课助手')
+
+        self.assertTrue(assistant['active'])
+        self.assertFalse(registration['active'])
+
+    def test_edit_form_only_highlights_listening_registration(self):
+        groups = build_navigation(self.user('信息员'), 'user.edit_form')
+
+        registration = self.item(groups, '听课与填报')
+        assistant = self.item(groups, '听课助手')
+
+        self.assertFalse(assistant['active'])
+        self.assertTrue(registration['active'])
+
     def test_registration_item_keeps_its_role_scope(self):
         groups = build_navigation(self.user('教师'), 'user.my_forms')
         labels = [item['label'] for item in self.items(groups)]

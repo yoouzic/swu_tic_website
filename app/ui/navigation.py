@@ -20,7 +20,6 @@ NAVIGATION = (
                 'active_endpoints': (
                     'user.listening_registration',
                     'user.my_forms',
-                    'user.submit_form',
                     'user.edit_form',
                     'user.view_form',
                 ),
@@ -30,7 +29,7 @@ NAVIGATION = (
                 'endpoint': 'user.submit_form',
                 'icon': 'bi-stars',
                 'authenticated': True,
-                'active_endpoints': ('user.submit_form', 'user.edit_form'),
+                'active_endpoints': ('user.submit_form',),
             },
             {
                 'label': '表单审核',
