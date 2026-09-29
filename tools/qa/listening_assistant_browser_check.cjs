@@ -191,6 +191,7 @@ function stateFor(facts, count, stage, candidates) {
 }
 
 function candidatesFor(facts) {
+  if (facts.teacher === 'NoMatch') return [];
   if (facts.teacher === 'Conflict' && facts.date) return CONFLICT;
   if (facts.room === '9-101') return PRIMARY_SINGLE;
   if (facts.date && (facts.teacher || facts.room)) return PRIMARY_MULTI;
@@ -530,7 +531,13 @@ async function runBrowserScenarios() {
       await openForm(page, baseUrl); await fillSemester(page);
       await page.locator('[data-assistant-option="A"]').click();
       await page.locator('[data-assistant-option="D"]').click();
-      await page.locator('[data-assistant-custom-input]').fill('不确定');
+      await page.locator('[data-assistant-custom-input]').fill('2026-09-18');
+      await page.locator('[data-assistant-custom-submit]').click();
+      await page.locator('[data-assistant-option="D"]').click();
+      await page.locator('[data-assistant-custom-input]').fill('NoMatch');
+      await page.locator('[data-assistant-custom-submit]').click();
+      await page.locator('[data-assistant-option="D"]').click();
+      await page.locator('[data-assistant-custom-input]').fill('8-999');
       await page.locator('[data-assistant-custom-submit]').click();
       await page.locator('[data-assistant-manual-view]').waitFor({state: 'visible'});
     });
@@ -592,9 +599,21 @@ async function runBrowserScenarios() {
 
     await runScenario('keyboard-focus-320px-and-console-clean', async () => {
       await openForm(page, baseUrl); await fillSemester(page);
+      await page.locator('#lecture_date').fill('2026-09-18');
+      await page.locator('#teacher_name').fill('张老师');
       await page.locator('[data-assistant-option="A"]').focus();
       await page.keyboard.press('Enter');
-      await page.locator('[data-assistant-question]').waitFor({state: 'visible'});
+      await page.locator('[data-assistant-candidate-confirm]').waitFor({state: 'visible'});
+      await page.locator('[data-assistant-confirm]').focus();
+      await page.keyboard.press('Enter');
+      await waitForText(page, '[data-assistant-status]', '已完成');
+      await openForm(page, baseUrl); await fillSemester(page);
+      await page.locator('#lecture_date').fill('2026-09-18');
+      await page.locator('#lecture_location').fill('9-101');
+      await page.locator('[data-assistant-option="A"]').click();
+      await page.locator('[data-assistant-none]').focus();
+      await page.keyboard.press('Enter');
+      await page.locator('[data-assistant-manual-view]').waitFor({state: 'visible'});
       await page.setViewportSize({width: 320, height: 720});
       const dimensions = await page.evaluate(() => ({
         scrollWidth: document.documentElement.scrollWidth,
