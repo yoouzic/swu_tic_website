@@ -120,12 +120,38 @@ def test_candidate_ids_reject_duplicates_and_more_than_budget():
         normalize_candidate_ids(tuple(f'candidate-{i}' for i in range(MAX_GUIDED_CANDIDATES + 1)))
 
 
+def test_candidate_id_length_is_bounded_for_normalization_and_state_construction():
+    oversized_candidate_id = 'c' * (MAX_GUIDED_FACT_LENGTH + 1)
+
+    with pytest.raises(ValueError):
+        normalize_candidate_ids((oversized_candidate_id,))
+    with pytest.raises(ValueError):
+        GuidedAssistantState({}, (oversized_candidate_id,), (), 0, 'question')
+
+
+def test_option_code_and_custom_label_lengths_are_bounded():
+    oversized_text = 'x' * (MAX_GUIDED_FACT_LENGTH + 1)
+
+    with pytest.raises(ValueError):
+        GuidedOption(oversized_text, '选项', 'value')
+    with pytest.raises(ValueError):
+        GuidedQuestion('date', '请选择日期', (), custom_label=oversized_text)
+
+
 def test_question_kinds_and_stage_are_whitelisted():
     with pytest.raises(ValueError):
         normalize_question_kinds(('date', 'not-a-question'))
     with pytest.raises(ValueError):
         normalize_stage('unknown')
     assert ALLOWED_GUIDED_STAGES == {'question', 'candidate', 'confirm', 'manual', 'done'}
+
+
+def test_stage_allowlist_is_immutable_and_rejects_new_stage():
+    assert isinstance(ALLOWED_GUIDED_STAGES, frozenset)
+    with pytest.raises(AttributeError):
+        ALLOWED_GUIDED_STAGES.add('future')
+    with pytest.raises(ValueError):
+        normalize_stage('future')
 
 
 def test_result_public_dict_uses_privacy_safe_candidate_payload():

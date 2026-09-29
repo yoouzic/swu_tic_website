@@ -9,8 +9,8 @@ from .listening_assistant_contracts import Candidate
 MAX_GUIDED_QUESTIONS = 4
 MAX_GUIDED_FACT_LENGTH = 120
 MAX_GUIDED_CANDIDATES = 20
-ALLOWED_GUIDED_STAGES = {'question', 'candidate', 'confirm', 'manual', 'done'}
-_ALLOWED_GUIDED_FACTS = {'date', 'teacher', 'room', 'period', 'student_grade_class'}
+ALLOWED_GUIDED_STAGES = frozenset({'question', 'candidate', 'confirm', 'manual', 'done'})
+_ALLOWED_GUIDED_FACTS = frozenset({'date', 'teacher', 'room', 'period', 'student_grade_class'})
 _ALLOWED_GUIDED_QUESTION_KINDS = _ALLOWED_GUIDED_FACTS | {'memory'}
 
 
@@ -51,7 +51,7 @@ def normalize_candidate_ids(value: Any) -> tuple[str, ...]:
         raise ValueError('candidate_ids exceeds maximum count')
     normalized: list[str] = []
     for candidate_id in values:
-        item = _require_text(candidate_id, 'candidate_id')
+        item = _require_text(candidate_id, 'candidate_id', max_length=MAX_GUIDED_FACT_LENGTH)
         if item in normalized:
             raise ValueError('candidate_ids must not contain duplicates')
         normalized.append(item)
@@ -94,7 +94,7 @@ class GuidedOption:
     candidate_count: int | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, 'code', _require_text(self.code, 'code'))
+        object.__setattr__(self, 'code', _require_text(self.code, 'code', max_length=MAX_GUIDED_FACT_LENGTH))
         object.__setattr__(self, 'label', _require_text(self.label, 'label', max_length=MAX_GUIDED_FACT_LENGTH))
         object.__setattr__(self, 'value', _require_text(self.value, 'value', max_length=MAX_GUIDED_FACT_LENGTH))
         if self.candidate_count is not None and (
@@ -133,7 +133,11 @@ class GuidedQuestion:
         object.__setattr__(self, 'options', options)
         if not isinstance(self.allow_custom, bool):
             raise ValueError('allow_custom must be a bool')
-        object.__setattr__(self, 'custom_label', _require_text(self.custom_label, 'custom_label'))
+        object.__setattr__(
+            self,
+            'custom_label',
+            _require_text(self.custom_label, 'custom_label', max_length=MAX_GUIDED_FACT_LENGTH),
+        )
 
     @classmethod
     def initial_memory_question(cls) -> 'GuidedQuestion':
