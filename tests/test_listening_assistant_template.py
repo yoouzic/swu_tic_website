@@ -36,6 +36,23 @@ def test_adaptive_guide_starts_with_memory_question_and_required_hooks():
     assert 'D. 我自己填写' in TEMPLATE
 
 
+def test_legacy_additive_and_semester_entry_contract_is_preserved():
+    assert TEMPLATE.index('data-listening-assistant') < TEMPLATE.index('id="course-information"')
+    assert 'data-assistant-toggle' in TEMPLATE
+    assert 'data-assistant-panel' in TEMPLATE
+    assert re.search(
+        r'<label[^>]+for="assistantSemester"[^>]*>[^<]*课表学期',
+        TEMPLATE,
+    )
+    assert re.search(
+        r'<input[^>]+id="assistantSemester"[^>]+data-assistant-semester',
+        TEMPLATE,
+    )
+    assert 'placeholder="如 2026-2027-1"' in TEMPLATE
+    assert 'data-assistant-semester-error' in TEMPLATE
+    assert 'assistantSemesterLegacy' in TEMPLATE
+
+
 def test_guide_client_uses_server_recomputed_answer_protocol():
     assert "'/user/api/listening-assistant/guide/start'" in SCRIPT
     assert "'/user/api/listening-assistant/guide/answer'" in SCRIPT
@@ -60,6 +77,27 @@ def test_guide_client_uses_server_recomputed_answer_protocol():
     assert 'candidates.at(0)' not in SCRIPT
 
 
+def test_existing_csrf_and_endpoint_contracts_are_retained():
+    assert 'name="csrf-token"' in BASE
+    assert 'csrf-token' in SCRIPT
+    for endpoint in (
+        '/user/api/listening-assistant/candidates',
+        '/user/api/listening-assistant/fallback',
+        '/user/api/listening-assistant/confirm',
+        '/user/api/listening-assistant/guide/start',
+        '/user/api/listening-assistant/guide/answer',
+    ):
+        assert endpoint in SCRIPT
+    for hook in (
+        'data-assistant-manual',
+        'data-assistant-rescue',
+        'data-assistant-select',
+        'data-assistant-reject',
+        'data-assistant-backup-ack',
+    ):
+        assert hook in TEMPLATE
+
+
 def test_guide_keeps_safe_dom_rendering_and_request_cancellation():
     assert 'window.alert' not in SCRIPT
     assert 'window.confirm' not in SCRIPT
@@ -79,12 +117,70 @@ def test_candidate_confirmation_retains_evidence_and_manual_safety_hooks():
         'data-assistant-source', 'data-assistant-conflict',
         'data-assistant-backup-ack', 'data-assistant-room-choice',
         'data-assistant-period-override',
+        'data-assistant-date-override',
+        'data-assistant-fallback',
+        'data-assistant-fallback-submit',
+        'data-assistant-fallback-date',
+        'data-assistant-fallback-teacher',
     ):
         assert marker in TEMPLATE + SCRIPT
     assert 'applyFieldSnapshot' in SCRIPT
     assert 'storeAssistantPayload' in SCRIPT
     assert 'field_snapshot' in SCRIPT
     assert "data-assistant-confirm'" in SCRIPT or 'data-assistant-confirm]' in SCRIPT
+
+
+def test_candidate_conflicts_have_reachable_overrides_and_fallback_keeps_filters():
+    for marker in (
+        "conflicts.includes('date_needs_confirmation')",
+        'overrides.lecture_date',
+        '请填写日期覆盖值',
+        'fallbackPayload.period',
+        'fallbackPayload.student_grade_class',
+        "question.kind === 'memory' || question.kind === 'candidate'",
+        'data-assistant-fallback-panel',
+    ):
+        assert marker in TEMPLATE + SCRIPT
+
+
+def test_current_request_guards_and_provenance_clear_contracts_are_retained():
+    for marker in (
+        'beginRequest()',
+        'invalidateRequests()',
+        'guideState.controller.abort()',
+        'isCurrentRequest(request.requestId)',
+        'finally',
+        'mergePersistedAssistantProvenance',
+        'payload.assistant_filled_fields',
+        'payload.assistant_filled_groups',
+        'overrides[fieldName] = null',
+        'Array.from(guideState.assistantFilledFields)',
+        'Array.from(guideState.assistantFilledGroups)',
+    ):
+        assert marker in SCRIPT
+    for start_marker in (
+        'async function startGuide',
+        'async function sendAnswer',
+        'async function requestFallback',
+        'async function confirmSelection',
+    ):
+        start = SCRIPT.index(start_marker)
+        end = SCRIPT.find('\n        async function ', start + len(start_marker))
+        body = SCRIPT[start:] if end == -1 else SCRIPT[start:end]
+        assert 'const request = beginRequest()' in body
+        assert 'if (isCurrentRequest(request.requestId))' in body
+
+
+def test_legacy_candidate_region_and_inline_event_safety_remain_present():
+    candidate_start = TEMPLATE.index('data-assistant-candidates')
+    candidate_end = TEMPLATE.index('data-assistant-none', candidate_start)
+    candidate_region = TEMPLATE[candidate_start:candidate_end]
+    assert 'role="region"' in candidate_region
+    assert 'tabindex="0"' in candidate_region
+    assistant_panel = TEMPLATE[TEMPLATE.index('data-listening-assistant'):TEMPLATE.index('<!-- 基本信息 -->')]
+    assert 'onclick=' not in assistant_panel
+    assert 'data-assistant-select' in candidate_region
+    assert 'data-assistant-reject' in candidate_region
 
 
 def test_source_conflict_and_confirmation_contract_stays_additive():
@@ -101,6 +197,7 @@ def test_source_conflict_and_confirmation_contract_stays_additive():
         'explicit_fallback',
         'fallback_reason',
         'stage',
+        'rejected_ids',
     ):
         assert marker in SCRIPT
 
@@ -145,3 +242,33 @@ def test_accessibility_responsive_and_local_assets_are_present():
         assert 'https://unpkg.' not in text
     assert '<script src="{{ url_for(\'static\', filename=\'js/listening-assistant.js\') }}"></script>' in TEMPLATE
     assert '<link rel="stylesheet" href="{{ url_for(\'static\', filename=\'css/listening-assistant.css\') }}">' in TEMPLATE
+
+
+def test_guide_does_not_auto_start_before_user_enters_semester():
+    init_start = SCRIPT.index("document.addEventListener('DOMContentLoaded', initListeningAssistant)")
+    init_body = SCRIPT[SCRIPT.rfind('function initListeningAssistant()', 0, init_start):init_start]
+    init_tail = init_body[init_body.rfind('renderAll();'):]
+    assert 'if (readSemester())' not in init_tail
+    assert 'startGuide(readKnownFacts(), false)' not in init_tail
+    assert 'ensureStarted' in init_body
+
+
+def test_confirmation_query_and_fallback_payload_cover_missing_facts_safely():
+    assert 'function queryForConfirmation(candidate)' in SCRIPT
+    query_start = SCRIPT.index('function queryForConfirmation(candidate)')
+    query_end = SCRIPT.index('function collectOverrides', query_start)
+    query_body = SCRIPT[query_start:query_end]
+    for marker in ('candidate.lecture_date', 'candidate.teacher_name', 'candidate.room', 'query.lecture_date', 'query.teacher_name', 'query.semester'):
+        assert marker in query_body
+    assert 'source_batch_id' in SCRIPT
+    assert 'explicit_fallback: true' in SCRIPT
+    assert 'rejected_ids' in SCRIPT
+    assert 'reason' in SCRIPT
+
+
+def test_confirmation_only_applies_snapshot_after_successful_confirm_response():
+    confirm_start = SCRIPT.index('async function confirmSelection()')
+    confirm_end = SCRIPT.index('function handleClick', confirm_start)
+    confirm_body = SCRIPT[confirm_start:confirm_end]
+    assert confirm_body.index('await requestJson') < confirm_body.index('applyFieldSnapshot')
+    assert confirm_body.index('applyFieldSnapshot') < confirm_body.index('storeAssistantPayload')

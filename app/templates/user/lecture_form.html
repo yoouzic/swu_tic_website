@@ -139,6 +139,12 @@
                                 <div class="listening-assistant__guide" data-assistant-guide>
                                     <div class="listening-assistant__history" data-assistant-history aria-live="polite" aria-label="历史答案摘要"></div>
                                     <div class="listening-assistant__progress" data-assistant-progress role="status" aria-live="polite">问题 0 / 4</div>
+                                    <div class="listening-assistant__semester-field">
+                                        <label class="form-label" for="assistantSemester">课表学期</label>
+                                        <input type="text" class="form-control" id="assistantSemester" data-assistant-semester placeholder="如 2026-2027-1" autocomplete="off" aria-describedby="assistantSemesterHelp assistantSemesterError">
+                                        <small class="form-text" id="assistantSemesterHelp">请先填写课表学期，选择 A/B/C/D 后才会启动引导查询。</small>
+                                        <small class="listening-assistant__semester-error" data-assistant-semester-error role="alert" hidden></small>
+                                    </div>
                                     <div class="listening-assistant__question-region" data-assistant-question-region aria-live="polite" aria-atomic="true">
                                         <h3 class="listening-assistant__question" data-assistant-question>你还记得哪类信息？</h3>
                                         <div class="listening-assistant__options" data-assistant-options role="group" aria-label="回答选项">
@@ -177,6 +183,10 @@
                                             <label><input type="radio" name="assistant_room_choice" value="candidate" data-assistant-room-choice> 使用课表教室</label>
                                             <label><input type="radio" name="assistant_room_choice" value="manual" data-assistant-room-choice> 保留手动教室</label>
                                         </fieldset>
+                                        <label class="listening-assistant__date-override" data-assistant-date-override-wrap hidden>
+                                            日期覆盖（date override）
+                                            <input type="date" class="form-control" data-assistant-date-override>
+                                        </label>
                                         <label class="listening-assistant__period-override" data-assistant-period-override-wrap hidden>
                                             节次覆盖（period override）
                                             <input class="form-control" data-assistant-period-override>
@@ -187,6 +197,18 @@
                                         <button type="button" class="btn btn-outline-secondary" data-assistant-none>这些都不是 / 都不是，改为手动填写</button>
                                         <button type="button" class="btn btn-primary" data-assistant-confirm disabled>确认并补充空白字段</button>
                                         <button type="button" class="btn btn-outline-secondary" data-assistant-back-to-guide>返回上一问</button>
+                                    </div>
+                                </div>
+
+                                <div class="listening-assistant__fallback-panel" data-assistant-fallback-panel hidden>
+                                    <button type="button" class="btn btn-outline-warning" data-assistant-fallback>这些都不是 / 改查备用课表</button>
+                                    <div class="listening-assistant__fallback-controls" data-assistant-fallback-controls hidden>
+                                        <label class="form-label" for="assistantFallbackDate">备用查询日期</label>
+                                        <input type="date" class="form-control" id="assistantFallbackDate" data-assistant-fallback-date>
+                                        <label class="form-label" for="assistantFallbackTeacher">备用查询教师</label>
+                                        <input type="text" class="form-control" id="assistantFallbackTeacher" data-assistant-fallback-teacher placeholder="请输入授课教师">
+                                        <small class="form-text" data-assistant-fallback-help>备用课表查询需要日期、授课教师和服务器提供的备用批次。</small>
+                                        <button type="button" class="btn btn-warning" data-assistant-fallback-submit disabled>查询备用课表</button>
                                     </div>
                                 </div>
 
@@ -217,7 +239,7 @@
                                         </div>
                                         <div class="listening-assistant__field listening-assistant__field--wide">
                                             <label for="assistantSemester" class="form-label">课表学期（确认时需要）</label>
-                                            <input type="text" class="form-control" id="assistantSemester" data-assistant-query="semester" placeholder="如 2026-2027-1" autocomplete="off">
+                                            <input type="text" class="form-control" id="assistantSemesterLegacy" data-assistant-query="semester" placeholder="如 2026-2027-1" autocomplete="off">
                                             <small class="form-text">只在你填写时作为查询参数发送；备用课表查询和最终确认需要明确学期。</small>
                                         </div>
                                     </div>

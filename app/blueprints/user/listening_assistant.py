@@ -430,6 +430,17 @@ def _guide_service(semester: str) -> ListeningAssistantGuideService:
     return ListeningAssistantGuideService(ListeningAssistantService(semester=semester))
 
 
+def _public_guide_result(result, semester: str) -> dict[str, Any]:
+    """Add safe backup-source discovery metadata to every guide response."""
+    data = result.to_public_dict()
+    backup_source_batch_id = latest_retired_batch_id(semester)
+    data['backup_source_batch_id'] = (
+        str(backup_source_batch_id) if backup_source_batch_id is not None else None
+    )
+    data['backup_rescue_available'] = backup_source_batch_id is not None
+    return data
+
+
 def _is_expected_guide_value_error(error: ValueError) -> bool:
     message = str(error)
     return message.startswith(_EXPECTED_GUIDE_VALUE_ERROR_PREFIXES)
@@ -462,7 +473,7 @@ def listening_assistant_guide_start(user):
         if _is_expected_guide_value_error(error):
             return _error_response(str(error) or '请求参数无效', 400)
         raise
-    return _envelope(True, result.to_public_dict(), '引导已开始')
+    return _envelope(True, _public_guide_result(result, semester), '引导已开始')
 
 
 @user_bp.route('/api/listening-assistant/guide/answer', methods=['POST'])
@@ -498,7 +509,7 @@ def listening_assistant_guide_answer(user):
         if _is_expected_guide_value_error(error):
             return _error_response(str(error) or '请求参数无效', 400)
         raise
-    return _envelope(True, result.to_public_dict(), '引导答案已处理')
+    return _envelope(True, _public_guide_result(result, semester), '引导答案已处理')
 
 
 @user_bp.route('/api/listening-assistant/candidates', methods=['GET'])

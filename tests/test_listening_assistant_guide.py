@@ -209,6 +209,28 @@ def test_guide_returns_candidate_options_for_two_or_three_and_confirm_for_clean_
     assert single.needs_confirmation is True
 
 
+def test_candidate_with_primary_conflict_reaches_confirmation_instead_of_forced_manual():
+    service, _ = make_service([entry(1, period=(3, 4))])
+    guide = ListeningAssistantGuideService(service)
+    result = guide.start(known_facts={
+        'date': LOOKUP_DATE.isoformat(),
+        'teacher': '张三',
+        'period': '第5-6节',
+    })
+
+    assert result.state.stage == 'candidate'
+    selected = guide.answer(
+        result.state,
+        question_kind=result.question.kind,
+        option_code='A',
+        custom_value=None,
+    )
+
+    assert selected.state.stage == 'confirm'
+    assert selected.needs_confirmation is True
+    assert selected.candidates[0].conflicts
+
+
 def test_guide_never_exceeds_four_questions_and_can_fall_back_to_manual():
     entries = [entry(i, teacher=f'教师{i}', room=f'8-{i:04d}', period=(i, i)) for i in range(1, 7)]
     service, _ = make_service(entries)

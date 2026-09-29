@@ -208,15 +208,27 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         )
 
     def test_guide_start_returns_initial_question_in_the_public_envelope(self):
-        response = self._guide_start()
+        with mock.patch(
+            'app.blueprints.user.listening_assistant.latest_retired_batch_id',
+            return_value=BACKUP_BATCH,
+        ):
+            response = self._guide_start()
 
         payload = self._assert_envelope(response, success=True)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(set(payload['data']), {'question', 'state', 'candidates', 'needs_confirmation'})
+        self.assertEqual(
+            set(payload['data']),
+            {
+                'question', 'state', 'candidates', 'needs_confirmation',
+                'backup_source_batch_id', 'backup_rescue_available',
+            },
+        )
         self.assertEqual(payload['data']['question']['kind'], 'memory')
         self.assertEqual(payload['data']['state']['stage'], 'question')
         self.assertEqual(payload['data']['candidates'], [])
         self.assertFalse(payload['data']['needs_confirmation'])
+        self.assertEqual(payload['data']['backup_source_batch_id'], BACKUP_BATCH)
+        self.assertTrue(payload['data']['backup_rescue_available'])
 
     def test_guide_start_rejects_non_string_semester_and_known_fact_values(self):
         self._login()

@@ -4,6 +4,8 @@
     const GUIDE_ENDPOINTS = Object.freeze({
         start: '/user/api/listening-assistant/guide/start',
         answer: '/user/api/listening-assistant/guide/answer',
+        candidates: '/user/api/listening-assistant/candidates',
+        fallback: '/user/api/listening-assistant/fallback',
         confirm: '/user/api/listening-assistant/confirm',
     });
     const TEMPLATE_VERSION = 'task4-v1';
@@ -92,6 +94,7 @@
             customCancel: root.querySelector('[data-assistant-custom-cancel]'),
             history: root.querySelector('[data-assistant-history]'),
             progress: root.querySelector('[data-assistant-progress]'),
+            semesterError: root.querySelector('[data-assistant-semester-error]'),
             back: root.querySelector('[data-assistant-back]'),
             candidateConfirm: root.querySelector('[data-assistant-candidate-confirm]'),
             candidateSummary: root.querySelector('[data-assistant-candidate-summary]'),
@@ -100,8 +103,17 @@
             backupAckWrap: root.querySelector('[data-assistant-backup-ack-wrap]'),
             backupAck: root.querySelector('[data-assistant-backup-ack]'),
             roomChoiceWrap: root.querySelector('[data-assistant-room-choice-wrap]'),
+            dateOverrideWrap: root.querySelector('[data-assistant-date-override-wrap]'),
+            dateOverride: root.querySelector('[data-assistant-date-override]'),
             periodOverrideWrap: root.querySelector('[data-assistant-period-override-wrap]'),
             periodOverride: root.querySelector('[data-assistant-period-override]'),
+            fallback: root.querySelector('[data-assistant-fallback]'),
+            fallbackPanel: root.querySelector('[data-assistant-fallback-panel]'),
+            fallbackControls: root.querySelector('[data-assistant-fallback-controls]'),
+            fallbackDate: root.querySelector('[data-assistant-fallback-date]'),
+            fallbackTeacher: root.querySelector('[data-assistant-fallback-teacher]'),
+            fallbackHelp: root.querySelector('[data-assistant-fallback-help]'),
+            fallbackSubmit: root.querySelector('[data-assistant-fallback-submit]'),
             reviewHint: root.querySelector('[data-assistant-review-hint]'),
             confirm: root.querySelector('[data-assistant-confirm]'),
             manual: root.querySelector('[data-assistant-manual-view]'),
@@ -119,6 +131,12 @@
             candidates: [],
             selectedCandidateId: '',
             lastResponse: null,
+            backupSourceBatchId: '',
+            backupRescueAvailable: false,
+            backupSelectionMode: false,
+            originalRoomForFallback: '',
+            fallbackReason: 'rejected_candidates',
+            rejectedIds: [],
             assistantFilledFields: new Set(),
             assistantFilledGroups: new Set(),
         };
@@ -129,6 +147,14 @@
             }
             elements.status.textContent = message || '';
             elements.status.dataset.tone = tone || 'info';
+        }
+
+        function setSemesterError(message) {
+            if (!elements.semesterError) {
+                return;
+            }
+            elements.semesterError.textContent = message || '';
+            elements.semesterError.hidden = !message;
         }
 
         function setStateLabel(stage) {
@@ -363,7 +389,7 @@
             appendCandidateMeta(meta, '班级', candidate.student_grade_class);
             appendCandidateMeta(meta, '日期', candidate.lecture_date);
             elements.candidateSummary.appendChild(meta);
-            if (candidate.needs_confirmation === true) {
+            if (candidate.needs_confirmation === true || candidate.source_kind === 'backup') {
                 appendText(elements.candidateSummary, 'p', 'listening-assistant__review-hint', '该候选需要人工确认后才能写入正式表单。');
             }
 
@@ -390,8 +416,25 @@
             const isBackup = candidate.source_kind === 'backup';
             elements.backupAckWrap.hidden = !isBackup;
             const formRoom = cleanText(form.querySelector('#lecture_location')?.value);
-            elements.roomChoiceWrap.hidden = !formRoom || formRoom === cleanText(candidate.room);
-            elements.periodOverrideWrap.hidden = false;
+            const knownRoom = cleanText(
+                guideState.originalRoomForFallback
+                || (guideState.state && guideState.state.known_facts && guideState.state.known_facts.room)
+                || formRoom,
+            );
+            const roomConflict = conflicts.some((conflict) => String(conflict).toLowerCase().includes('location'));
+            elements.roomChoiceWrap.hidden = !roomConflict && (!knownRoom || knownRoom === cleanText(candidate.room));
+            const dateConflict = conflicts.includes('date_needs_confirmation');
+            const periodConflict = conflicts.some(
+                (conflict) => ['period_mismatch', 'venue_period_needs_confirmation'].includes(conflict),
+            );
+            elements.dateOverrideWrap.hidden = !dateConflict;
+            if (!dateConflict && elements.dateOverride) {
+                elements.dateOverride.value = '';
+            }
+            if (elements.dateOverride && dateConflict && !elements.dateOverride.value) {
+                elements.dateOverride.placeholder = candidate.lecture_date;
+            }
+            elements.periodOverrideWrap.hidden = !periodConflict;
             if (elements.periodOverride && !elements.periodOverride.value) {
                 elements.periodOverride.placeholder = displayPeriod(candidate.period);
             }
@@ -416,11 +459,219 @@
             if (!elements.roomChoiceWrap.hidden && !root.querySelector('[data-assistant-room-choice]:checked')) {
                 missing.push('请选择教室处理方式');
             }
+            const conflicts = candidate && Array.isArray(candidate.conflicts) ? candidate.conflicts : [];
+            if (
+                conflicts.includes('date_needs_confirmation')
+                && !cleanText(elements.dateOverride && elements.dateOverride.value)
+            ) {
+                missing.push('请填写日期覆盖值');
+            }
+            if (
+                conflicts.some((conflict) => ['period_mismatch', 'venue_period_needs_confirmation'].includes(conflict))
+                && !cleanText(elements.periodOverride && elements.periodOverride.value)
+            ) {
+                missing.push('请填写节次覆盖值');
+            }
             elements.confirm.disabled = missing.length > 0;
             if (elements.reviewHint) {
                 elements.reviewHint.textContent = missing.length
                     ? missing.join('；')
                     : '确认成功后才会把服务器字段快照补充到正式表单。';
+            }
+        }
+
+        function updateFallbackControls() {
+            if (!elements.fallbackControls) {
+                return;
+            }
+            const stage = guideState.state && guideState.state.stage;
+            const visible = Boolean(
+                guideState.state
+                && stage !== 'done'
+                && guideState.backupRescueAvailable
+                && guideState.backupSourceBatchId,
+            );
+            if (elements.fallbackPanel) {
+                elements.fallbackPanel.hidden = !visible;
+            }
+            if (!visible) {
+                elements.fallbackControls.hidden = true;
+                return;
+            }
+            const facts = guideState.state && isObject(guideState.state.known_facts)
+                ? guideState.state.known_facts : {};
+            if (!cleanText(elements.fallbackDate?.value) && facts.date) {
+                elements.fallbackDate.value = facts.date;
+            }
+            if (!cleanText(elements.fallbackTeacher?.value) && facts.teacher) {
+                elements.fallbackTeacher.value = facts.teacher;
+            }
+            const ready = Boolean(
+                guideState.backupRescueAvailable
+                && guideState.backupSourceBatchId
+                && readSemester()
+                && cleanText(elements.fallbackDate?.value)
+                && cleanText(elements.fallbackTeacher?.value),
+            );
+            if (elements.fallbackSubmit) {
+                elements.fallbackSubmit.disabled = !ready;
+            }
+            if (elements.fallbackHelp) {
+                elements.fallbackHelp.textContent = guideState.backupRescueAvailable
+                    ? '备用课表只是线索；查询后仍需选择候选、核对来源并勾选确认。'
+                    : '当前学期没有可用的备用批次，请手动填写。';
+            }
+        }
+
+        function showFallbackControls() {
+            if (!elements.fallbackControls) {
+                return;
+            }
+            elements.fallbackControls.hidden = false;
+            updateFallbackControls();
+            if (elements.fallbackSubmit && !elements.fallbackSubmit.disabled) {
+                elements.fallbackSubmit.focus();
+            } else {
+                elements.fallbackDate?.focus();
+            }
+        }
+
+        function backupCandidateLabel(candidate) {
+            return [
+                cleanText(candidate.course_title) || '未命名课程',
+                cleanText(candidate.teacher_name) || '教师未知',
+                cleanText(candidate.room) || '教室未知',
+                displayPeriod(candidate.period),
+            ].join(' · ');
+        }
+
+        function selectBackupCandidate(candidateId) {
+            const candidate = guideState.candidates.find(
+                (item) => cleanText(item && item.candidate_id) === cleanText(candidateId),
+            );
+            if (!candidate) {
+                setStatus('备用候选已失效，请重新查询。', 'error');
+                return;
+            }
+            guideState.selectedCandidateId = cleanText(candidate.candidate_id);
+            guideState.state = {
+                known_facts: guideState.state && isObject(guideState.state.known_facts)
+                    ? guideState.state.known_facts : {},
+                candidate_ids: [guideState.selectedCandidateId],
+                asked_question_kinds: guideState.state && Array.isArray(guideState.state.asked_question_kinds)
+                    ? guideState.state.asked_question_kinds : [],
+                question_count: guideState.state && Number.isInteger(guideState.state.question_count)
+                    ? guideState.state.question_count : 0,
+                stage: 'confirm',
+            };
+            guideState.question = null;
+            renderAll();
+            setStatus('状态：确认。请核对备用来源、冲突和覆盖值。', 'info');
+            elements.confirm?.focus();
+        }
+
+        async function requestFallback() {
+            const semester = readSemester();
+            const date = cleanText(elements.fallbackDate?.value);
+            const teacher = cleanText(elements.fallbackTeacher?.value);
+            if (!semester) {
+                setSemesterError('请先填写课表学期，再查询备用课表。');
+                return;
+            }
+            if (!date || !teacher) {
+                if (elements.fallbackHelp) {
+                    elements.fallbackHelp.textContent = '备用查询需要同时填写日期和授课教师。';
+                }
+                return;
+            }
+            if (!guideState.backupRescueAvailable || !guideState.backupSourceBatchId) {
+                setStatus('当前学期没有可用备用批次，请手动填写。', 'error');
+                return;
+            }
+            guideState.originalRoomForFallback = cleanText(
+                guideState.state?.known_facts?.room || form.querySelector('#lecture_location')?.value,
+            );
+            guideState.fallbackReason = guideState.candidates.length
+                ? 'rejected_candidates' : 'no_result';
+            guideState.rejectedIds = guideState.candidates
+                .map((candidate) => cleanText(candidate && candidate.candidate_id))
+                .filter(Boolean);
+            const request = beginRequest();
+            setBusy(elements.fallbackSubmit, true, '查询中…');
+            try {
+                const fallbackPayload = {
+                    date,
+                    teacher,
+                    semester,
+                    source_batch_id: guideState.backupSourceBatchId,
+                    reason: guideState.fallbackReason,
+                    explicit_fallback: true,
+                    rejected_ids: guideState.rejectedIds.slice(),
+                };
+                const facts = guideState.state && isObject(guideState.state.known_facts)
+                    ? guideState.state.known_facts : {};
+                if (facts.period) {
+                    fallbackPayload.period = facts.period;
+                }
+                if (facts.student_grade_class) {
+                    fallbackPayload.student_grade_class = facts.student_grade_class;
+                }
+                const data = await requestJson(GUIDE_ENDPOINTS.fallback, fallbackPayload, request);
+                if (!isCurrentRequest(request.requestId)) {
+                    return;
+                }
+                guideState.candidates = Array.isArray(data.candidates) ? data.candidates.filter(isObject) : [];
+                guideState.backupSourceBatchId = cleanText(data.source_batch_id || guideState.backupSourceBatchId);
+                guideState.backupRescueAvailable = Boolean(guideState.backupSourceBatchId);
+                guideState.fallbackReason = cleanText(data.fallback_reason || guideState.fallbackReason);
+                guideState.backupSelectionMode = true;
+                const previousFacts = guideState.state && isObject(guideState.state.known_facts)
+                    ? guideState.state.known_facts : {};
+                guideState.state = {
+                    known_facts: {
+                        date,
+                        teacher,
+                        ...(previousFacts.period ? {period: previousFacts.period} : {}),
+                        ...(previousFacts.student_grade_class
+                            ? {student_grade_class: previousFacts.student_grade_class} : {}),
+                    },
+                    candidate_ids: guideState.candidates.map((candidate) => cleanText(candidate.candidate_id)),
+                    asked_question_kinds: ['teacher'],
+                    question_count: guideState.state && Number.isInteger(guideState.state.question_count)
+                        ? guideState.state.question_count : 0,
+                    stage: guideState.candidates.length ? 'candidate' : 'manual',
+                };
+                guideState.question = guideState.candidates.length ? {
+                    kind: 'candidate',
+                    prompt: '请选择最符合的备用课表线索：',
+                    options: guideState.candidates.slice(0, 3).map((candidate, index) => ({
+                        code: String.fromCharCode(65 + index),
+                        label: backupCandidateLabel(candidate),
+                        value: cleanText(candidate.candidate_id),
+                        candidate_count: 1,
+                    })),
+                    allow_custom: true,
+                    custom_label: 'D. 都不是 / 手动填写',
+                } : null;
+                if (elements.fallbackControls) {
+                    elements.fallbackControls.hidden = true;
+                }
+                renderAll();
+                setStatus(
+                    guideState.candidates.length
+                        ? '状态：候选。请选择备用课表线索。'
+                        : '状态：手动。备用课表没有返回候选。',
+                    guideState.candidates.length ? 'info' : 'error',
+                );
+            } catch (error) {
+                if (error && error.name !== 'AbortError') {
+                    setStatus(error.message || '备用课表查询失败，请手动填写。', 'error');
+                }
+            } finally {
+                if (isCurrentRequest(request.requestId)) {
+                    setBusy(elements.fallbackSubmit, false);
+                    guideState.controller = null;
+                }
             }
         }
 
@@ -445,6 +696,7 @@
             if (elements.guide) {
                 elements.guide.hidden = stage === 'manual';
             }
+            updateFallbackControls();
         }
 
         function applyGuideResult(data, historyEntry) {
@@ -458,6 +710,10 @@
             guideState.question = isObject(data.question) ? data.question : null;
             guideState.candidates = Array.isArray(data.candidates) ? data.candidates.filter(isObject) : [];
             guideState.lastResponse = data;
+            guideState.backupSourceBatchId = cleanText(data.backup_source_batch_id);
+            guideState.backupRescueAvailable = data.backup_rescue_available === true;
+            guideState.backupSelectionMode = false;
+            guideState.rejectedIds = [];
             guideState.customMode = false;
             renderAll();
         }
@@ -465,8 +721,10 @@
         async function startGuide(knownFacts, preserveHistory) {
             const semester = readSemester();
             if (!semester) {
+                setSemesterError('请先填写课表学期，再选择答案启动引导。');
                 throw new Error('课表学期尚未设置，暂时无法查询；可以直接手动填写。');
             }
+            setSemesterError('');
             const request = beginRequest();
             try {
                 const data = await requestJson(GUIDE_ENDPOINTS.start, {
@@ -538,7 +796,7 @@
             const code = cleanText(optionCode);
             const question = guideState.question;
             if (code === 'D') {
-                if (question.kind === 'memory') {
+                if (question.kind === 'memory' || question.kind === 'candidate') {
                     openManual();
                 } else {
                     showCustomInput(true);
@@ -553,6 +811,10 @@
                 .find((item) => cleanText(item && item.code) === code);
             if (!option) {
                 setStatus('当前问题已更新，请重新选择。', 'error');
+                return;
+            }
+            if (guideState.backupSelectionMode) {
+                selectBackupCandidate(option.value);
                 return;
             }
             await sendAnswer(code, null, {
@@ -585,6 +847,7 @@
 
         function openManual() {
             invalidateRequests();
+            guideState.backupSelectionMode = false;
             guideState.state = {
                 known_facts: guideState.state && guideState.state.known_facts ? guideState.state.known_facts : {},
                 candidate_ids: guideState.state && Array.isArray(guideState.state.candidate_ids) ? guideState.state.candidate_ids : [],
@@ -609,6 +872,8 @@
             guideState.question = initialQuestion();
             guideState.candidates = [];
             guideState.selectedCandidateId = '';
+            guideState.backupSelectionMode = false;
+            guideState.rejectedIds = [];
             renderAll();
             try {
                 await startGuide(facts, true);
@@ -618,13 +883,13 @@
             }
         }
 
-        function queryForConfirmation() {
+        function queryForConfirmation(candidate) {
             const facts = guideState.state && isObject(guideState.state.known_facts)
                 ? guideState.state.known_facts : {};
             const query = {};
-            if (facts.date) query.lecture_date = facts.date;
-            if (facts.teacher) query.teacher_name = facts.teacher;
-            if (facts.room) query.room = facts.room;
+            if (facts.date || candidate.lecture_date) query.lecture_date = facts.date || candidate.lecture_date;
+            if (facts.teacher || candidate.teacher_name) query.teacher_name = facts.teacher || candidate.teacher_name;
+            if (facts.room || candidate.room) query.room = facts.room || candidate.room;
             if (facts.period) query.period = facts.period;
             if (facts.student_grade_class) query.student_grade_class = facts.student_grade_class;
             const semester = readSemester();
@@ -632,11 +897,17 @@
             return query;
         }
 
-        function collectOverrides() {
+        function collectOverrides(candidate) {
             const overrides = {};
             const roomChoice = root.querySelector('[data-assistant-room-choice]:checked');
-            if (roomChoice && roomChoice.value === 'manual') {
+            if (roomChoice && roomChoice.value === 'candidate') {
+                overrides.room = cleanText(candidate.room);
+            } else if (roomChoice && roomChoice.value === 'manual') {
                 overrides.lecture_location = cleanText(form.querySelector('#lecture_location')?.value);
+            }
+            const dateOverride = cleanText(elements.dateOverride && elements.dateOverride.value);
+            if (dateOverride) {
+                overrides.lecture_date = dateOverride;
             }
             const periodOverride = cleanText(elements.periodOverride && elements.periodOverride.value);
             if (periodOverride) {
@@ -648,11 +919,11 @@
         function buildConfirmationPayload(candidate) {
             const sourceKind = candidate.source_kind === 'backup' ? 'backup' : 'primary';
             const payload = {
-                query: queryForConfirmation(),
-                rejected_ids: [],
+                query: queryForConfirmation(candidate),
+                rejected_ids: guideState.rejectedIds.slice(),
                 source_kind: sourceKind,
                 candidate_id: cleanText(candidate.candidate_id),
-                overrides: collectOverrides(),
+                overrides: collectOverrides(candidate),
                 template_version: TEMPLATE_VERSION,
                 stage: 'confirmed',
                 acknowledged_source: sourceKind === 'backup' && elements.backupAck.checked,
@@ -660,7 +931,8 @@
             };
             if (sourceKind === 'backup') {
                 payload.source_batch_id = cleanText(candidate.source_batch_id);
-                payload.fallback_reason = 'no_result';
+                payload.fallback_reason = guideState.fallbackReason || 'rejected_candidates';
+                payload.reason = payload.fallback_reason;
             }
             const semester = readSemester();
             if (semester) payload.semester = semester;
@@ -866,6 +1138,14 @@
                 confirmSelection();
                 return;
             }
+            if (target.closest('[data-assistant-fallback]')) {
+                showFallbackControls();
+                return;
+            }
+            if (target.closest('[data-assistant-fallback-submit]')) {
+                requestFallback();
+                return;
+            }
             if (target.closest('[data-assistant-none]')) {
                 openManual();
                 return;
@@ -877,6 +1157,8 @@
                 guideState.history = [];
                 guideState.candidates = [];
                 guideState.selectedCandidateId = '';
+                guideState.backupSelectionMode = false;
+                guideState.rejectedIds = [];
                 renderAll();
                 setStatus('状态：引导已重置。', 'info');
             }
@@ -899,24 +1181,35 @@
         function handleChange(event) {
             const target = event.target;
             if (!target) return;
-            if (target.matches('[data-assistant-backup-ack], [data-assistant-room-choice], [data-assistant-period-override]')) {
+            if (target.matches('[data-assistant-backup-ack], [data-assistant-room-choice], [data-assistant-date-override], [data-assistant-period-override]')) {
                 updateConfirmControls();
+            }
+            if (target.matches('[data-assistant-fallback-date], [data-assistant-fallback-teacher]')) {
+                updateFallbackControls();
+            }
+        }
+
+        function handleInput(event) {
+            const target = event.target;
+            if (!target) return;
+            if (target.matches('[data-assistant-semester]')) {
+                setSemesterError('');
+                updateFallbackControls();
+            }
+            if (target.matches('[data-assistant-fallback-date], [data-assistant-fallback-teacher]')) {
+                updateFallbackControls();
             }
         }
 
         root.addEventListener('click', handleClick);
         root.addEventListener('keydown', handleKeydown);
         root.addEventListener('change', handleChange);
+        root.addEventListener('input', handleInput);
         form.addEventListener('submit', syncAssistantClearsBeforeSubmit, true);
         if (elements.toggle) {
             elements.toggle.setAttribute('aria-expanded', 'true');
         }
         renderAll();
-        if (readSemester()) {
-            startGuide(readKnownFacts(), false).catch((error) => {
-                if (error && error.name !== 'AbortError') setStatus(error.message || '引导启动失败，可直接手动填写。', 'error');
-            });
-        }
     }
 
     document.addEventListener('DOMContentLoaded', initListeningAssistant);

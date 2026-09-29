@@ -113,6 +113,10 @@
 .listening-assistant__history-list { margin: 8px 0 0; padding-left: 22px; }
 .listening-assistant__history-list li { overflow-wrap: anywhere; }
 .listening-assistant__progress { border-left: 3px solid var(--color-accent); color: var(--color-text-muted); background: var(--color-accent-soft); }
+.listening-assistant__semester-field { min-width: 0; margin-top: 14px; }
+.listening-assistant__semester-field .form-text,
+.listening-assistant__semester-error { display: block; margin-top: 6px; overflow-wrap: anywhere; }
+.listening-assistant__semester-error { color: var(--color-status-danger); }
 .listening-assistant__question-region { min-width: 0; margin-top: 14px; }
 .listening-assistant__question { margin: 0; overflow-wrap: anywhere; font-size: 1.1rem; }
 .listening-assistant__options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; min-width: 0; }
@@ -135,7 +139,11 @@
 .listening-assistant__conflicts p { margin: 0; }
 .listening-assistant__conflict-title { color: var(--color-status-warning); }
 .listening-assistant__conflicts ul { margin: 6px 0 0; padding-left: 20px; }
+.listening-assistant__date-override,
 .listening-assistant__period-override { display: block; margin-top: 14px; overflow-wrap: anywhere; }
+.listening-assistant__fallback-panel { display: grid; gap: 8px; margin-top: 14px; }
+.listening-assistant__fallback-controls { display: grid; gap: 8px; margin-top: 14px; padding: 12px; border: 1px solid var(--color-status-warning); border-radius: var(--control-radius); background: var(--status-warning-soft); }
+.listening-assistant__fallback-controls .form-text { overflow-wrap: anywhere; }
 .listening-assistant__room-choice label { display: block; min-height: 48px; padding: 12px 0; overflow-wrap: anywhere; }
 .listening-assistant__room-choice input { margin-right: 8px; }
 .listening-assistant__manual p { margin: 0; color: var(--color-text-muted); overflow-wrap: anywhere; }

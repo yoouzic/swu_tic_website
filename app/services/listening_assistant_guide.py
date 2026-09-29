@@ -432,7 +432,11 @@ class ListeningAssistantGuideService:
             candidate for candidate in candidates
             if candidate.candidate_id == selected_option.value
         )
-        stage = 'confirm' if not selected.conflicts else 'manual'
+        # Conflicts are evidence that require explicit confirmation/overrides,
+        # not a reason to discard a user-selected candidate into an opaque
+        # manual state.  The existing /confirm route remains the authority
+        # and will reject missing conflict overrides.
+        stage = 'confirm'
         next_state = GuidedAssistantState(
             dict(state.known_facts), (selected.candidate_id,),
             state.asked_question_kinds, state.question_count, stage,
