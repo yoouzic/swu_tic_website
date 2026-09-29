@@ -143,7 +143,7 @@ def build_navigation(user, endpoint='', review_permission=None, manage_permissio
         items = []
         for definition in group_definition['items']:
             if definition.get('authenticated'):
-                if not getattr(user, 'is_authenticated', False):
+                if not getattr(user, 'is_authenticated', False) or not getattr(user, 'is_active', False):
                     continue
             elif user.role not in definition['roles']:
                 continue

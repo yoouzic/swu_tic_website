@@ -71,6 +71,16 @@ class NavigationTest(unittest.TestCase):
 
         self.assertEqual(groups, [])
 
+    def test_inactive_authenticated_user_does_not_get_listening_assistant(self):
+        groups = build_navigation(
+            self.user('信息员', authenticated=True, active=False),
+            'user.submit_form',
+        )
+
+        labels = [item['label'] for item in self.items(groups)]
+
+        self.assertNotIn('听课助手', labels)
+
 
 if __name__ == '__main__':
     unittest.main()
