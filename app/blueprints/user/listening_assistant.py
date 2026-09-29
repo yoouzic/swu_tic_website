@@ -13,6 +13,11 @@ from flask import jsonify, request, session
 
 from app.models import User, db
 from app.services.listening_assistant import ListeningAssistantService
+from app.services.listening_assistant_guide import ListeningAssistantGuideService
+from app.services.listening_assistant_guide_contracts import (
+    MAX_GUIDED_FACT_LENGTH,
+    GuidedAssistantState,
+)
 from app.services.listening_assistant_contracts import (
     AssistantQuery,
     normalize_class_for_display,
@@ -68,6 +73,29 @@ _EXPECTED_BACKUP_SOURCE_ERRORS = frozenset({
     'backup source batch semester does not match requested semester',
     'source_batch_id and batch_id must match',
 })
+_GUIDE_START_FIELDS = frozenset({'known_facts', 'semester'})
+_GUIDE_ANSWER_FIELDS = frozenset({
+    'state',
+    'question_kind',
+    'option_code',
+    'custom_value',
+    'semester',
+})
+_EXPECTED_GUIDE_VALUE_ERROR_PREFIXES = (
+    'known_facts',
+    'date is invalid',
+    'teacher must be',
+    'room must be',
+    'period is invalid',
+    'student_grade_class must be',
+    'state ',
+    'question_kind ',
+    'memory answer',
+    'option_code ',
+    'custom_value ',
+    'candidate selection ',
+    'question budget ',
+)
 
 
 def _envelope(success: bool, data: Any = None, message: str = ''):
@@ -379,6 +407,100 @@ def _expected_selection_error(error: AssistantSelectionError) -> tuple[int, str]
     return 400, str(error) or 'invalid assistant selection'
 
 
+def _require_exact_fields(payload: Mapping[str, Any], expected: frozenset[str]) -> None:
+    if set(payload) != expected:
+        raise ValueError('payload contains unknown or missing fields')
+
+
+def _guide_text(value: object, field_name: str) -> str:
+    normalized = _clean_text(value, field_name, required=True)
+    assert normalized is not None
+    if len(normalized) > MAX_GUIDED_FACT_LENGTH:
+        raise ValueError(f'{field_name} exceeds maximum length')
+    return normalized
+
+
+def _guide_optional_text(value: object, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _guide_text(value, field_name)
+
+
+def _guide_service(semester: str) -> ListeningAssistantGuideService:
+    return ListeningAssistantGuideService(ListeningAssistantService(semester=semester))
+
+
+def _is_expected_guide_value_error(error: ValueError) -> bool:
+    message = str(error)
+    return message.startswith(_EXPECTED_GUIDE_VALUE_ERROR_PREFIXES)
+
+
+@user_bp.route('/api/listening-assistant/guide/start', methods=['POST'])
+@_assistant_login_required
+def listening_assistant_guide_start(user):
+    del user
+    try:
+        payload = _json_object()
+        _require_exact_fields(payload, _GUIDE_START_FIELDS)
+        known_facts = payload['known_facts']
+        if not isinstance(known_facts, Mapping):
+            raise ValueError('known_facts must be a mapping')
+        semester = _guide_text(payload['semester'], 'semester')
+    except (AssistantSelectionError, ValueError) as error:
+        return _error_response(str(error) or '请求参数无效', 400)
+
+    try:
+        result = _guide_service(semester).start(
+            known_facts=known_facts,
+            semester=semester,
+        )
+    except ScheduleSourceUnavailable as error:
+        return _envelope(False, {'status': error.status, 'code': error.code}, error.message), 503
+    except AssistantSelectionError as error:
+        return _error_response(str(error) or '请求参数无效', 400)
+    except ValueError as error:
+        if _is_expected_guide_value_error(error):
+            return _error_response(str(error) or '请求参数无效', 400)
+        raise
+    return _envelope(True, result.to_public_dict(), '引导已开始')
+
+
+@user_bp.route('/api/listening-assistant/guide/answer', methods=['POST'])
+@_assistant_login_required
+def listening_assistant_guide_answer(user):
+    del user
+    try:
+        payload = _json_object()
+        _require_exact_fields(payload, _GUIDE_ANSWER_FIELDS)
+        state = GuidedAssistantState.from_public_dict(payload['state'])
+        question_kind = _guide_text(payload['question_kind'], 'question_kind')
+        option_code = _guide_optional_text(payload['option_code'], 'option_code')
+        custom_value = _guide_optional_text(payload['custom_value'], 'custom_value')
+        semester = _guide_text(payload['semester'], 'semester')
+        if option_code is not None and custom_value is not None:
+            raise ValueError('option_code and custom_value cannot both be supplied')
+    except (AssistantSelectionError, ValueError) as error:
+        return _error_response(str(error) or '请求参数无效', 400)
+
+    try:
+        result = _guide_service(semester).answer(
+            state,
+            question_kind=question_kind,
+            option_code=option_code,
+            custom_value=custom_value,
+            semester=semester,
+        )
+    except ScheduleSourceUnavailable as error:
+        return _envelope(False, {'status': error.status, 'code': error.code}, error.message), 503
+    except AssistantSelectionError as error:
+        return _error_response(str(error) or '请求参数无效', 400)
+    except ValueError as error:
+        if _is_expected_guide_value_error(error):
+            return _error_response(str(error) or '请求参数无效', 400)
+        raise
+    return _envelope(True, result.to_public_dict(), '引导答案已处理')
+
+
 @user_bp.route('/api/listening-assistant/candidates', methods=['GET'])
 @_assistant_login_required
 def listening_assistant_candidates(user):
@@ -546,4 +668,6 @@ __all__ = [
     'listening_assistant_candidates',
     'listening_assistant_confirm',
     'listening_assistant_fallback',
+    'listening_assistant_guide_answer',
+    'listening_assistant_guide_start',
 ]

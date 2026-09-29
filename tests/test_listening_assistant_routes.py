@@ -152,6 +152,14 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
             ),
             lambda: self.client.post('/user/api/listening-assistant/fallback', json={}),
             lambda: self.client.post('/user/api/listening-assistant/confirm', json={}),
+            lambda: self.client.post(
+                '/user/api/listening-assistant/guide/start',
+                json={'known_facts': {}, 'semester': SEMESTER},
+            ),
+            lambda: self.client.post(
+                '/user/api/listening-assistant/guide/answer',
+                json={},
+            ),
         )
         for make_request in requests:
             with self.subTest(endpoint=make_request):
@@ -172,6 +180,164 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         payload = self._assert_envelope(response, success=False)
         self.assertNotIn('phone', str(payload))
         self.assertNotIn('student_signature1', str(payload))
+
+        response = self._guide_start(user=inactive)
+        self.assertEqual(response.status_code, 401)
+        self._assert_envelope(response, success=False)
+
+    def _guide_start(self, *, known_facts=None, user=None, semester=SEMESTER):
+        self._login(user)
+        return self.client.post(
+            '/user/api/listening-assistant/guide/start',
+            json={
+                'known_facts': {} if known_facts is None else known_facts,
+                'semester': semester,
+            },
+        )
+
+    def _guide_answer(self, state, *, question_kind, option_code=None, custom_value=None):
+        return self.client.post(
+            '/user/api/listening-assistant/guide/answer',
+            json={
+                'state': state,
+                'question_kind': question_kind,
+                'option_code': option_code,
+                'custom_value': custom_value,
+                'semester': SEMESTER,
+            },
+        )
+
+    def test_guide_start_returns_initial_question_in_the_public_envelope(self):
+        response = self._guide_start()
+
+        payload = self._assert_envelope(response, success=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(payload['data']), {'question', 'state', 'candidates', 'needs_confirmation'})
+        self.assertEqual(payload['data']['question']['kind'], 'memory')
+        self.assertEqual(payload['data']['state']['stage'], 'question')
+        self.assertEqual(payload['data']['candidates'], [])
+        self.assertFalse(payload['data']['needs_confirmation'])
+
+    def test_guide_all_active_roles_are_allowed(self):
+        for index, role in enumerate(('信息员', '管理员', '超级管理员'), start=10):
+            with self.subTest(role=role):
+                user = self._create_user(str(index), f'student-{index}', role=role)
+                response = self._guide_start(user=user)
+                self.assertEqual(response.status_code, 200)
+                self._assert_envelope(response, success=True)
+
+    def test_guide_answer_forwards_date_teacher_and_custom_paths(self):
+        initial = self._assert_envelope(self._guide_start(), success=True)['data']
+
+        date_question = self._assert_envelope(
+            self._guide_answer(initial['state'], question_kind='memory', option_code='A'),
+            success=True,
+        )['data']
+        self.assertEqual(date_question['question']['kind'], 'date')
+
+        custom_date = self._assert_envelope(
+            self._guide_answer(
+                date_question['state'],
+                question_kind='date',
+                custom_value=LOOKUP_DATE.isoformat(),
+            ),
+            success=True,
+        )['data']
+        self.assertEqual(custom_date['state']['known_facts']['date'], LOOKUP_DATE.isoformat())
+        self.assertEqual(len(custom_date['candidates']), 2)
+
+        teacher_question = self._assert_envelope(
+            self._guide_start(known_facts={'date': LOOKUP_DATE.isoformat()}),
+            success=True,
+        )['data']
+        self.assertEqual(teacher_question['question']['kind'], 'teacher')
+        teacher_result = self._assert_envelope(
+            self._guide_answer(teacher_question['state'], question_kind='teacher', option_code='A'),
+            success=True,
+        )['data']
+        self.assertEqual(teacher_result['state']['stage'], 'confirm')
+        self.assertEqual(teacher_result['candidates'][0]['teacher_name'], '张老师')
+
+    def test_guide_answer_rejects_malformed_and_unsafe_payloads(self):
+        self._login()
+        start = self._assert_envelope(
+            self.client.post(
+                '/user/api/listening-assistant/guide/start',
+                json={'known_facts': {}, 'semester': SEMESTER},
+            ),
+            success=True,
+        )['data']
+        valid = {
+            'state': start['state'],
+            'question_kind': 'memory',
+            'option_code': 'A',
+            'custom_value': None,
+            'semester': SEMESTER,
+        }
+
+        cases = (
+            ('unknown top-level field', {**valid, 'candidate_ids': ['forged']}),
+            ('unknown state field', {**valid, 'state': {**valid['state'], 'unexpected': True}}),
+            ('invalid stage', {**valid, 'state': {**valid['state'], 'stage': 'forged'}}),
+            ('option and custom conflict', {**valid, 'custom_value': '2026-09-18'}),
+            ('invalid question kind', {**valid, 'question_kind': 'phone'}),
+            ('budget overflow', {**valid, 'state': {**valid['state'], 'question_count': 5}}),
+            ('overlong semester', {**valid, 'semester': 'x' * 121}),
+        )
+        for label, body in cases:
+            with self.subTest(label=label):
+                response = self.client.post(
+                    '/user/api/listening-assistant/guide/answer',
+                    json=body,
+                )
+                self.assertEqual(response.status_code, 400)
+                self._assert_envelope(response, success=False)
+
+        malformed = self.client.post(
+            '/user/api/listening-assistant/guide/answer',
+            data='{"state":',
+            content_type='application/json',
+        )
+        self.assertEqual(malformed.status_code, 400)
+        self._assert_envelope(malformed, success=False)
+
+    def test_guide_answer_ignores_forged_candidate_ids_and_keeps_output_private(self):
+        self._login()
+        started = self._assert_envelope(
+            self._guide_start(known_facts={'date': LOOKUP_DATE.isoformat()}),
+            success=True,
+        )['data']
+        forged_state = {**started['state'], 'candidate_ids': ['forged-candidate']}
+
+        response = self._guide_answer(
+            forged_state,
+            question_kind=started['question']['kind'],
+            option_code='A',
+        )
+        payload = self._assert_envelope(response, success=True)
+        serialized = str(payload).lower()
+        self.assertNotIn('forged-candidate', serialized)
+        for secret in ('phone', 'signature', 'credential', 'evaluation'):
+            self.assertNotIn(secret, serialized)
+        self.assertTrue(all(item['candidate_id'] != 'forged-candidate' for item in payload['data']['candidates']))
+
+    def test_guide_answer_does_not_convert_operational_value_error_to_json_success(self):
+        self._login()
+        started = self._assert_envelope(
+            self._guide_start(),
+            success=True,
+        )['data']
+        with mock.patch(
+            'app.services.listening_assistant.load_schedule_entries',
+            side_effect=ValueError('database unavailable'),
+        ):
+            with self.assertRaises(ValueError) as raised:
+                self._guide_answer(
+                    started['state'],
+                    question_kind='memory',
+                    option_code='A',
+                )
+        self.assertEqual(str(raised.exception), 'database unavailable')
 
     def test_get_candidates_supports_room_teacher_both_rejections_and_always_none(self):
         self._login()
