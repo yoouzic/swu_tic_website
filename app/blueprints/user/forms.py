@@ -12,6 +12,11 @@ from app.models import (
 from app.security import login_required
 from app.services.form_bindings import reconcile_registration_usage_flags
 from app.services.listening_assistant_contracts import SAFE_OVERRIDE_KEYS
+from app.services.listening_assistant_guide_contracts import (
+    MAX_GUIDED_FACT_LENGTH,
+    MAX_GUIDED_QUESTIONS,
+    GuidedAssistantState,
+)
 from app.services.listening_assistant_evidence import (
     AssistantSelectionError,
     create_evidence,
@@ -24,6 +29,7 @@ from app.utils.leave_management import append_leave_system_note, get_pending_lea
 from app.utils.permission_feedback import forbidden_json, flash_forbidden
 import hashlib
 import json
+import re
 
 from . import user_bp
 
@@ -46,6 +52,8 @@ _ASSISTANT_DRAFT_KEYS = frozenset({
     'acknowledged_source',
     'assistant_filled_fields',
     'assistant_filled_groups',
+    'guide_state',
+    'history',
 })
 _ASSISTANT_FILLED_FIELD_KEYS = frozenset({
     'lecture_date',
@@ -64,33 +72,97 @@ _ASSISTANT_QUERY_DRAFT_KEYS = frozenset({
     'student_grade_class',
     'semester',
 })
+_GUIDE_HISTORY_KEYS = frozenset({'kind', 'answer_code', 'custom_value'})
+_GUIDE_KINDS = frozenset({'memory', 'date', 'teacher', 'room', 'period', 'student_grade_class'})
+_GUIDE_ANSWER_CODES = frozenset({'A', 'B', 'C', 'D', 'NONE'})
+_MAX_GUIDE_HISTORY = MAX_GUIDED_QUESTIONS
+_GUIDE_CANDIDATE_ID_PATTERN = re.compile(r'^[0-9A-Za-z._:~\-]+$')
+_GUIDE_PRIVATE_TEXT_PATTERN = re.compile(
+    r'(?i)(password|passwd|token|secret|credential|凭据|密码|口令|签名|评价|反馈)'
+)
 
 
 def _is_draft_scalar(value):
     return isinstance(value, (str, int, float, bool)) or value is None
 
 
+def _normalize_guide_history(value):
+    if not isinstance(value, list):
+        raise ValueError('assistant.history must be a list')
+    if len(value) > _MAX_GUIDE_HISTORY:
+        raise ValueError('assistant.history exceeds maximum count')
+
+    normalized = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict) or set(item) != _GUIDE_HISTORY_KEYS:
+            raise ValueError(f'assistant.history[{index}] contains unsupported fields')
+        kind = item['kind']
+        answer_code = item['answer_code']
+        if not isinstance(kind, str) or kind not in _GUIDE_KINDS:
+            raise ValueError(f'assistant.history[{index}].kind is not allowed')
+        if not isinstance(answer_code, str) or answer_code not in _GUIDE_ANSWER_CODES:
+            raise ValueError(f'assistant.history[{index}].answer_code is not allowed')
+        custom_value = item['custom_value']
+        if custom_value is not None:
+            if not isinstance(custom_value, str):
+                raise ValueError(f'assistant.history[{index}].custom_value must be text or null')
+            custom_value = ' '.join(custom_value.split()).strip()
+            if not custom_value or len(custom_value) > MAX_GUIDED_FACT_LENGTH:
+                raise ValueError(f'assistant.history[{index}].custom_value is invalid')
+            if any(ord(char) < 32 or ord(char) == 127 for char in custom_value):
+                raise ValueError(f'assistant.history[{index}].custom_value contains control characters')
+            if _GUIDE_PRIVATE_TEXT_PATTERN.search(custom_value) or re.search(
+                r'(?<!\d)\d{7,}(?!\d)', custom_value
+            ):
+                raise ValueError(f'assistant.history[{index}].custom_value contains private text')
+        normalized.append({
+            'kind': kind,
+            'answer_code': answer_code,
+            'custom_value': custom_value,
+        })
+    return normalized
+
+
+def _normalize_guide_state(value):
+    if not isinstance(value, dict):
+        raise ValueError('assistant.guide_state must be an object')
+    try:
+        state = GuidedAssistantState.from_public_dict(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f'invalid assistant.guide_state: {error}') from error
+    if len(state.asked_question_kinds) > MAX_GUIDED_QUESTIONS:
+        raise ValueError('assistant.guide_state.asked_question_kinds exceeds maximum count')
+    if any(
+        not _GUIDE_CANDIDATE_ID_PATTERN.fullmatch(candidate_id)
+        for candidate_id in state.candidate_ids
+    ):
+        raise ValueError('assistant.guide_state contains an invalid candidate id')
+    return state.to_public_dict()
+
+
 def _normalize_assistant_draft_payload(raw_payload):
     if not isinstance(raw_payload, dict):
         return None
 
+    unknown = set(raw_payload) - _ASSISTANT_DRAFT_KEYS
+    if unknown:
+        raise ValueError('assistant payload contains unsupported fields')
+
     normalized = {}
     for key, value in raw_payload.items():
-        if not isinstance(key, str) or key not in _ASSISTANT_DRAFT_KEYS:
-            continue
-
         if key in {'query', 'overrides'}:
             if not isinstance(value, dict):
-                continue
+                raise ValueError(f'assistant.{key} must be an object')
             nested = {}
             allowed_keys = (
                 _ASSISTANT_QUERY_DRAFT_KEYS
                 if key == 'query'
                 else SAFE_OVERRIDE_KEYS
             )
+            unknown_nested = set(value) - allowed_keys
+            if unknown_nested:
+                raise ValueError(f'assistant.{key} contains unsupported fields')
             for nested_key, nested_value in value.items():
-                if not isinstance(nested_key, str) or nested_key not in allowed_keys:
-                    continue
                 if _is_draft_scalar(nested_value):
                     nested[nested_key] = nested_value
                 elif isinstance(nested_value, list):
@@ -98,6 +170,14 @@ def _normalize_assistant_draft_payload(raw_payload):
                         item for item in nested_value if _is_draft_scalar(item)
                     ]
             normalized[key] = nested
+            continue
+
+        if key == 'guide_state':
+            normalized[key] = _normalize_guide_state(value)
+            continue
+
+        if key == 'history':
+            normalized[key] = _normalize_guide_history(value)
             continue
 
         if key in {'assistant_filled_fields', 'assistant_filled_groups'}:
@@ -122,6 +202,32 @@ def _normalize_assistant_draft_payload(raw_payload):
 
         if _is_draft_scalar(value):
             normalized[key] = value
+
+    if 'history' in normalized and 'guide_state' not in normalized:
+        raise ValueError('assistant.history requires assistant.guide_state')
+
+    guide_state = normalized.get('guide_state')
+    if guide_state and guide_state['stage'] not in {'confirm', 'done'}:
+        # A rewind/re-answer is a new provenance branch.  Keep the current
+        # bounded guide state/history, but never carry a prior confirmation,
+        # candidate snapshot, override, or assistant-filled marker forward.
+        normalized['stage'] = guide_state['stage']
+        for stale_key in (
+            'query',
+            'rejected_ids',
+            'source_kind',
+            'source_batch_id',
+            'semester',
+            'candidate_id',
+            'overrides',
+            'fallback_reason',
+            'reason',
+            'explicit_fallback',
+            'acknowledged_source',
+            'assistant_filled_fields',
+            'assistant_filled_groups',
+        ):
+            normalized.pop(stale_key, None)
 
     return normalized
 
@@ -150,7 +256,10 @@ def _parse_draft_payload(draft):
         return {}
     if not isinstance(payload, dict):
         return {}
-    normalized = _normalize_draft_payload(payload)
+    try:
+        normalized = _normalize_draft_payload(payload)
+    except ValueError:
+        return {}
     return normalized if normalized is not None else {}
 
 
@@ -305,7 +414,10 @@ def lecture_form_draft():
 
     body = request.get_json(silent=True) or {}
     raw_payload = body.get('data', body)
-    payload = _normalize_draft_payload(raw_payload)
+    try:
+        payload = _normalize_draft_payload(raw_payload)
+    except ValueError as error:
+        return jsonify({'success': False, 'message': str(error)}), 400
     if payload is None:
         return jsonify({'success': False, 'message': 'Draft payload must be a JSON object'}), 400
 

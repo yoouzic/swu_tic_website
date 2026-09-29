@@ -29,6 +29,15 @@ from app.services.listening_assistant_contracts import (
     SAFE_OVERRIDE_KEYS,
     parse_period,
 )
+from app.services.listening_assistant_guide_contracts import (
+    MAX_GUIDED_FACT_LENGTH,
+    MAX_GUIDED_QUESTIONS,
+    normalize_candidate_ids,
+    normalize_known_facts,
+    normalize_question_count,
+    normalize_question_kinds,
+    normalize_stage,
+)
 
 
 SELECTION_KEYS = frozenset({
@@ -47,6 +56,8 @@ SELECTION_KEYS = frozenset({
     'acknowledged_source',
     'assistant_filled_fields',
     'assistant_filled_groups',
+    'guide_state',
+    'history',
 })
 QUERY_KEYS = frozenset({
     'lecture_date',
@@ -77,6 +88,17 @@ ASSISTANT_FILLED_FIELD_KEYS = frozenset({
 ASSISTANT_FILLED_GROUP_KEYS = frozenset({'period'})
 MAX_TEMPLATE_VERSION_LENGTH = 100
 MAX_SEMESTER_LENGTH = 50
+GUIDE_STATE_KEYS = frozenset({
+    'known_facts',
+    'candidate_ids',
+    'asked_question_kinds',
+    'question_count',
+    'stage',
+})
+GUIDE_HISTORY_KEYS = frozenset({'kind', 'answer_code', 'custom_value'})
+GUIDE_KINDS = frozenset({'memory', 'date', 'teacher', 'room', 'period', 'student_grade_class'})
+GUIDE_ANSWER_CODES = frozenset({'A', 'B', 'C', 'D', 'NONE'})
+GUIDE_CANDIDATE_ID_PATTERN = re.compile(r'^[0-9A-Za-z._:~\-]+$')
 
 
 class AssistantSelectionError(ValueError):
@@ -106,6 +128,8 @@ class NormalizedAssistantSelection:
     stage: str | None = None
     fallback_reason: str | None = None
     explicit_fallback: bool = False
+    guide_state: Mapping[str, Any] | None = None
+    guide_history: tuple[Mapping[str, Any], ...] = ()
 
     @property
     def snapshot(self) -> Mapping[str, Any]:
@@ -161,6 +185,88 @@ def _validate_assistant_filled_provenance(payload: Mapping[str, Any]) -> None:
         for item in value:
             if not isinstance(item, str) or item not in allowed:
                 raise AssistantSelectionError(f'{key} contains an unsupported value')
+
+
+def _normalize_guide_text(value: object, *, field_name: str) -> str | None:
+    normalized = _optional_text(value, field_name=field_name, maximum=MAX_GUIDED_FACT_LENGTH)
+    if normalized is None:
+        return None
+    if re.search(r'(?i)(password|passwd|token|secret|credential|凭据|密码|口令|签名|评价|反馈)', normalized):
+        raise AssistantSelectionError(f'{field_name} contains private or evaluation text')
+    if re.search(r'(?<!\d)\d{7,}(?!\d)', normalized):
+        raise AssistantSelectionError(f'{field_name} contains a phone-like value')
+    return normalized
+
+
+def _normalize_guide_state(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise AssistantSelectionError('guide_state must be an object')
+    if set(value) != GUIDE_STATE_KEYS:
+        raise AssistantSelectionError('guide_state contains unsupported fields')
+    try:
+        known_facts = normalize_known_facts(value['known_facts'])
+        candidate_ids = normalize_candidate_ids(value['candidate_ids'])
+        asked_question_kinds = normalize_question_kinds(value['asked_question_kinds'])
+        question_count = normalize_question_count(value['question_count'])
+        stage = normalize_stage(value['stage'])
+    except (TypeError, ValueError) as error:
+        raise AssistantSelectionError(f'invalid guide_state: {error}') from error
+    if len(asked_question_kinds) > MAX_GUIDED_QUESTIONS:
+        raise AssistantSelectionError('guide_state.asked_question_kinds exceeds maximum count')
+    if any(not GUIDE_CANDIDATE_ID_PATTERN.fullmatch(candidate_id) for candidate_id in candidate_ids):
+        raise AssistantSelectionError('guide_state contains an invalid candidate id')
+    for candidate_id in candidate_ids:
+        _normalize_guide_text(candidate_id, field_name='guide_state.candidate_ids')
+    safe_facts = {
+        kind: _normalize_guide_text(fact, field_name=f'guide_state.known_facts[{kind}]')
+        for kind, fact in known_facts.items()
+    }
+    return {
+        'known_facts': safe_facts,
+        'candidate_ids': list(candidate_ids),
+        'asked_question_kinds': list(asked_question_kinds),
+        'question_count': question_count,
+        'stage': stage,
+    }
+
+
+def _normalize_guide_history(value: object) -> tuple[Mapping[str, Any], ...]:
+    if not isinstance(value, (list, tuple)):
+        raise AssistantSelectionError('history must be a list')
+    if len(value) > MAX_GUIDED_QUESTIONS:
+        raise AssistantSelectionError('history exceeds maximum count')
+    normalized = []
+    for index, item in enumerate(value):
+        if not isinstance(item, Mapping) or set(item) != GUIDE_HISTORY_KEYS:
+            raise AssistantSelectionError(f'history[{index}] contains unsupported fields')
+        kind = item['kind']
+        answer_code = item['answer_code']
+        if not isinstance(kind, str) or kind not in GUIDE_KINDS:
+            raise AssistantSelectionError(f'history[{index}].kind is not allowed')
+        if not isinstance(answer_code, str) or answer_code not in GUIDE_ANSWER_CODES:
+            raise AssistantSelectionError(f'history[{index}].answer_code is not allowed')
+        custom_value = _normalize_guide_text(
+            item['custom_value'],
+            field_name=f'history[{index}].custom_value',
+        )
+        normalized.append({
+            'kind': kind,
+            'answer_code': answer_code,
+            'custom_value': custom_value,
+        })
+    return tuple(normalized)
+
+
+def _normalize_guided_provenance(payload: Mapping[str, Any]):
+    guide_state = None
+    guide_history: tuple[Mapping[str, Any], ...] = ()
+    if 'guide_state' in payload:
+        guide_state = _normalize_guide_state(payload['guide_state'])
+    if 'history' in payload:
+        if guide_state is None:
+            raise AssistantSelectionError('history requires guide_state')
+        guide_history = _normalize_guide_history(payload['history'])
+    return guide_state, guide_history
 
 
 def _json_safe_copy(value: Any) -> Any:
@@ -406,6 +512,7 @@ def revalidate_selection(
     if unknown:
         raise AssistantSelectionError('assistant payload contains unsupported fields')
     _validate_assistant_filled_provenance(selection_payload)
+    guide_state, guide_history = _normalize_guided_provenance(selection_payload)
 
     if 'stage' not in selection_payload:
         raise AssistantSelectionError('assistant selection stage is required')
@@ -567,6 +674,8 @@ def revalidate_selection(
         stage=stage,
         fallback_reason=fallback_reason,
         explicit_fallback=explicit_fallback,
+        guide_state=guide_state,
+        guide_history=guide_history,
     )
 
 
@@ -615,6 +724,23 @@ def create_evidence(
         if not user_number or not form_number or user_number != form_number:
             raise AssistantSelectionError('evidence user does not own lecture form')
 
+    confirmation_payload = {
+        key: value
+        for key, value in {
+            'confirmed': normalized.confirmation.confirmed,
+            'candidate_id': normalized.candidate.candidate_id,
+            'source_kind': normalized.source_kind,
+            'source_batch_id': normalized.source_batch_id,
+            'acknowledged_source': normalized.confirmation.acknowledged_source,
+            'stage': normalized.stage,
+            'explicit_fallback': normalized.explicit_fallback,
+            'fallback_reason': normalized.fallback_reason,
+            'guide_state': normalized.guide_state,
+            'guide_history': list(normalized.guide_history) if normalized.guide_state is not None else None,
+        }.items()
+        if value is not None
+    }
+
     evidence = ListeningAssistantEvidence(
         user_id=int(user_id),
         lecture_form_id=lecture_form_id,
@@ -625,20 +751,7 @@ def create_evidence(
         query_json=_dump_json(normalized.query_payload),
         candidate_json=_dump_json(normalized.candidate_payload),
         overrides_json=_dump_json(normalized.overrides),
-        confirmation_json=_dump_json({
-            key: value
-            for key, value in {
-                'confirmed': normalized.confirmation.confirmed,
-                'candidate_id': normalized.candidate.candidate_id,
-                'source_kind': normalized.source_kind,
-                'source_batch_id': normalized.source_batch_id,
-                'acknowledged_source': normalized.confirmation.acknowledged_source,
-                'stage': normalized.stage,
-                'explicit_fallback': normalized.explicit_fallback,
-                'fallback_reason': normalized.fallback_reason,
-            }.items()
-            if value is not None
-        }),
+        confirmation_json=_dump_json(confirmation_payload),
         confirmed_at=datetime.now(),
     )
     db.session.add(evidence)

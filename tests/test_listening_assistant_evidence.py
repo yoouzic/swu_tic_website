@@ -233,6 +233,114 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
         self.assertNotIn('真实签名', stored)
         self.assertNotIn('课程反馈内容', stored)
 
+    def test_guided_provenance_is_normalized_and_stored_without_private_fields(self):
+        service, _loader = self._service(primary=[schedule_entry()])
+        payload, _candidate = self._payload(service)
+        payload.update({
+            'guide_state': {
+                'known_facts': {'date': LOOKUP_DATE.isoformat()},
+                'candidate_ids': ['forged-or-stale-id'],
+                'asked_question_kinds': ['memory', 'date'],
+                'question_count': 1,
+                'stage': 'done',
+            },
+            'history': [
+                {'kind': 'memory', 'answer_code': 'A', 'custom_value': None},
+                {'kind': 'date', 'answer_code': 'D', 'custom_value': LOOKUP_DATE.isoformat()},
+            ],
+        })
+
+        normalized = revalidate_selection(
+            self.user,
+            payload,
+            service=service,
+            semester=SEMESTER,
+        )
+        form = LectureForm(
+            listener_name='Test User（Test College）',
+            listener_number=self.user.number,
+            lecture_date='2026-09-18',
+            class_period='第3-4节',
+            lecture_location='8-309',
+            teacher_name='张老师',
+            teacher_college='计算机学院',
+            course_title='数据结构',
+            student_grade_class='2024级计算机1班',
+            teaching_method='讲授法',
+            classroom_discipline='好',
+            classroom_atmosphere='好',
+            courseware_quality='无',
+            overall_effect='好',
+            quality_case='推荐',
+            course_feedback='评价原文不得写入助手证据。',
+            student_signature1='签名不得写入助手证据',
+            contact_phone1='13800000000',
+        )
+        db.session.add(form)
+        db.session.flush()
+        evidence = create_evidence(self.user, form, normalized)
+        confirmation = json.loads(evidence.confirmation_json)
+
+        self.assertEqual(confirmation['guide_state']['stage'], 'done')
+        self.assertEqual(confirmation['guide_history'][1], {
+            'kind': 'date',
+            'answer_code': 'D',
+            'custom_value': LOOKUP_DATE.isoformat(),
+        })
+        stored = ' '.join(
+            value or ''
+            for value in (
+                evidence.query_json,
+                evidence.candidate_json,
+                evidence.overrides_json,
+                evidence.confirmation_json,
+            )
+        )
+        for secret in ('13800000000', '签名不得写入助手证据', '评价原文不得写入助手证据'):
+            self.assertNotIn(secret, stored)
+
+    def test_guide_provenance_does_not_bypass_fresh_candidate_revalidation(self):
+        service, loader = self._service(primary=[schedule_entry()])
+        payload, _candidate = self._payload(service)
+        payload.update({
+            'guide_state': {
+                'known_facts': {'date': LOOKUP_DATE.isoformat()},
+                'candidate_ids': ['primary:batch-current:1'],
+                'asked_question_kinds': ['memory'],
+                'question_count': 0,
+                'stage': 'done',
+            },
+            'history': [
+                {'kind': 'memory', 'answer_code': 'A', 'custom_value': None},
+            ],
+        })
+        loader.primary = [schedule_entry(source_batch_id='batch-new')]
+
+        with self.assertRaises(AssistantSelectionError):
+            revalidate_selection(self.user, payload, service=service, semester=SEMESTER)
+
+    def test_guide_provenance_rejects_unsafe_candidate_ids_and_sensitive_text(self):
+        service, _loader = self._service(primary=[schedule_entry()])
+        payload, _candidate = self._payload(service)
+        payload['guide_state'] = {
+            'known_facts': {'date': LOOKUP_DATE.isoformat()},
+            'candidate_ids': ['primary/batch/1'],
+            'asked_question_kinds': ['memory'],
+            'question_count': 0,
+            'stage': 'done',
+        }
+        payload['history'] = [
+            {'kind': 'room', 'answer_code': 'D', 'custom_value': 'safe-placeholder'},
+        ]
+
+        with self.assertRaises(AssistantSelectionError):
+            revalidate_selection(self.user, payload, service=service, semester=SEMESTER)
+
+        payload['guide_state']['candidate_ids'] = ['primary:batch-current:1']
+        payload['history'][0]['custom_value'] = '13800000000'
+        with self.assertRaises(AssistantSelectionError):
+            revalidate_selection(self.user, payload, service=service, semester=SEMESTER)
+
     def test_revalidation_requires_valid_overrides_for_candidate_conflicts(self):
         period_entry = schedule_entry()
         service, _loader = self._service(primary=[period_entry])
