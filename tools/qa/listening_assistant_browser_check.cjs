@@ -226,6 +226,7 @@ async function installApiFixtures(page) {
       assert(route.request().method() === 'POST', 'fallback lookup must use POST');
       assert(request.date === '2026-09-18', 'fallback date is missing or invalid');
       assert(request.teacher === '张老师', 'fallback teacher is missing or invalid');
+      assert(request.semester === '2026-2027-1', 'fallback semester is missing or invalid');
       assert(request.explicit_fallback === true, 'fallback must be explicitly requested');
       assert(request.source_batch_id === 'backup-fixture-1', 'fallback batch provenance is missing');
       assert(['no_result', 'rejected_candidates'].includes(request.reason), 'fallback reason is invalid');
