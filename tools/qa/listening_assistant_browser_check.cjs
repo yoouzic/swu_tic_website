@@ -110,7 +110,7 @@ function staticContractChecks() {
   assert(assistantScript.includes('textContent'), 'user text should be rendered as text');
   assert(style.includes('min-width: 0'), 'assistant style should constrain narrow layouts');
   assert(style.includes('@media'), 'assistant style should include responsive rules');
-  pass('static-dom-contracts', {checks: templateHooks.length + 15});
+  pass('static-dom-contracts');
 }
 
 function isLoopbackUrl(value) {
@@ -251,7 +251,10 @@ async function installApiFixtures(page) {
       assert(route.request().method() === 'POST', 'confirmation must use POST');
       assert(request.stage === 'confirmed', 'confirmation stage is missing');
       assert(request.query && request.query.lecture_date === '2026-09-18', 'confirmation query is missing date');
+      assert(request.query.semester === '2026-2027-1', 'confirmation query is missing semester');
+      assert(request.semester === '2026-2027-1', 'confirmation semester is missing');
       assert(request.candidate_id, 'confirmation candidate ID is missing');
+      assert(request.template_version === 'task6-v1', 'confirmation template version is invalid');
       const allowedIds = new Set(['primary-fixture-1', 'primary-fixture-2', 'backup-fixture-1']);
       assert(allowedIds.has(request.candidate_id), 'confirmation candidate ID is not from the fixture');
       assert(request.source_kind === 'primary' || request.source_kind === 'backup', 'confirmation source kind is invalid');
@@ -261,6 +264,19 @@ async function installApiFixtures(page) {
           : request.candidate_id !== 'backup-fixture-1',
         'confirmation source kind and candidate ID do not match',
       );
+      if (request.source_kind === 'backup') {
+        assert(request.acknowledged_source === true, 'backup confirmation lacks source acknowledgement');
+        assert(request.explicit_fallback === true, 'backup confirmation lacks explicit fallback');
+        assert(request.source_batch_id === 'backup-fixture-1', 'backup confirmation lacks source batch');
+        assert(
+          request.fallback_reason === 'rejected_candidates' &&
+            request.reason === 'rejected_candidates',
+          'backup confirmation lacks fallback reason',
+        );
+      } else {
+        assert(request.acknowledged_source === false, 'primary confirmation has backup acknowledgement');
+        assert(request.explicit_fallback === false, 'primary confirmation has explicit fallback');
+      }
       const selected = request.source_kind === 'backup' ? BACKUP[0] : PRIMARY_MULTI.find(
         (item) => item.candidate_id === request.candidate_id,
       );
