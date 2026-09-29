@@ -150,11 +150,11 @@ def _text(value: object, *, field_name: str, required: bool = False, maximum: in
     if isinstance(value, bool) or not isinstance(value, (str, int)):
         raise AssistantSelectionError(f'{field_name} must be text')
     normalized = unicodedata.normalize('NFKC', str(value)).replace('\u3000', ' ')
+    if any(ord(char) < 32 or ord(char) == 127 for char in normalized):
+        raise AssistantSelectionError(f'{field_name} contains an invalid control character')
     normalized = re.sub(r'\s+', ' ', normalized).strip()
     if maximum is not None and len(normalized) > maximum:
         raise AssistantSelectionError(f'{field_name} is too long')
-    if any(ord(char) < 32 or ord(char) == 127 for char in normalized):
-        raise AssistantSelectionError(f'{field_name} contains an invalid control character')
     if required and not normalized:
         raise AssistantSelectionError(f'{field_name} is required')
     return normalized

@@ -246,6 +246,9 @@ class LectureFormDraftTest(unittest.TestCase):
             ({**base_state, 'candidate_ids': ['primary:batch:1']}, [
                 {'kind': 'room', 'answer_code': 'D', 'custom_value': '１３８－００００－００００'},
             ]),
+            ({**base_state, 'candidate_ids': ['primary:batch:1']}, [
+                {'kind': 'room', 'answer_code': 'D', 'custom_value': '教室\n8-309'},
+            ]),
         ):
             with self.subTest(state=state, history=history):
                 response = self.client.put(

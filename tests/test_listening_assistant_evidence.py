@@ -343,6 +343,15 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
                 with self.assertRaises(AssistantSelectionError):
                     revalidate_selection(self.user, payload, service=service, semester=SEMESTER)
 
+        payload['history'][0]['custom_value'] = '教室\n8-309'
+        with self.assertRaises(AssistantSelectionError):
+            revalidate_selection(self.user, payload, service=service, semester=SEMESTER)
+
+        payload['history'][0]['custom_value'] = 'safe'
+        payload['query']['room'] = '8-309\n'
+        with self.assertRaises(AssistantSelectionError):
+            revalidate_selection(self.user, payload, service=service, semester=SEMESTER)
+
     def test_revalidation_requires_valid_overrides_for_candidate_conflicts(self):
         period_entry = schedule_entry()
         service, _loader = self._service(primary=[period_entry])

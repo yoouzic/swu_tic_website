@@ -118,11 +118,12 @@ def _normalize_guide_history(value):
         if custom_value is not None:
             if not isinstance(custom_value, str):
                 raise ValueError(f'assistant.history[{index}].custom_value must be text or null')
+            custom_value = unicodedata.normalize('NFKC', custom_value)
+            if any(ord(char) < 32 or ord(char) == 127 for char in custom_value):
+                raise ValueError(f'assistant.history[{index}].custom_value contains control characters')
             custom_value = ' '.join(custom_value.split()).strip()
             if not custom_value or len(custom_value) > MAX_GUIDED_FACT_LENGTH:
                 raise ValueError(f'assistant.history[{index}].custom_value is invalid')
-            if any(ord(char) < 32 or ord(char) == 127 for char in custom_value):
-                raise ValueError(f'assistant.history[{index}].custom_value contains control characters')
             if _contains_guide_sensitive_text(custom_value):
                 raise ValueError(f'assistant.history[{index}].custom_value contains private text')
         normalized.append({
