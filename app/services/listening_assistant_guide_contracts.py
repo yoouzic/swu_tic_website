@@ -1,6 +1,7 @@
 """Pure contracts for the adaptive listening-assistant guide."""
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from .listening_assistant_contracts import Candidate
@@ -170,7 +171,11 @@ class GuidedAssistantState:
     stage: str
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, 'known_facts', normalize_known_facts(self.known_facts))
+        object.__setattr__(
+            self,
+            'known_facts',
+            MappingProxyType(normalize_known_facts(self.known_facts)),
+        )
         object.__setattr__(self, 'candidate_ids', normalize_candidate_ids(self.candidate_ids))
         object.__setattr__(self, 'asked_question_kinds', normalize_question_kinds(self.asked_question_kinds))
         object.__setattr__(self, 'question_count', normalize_question_count(self.question_count))

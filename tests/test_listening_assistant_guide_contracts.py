@@ -84,6 +84,23 @@ def test_state_round_trip_is_json_safe():
     assert restored.is_valid is True
 
 
+def test_state_known_facts_are_immutable_but_public_copy_is_a_plain_dict():
+    state = GuidedAssistantState(
+        {'date': '2026-09-29', 'teacher': '李老师'},
+        (),
+        (),
+        0,
+        'question',
+    )
+
+    with pytest.raises(TypeError):
+        state.known_facts['date'] = 'changed'
+
+    public = state.to_public_dict()
+    assert isinstance(public['known_facts'], dict)
+    assert public['known_facts'] == {'date': '2026-09-29', 'teacher': '李老师'}
+
+
 @pytest.mark.parametrize(
     'payload',
     [
