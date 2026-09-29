@@ -134,7 +134,68 @@
                             </div>
                             <div id="listeningAssistantPanel" class="listening-assistant__panel" data-assistant-panel>
                                 <p class="listening-assistant__intro">先用日期和教室或教师缩小范围，再由你选择并确认课程。助手只推荐课表信息，不会自动提交表单。</p>
-                                <div class="listening-assistant__status" data-assistant-status role="status" aria-live="polite">状态：查找。请输入日期，并填写教室或教师。</div>
+                                <div class="listening-assistant__status" data-assistant-status role="status" aria-live="polite">状态：引导已就绪。</div>
+
+                                <div class="listening-assistant__guide" data-assistant-guide>
+                                    <div class="listening-assistant__history" data-assistant-history aria-live="polite" aria-label="历史答案摘要"></div>
+                                    <div class="listening-assistant__progress" data-assistant-progress role="status" aria-live="polite">问题 0 / 4</div>
+                                    <div class="listening-assistant__question-region" data-assistant-question-region aria-live="polite" aria-atomic="true">
+                                        <h3 class="listening-assistant__question" data-assistant-question>你还记得哪类信息？</h3>
+                                        <div class="listening-assistant__options" data-assistant-options role="group" aria-label="回答选项">
+                                            <button type="button" class="btn btn-outline-primary" data-assistant-option="A">A. 听课日期</button>
+                                            <button type="button" class="btn btn-outline-primary" data-assistant-option="B">B. 授课教师</button>
+                                            <button type="button" class="btn btn-outline-primary" data-assistant-option="C">C. 教室</button>
+                                            <button type="button" class="btn btn-outline-secondary" data-assistant-option="D">D. 我自己填写</button>
+                                        </div>
+                                        <div class="listening-assistant__custom" data-assistant-custom hidden>
+                                            <label class="form-label" data-assistant-custom-label for="assistantCustomInput">自定义填写</label>
+                                            <input class="form-control" id="assistantCustomInput" data-assistant-custom-input autocomplete="off">
+                                            <small class="form-text" data-assistant-custom-help></small>
+                                            <div class="listening-assistant__actions">
+                                                <button type="button" class="btn btn-primary" data-assistant-custom-submit>提交这一项</button>
+                                                <button type="button" class="btn btn-outline-secondary" data-assistant-custom-cancel>返回选项</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="listening-assistant__guide-actions">
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-back disabled>返回上一问</button>
+                                    </div>
+                                </div>
+
+                                <div class="listening-assistant__candidate-confirm" data-assistant-candidate-confirm hidden aria-live="polite" aria-atomic="true">
+                                    <div class="listening-assistant__candidate-summary" data-assistant-candidate-summary></div>
+                                    <div class="listening-assistant__confirmation-evidence" data-assistant-confirmation-evidence>
+                                        <p class="listening-assistant__evidence-title">确认前请核对课程、教师、教室、节次、班级和来源。</p>
+                                        <div class="listening-assistant__source" data-assistant-source></div>
+                                        <div class="listening-assistant__conflicts" data-assistant-conflict></div>
+                                        <div class="listening-assistant__backup-ack form-check" data-assistant-backup-ack-wrap hidden>
+                                            <input class="form-check-input" type="checkbox" id="assistantBackupAck" data-assistant-backup-ack>
+                                            <label class="form-check-label" for="assistantBackupAck">我已知道这是备用课表线索，并已人工核对来源和课程信息。</label>
+                                        </div>
+                                        <fieldset class="listening-assistant__room-choice" data-assistant-room-choice-wrap hidden>
+                                            <legend>教室处理方式（room choice）</legend>
+                                            <label><input type="radio" name="assistant_room_choice" value="candidate" data-assistant-room-choice> 使用课表教室</label>
+                                            <label><input type="radio" name="assistant_room_choice" value="manual" data-assistant-room-choice> 保留手动教室</label>
+                                        </fieldset>
+                                        <label class="listening-assistant__period-override" data-assistant-period-override-wrap hidden>
+                                            节次覆盖（period override）
+                                            <input class="form-control" data-assistant-period-override>
+                                        </label>
+                                    </div>
+                                    <p class="listening-assistant__review-hint" data-assistant-review-hint role="status" aria-live="polite"></p>
+                                    <div class="listening-assistant__actions">
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-none>这些都不是 / 都不是，改为手动填写</button>
+                                        <button type="button" class="btn btn-primary" data-assistant-confirm disabled>确认并补充空白字段</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-back-to-guide>返回上一问</button>
+                                    </div>
+                                </div>
+
+                                <div class="listening-assistant__manual" data-assistant-manual-view hidden>
+                                    <p>已切换到手动填写。助手不会把不确定信息写入正式表单。</p>
+                                    <button type="button" class="btn btn-outline-secondary" data-assistant-restart>重新开始引导</button>
+                                </div>
+
+                                <div data-assistant-legacy hidden aria-hidden="true">
 
                                 <div class="listening-assistant__view" data-assistant-view="find">
                                     <div class="listening-assistant__query-grid">
@@ -228,6 +289,7 @@
                                 <div class="listening-assistant__view" data-assistant-view="error" hidden>
                                     <div class="alert alert-danger" data-assistant-error-message role="alert">听课助手暂时无法完成这一步。</div>
                                     <div class="listening-assistant__actions"><button type="button" class="btn btn-primary" data-assistant-retry>重试</button><button type="button" class="btn btn-outline-secondary" data-assistant-manual>改为手动填写</button></div>
+                                </div>
                                 </div>
                             </div>
                         </section>
