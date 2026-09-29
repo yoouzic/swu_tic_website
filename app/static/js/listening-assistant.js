@@ -421,7 +421,13 @@
                 || (guideState.state && guideState.state.known_facts && guideState.state.known_facts.room)
                 || formRoom,
             );
-            const roomConflict = conflicts.some((conflict) => String(conflict).toLowerCase().includes('location'));
+            const roomConflict = conflicts.some((conflict) => String(conflict).toLowerCase().includes('location'))
+                || (
+                    isBackup
+                    && Boolean(knownRoom)
+                    && Boolean(cleanText(candidate.room))
+                    && knownRoom !== cleanText(candidate.room)
+                );
             elements.roomChoiceWrap.hidden = !roomConflict && (!knownRoom || knownRoom === cleanText(candidate.room));
             const dateConflict = conflicts.includes('date_needs_confirmation');
             const periodConflict = conflicts.some(

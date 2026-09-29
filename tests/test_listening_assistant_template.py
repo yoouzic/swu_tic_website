@@ -134,6 +134,8 @@ def test_candidate_conflicts_have_reachable_overrides_and_fallback_keeps_filters
     for marker in (
         "conflicts.includes('date_needs_confirmation')",
         'overrides.lecture_date',
+        'originalRoomForFallback',
+        'knownRoom !== cleanText(candidate.room)',
         '请填写日期覆盖值',
         'fallbackPayload.period',
         'fallbackPayload.student_grade_class',
@@ -141,6 +143,8 @@ def test_candidate_conflicts_have_reachable_overrides_and_fallback_keeps_filters
         'data-assistant-fallback-panel',
     ):
         assert marker in TEMPLATE + SCRIPT
+    assert TEMPLATE.count('id="assistantBackupAck"') == 1
+    assert 'id="assistantBackupAckLegacy"' in TEMPLATE
 
 
 def test_current_request_guards_and_provenance_clear_contracts_are_retained():
