@@ -38,6 +38,19 @@ from app.services.teaching_calendar import TeachingCalendarConfig, parse_lecture
 _INVALID_WEEK_DATA = object()
 _UNSET = object()
 BACKUP_FALLBACK_REASONS = frozenset({'no_result', 'rejected_candidates'})
+MAX_GUIDED_CANDIDATES = 20
+_MAX_GUIDED_FACT_LENGTH = 120
+_PARTIAL_FACT_ALIASES = {
+    'date': 'date',
+    'lecture_date': 'date',
+    'teacher': 'teacher',
+    'teacher_name': 'teacher',
+    'room': 'room',
+    'location': 'room',
+    'period': 'period',
+    'student_grade_class': 'student_grade_class',
+    'semester': 'semester',
+}
 
 
 def _text(value: object) -> str:
@@ -533,6 +546,89 @@ class ListeningAssistantSearchResult:
         return self.to_public_dict()[key]
 
 
+@dataclass(frozen=True)
+class _PartialQuery:
+    lecture_date: date | None = None
+    room: str | None = None
+    teacher_name: str | None = None
+    period: tuple[int, int] | None = None
+    student_grade_class: str | None = None
+
+
+def _bounded_partial_text(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f'{field_name} must be a non-empty string')
+    normalized = _text(value)
+    if len(normalized) > _MAX_GUIDED_FACT_LENGTH:
+        raise ValueError(f'{field_name} exceeds maximum length')
+    if any(ord(character) < 32 for character in normalized):
+        raise ValueError(f'{field_name} contains a control character')
+    return normalized
+
+
+def _normalize_partial_facts(
+    known_facts: Mapping[str, object],
+) -> tuple[_PartialQuery, str | None]:
+    if not isinstance(known_facts, Mapping):
+        raise ValueError('known_facts must be a mapping')
+
+    values: dict[str, object] = {}
+    for key, value in known_facts.items():
+        if not isinstance(key, str) or key not in _PARTIAL_FACT_ALIASES:
+            raise ValueError('known_facts contains an unknown key')
+        canonical_key = _PARTIAL_FACT_ALIASES[key]
+        if canonical_key in values:
+            raise ValueError(f'known_facts contains duplicate aliases for {canonical_key}')
+        values[canonical_key] = value
+
+    lecture_date = None
+    if 'date' in values:
+        lecture_date = _date_value(values['date'])
+        if lecture_date is None:
+            raise ValueError('known_facts[date] is invalid')
+
+    teacher = (
+        _bounded_partial_text(values['teacher'], 'known_facts[teacher]')
+        if 'teacher' in values else None
+    )
+    room = (
+        normalize_room(_bounded_partial_text(values['room'], 'known_facts[room]'))
+        if 'room' in values else None
+    )
+    if room == '':
+        room = None
+
+    period = None
+    if 'period' in values:
+        period = parse_period(values['period'])
+        if period is None:
+            raise ValueError('known_facts[period] is invalid')
+
+    student_grade_class = (
+        normalize_class_for_display(
+            _bounded_partial_text(values['student_grade_class'], 'known_facts[student_grade_class]')
+        )
+        if 'student_grade_class' in values else None
+    )
+    if student_grade_class == '':
+        student_grade_class = None
+
+    embedded_semester = (
+        _bounded_partial_text(values['semester'], 'known_facts[semester]')
+        if 'semester' in values else None
+    )
+    return (
+        _PartialQuery(
+            lecture_date=lecture_date,
+            room=room,
+            teacher_name=teacher,
+            period=period,
+            student_grade_class=student_grade_class,
+        ),
+        embedded_semester,
+    )
+
+
 class ListeningAssistantService:
     """Search the authoritative schedule index with explicit source control."""
 
@@ -574,6 +670,44 @@ class ListeningAssistantService:
             semester=selected_semester,
             rejected_ids=rejected_ids,
         )
+
+    def search_partial(
+        self,
+        known_facts: Mapping[str, object],
+        *,
+        semester: str | None = None,
+        rejected_ids: Iterable[object] | object | None = None,
+    ) -> ListeningAssistantSearchResult:
+        """Search the current primary schedule from any safe subset of facts."""
+        query, embedded_semester = _normalize_partial_facts(known_facts)
+        selected_semester = (
+            semester if semester is not None else embedded_semester
+        )
+        if selected_semester is not None:
+            selected_semester = _bounded_partial_text(selected_semester, 'semester')
+        entries = self._schedule_loader(
+            source_kind='primary',
+            semester=(self._semester if selected_semester is None else selected_semester),
+        )
+        result = self._search_entries(
+            query,
+            entries,
+            source_kind='primary',
+            source_label=PRIMARY_SOURCE_LABEL,
+            semester=(self._semester if selected_semester is None else selected_semester),
+            rejected_ids=rejected_ids,
+            lookup_date=query.lecture_date,
+        )
+        candidates = tuple(sorted(
+            result.candidates,
+            key=lambda candidate: (
+                candidate.period[0],
+                candidate.course_title,
+                candidate.teacher_name,
+                candidate.candidate_id,
+            ),
+        )[:MAX_GUIDED_CANDIDATES])
+        return replace(result, candidates=candidates)
 
     @staticmethod
     def reject(candidates: Iterable[Candidate] | Candidate | None) -> tuple[str, ...]:
@@ -691,7 +825,7 @@ class ListeningAssistantService:
 
     def _search_entries(
         self,
-        query: AssistantQuery,
+        query: AssistantQuery | _PartialQuery,
         entries: Iterable[ScheduleEntry] | None,
         *,
         source_kind: str,
@@ -699,17 +833,28 @@ class ListeningAssistantService:
         semester: str | None,
         rejected_ids: Iterable[object] | object | None,
         fallback_reason: str | None = None,
+        lookup_date: date | None = None,
     ) -> ListeningAssistantSearchResult:
         rows = tuple(entries or ())
         rejected = _normalize_rejected_ids(rejected_ids)
+        lookup_date = query.lecture_date if lookup_date is None else lookup_date
         calendar = None
-        if any(not _has_date_value(_value(row, 'lecture_date')) for row in rows):
+        if lookup_date is not None and any(
+            not _has_date_value(_value(row, 'lecture_date')) for row in rows
+        ):
             calendar = _load_calendar(self._calendar, semester)
 
         candidates: list[Candidate] = []
         skipped_invalid_rows = 0
         for row in rows:
-            date_match = _match_date(row, query.lecture_date, calendar)
+            if lookup_date is None:
+                candidate_date = _date_value(_value(row, 'lecture_date'))
+                if candidate_date is None:
+                    continue
+                date_match = _DateMatch(True)
+            else:
+                candidate_date = lookup_date
+                date_match = _match_date(row, lookup_date, calendar)
             if date_match.conflict in {'invalid_lecture_date', 'invalid_week_data'}:
                 skipped_invalid_rows += 1
             if not date_match.matched:
@@ -771,7 +916,7 @@ class ListeningAssistantService:
                     source_kind=source_kind,
                     source_batch_id=source_batch_id,
                     source_row=identity_source_row,
-                    lecture_date=query.lecture_date,
+                    lecture_date=candidate_date,
                     room=room,
                     period=period,
                     course_code=course_code,
@@ -783,7 +928,7 @@ class ListeningAssistantService:
                 try:
                     candidate = Candidate(
                         candidate_id=candidate_id,
-                        lecture_date=query.lecture_date,
+                        lecture_date=candidate_date,
                         room=room,
                         period=period,
                         course_code=course_code,
@@ -795,7 +940,7 @@ class ListeningAssistantService:
                         source_kind=source_kind,
                         source_label=source_label,
                         source_batch_id=source_batch_id,
-                        weekday=_entry_weekday(row) or query.lecture_date.isoweekday(),
+                        weekday=_entry_weekday(row) or candidate_date.isoweekday(),
                         conflicts=tuple(conflicts),
                         needs_confirmation=(
                             source_kind == 'backup'
@@ -865,6 +1010,7 @@ SearchResult = ListeningAssistantSearchResult
 
 
 __all__ = [
+    'MAX_GUIDED_CANDIDATES',
     'ListeningAssistantSearchResult',
     'ListeningAssistantService',
     'BACKUP_FALLBACK_REASONS',
