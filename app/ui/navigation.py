@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+from app.utils.user_status import is_user_active
+
 
 NAVIGATION = (
     {
@@ -143,7 +145,7 @@ def build_navigation(user, endpoint='', review_permission=None, manage_permissio
         items = []
         for definition in group_definition['items']:
             if definition.get('authenticated'):
-                if not getattr(user, 'is_authenticated', False) or not getattr(user, 'is_active', False):
+                if not getattr(user, 'is_authenticated', False) or not is_user_active(user):
                     continue
             elif user.role not in definition['roles']:
                 continue
