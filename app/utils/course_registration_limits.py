@@ -55,21 +55,24 @@ def get_current_teaching_week_no():
     return teaching_week_number(datetime.now().date(), config)
 
 
-def get_course_registration_count_for_week(course_code, selection_code, week_no):
+def get_course_registration_count_for_week(course_code, selection_code, week_no, *, exclude_registration_id=None):
     if not course_code or not selection_code or not week_no:
         return 0
 
-    registrations = CourseRegistration.query.filter_by(
+    query = CourseRegistration.query.filter_by(
         course_code=course_code,
         selection_code=selection_code
-    ).all()
+    )
+    if exclude_registration_id is not None:
+        query = query.filter(CourseRegistration.id != exclude_registration_id)
+    registrations = query.all()
     return sum(
         1 for registration in registrations
         if parse_listening_week_no(registration.listening_info) == week_no
     )
 
 
-def validate_course_weekly_registration_limit(course_code, selection_code, listening_info):
+def validate_course_weekly_registration_limit(course_code, selection_code, listening_info, *, exclude_registration_id=None):
     settings = get_course_weekly_limit_settings()
     if not settings['enabled']:
         return True, None
@@ -78,7 +81,9 @@ def validate_course_weekly_registration_limit(course_code, selection_code, liste
     if not week_no:
         return True, None
 
-    existing_count = get_course_registration_count_for_week(course_code, selection_code, week_no)
+    existing_count = get_course_registration_count_for_week(
+        course_code, selection_code, week_no, exclude_registration_id=exclude_registration_id,
+    )
     limit_count = settings['limit_count']
     if existing_count >= limit_count:
         return False, (

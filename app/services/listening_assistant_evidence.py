@@ -213,12 +213,16 @@ def _normalize_guide_state(value: object) -> dict[str, Any]:
         stage = normalize_stage(value['stage'])
     except (TypeError, ValueError) as error:
         raise AssistantSelectionError(f'invalid guide_state: {error}') from error
-    if len(asked_question_kinds) > MAX_GUIDED_QUESTIONS:
+    if len([kind for kind in asked_question_kinds if kind != 'memory']) > MAX_GUIDED_QUESTIONS:
         raise AssistantSelectionError('guide_state.asked_question_kinds exceeds maximum count')
     if any(not GUIDE_CANDIDATE_ID_PATTERN.fullmatch(candidate_id) for candidate_id in candidate_ids):
         raise AssistantSelectionError('guide_state contains an invalid candidate id')
     for candidate_id in candidate_ids:
-        _normalize_guide_text(candidate_id, field_name='guide_state.candidate_ids')
+        # Server-generated SHA identifiers are opaque machine values, whose
+        # hex suffix can contain long digit runs. They are revalidated against
+        # the current timetable below; free-text values keep the privacy check.
+        if not re.fullmatch(r'(?:primary|backup):[1-9]\d*:[0-9a-f]{24}', candidate_id):
+            _normalize_guide_text(candidate_id, field_name='guide_state.candidate_ids')
     safe_facts = {
         kind: _normalize_guide_text(fact, field_name=f'guide_state.known_facts[{kind}]')
         for kind, fact in known_facts.items()
@@ -235,7 +239,7 @@ def _normalize_guide_state(value: object) -> dict[str, Any]:
 def _normalize_guide_history(value: object) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(value, (list, tuple)):
         raise AssistantSelectionError('history must be a list')
-    if len(value) > MAX_GUIDED_QUESTIONS:
+    if len(value) > MAX_GUIDED_QUESTIONS + 2:
         raise AssistantSelectionError('history exceeds maximum count')
     normalized = []
     for index, item in enumerate(value):

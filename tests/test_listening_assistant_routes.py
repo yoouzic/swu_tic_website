@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.services.listening_assistant import ListeningAssistantService
 from app.services.listening_assistant_contracts import ScheduleEntry
+from app.services.listening_assistant_guide_contracts import GuidedAssistantState
 from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
 
@@ -95,8 +96,11 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
             side_effect=self._load_schedule_entries,
         )
         self.loader_patch.start()
+        self.current_semester_patch = mock.patch('app.blueprints.user.listening_assistant.get_current_teaching_semester', return_value=SEMESTER, create=True)
+        self.current_semester_patch.start()
 
     def tearDown(self):
+        self.current_semester_patch.stop()
         self.loader_patch.stop()
         cleanup_sqlite_database(db, drop_all=True)
         self.app_context.pop()
@@ -129,6 +133,35 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
             sess['user_id'] = user.id
             sess['user_role'] = user.role
             sess['user_name'] = user.name
+
+    def test_form_uses_configured_semester_without_student_settings(self):
+        self._login()
+        with mock.patch('app.blueprints.user.forms.get_current_teaching_semester', return_value=SEMESTER, create=True):
+            response = self.client.get('/user/submit_form')
+        assert response.status_code == 200
+        html = response.get_data(as_text=True)
+        assert f'data-assistant-semester="{SEMESTER}"' in html
+        assert '切换课表学期' not in html
+        assert '查看课表来源' not in html
+        assert 'data-assistant-fallback-panel' not in html
+        assert 'data-assistant-semester value=' in html
+        assert 'data-assistant-progress hidden' in html
+        assert 'data-assistant-history hidden' in html
+
+    def test_guide_uses_admin_semester_without_student_parameter(self):
+        self._login()
+        with mock.patch('app.blueprints.user.listening_assistant._guide_service', wraps=__import__('app.blueprints.user.listening_assistant', fromlist=['_guide_service'])._guide_service) as service:
+            response = self.client.post('/user/api/listening-assistant/guide/start', json={'known_facts': {}})
+        assert response.status_code == 200, response.get_json()
+        service.assert_called_once_with(SEMESTER)
+        assert response.get_json()['data']['backup_rescue_available'] is False
+
+    def test_unconfigured_admin_semester_is_actionable_not_student_input(self):
+        self._login()
+        with mock.patch('app.blueprints.user.listening_assistant.get_current_teaching_semester', return_value=''):
+            response = self.client.post('/user/api/listening-assistant/guide/start', json={'known_facts': {}})
+        assert response.status_code == 503
+        assert '请联系管理员' in response.get_json()['message']
 
     def _load_schedule_entries(self, *, source_kind='primary', **_kwargs):
         return list(self.primary if source_kind == 'primary' else self.backup)
@@ -227,8 +260,8 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         self.assertEqual(payload['data']['state']['stage'], 'question')
         self.assertEqual(payload['data']['candidates'], [])
         self.assertFalse(payload['data']['needs_confirmation'])
-        self.assertEqual(payload['data']['backup_source_batch_id'], BACKUP_BATCH)
-        self.assertTrue(payload['data']['backup_rescue_available'])
+        self.assertIsNone(payload['data']['backup_source_batch_id'])
+        self.assertFalse(payload['data']['backup_rescue_available'])
 
     def test_guide_start_rejects_non_string_semester_and_known_fact_values(self):
         self._login()
@@ -503,10 +536,10 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         )
 
         payload = self._assert_envelope(response, success=True)
-        self.assertTrue(payload['data']['backup_rescue_available'])
+        self.assertFalse(payload['data']['backup_rescue_available'])
         self.assertEqual(
-            payload['data']['backup_source_batch_id'],
-            str(indexed_batch.id),
+            payload['data'].get('backup_source_batch_id'),
+            None,
         )
 
     def test_primary_get_returns_unavailable_json_when_authoritative_source_is_not_ready(self):
@@ -589,98 +622,18 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         payload = self._assert_envelope(response, success=True)
         self.assertEqual(len(payload['data']['candidates']), 1)
 
-    def test_fallback_requires_approved_reason_and_explicit_retired_batch(self):
+    def test_retired_lookup_is_disabled_for_student(self):
         self._login()
-        base = {
-            'date': '2026-09-18',
-            'teacher': '备用老师',
-            'rejected_ids': [],
-            'reason': 'no_result',
-            'source_batch_id': BACKUP_BATCH,
-            'semester': SEMESTER,
-        }
+        response = self.client.post('/user/api/listening-assistant/fallback', json={'date': '2026-09-18', 'teacher': '备用老师', 'semester': SEMESTER, 'source_batch_id': BACKUP_BATCH, 'reason': 'no_result'})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('当前课表', response.get_json()['message'])
 
-        response = self.client.post('/user/api/listening-assistant/fallback', json=base)
-        payload = self._assert_envelope(response, success=True)
-        self.assertEqual(payload['data']['source_kind'], 'backup')
-        self.assertEqual(payload['data']['source_label'], '备用课表线索 · 需核对')
-        self.assertEqual(payload['data']['source_batch_id'], BACKUP_BATCH)
-        self.assertEqual(payload['data']['fallback_reason'], 'no_result')
-        self.assertTrue(payload['data']['explicit_fallback'])
-        self.assertFalse(payload['data']['acknowledged_source'])
-        self.assertTrue(payload['data']['needs_confirmation'])
-        self.assertTrue(payload['data']['candidates'][0]['needs_confirmation'])
-
-        for reason in ('unsupported', '', None):
-            invalid = dict(base)
-            invalid['reason'] = reason
-            with self.subTest(reason=reason):
-                response = self.client.post(
-                    '/user/api/listening-assistant/fallback',
-                    json=invalid,
-                )
-                self.assertEqual(response.status_code, 400)
-                self._assert_envelope(response, success=False)
-
-        for field in ('teacher', 'date', 'semester', 'source_batch_id'):
-            invalid = dict(base)
-            invalid[field] = ''
-            with self.subTest(field=field):
-                response = self.client.post(
-                    '/user/api/listening-assistant/fallback',
-                    json=invalid,
-                )
-                self.assertEqual(response.status_code, 400)
-                self._assert_envelope(response, success=False)
-
-        for invalid_batch in (0, -1, True, '0', '01', '+7', ' retired-7', 'retired-7'):
-            invalid = dict(base)
-            invalid['source_batch_id'] = invalid_batch
-            with self.subTest(invalid_batch=invalid_batch):
-                response = self.client.post(
-                    '/user/api/listening-assistant/fallback',
-                    json=invalid,
-                )
-                self.assertEqual(response.status_code, 400)
-                self._assert_envelope(response, success=False)
-
-    def test_fallback_passes_optional_period_and_class_filters_to_search(self):
+    def test_retired_lookup_never_calls_backup_search(self):
         self._login()
-        payload = {
-            'date': '2026-09-18',
-            'teacher': '备用老师',
-            'period': '第3-4节',
-            'student_grade_class': '2024级计算机1班',
-            'rejected_ids': [],
-            'reason': 'no_result',
-            'source_batch_id': BACKUP_BATCH,
-            'semester': SEMESTER,
-        }
-        captured = {}
-        original_search_backup = ListeningAssistantService.search_backup
-
-        def capture_search(service, query, **kwargs):
-            captured['query'] = query
-            captured['kwargs'] = kwargs
-            return original_search_backup(service, query, **kwargs)
-
-        with mock.patch(
-            'app.blueprints.user.listening_assistant.ListeningAssistantService.search_backup',
-            new=capture_search,
-        ):
-            response = self.client.post(
-                '/user/api/listening-assistant/fallback',
-                json=payload,
-            )
-
-        result = self._assert_envelope(response, success=True)
-        self.assertEqual(captured['query'].period, (3, 4))
-        self.assertEqual(
-            captured['query'].student_grade_class,
-            '2024级计算机1班',
-        )
-        self.assertEqual(captured['kwargs']['source_batch_id'], BACKUP_BATCH)
-        self.assertTrue(result['data']['needs_confirmation'])
+        with mock.patch('app.blueprints.user.listening_assistant.ListeningAssistantService.search_backup') as search:
+            response = self.client.post('/user/api/listening-assistant/fallback', json={'semester': SEMESTER, 'source_batch_id': BACKUP_BATCH, 'date': '2026-09-18', 'teacher': '备用老师'})
+        self.assertEqual(response.status_code, 400)
+        search.assert_not_called()
 
     def test_fallback_rejects_malformed_optional_period_and_class_filters(self):
         self._login()
@@ -706,44 +659,14 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self._assert_envelope(response, success=False)
 
-    def test_fallback_wraps_expected_batch_errors_but_not_operational_errors(self):
+    def test_guide_ignores_a_stale_client_semester(self):
         self._login()
-        payload = {
-            'date': '2026-09-18',
-            'teacher': '备用老师',
-            'rejected_ids': [],
-            'reason': 'no_result',
-            'source_batch_id': BACKUP_BATCH,
-            'semester': SEMESTER,
-        }
-
-        for error_message in (
-            'backup source batch does not exist',
-            'backup source batch must be retired',
-            'backup source batch semester does not match requested semester',
-        ):
-            with self.subTest(error_message=error_message):
-                with mock.patch(
-                    'app.blueprints.user.listening_assistant.ListeningAssistantService.search_backup',
-                    side_effect=ValueError(error_message),
-                ):
-                    response = self.client.post(
-                        '/user/api/listening-assistant/fallback',
-                        json=payload,
-                    )
-                self.assertEqual(response.status_code, 400)
-                self._assert_envelope(response, success=False)
-
-        with mock.patch(
-            'app.blueprints.user.listening_assistant.ListeningAssistantService.search_backup',
-            side_effect=ValueError('database unavailable'),
-        ):
-            with self.assertRaises(ValueError) as raised:
-                self.client.post(
-                    '/user/api/listening-assistant/fallback',
-                    json=payload,
-                )
-            self.assertIs(type(raised.exception), ValueError)
+        with mock.patch('app.blueprints.user.listening_assistant._guide_service') as service:
+            service.return_value.start.return_value = __import__('app.services.listening_assistant_guide_contracts', fromlist=['GuidedResult']).GuidedResult(
+                GuidedAssistantState({}, (), (), 0, 'question'), None, (), False)
+            response = self.client.post('/user/api/listening-assistant/guide/start', json={'known_facts': {}, 'semester': 'old-semester'})
+        self.assertEqual(response.status_code, 200)
+        service.assert_called_once_with(SEMESTER)
 
     def test_fallback_rejects_an_explicit_false_fallback_flag(self):
         self._login()
@@ -987,26 +910,13 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         self.assertEqual(query['student_grade_class'], '2024级计算机1班')
         self.assertEqual(query['semester'], SEMESTER)
 
-    def test_confirm_requires_explicit_semester_provenance(self):
+    def test_confirm_binds_semester_to_admin_configuration(self):
         self._login()
-        candidate = self._primary_candidate()
-        payload = self._confirm_payload(candidate)
+        payload = self._confirm_payload(self._primary_candidate())
         payload.pop('semester')
-
-        response = self.client.post(
-            '/user/api/listening-assistant/confirm',
-            json=payload,
-        )
-        self.assertEqual(response.status_code, 400)
-        self._assert_envelope(response, success=False)
-
-        payload['query']['semester'] = SEMESTER
-        response = self.client.post(
-            '/user/api/listening-assistant/confirm',
-            json=payload,
-        )
-        result = self._assert_envelope(response, success=True)
-        self.assertEqual(result['data']['confirmation']['semester'], SEMESTER)
+        response = self.client.post('/user/api/listening-assistant/confirm', json=payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['data']['confirmation']['semester'], SEMESTER)
 
     def test_confirm_missing_lookup_anchor_is_a_json_client_error(self):
         self._login()
@@ -1036,50 +946,12 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         self.assertEqual(LectureForm.query.count(), 0)
         self.assertEqual(ListeningAssistantEvidence.query.count(), 0)
 
-    def test_confirm_backup_requires_acknowledgement_and_preserves_source_provenance(self):
+    def test_confirm_rejects_backup_even_with_acknowledgement(self):
         self._login()
-        candidate = self._backup_candidate()
-        payload = self._confirm_payload(candidate, source_kind='backup')
-        payload['acknowledged_source'] = False
-
-        response = self.client.post(
-            '/user/api/listening-assistant/confirm',
-            json=payload,
-        )
+        payload = self._confirm_payload(self._primary_candidate(), source_kind='backup')
+        response = self.client.post('/user/api/listening-assistant/confirm', json=payload)
         self.assertEqual(response.status_code, 400)
-        self._assert_envelope(response, success=False)
-
-        payload['acknowledged_source'] = True
-        response = self.client.post(
-            '/user/api/listening-assistant/confirm',
-            json=payload,
-        )
-        result = self._assert_envelope(response, success=True)
-        self.assertEqual(result['data']['candidate']['source_kind'], 'backup')
-        self.assertEqual(result['data']['candidate']['source_batch_id'], BACKUP_BATCH)
-        self.assertTrue(result['data']['confirmation']['acknowledged_source'])
-        self.assertTrue(result['data']['confirmation']['explicit_fallback'])
-        self.assertEqual(result['data']['confirmation']['fallback_reason'], 'rejected_candidates')
-
-        payload['source_batch_id'] = 'retired-7'
-        response = self.client.post(
-            '/user/api/listening-assistant/confirm',
-            json=payload,
-        )
-        self.assertEqual(response.status_code, 400)
-        self._assert_envelope(response, success=False)
-
-        payload['source_batch_id'] = BACKUP_BATCH
-        with mock.patch(
-            'app.blueprints.user.listening_assistant.ListeningAssistantService.search_backup',
-            side_effect=ValueError('backup source batch must be retired'),
-        ):
-            response = self.client.post(
-                '/user/api/listening-assistant/confirm',
-                json=payload,
-            )
-        self.assertEqual(response.status_code, 400)
-        self._assert_envelope(response, success=False)
+        self.assertIn('当前课表', response.get_json()['message'])
 
     def test_confirm_rejects_unsafe_overrides_without_db_or_evidence_side_effects(self):
         self._login()

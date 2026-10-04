@@ -23,6 +23,9 @@
                 </div>
                 <div class="page-header__actions course-page-actions">
                     {% if is_course_management %}
+                    <a href="{{ url_for('user.course_lookup') }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-search"></i> 查询课表
+                    </a>
                     <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#columnSettingsModal">
                         <i class="bi bi-gear"></i> 列设置
                     </button>

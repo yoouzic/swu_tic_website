@@ -5,8 +5,10 @@
 from flask import render_template, request, redirect, url_for, session, jsonify, current_app
 from app.models import User, Teacher, Venue, Course, ListeningBan, CourseRegistration, db, SystemSetting
 from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 from app.security import login_required, role_required
 from app.services.workbook import workbook_response
+from app.services.current_courses import current_course_query
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, is_user_active
 import pandas as pd
 import openpyxl
@@ -54,7 +56,9 @@ def get_courses():
         time_slot = request.args.get('time_slot', '')
         
         # 构建查询
-        query = Course.query
+        current_query = current_course_query(all_semesters=True)
+        semester_query = current_query.filter(Course.semester == semester) if semester else current_query
+        query = semester_query
         
         # 搜索功能
         if search:
@@ -82,7 +86,7 @@ def get_courses():
             query = query.filter(Course.class_period == time_slot)
         
         # 获取所有符合条件的课程记录
-        all_courses = query.all()
+        all_courses = query.options(joinedload(Course.teacher), joinedload(Course.venue)).all()
         
         # 按课程号和选课课号分组
         course_groups = {}
@@ -143,10 +147,10 @@ def get_courses():
         has_next = page < total_pages
         
         # 获取筛选选项
-        semesters = db.session.query(Course.semester).distinct().filter(Course.semester.isnot(None)).all()
+        semesters = current_query.with_entities(Course.semester).distinct().filter(Course.semester.isnot(None)).all()
         semesters = [s[0] for s in semesters if s[0]]  # 提取学期值并过滤空值
         
-        time_slots = db.session.query(Course.class_period).distinct().filter(Course.class_period.isnot(None)).all()
+        time_slots = semester_query.with_entities(Course.class_period).distinct().filter(Course.class_period.isnot(None)).all()
         time_slots = [t[0] for t in time_slots if t[0]]  # 提取时间段值并过滤空值
         
         return jsonify({
@@ -259,7 +263,7 @@ def get_teacher_detail(teacher_id):
         teacher = Teacher.query.get_or_404(teacher_id)
         
         # 获取该教师的课程
-        courses = Course.query.filter_by(teacher_id=teacher_id).all()
+        courses = current_course_query(all_semesters=True).filter_by(teacher_id=teacher_id).all()
         
         teacher_data = {
             'teacher_id': teacher.teacher_id,
@@ -295,7 +299,7 @@ def get_venue_detail(venue_id):
         venue = Venue.query.get_or_404(venue_id)
         
         # 获取该场地的课程
-        courses = Course.query.filter_by(venue_id=venue_id).all()
+        courses = current_course_query(all_semesters=True).filter_by(venue_id=venue_id).all()
         
         venue_data = {
             'venue_id': venue.venue_id,

@@ -9,6 +9,10 @@ from app.security import role_required
 from app.utils.review_permissions import get_user_review_permission
 from app.utils.permission_feedback import build_forbidden_message, flash_forbidden
 from app.utils.manage_permissions import get_user_manage_permission
+from app.utils.submission_permissions import (
+    set_submission_permission_revoked,
+    submission_permission_revoked,
+)
 from app.utils.password_audit import record_password_audit
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, is_user_active
 from app.services.form_bindings import get_registration_logical_form_counts
@@ -604,6 +608,15 @@ def update_user(user_id):
                 user.password_hash = generate_password_hash(data['new_password'])
                 password_changed = True
         
+        if before_snapshot.get('role') != user.role:
+            # Role transitions do not silently carry a personal submission grant.
+            fill_permission = Permission.query.filter_by(name='填表').first()
+            if fill_permission:
+                RolePermission.query.filter_by(
+                    role=f'特殊角色_{user.id}', permission_id=fill_permission.id,
+                ).delete()
+            set_submission_permission_revoked(user.id, True)
+
         after_snapshot = _snapshot_user_for_movement(user)
         movement_changes = []
         if before_snapshot.get('department') != after_snapshot.get('department'):
@@ -723,6 +736,23 @@ def depart_user(user_id):
         if not is_user_active(user_to_depart):
             return jsonify({'success': True, 'message': '该用户已处于离任状态'})
 
+        # Count logical forms by newest physical version, never historical timestamps.
+        latest_forms = {}
+        for form in LectureForm.query.filter_by(listener_number=user_to_depart.number).order_by(LectureForm.id.desc()).all():
+            latest_forms.setdefault(form.logical_id, form)
+        outstanding_count = sum(
+            form.status in ('待审核', '部门已审核')
+            for form in latest_forms.values()
+        )
+        if outstanding_count:
+            return jsonify({
+                'success': False,
+                'code': 'outstanding_reviews',
+                'message': f'该用户还有{outstanding_count}份未结听课表，请先在审核队列完成审核或驳回，再办理离任。',
+                'outstanding_count': outstanding_count,
+                'action': {'label': '处理未结听课表', 'url': url_for('admin.review_forms')},
+            }), 409
+
         before_snapshot = _snapshot_user_for_movement(user_to_depart)
         user_to_depart.is_active = False
         user_to_depart.department = '离任'
@@ -806,6 +836,7 @@ def delete_user(user_id):
 
         # 删除相关的特殊角色权限
         RolePermission.query.filter_by(role=f'特殊角色_{user_to_delete.id}').delete()
+        set_submission_permission_revoked(user_to_delete.id, False)
 
         _create_personnel_movement_record(
             current_user.id,
@@ -971,6 +1002,10 @@ def get_user_permissions(user_id):
                 RolePermission.role == user.role
             ).all()
             user_permissions = [perm.id for perm in role_permissions]
+
+        if submission_permission_revoked(user.id):
+            fill_ids = {perm.id for perm in all_permissions if perm.name == '填表'}
+            user_permissions = [perm_id for perm_id in user_permissions if perm_id not in fill_ids]
         
         return jsonify({
             'success': True, 
@@ -1077,11 +1112,16 @@ def update_user_permissions(user_id):
         RolePermission.query.filter_by(role=f'特殊角色_{user.id}').delete()
         
         # 添加新的权限
+        has_submission_permission = False
         for perm_id in permission_ids:
             permission = Permission.query.get(perm_id)
             if permission:
                 role_perm = RolePermission(role=f'特殊角色_{user.id}', permission_id=perm_id)
                 db.session.add(role_perm)
+                has_submission_permission = has_submission_permission or permission.name == '填表'
+
+        # An empty personal set falls back to role defaults, so revocation is explicit.
+        set_submission_permission_revoked(user.id, not has_submission_permission)
         
         # 更新用户角色为管理员
         if user.role != '超级管理员':

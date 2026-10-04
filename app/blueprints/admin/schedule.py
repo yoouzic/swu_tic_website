@@ -13,7 +13,9 @@ from app.services.schedule_snapshots import (
 from app.services.listening_assistant_schedule import (
     persist_listening_assistant_entries,
 )
+from app.services.current_courses import ensure_current_course_schema, persist_course_mapping
 import hashlib
+import math
 import pandas as pd
 import os
 from . import admin_bp
@@ -58,6 +60,31 @@ _SCHEDULE_ROW_COLUMNS = {
     'semester': '学期',
     'academic_year': '学年',
 }
+
+
+_INTEGER_COLUMNS = {'星期几', '教学班人数', '选课人数'}
+_NUMERIC_COLUMNS = _INTEGER_COLUMNS | {'楼层号', '座位数', '学分', '总学时'}
+
+
+def _schedule_numeric_errors(df):
+    """Validate business numeric fields; sample dtypes do not define identifiers."""
+    errors = []
+    for column in df.columns:
+        if column not in _NUMERIC_COLUMNS:
+            continue
+        for index, value in df[column].items():
+            if pd.isna(value) or str(value).strip() == '':
+                continue
+            try:
+                number = float(pd.to_numeric(value, errors='raise'))
+                if not math.isfinite(number):
+                    raise ValueError('non-finite number')
+                if column in _INTEGER_COLUMNS and not number.is_integer():
+                    raise ValueError('non-integer number')
+            except (TypeError, ValueError, OverflowError):
+                expected = '整数' if column in _INTEGER_COLUMNS else '数值'
+                errors.append(f"第 {int(index) + 2} 行，列 '{column}' 应为{expected}：{value}")
+    return errors
 
 
 @admin_bp.route('/api/export/schedule')
@@ -122,26 +149,13 @@ def validate_schedule_format():
                 'uploaded_columns': uploaded_columns
             })
         
-        # 检查数据类型
-        type_errors = []
-        for col in expected_columns:
-            if col in uploaded_df.columns:
-                template_type = template_df[col].dtype
-                uploaded_type = uploaded_df[col].dtype
-                
-                # 对于数值类型，检查是否兼容
-                if pd.api.types.is_numeric_dtype(template_type):
-                    if not pd.api.types.is_numeric_dtype(uploaded_type):
-                        # 尝试转换为数值类型
-                        try:
-                            pd.to_numeric(uploaded_df[col], errors='coerce')
-                        except:
-                            type_errors.append(f"列 '{col}' 应为数值类型")
+        type_errors = _schedule_numeric_errors(uploaded_df)
         
         if type_errors:
             return jsonify({
                 'success': False,
-                'message': "数据类型错误：\n" + "\n".join(type_errors)
+                'message': "数据类型错误：\n" + "\n".join(type_errors),
+                'errors': type_errors,
             })
         
         return jsonify({
@@ -156,7 +170,7 @@ def validate_schedule_format():
 
 
 def _normalized_schedule_value(value):
-    if value is None:
+    if value is None or pd.isna(value):
         return ''
     if hasattr(value, 'isoformat'):
         return value.isoformat()
@@ -205,6 +219,10 @@ def import_schedule_data():
 
         # 读取文件
         df = pd.read_excel(file)
+        for column in _NUMERIC_COLUMNS:
+            if column in df:
+                df[column] = pd.to_numeric(df[column], errors='raise')
+        ensure_current_course_schema()
         
         # 统计信息
         stats = {
@@ -279,7 +297,8 @@ def import_schedule_data():
                 stats['errors'].append(f"处理场地数据时出错（场地编号：{row['场地编号']}）：{str(e)}")
         
         # 处理课程数据 - 使用完整自然键幂等插入，保留不同节次/地点/周次的合法课程记录。
-        existing_course_keys = {_course_model_key(course) for course in Course.query.all()}
+        existing_course_keys = {_course_model_key(course): course for course in Course.query.all()}
+        imported_courses = {}
         for _, row in df.iterrows():
             try:
                 course_code = str(row['课程号']).strip()
@@ -319,14 +338,25 @@ def import_schedule_data():
                 course_key = _course_row_key(row)
                 if course_key in existing_course_keys:
                     stats['courses_skipped_duplicate'] += 1
+                    imported_courses.setdefault(str(course.semester or '').strip(), []).append(existing_course_keys[course_key])
                     continue
                 db.session.add(course)
-                existing_course_keys.add(course_key)
+                existing_course_keys[course_key] = course
+                imported_courses.setdefault(str(course.semester or '').strip(), []).append(course)
                 stats['courses_added'] += 1
                     
             except Exception as e:
                 stats['errors'].append(f"处理课程数据时出错（课程号：{course_code}-{selection_code}）：{str(e)}")
         
+        # Any row error rejects the whole workbook before advancing authority.
+        if stats['errors']:
+            db.session.rollback()
+            return jsonify({
+                'success': False,
+                'message': '课表导入失败，未保存任何数据：\n' + '\n'.join(stats['errors']),
+                'stats': stats,
+            })
+
         # 同步生成 canonical row-level schedule snapshot（与上述写入同一事务）。
         source_row_offset = DEFAULT_SOURCE_ROW_OFFSET
         imported_batches = persist_import_snapshot(
@@ -340,6 +370,9 @@ def import_schedule_data():
             imported_batches,
             source_row_offset=source_row_offset,
         )
+        db.session.flush()
+        for batch in imported_batches:
+            persist_course_mapping(batch, [course.id for course in imported_courses.get(batch.semester, [])])
 
         # 提交数据库更改
         db.session.commit()

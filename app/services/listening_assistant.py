@@ -31,6 +31,7 @@ from app.services.listening_assistant_schedule import (
     BACKUP_SOURCE_LABEL,
     PRIMARY_SOURCE_LABEL,
     load_schedule_entries,
+    load_schedule_entries_for_query,
 )
 from app.services.teaching_calendar import TeachingCalendarConfig, parse_lecture_date, teaching_week_number
 
@@ -39,6 +40,7 @@ _INVALID_WEEK_DATA = object()
 _UNSET = object()
 BACKUP_FALLBACK_REASONS = frozenset({'no_result', 'rejected_candidates'})
 MAX_GUIDED_CANDIDATES = 20
+_DEFAULT_SCHEDULE_LOADER = load_schedule_entries
 _MAX_GUIDED_FACT_LENGTH = 120
 _PARTIAL_FACT_ALIASES = {
     'date': 'date',
@@ -645,6 +647,10 @@ class ListeningAssistantService:
         if schedule_loader is not None and loader is not None:
             raise ValueError('provide only one schedule loader')
         self._schedule_loader = schedule_loader or loader or load_schedule_entries
+        self._uses_default_schedule_loader = (
+            schedule_loader is None and loader is None
+            and self._schedule_loader is _DEFAULT_SCHEDULE_LOADER
+        )
         self._semester = semester
         self._calendar = calendar if calendar is not None else calendar_provider
         self._backup_source_batch_id = backup_source_batch_id
@@ -658,10 +664,7 @@ class ListeningAssistantService:
     ) -> ListeningAssistantSearchResult:
         self._validate_query(query)
         selected_semester = self._semester if semester is None else semester
-        entries = self._schedule_loader(
-            source_kind='primary',
-            semester=selected_semester,
-        )
+        entries = self._load_primary_entries(query, selected_semester)
         return self._search_entries(
             query,
             entries,
@@ -677,17 +680,21 @@ class ListeningAssistantService:
         *,
         semester: str | None = None,
         rejected_ids: Iterable[object] | object | None = None,
+        candidate_limit: int | None = MAX_GUIDED_CANDIDATES,
     ) -> ListeningAssistantSearchResult:
-        """Search the current primary schedule from any safe subset of facts."""
+        """Search the current primary schedule from any safe subset of facts.
+
+        The default bounds display results; the guide uses None to group
+        facts across every match before bounding its transmitted candidates.
+        """
         query, embedded_semester = _normalize_partial_facts(known_facts)
         selected_semester = (
             semester if semester is not None else embedded_semester
         )
         if selected_semester is not None:
             selected_semester = _bounded_partial_text(selected_semester, 'semester')
-        entries = self._schedule_loader(
-            source_kind='primary',
-            semester=(self._semester if selected_semester is None else selected_semester),
+        entries = self._load_primary_entries(
+            query, self._semester if selected_semester is None else selected_semester,
         )
         result = self._search_entries(
             query,
@@ -706,7 +713,11 @@ class ListeningAssistantService:
                 candidate.teacher_name,
                 candidate.candidate_id,
             ),
-        )[:MAX_GUIDED_CANDIDATES])
+        ))
+        if candidate_limit is not None:
+            if type(candidate_limit) is not int or candidate_limit < 1:
+                raise ValueError('candidate_limit must be positive or None')
+            candidates = candidates[:candidate_limit]
         return replace(result, candidates=candidates)
 
     @staticmethod
@@ -731,6 +742,11 @@ class ListeningAssistantService:
             if normalized and normalized not in rejected:
                 rejected.append(normalized)
         return tuple(rejected)
+
+    def _load_primary_entries(self, query, semester):
+        if self._uses_default_schedule_loader:
+            return load_schedule_entries_for_query(semester=semester, lecture_date=query.lecture_date)
+        return self._schedule_loader(source_kind='primary', semester=semester)
 
     def search_by_teacher(
         self,

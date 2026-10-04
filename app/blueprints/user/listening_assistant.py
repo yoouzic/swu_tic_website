@@ -33,6 +33,7 @@ from app.services.listening_assistant_evidence import (
     revalidate_selection,
 )
 from app.services.schedule_snapshots import resolve_current_schedule_snapshot
+from app.services.academic_term import get_current_teaching_semester
 from app.utils.user_status import is_user_active
 
 from . import user_bp
@@ -430,14 +431,18 @@ def _guide_service(semester: str) -> ListeningAssistantGuideService:
     return ListeningAssistantGuideService(ListeningAssistantService(semester=semester))
 
 
+def _configured_assistant_semester() -> str:
+    semester = get_current_teaching_semester().strip()
+    if not semester:
+        raise ScheduleSourceUnavailable(status='CURRENT_SEMESTER_UNSET', message='课表暂未配置，请联系管理员。')
+    return semester
+
+
 def _public_guide_result(result, semester: str) -> dict[str, Any]:
     """Add safe backup-source discovery metadata to every guide response."""
     data = result.to_public_dict()
-    backup_source_batch_id = latest_retired_batch_id(semester)
-    data['backup_source_batch_id'] = (
-        str(backup_source_batch_id) if backup_source_batch_id is not None else None
-    )
-    data['backup_rescue_available'] = backup_source_batch_id is not None
+    data['backup_source_batch_id'] = None
+    data['backup_rescue_available'] = False
     return data
 
 
@@ -452,11 +457,15 @@ def listening_assistant_guide_start(user):
     del user
     try:
         payload = _json_object()
+        payload.setdefault('semester', _configured_assistant_semester())
         _require_exact_fields(payload, _GUIDE_START_FIELDS)
         known_facts = payload['known_facts']
         if not isinstance(known_facts, Mapping):
             raise ValueError('known_facts must be a mapping')
-        semester = _guide_text(payload['semester'], 'semester')
+        _guide_text(payload['semester'], 'semester')
+        semester = _configured_assistant_semester()
+    except ScheduleSourceUnavailable as error:
+        return _envelope(False, {'status': error.status, 'code': error.code}, error.message), 503
     except (AssistantSelectionError, ValueError, TypeError) as error:
         return _error_response(str(error) or '请求参数无效', 400)
 
@@ -482,14 +491,18 @@ def listening_assistant_guide_answer(user):
     del user
     try:
         payload = _json_object()
+        payload.setdefault('semester', _configured_assistant_semester())
         _require_exact_fields(payload, _GUIDE_ANSWER_FIELDS)
         state = GuidedAssistantState.from_public_dict(payload['state'])
         question_kind = _guide_text(payload['question_kind'], 'question_kind')
         option_code = _guide_optional_text(payload['option_code'], 'option_code')
         custom_value = _guide_optional_text(payload['custom_value'], 'custom_value')
-        semester = _guide_text(payload['semester'], 'semester')
+        _guide_text(payload['semester'], 'semester')
+        semester = _configured_assistant_semester()
         if option_code is not None and custom_value is not None:
             raise ValueError('option_code and custom_value cannot both be supplied')
+    except ScheduleSourceUnavailable as error:
+        return _envelope(False, {'status': error.status, 'code': error.code}, error.message), 503
     except (AssistantSelectionError, ValueError, TypeError) as error:
         return _error_response(str(error) or '请求参数无效', 400)
 
@@ -558,10 +571,11 @@ def listening_assistant_candidates(user):
     except (AssistantSelectionError, ValueError, TypeError) as error:
         return _error_response(str(error) or '请求参数无效', 400)
 
-    resolved_semester = semester
-    if resolved_semester is None:
-        resolved_semester = resolve_current_schedule_snapshot().semester or None
-    backup_source_batch_id = latest_retired_batch_id(resolved_semester)
+    try:
+        resolved_semester = _configured_assistant_semester()
+    except ScheduleSourceUnavailable as error:
+        return _envelope(False, {'status': error.status, 'code': error.code}, error.message), 503
+    backup_source_batch_id = None
     try:
         result = ListeningAssistantService(
             semester=resolved_semester,
@@ -587,54 +601,7 @@ def listening_assistant_candidates(user):
 @_assistant_login_required
 def listening_assistant_fallback(user):
     del user
-    try:
-        payload = _json_object()
-        lecture_date = _parse_date(payload.get('date'))
-        teacher = _clean_text(payload.get('teacher'), 'teacher', required=True)
-        semester = _clean_text(payload.get('semester'), 'semester', required=True)
-        source_batch_id = _required_batch_id(payload.get('source_batch_id'))
-        reason = _clean_text(payload.get('reason'), 'reason', required=True)
-        if reason not in BACKUP_FALLBACK_REASONS:
-            raise ValueError('reason must be one of: no_result, rejected_candidates')
-        if payload.get('explicit_fallback', True) is not True:
-            raise ValueError('fallback requires an explicit fallback')
-        student_grade_class = _clean_text(
-            payload.get('student_grade_class'),
-            'student_grade_class',
-        )
-        query = _build_query(
-            lecture_date=lecture_date,
-            teacher=teacher,
-            period=payload.get('period'),
-            student_grade_class=student_grade_class,
-        )
-        rejected_ids = _normalize_rejected_ids(payload.get('rejected_ids'))
-    except (AssistantSelectionError, ValueError, TypeError) as error:
-        return _error_response(str(error) or '请求参数无效', 400)
-
-    try:
-        result = ListeningAssistantService(semester=semester).search_backup(
-            query,
-            source_batch_id=source_batch_id,
-            semester=semester,
-            rejected_ids=rejected_ids,
-            explicit_fallback=True,
-            reason=reason,
-        )
-    except ValueError as error:
-        if str(error) in _EXPECTED_BACKUP_SOURCE_ERRORS:
-            return _error_response(str(error), 400)
-        raise
-
-    data = result.to_public_dict()
-    data.update({
-        'needs_confirmation': True,
-        'acknowledged_source': False,
-        'explicit_fallback': True,
-        'source_batch_id': str(source_batch_id),
-        'fallback_reason': reason,
-    })
-    return _envelope(True, data, '备用课表线索需要人工核对')
+    return _error_response('填表助手仅使用后台配置的当前课表。', 400)
 
 
 @user_bp.route('/api/listening-assistant/confirm', methods=['POST'])
@@ -642,8 +609,18 @@ def listening_assistant_fallback(user):
 def listening_assistant_confirm(user):
     try:
         payload = _json_object()
+        current_semester = _configured_assistant_semester()
+        if payload.get('source_kind', 'primary') != 'primary':
+            raise ValueError('填表助手仅使用后台配置的当前课表。')
+        query = payload.get('query')
+        for value in (payload.get('semester'), query.get('semester') if isinstance(query, dict) else None):
+            if value is not None and value != current_semester:
+                raise ValueError('当前课表已更新，请重新选择课程。')
+        payload.setdefault('semester', current_semester)
         selection_payload = _normalize_selection_payload(payload)
         selected_semester = selection_payload.get('semester') or selection_payload['query'].get('semester')
+    except ScheduleSourceUnavailable as error:
+        return _envelope(False, {'status': error.status, 'code': error.code}, error.message), 503
     except AssistantSelectionError as error:
         status, message = _expected_selection_error(error)
         return _error_response(message, status)

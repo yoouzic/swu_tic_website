@@ -28,14 +28,14 @@
         <div class="activity-panel__header activity-panel__header--split">
             <div>
                 <h2>我的听课预约</h2>
-                <p>未绑定反馈表单时可以修改或删除。</p>
+                {% if app_can_submit_lecture_form %}<p>未绑定反馈表单时可以修改或删除。</p>{% endif %}
             </div>
         </div>
         <div class="activity-panel__body p-0">
             {% if my_reservations %}
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0 form-list-table responsive-record-table">
-                    <thead><tr><th>登记时间</th><th>课程</th><th>教师</th><th>计划说明</th><th>绑定状态</th><th>操作</th></tr></thead>
+                    <thead><tr><th>登记时间</th><th>课程</th><th>教师</th><th>计划说明</th><th>绑定状态</th>{% if app_can_submit_lecture_form %}<th>操作</th>{% endif %}</tr></thead>
                     <tbody id="reservationsTableBody">
                     {% for item in my_reservations %}
                         <tr data-reservation-row="{{ item.id }}">
@@ -49,21 +49,21 @@
                                 {% else %}<span class="badge bg-success">未绑定</span>{% endif %}
                                 </div>
                             </td>
-                            <td data-label="操作">
+                            {% if app_can_submit_lecture_form %}<td data-label="操作">
                                 <div class="record-cell__value">
                                 <div class="btn-group btn-group-sm">
                                     <button type="button" class="btn btn-outline-secondary" data-reservation-id="{{ item.id }}" data-listening-info="{{ (item.listening_info or '')|e }}" onclick="editReservation(this.dataset.reservationId, this.dataset.listeningInfo)"{% if not item.can_edit %} disabled{% endif %}>修改</button>
                                     <button type="button" class="btn btn-outline-danger" onclick="deleteReservation({{ item.id }})"{% if not item.can_delete %} disabled{% endif %}>删除</button>
                                 </div>
                                 </div>
-                            </td>
+                            </td>{% endif %}
                         </tr>
                     {% endfor %}
                     </tbody>
                 </table>
             </div>
             {% else %}
-            <div id="reservationsEmptyState" class="activity-empty">暂无听课预约。可以先切换到“听课登记”选择课程。</div>
+            <div id="reservationsEmptyState" class="activity-empty">暂无听课预约。{% if app_can_submit_lecture_form %}可以先切换到“听课登记”选择课程。{% endif %}</div>
             {% endif %}
         </div>
     </div>
@@ -108,9 +108,10 @@
                             <td data-label="最后更新"><div class="record-cell__value">{{ (latest_form.updated_at or latest_form.created_at).strftime('%Y-%m-%d %H:%M') if (latest_form.updated_at or latest_form.created_at) else '-' }}</div></td>
                             <td data-label="操作">
                                 <div class="record-cell__value">
-                                <div class="btn-group btn-group-sm">
+                                <div class="btn-group-vertical btn-group-sm">
                                     <a href="{{ url_for('admin.get_form_detail', form_id=latest_form.id) }}" class="btn btn-outline-secondary">查看</a>
-                                    {% if versions|length == 1 and latest_form.status == '待审核' %}<button type="button" class="btn btn-outline-danger" onclick="deleteForm({{ latest_form.id }})">删除</button>{% endif %}
+                                    {% if app_can_submit_lecture_form and latest_form.status in ['待审核', '已驳回'] %}<a href="{{ url_for('user.edit_form', form_id=latest_form.id) }}" class="btn btn-outline-secondary">{{ '重填' if latest_form.status == '已驳回' else '修改' }}</a>{% endif %}
+                                    {% if app_can_submit_lecture_form and versions|length == 1 and latest_form.status == '待审核' %}<button type="button" class="btn btn-outline-danger" onclick="deleteForm({{ latest_form.id }})">删除</button>{% endif %}
                                 </div>
                                 </div>
                             </td>
@@ -130,7 +131,7 @@
                                                     <td>{{ version.status or '草稿' }}</td>
                                                     <td>{{ (version.updated_at or version.created_at).strftime('%m-%d %H:%M') if (version.updated_at or version.created_at) else '-' }}</td>
                                                     <td>{{ version.review_comment or '-' }}</td>
-                                                    <td><a href="{{ url_for('admin.get_form_detail', form_id=version.id) }}" class="btn btn-sm btn-outline-secondary">查看</a>{% if version.status in [None, '草稿'] or (version.status == '已驳回' and loop.first) %}<a href="{{ url_for('user.edit_form', form_id=version.id) }}" class="btn btn-sm btn-outline-secondary ms-1">编辑</a>{% endif %}</td>
+                                                    <td><a href="{{ url_for('admin.get_form_detail', form_id=version.id) }}" class="btn btn-sm btn-outline-secondary">查看</a>{% if app_can_submit_lecture_form and (version.status in [None, '草稿'] or (version.status == '已驳回' and loop.first)) %}<a href="{{ url_for('user.edit_form', form_id=version.id) }}" class="btn btn-sm btn-outline-secondary ms-1">编辑</a>{% endif %}</td>
                                                 </tr>
                                             {% endfor %}
                                             </tbody>
@@ -145,12 +146,13 @@
                 </table>
             </div>
         {% else %}
-            <div id="formsEmptyState" class="activity-empty">暂无听课表单。填写并提交第一份听课表单后，记录会显示在这里。</div>
+            <div id="formsEmptyState" class="activity-empty">暂无听课表单。{% if app_can_submit_lecture_form %}填写并提交第一份听课表单后，记录会显示在这里。{% endif %}</div>
         {% endif %}
         </div>
     </div>
 </div>
 
+{% if app_can_submit_lecture_form %}
 <div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -212,3 +214,4 @@
         </div>
     </div>
 </div>
+{% endif %}

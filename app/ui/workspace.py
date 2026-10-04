@@ -24,33 +24,62 @@ def _build_review_tasks(pending_forms):
 
 
 def load_workspace_snapshot(user):
-    from app.models import CourseRegistration, LectureForm, LectureFormDraft, User
+    if user.role not in ('信息员', '管理员', '超级管理员'):
+        return WorkspaceSnapshot()
+
+    from app.models import CourseRegistration, LectureForm, LectureFormDraft, User, db
+    from app.utils.review_permissions import (
+        get_reviewable_users, get_user_review_permission, can_review_status,
+    )
+
+    latest_ids = db.select(db.func.max(LectureForm.id)).group_by(
+        db.func.coalesce(LectureForm.unique_id, LectureForm.id)
+    )
+    latest_forms = LectureForm.query.filter(LectureForm.id.in_(latest_ids))
 
     if user.role == '信息员':
         return WorkspaceSnapshot(
-            total_forms=LectureForm.query.filter_by(listener_number=user.number).count(),
+            total_forms=latest_forms.filter_by(listener_number=user.number).count(),
             reservation_count=CourseRegistration.query.filter_by(user_id=user.id).count(),
             draft_saved=LectureFormDraft.query.filter_by(user_id=user.id, draft_key='submit_form').first() is not None,
         )
+    permission = get_user_review_permission(user.id)
+    reviewable_users = get_reviewable_users(user.id)
+    numbers = db.select(User.number).where(User.id.in_(reviewable_users))
+    actionable_statuses = [status for status in ('待审核', '部门已审核')
+                          if can_review_status(user.id, status, permission=permission)] if permission else []
+    pending = latest_forms.filter(
+        LectureForm.listener_number.in_(numbers),
+        LectureForm.status.in_(actionable_statuses),
+    ).count()
     if user.role == '管理员':
         return WorkspaceSnapshot(
-            pending_forms=LectureForm.query.join(User, LectureForm.listener_number == User.number).filter(
-                User.department == user.department,
-                LectureForm.status.in_(['待审核', '部门已审核']),
-            ).count(),
+            pending_forms=pending,
             department_users=User.query.filter_by(department=user.department, is_active=True).count(),
-            department_forms=LectureForm.query.join(User, LectureForm.listener_number == User.number).filter(
+            department_forms=latest_forms.join(User, LectureForm.listener_number == User.number).filter(
                 User.department == user.department,
             ).count(),
         )
     return WorkspaceSnapshot(
-        pending_forms=LectureForm.query.filter(LectureForm.status.in_(['待审核', '部门已审核'])).count(),
+        pending_forms=pending,
         total_users=User.query.filter_by(is_active=True).count(),
-        total_forms=LectureForm.query.count(),
+        total_forms=latest_forms.count(),
     )
 
 
 def build_workspace(user, snapshot):
+    if user.role not in ('信息员', '管理员', '超级管理员'):
+        return {
+            'role': user.role,
+            'role_slug': 'course-lookup',
+            'title': f'你好，{user.name}',
+            'summary': '查找当前课表中的课程信息。',
+            'primary_action': {'label': '查询课表', 'endpoint': 'user.course_lookup'},
+            'metrics': [],
+            'tasks': [],
+            'quick_actions': [],
+        }
+
     if user.role == '信息员':
         tasks = []
         if snapshot.draft_saved:

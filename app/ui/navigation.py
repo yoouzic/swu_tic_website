@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 from app.utils.user_status import is_user_active
+from app.utils.submission_permissions import can_submit_lecture_form
 
 
 NAVIGATION = (
@@ -18,7 +19,8 @@ NAVIGATION = (
                 'label': '听课与填报',
                 'endpoint': 'user.listening_registration',
                 'icon': 'bi-journal-text',
-                'roles': ('信息员', '管理员', '超级管理员'),
+                'roles': ('信息员', '管理员'),
+                'submission': True,
                 'active_endpoints': (
                     'user.listening_registration',
                     'user.my_forms',
@@ -27,11 +29,30 @@ NAVIGATION = (
                 ),
             },
             {
-                'label': '听课助手',
+                'label': '填表助手',
                 'endpoint': 'user.submit_form',
                 'icon': 'bi-stars',
-                'authenticated': True,
+                'roles': ('信息员', '管理员'),
+                'submission': True,
                 'active_endpoints': ('user.submit_form',),
+            },
+            {
+                'label': '课程查询',
+                'endpoint': 'user.course_lookup',
+                'icon': 'bi-search',
+                'authenticated': True,
+                'exclude_roles': ('超级管理员',),
+                'submission': False,
+                'active_endpoints': ('user.course_lookup',),
+            },
+            {
+                'label': '我的记录',
+                'endpoint': 'user.listening_registration',
+                'icon': 'bi-journal-text',
+                'authenticated': True,
+                'exclude_roles': ('超级管理员',),
+                'submission': False,
+                'active_endpoints': ('user.listening_registration', 'user.my_forms', 'user.view_form'),
             },
             {
                 'label': '表单审核',
@@ -67,6 +88,7 @@ NAVIGATION = (
                     'admin.course_management',
                     'admin.course_feedback_management',
                     'admin.registration_statistics',
+                    'user.course_lookup',
                 ),
             },
             {
@@ -102,6 +124,7 @@ PAGE_LABELS = {
     'auth.change_password': '修改密码',
     'user.listening_registration': '听课与填报',
     'user.my_forms': '听课与填报',
+    'user.course_lookup': '课程查询',
     'user.submit_form': '填写听课表',
     'user.edit_form': '编辑听课表',
     'user.view_form': '表单详情',
@@ -138,16 +161,24 @@ def resolve_page_label(groups, endpoint):
     return PAGE_LABELS.get(endpoint, '当前页面')
 
 
-def build_navigation(user, endpoint='', review_permission=None, manage_permission=None):
+def build_navigation(user, endpoint='', review_permission=None, manage_permission=None, submission_allowed=None):
     """Return navigation groups visible to ``user`` with one active endpoint."""
+    if not getattr(user, 'is_authenticated', False) or not is_user_active(user):
+        return []
+    if submission_allowed is None:
+        # Actual requests pass the database-backed capability from the context.
+        # The standalone builder remains deterministic without a database query.
+        submission_allowed = can_submit_lecture_form(user, permission_names=())
+    submission_allowed = bool(submission_allowed) and user.role in ('信息员', '管理员')
     groups = []
     for group_definition in NAVIGATION:
         items = []
         for definition in group_definition['items']:
-            if definition.get('authenticated'):
-                if not getattr(user, 'is_authenticated', False) or not is_user_active(user):
-                    continue
-            elif user.role not in definition['roles']:
+            if definition.get('roles') and user.role not in definition['roles']:
+                continue
+            if user.role in definition.get('exclude_roles', ()):
+                continue
+            if 'submission' in definition and definition['submission'] != submission_allowed:
                 continue
             requirement = definition.get('permission')
             if user.role != '超级管理员' and requirement == 'review' and not review_permission:

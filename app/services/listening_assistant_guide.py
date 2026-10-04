@@ -15,6 +15,8 @@ from app.services.listening_assistant_contracts import (
 )
 from app.services.listening_assistant_guide_contracts import (
     MAX_GUIDED_QUESTIONS,
+    MAX_GUIDED_CANDIDATES,
+    MAX_GUIDED_FACT_LENGTH,
     GuidedAssistantState,
     GuidedOption,
     GuidedQuestion,
@@ -30,6 +32,9 @@ _UNCERTAIN_VALUES = frozenset({
     '不确定',
     '不清楚',
     '不知道',
+    '我不知道',
+    '跳过',
+    '跳过此题',
     '未知',
     '都不是',
     '不记得',
@@ -122,6 +127,16 @@ def _group_candidates(candidates: tuple[Candidate, ...], kind: str) -> dict[str,
     return groups
 
 
+def _bounded_result(
+    state: GuidedAssistantState,
+    question: GuidedQuestion | None,
+    candidates: tuple[Candidate, ...],
+    needs_confirmation: bool,
+) -> GuidedResult:
+    # Limit transport/state only. Question grouping uses the complete search.
+    return GuidedResult(state, question, candidates[:MAX_GUIDED_CANDIDATES], needs_confirmation)
+
+
 class ListeningAssistantGuideService:
     """Choose one safe question at a time from a fresh primary search."""
 
@@ -138,7 +153,7 @@ class ListeningAssistantGuideService:
     ) -> GuidedResult:
         facts = self._normalize_facts(known_facts)
         if not facts:
-            return GuidedResult(
+            return _bounded_result(
                 state=GuidedAssistantState({}, (), (), 0, 'question'),
                 question=GuidedQuestion.initial_memory_question(),
                 candidates=(),
@@ -160,8 +175,19 @@ class ListeningAssistantGuideService:
     ) -> GuidedResult:
         self._validate_answer(state, question_kind, option_code, custom_value)
 
-        current = self._search(dict(state.known_facts), semester=semester)
-        candidates = current.candidates
+        # A typed fact is independent of the old option list. Search only
+        # after incorporating it; option/candidate answers still need a fresh
+        # old-query search to validate their selection against the timetable.
+        typed_fact = (
+            state.stage == 'question'
+            and question_kind != 'memory'
+            and option_code in {None, 'D'}
+            and custom_value is not None
+            and not _is_uncertain_value(custom_value)
+        )
+        candidates = () if typed_fact else self._search(
+            dict(state.known_facts), semester=semester,
+        ).candidates
         if question_kind == 'memory':
             if option_code in {'A', 'B', 'C'}:
                 target = {'A': 'date', 'B': 'teacher', 'C': 'room'}[option_code]
@@ -169,13 +195,13 @@ class ListeningAssistantGuideService:
                 asked = self._append_kind(asked, target)
                 next_state = GuidedAssistantState(
                     dict(state.known_facts),
-                    tuple(candidate.candidate_id for candidate in candidates),
+                    tuple(candidate.candidate_id for candidate in candidates[:MAX_GUIDED_CANDIDATES]),
                     asked,
                     state.question_count,
                     'question',
                 )
                 return self._render(next_state, candidates, forced_kind=target)
-            if option_code == 'D':
+            if option_code in {'D','SKIP'}:
                 return self._manual(state, candidates)
             raise ValueError('memory answer must select A, B, or C')
 
@@ -196,6 +222,14 @@ class ListeningAssistantGuideService:
             raise ValueError('question budget is exhausted')
 
         facts = dict(state.known_facts)
+        if option_code == 'SKIP':
+            next_state=GuidedAssistantState(facts,
+                tuple(c.candidate_id for c in candidates[:MAX_GUIDED_CANDIDATES]),
+                state.asked_question_kinds,state.question_count+1,'question')
+            if not candidates and next_state.question_count<MAX_GUIDED_QUESTIONS:
+                available=[kind for kind in _FACT_KINDS if kind not in facts and kind not in next_state.asked_question_kinds]
+                if available:return self._render(next_state,candidates,forced_kind=available[0])
+            return self._render(next_state,candidates)
         if option_code in _NO_OP_CODES:
             return self._manual(state, candidates)
         if option_code is None and _is_uncertain_value(custom_value):
@@ -214,7 +248,7 @@ class ListeningAssistantGuideService:
         refreshed = self._search(facts, semester=semester)
         next_state = GuidedAssistantState(
             facts,
-            tuple(candidate.candidate_id for candidate in refreshed.candidates),
+            tuple(candidate.candidate_id for candidate in refreshed.candidates[:MAX_GUIDED_CANDIDATES]),
             state.asked_question_kinds,
             state.question_count + 1,
             'question',
@@ -226,7 +260,7 @@ class ListeningAssistantGuideService:
         return {kind: _canonical_fact(kind, value) for kind, value in normalized.items()}
 
     def _search(self, facts: Mapping[str, object], *, semester: str | None):
-        return self._assistant_service.search_partial(facts, semester=semester)
+        return self._assistant_service.search_partial(facts, semester=semester, candidate_limit=None)
 
     @staticmethod
     def _append_kind(kinds: tuple[str, ...], kind: str) -> tuple[str, ...]:
@@ -256,7 +290,7 @@ class ListeningAssistantGuideService:
             raise ValueError('option_code must be a non-empty string or None')
         if option_code is not None and custom_value is not None:
             raise ValueError('option_code and custom_value cannot both be supplied')
-        if question_kind == 'memory' and option_code not in {'A', 'B', 'C', 'D'}:
+        if question_kind == 'memory' and option_code not in {'A', 'B', 'C', 'D','SKIP'}:
             raise ValueError('memory answer must select A, B, C, or D')
 
     @staticmethod
@@ -289,25 +323,26 @@ class ListeningAssistantGuideService:
             )
             for index, kind in enumerate(_FACT_KINDS)
             if kind in available and len(_group_candidates(candidates, kind)) > 1
+            # A source can aggregate many classes in one value. Asking it
+            # cannot produce a valid answer within the fact contract. Keep
+            # every course and choose another distinguishing fact instead.
+            and all(len(value) <= MAX_GUIDED_FACT_LENGTH for value in _group_candidates(candidates, kind))
         ]
         return min(scored)[3] if scored else None
 
     def _field_question(self, kind: str, candidates: tuple[Candidate, ...]) -> GuidedQuestion:
         groups = _group_candidates(candidates, kind)
-        ranked = sorted(groups.items(), key=lambda item: (len(item[1]), item[0]))[:3]
-        options = tuple(
-            GuidedOption(
-                code=chr(ord('A') + index),
-                label=value,
-                value=value,
-                candidate_count=len(group),
-            )
-            for index, (value, group) in enumerate(ranked)
+        ranked = sorted(groups.items(), key=lambda item: (-len(item[1]), item[0]))
+        batches = tuple(
+            tuple(GuidedOption(chr(ord('A') + index), value, value, len(group))
+                  for index, (value, group) in enumerate(ranked[offset:offset + 3]))
+            for offset in range(0, len(ranked), 3)
         )
         return GuidedQuestion(
             kind=kind,
             prompt=_PROMPTS[kind],
-            options=options,
+            options=batches[0] if batches else (),
+            option_batches=batches if len(batches) > 1 else (),
         )
 
     def _candidate_kind(
@@ -350,7 +385,7 @@ class ListeningAssistantGuideService:
         *,
         forced_kind: str | None = None,
     ) -> GuidedResult:
-        candidate_ids = tuple(candidate.candidate_id for candidate in candidates)
+        candidate_ids = tuple(candidate.candidate_id for candidate in candidates[:MAX_GUIDED_CANDIDATES])
         if forced_kind is not None:
             question = self._field_question(forced_kind, candidates)
             next_state = GuidedAssistantState(
@@ -360,21 +395,40 @@ class ListeningAssistantGuideService:
                 state.question_count,
                 'question',
             )
-            return GuidedResult(next_state, question, candidates, False)
+            return _bounded_result(next_state, question, candidates, False)
 
         if not candidates:
+            if (
+                state.question_count < MAX_GUIDED_QUESTIONS
+                and state.known_facts
+                and 'date' not in state.known_facts
+                and 'date' not in state.asked_question_kinds
+            ):
+                next_state = GuidedAssistantState(
+                    dict(state.known_facts),
+                    (),
+                    self._append_kind(state.asked_question_kinds, 'date'),
+                    state.question_count,
+                    'question',
+                )
+                return _bounded_result(
+                    next_state,
+                    self._field_question('date', ()),
+                    (),
+                    False,
+                )
             next_state = GuidedAssistantState(
                 dict(state.known_facts), (), state.asked_question_kinds,
                 state.question_count, 'manual',
             )
-            return GuidedResult(next_state, None, (), False)
+            return _bounded_result(next_state, None, (), False)
 
         if len(candidates) == 1 and not candidates[0].conflicts:
             next_state = GuidedAssistantState(
                 dict(state.known_facts), candidate_ids, state.asked_question_kinds,
                 state.question_count, 'confirm',
             )
-            return GuidedResult(next_state, None, candidates, True)
+            return _bounded_result(next_state, None, candidates, True)
 
         if 1 <= len(candidates) <= 3:
             kind = self._candidate_kind(state, candidates)
@@ -383,14 +437,14 @@ class ListeningAssistantGuideService:
                 self._append_kind(state.asked_question_kinds, kind),
                 state.question_count, 'candidate',
             )
-            return GuidedResult(next_state, self._candidate_question(kind, candidates), candidates, True)
+            return _bounded_result(next_state, self._candidate_question(kind, candidates), candidates, True)
 
         if state.question_count >= MAX_GUIDED_QUESTIONS:
             next_state = GuidedAssistantState(
                 dict(state.known_facts), candidate_ids, state.asked_question_kinds,
                 state.question_count, 'manual',
             )
-            return GuidedResult(next_state, None, candidates, False)
+            return _bounded_result(next_state, None, candidates, False)
 
         kind = self._select_kind(candidates, state.known_facts, state.asked_question_kinds)
         if kind is None:
@@ -398,13 +452,13 @@ class ListeningAssistantGuideService:
                 dict(state.known_facts), candidate_ids, state.asked_question_kinds,
                 state.question_count, 'manual',
             )
-            return GuidedResult(next_state, None, candidates, False)
+            return _bounded_result(next_state, None, candidates, False)
         next_state = GuidedAssistantState(
             dict(state.known_facts), candidate_ids,
             self._append_kind(state.asked_question_kinds, kind),
             state.question_count, 'question',
         )
-        return GuidedResult(next_state, self._field_question(kind, candidates), candidates, False)
+        return _bounded_result(next_state, self._field_question(kind, candidates), candidates, False)
 
     def _answer_candidate(
         self,
@@ -418,7 +472,7 @@ class ListeningAssistantGuideService:
             raise ValueError('candidate selection does not accept custom_value')
         if question_kind != self._candidate_kind(state, candidates):
             raise ValueError('question_kind does not match the candidate question')
-        if option_code in _NO_OP_CODES:
+        if option_code in _NO_OP_CODES or option_code=='SKIP':
             return self._manual(state, candidates)
         if option_code == 'D':
             return self._manual(state, candidates)
@@ -441,18 +495,18 @@ class ListeningAssistantGuideService:
             dict(state.known_facts), (selected.candidate_id,),
             state.asked_question_kinds, state.question_count, stage,
         )
-        return GuidedResult(next_state, None, candidates, stage == 'confirm')
+        return _bounded_result(next_state, None, candidates, stage == 'confirm')
 
     @staticmethod
     def _manual(state: GuidedAssistantState, candidates: tuple[Candidate, ...]) -> GuidedResult:
         next_state = GuidedAssistantState(
             dict(state.known_facts),
-            tuple(candidate.candidate_id for candidate in candidates),
+            tuple(candidate.candidate_id for candidate in candidates[:MAX_GUIDED_CANDIDATES]),
             state.asked_question_kinds,
             state.question_count,
             'manual',
         )
-        return GuidedResult(next_state, None, candidates, False)
+        return _bounded_result(next_state, None, candidates, False)
 
 
 __all__ = ['ListeningAssistantGuideService']

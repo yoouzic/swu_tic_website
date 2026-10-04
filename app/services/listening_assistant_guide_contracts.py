@@ -121,6 +121,7 @@ class GuidedQuestion:
     options: tuple[GuidedOption, ...]
     allow_custom: bool = True
     custom_label: str = 'D. 我自己填写'
+    option_batches: tuple[tuple[GuidedOption, ...], ...] = ()
 
     def __post_init__(self) -> None:
         kind = _require_text(self.kind, 'kind')
@@ -132,6 +133,10 @@ class GuidedQuestion:
         if len(options) > 3 or any(not isinstance(option, GuidedOption) for option in options):
             raise ValueError('options must contain at most three GuidedOption values')
         object.__setattr__(self, 'options', options)
+        batches = tuple(tuple(batch) for batch in self.option_batches)
+        if any(not batch or len(batch) > 3 or any(not isinstance(option, GuidedOption) for option in batch) for batch in batches):
+            raise ValueError('option batches must contain one to three GuidedOption values')
+        object.__setattr__(self, 'option_batches', batches)
         if not isinstance(self.allow_custom, bool):
             raise ValueError('allow_custom must be a bool')
         object.__setattr__(
@@ -159,6 +164,7 @@ class GuidedQuestion:
             'options': [option.to_public_dict() for option in self.options],
             'allow_custom': self.allow_custom,
             'custom_label': self.custom_label,
+            **({'option_batches': [[option.to_public_dict() for option in batch] for batch in self.option_batches]} if self.option_batches else {}),
         }
 
 

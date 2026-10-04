@@ -6,6 +6,7 @@ import math
 import re
 import unicodedata
 from numbers import Real
+from datetime import date
 from typing import Any, Iterable
 
 import pandas as pd
@@ -426,10 +427,16 @@ def _requested_batch_id(
     raise ValueError('backup source requires an explicit retired batch id')
 
 
-def _rows_for_batch(batch_id: int) -> list[ListeningAssistantScheduleEntry]:
-    return ListeningAssistantScheduleEntry.query.filter_by(
+def _rows_for_batch(batch_id: int, weekday: int | None = None) -> list[ListeningAssistantScheduleEntry]:
+    query = ListeningAssistantScheduleEntry.query.filter_by(
         batch_id=batch_id,
-    ).order_by(
+    )
+    if weekday is not None:
+        query = query.filter(
+            (ListeningAssistantScheduleEntry.weekday == weekday)
+            | ListeningAssistantScheduleEntry.weekday.is_(None)
+        )
+    return query.order_by(
         ListeningAssistantScheduleEntry.source_row.asc(),
         ListeningAssistantScheduleEntry.id.asc(),
     ).all()
@@ -508,7 +515,7 @@ def load_schedule_entries(
         raise ValueError("source_kind must be 'primary' or 'backup'")
 
     if normalized_kind == 'primary':
-        snapshot = resolve_current_schedule_snapshot(semester)
+        snapshot = resolve_current_schedule_snapshot(semester, include_rows=False)
         if snapshot.status != READY or snapshot.batch is None:
             raise ScheduleSourceUnavailable(status=snapshot.status)
         rows = _rows_for_batch(snapshot.batch.id)
@@ -545,6 +552,24 @@ def load_schedule_entries(
     ]
 
 
+def load_schedule_entries_for_query(*, semester: str | None, lecture_date: date | None) -> list[ScheduleEntry]:
+    """Read only the primary index rows that can match a dated query.
+
+    This index stores weekday/week ranges, never a concrete lecture date.
+    With no date it cannot produce candidates. Resolve authority first so
+    missing or replaced schedules still fail safely on every request.
+    """
+    snapshot = resolve_current_schedule_snapshot(semester, include_rows=False)
+    if snapshot.status != READY or snapshot.batch is None:
+        raise ScheduleSourceUnavailable(status=snapshot.status)
+    if lecture_date is None:
+        return []
+    return [
+        _as_contract(entry, source_kind='primary', source_label=PRIMARY_SOURCE_LABEL)
+        for entry in _rows_for_batch(snapshot.batch.id, weekday=lecture_date.isoweekday())
+    ]
+
+
 __all__ = [
     'BACKUP_SOURCE_LABEL',
     'PRIMARY_SOURCE_LABEL',
@@ -552,5 +577,6 @@ __all__ = [
     'ensure_listening_assistant_schema',
     'latest_retired_batch_id',
     'load_schedule_entries',
+    'load_schedule_entries_for_query',
     'persist_listening_assistant_entries',
 ]

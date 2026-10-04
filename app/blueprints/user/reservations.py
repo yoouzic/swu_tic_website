@@ -11,13 +11,16 @@ from app.models import (
     User,
     db,
 )
-from app.security import login_required
+from app.security import login_required, submission_required
+from app.services.current_courses import current_course_query
+from app.services.teaching_calendar import parse_lecture_date
 from app.services.form_bindings import (
     get_registration_logical_form_counts,
     registration_has_form_binding,
 )
 from sqlalchemy import and_
 from app.utils.time_validator import validate_listening_time, TimeValidator
+from app.utils.submission_permissions import can_submit_lecture_form
 from app.utils.course_registration_limits import (
     get_current_teaching_week_no,
     parse_listening_week_no,
@@ -31,34 +34,34 @@ def _build_activity_records(user, request_args):
     """Build the existing form and reservation view model for the activity center."""
     from collections import defaultdict
 
+    can_submit = can_submit_lecture_form(user)
     search = request_args.get('search', '')
-    date_from = request_args.get('date_from', '')
-    date_to = request_args.get('date_to', '')
+    date_from = parse_lecture_date(request_args.get('date_from', ''))
+    date_to = parse_lecture_date(request_args.get('date_to', ''))
 
     query = LectureForm.query.filter_by(listener_number=user.number)
-    if search:
-        query = query.filter(
-            db.or_(
-                LectureForm.course_title.contains(search),
-                LectureForm.teacher_name.contains(search),
-                LectureForm.lecture_location.contains(search)
-            )
-        )
-
-    if date_from:
-        query = query.filter(LectureForm.lecture_date >= date_from)
-    if date_to:
-        query = query.filter(LectureForm.lecture_date <= date_to)
-
-    all_forms = query.order_by(LectureForm.updated_at.desc()).all()
+    all_forms = query.order_by(LectureForm.id.desc()).all()
     grouped_forms = defaultdict(list)
     for form in all_forms:
-        unique_key = form.unique_id if form.unique_id else f"single_{form.id}"
+        unique_key = form.unique_id or form.id
         grouped_forms[unique_key].append(form)
 
     form_groups = []
     for unique_id, versions in grouped_forms.items():
-        versions.sort(key=lambda item: item.updated_at or item.created_at, reverse=True)
+        versions.sort(key=lambda item: item.id, reverse=True)
+        if search and not any(
+            search.casefold() in (getattr(versions[0], field) or '').casefold()
+            for field in ('course_title', 'teacher_name', 'lecture_location')
+        ):
+            continue
+        lecture_date = parse_lecture_date(versions[0].lecture_date)
+        if date_from or date_to:
+            if lecture_date is None:
+                continue
+            if date_from and lecture_date < date_from:
+                continue
+            if date_to and lecture_date > date_to:
+                continue
         form_groups.append({
             'unique_id': unique_id,
             'latest_form': versions[0],
@@ -95,8 +98,8 @@ def _build_activity_records(user, request_args):
             'created_at': reservation.created_at,
             'is_bound': is_bound,
             'bind_count': bind_count,
-            'can_edit': not is_bound,
-            'can_delete': not is_bound,
+            'can_edit': can_submit and not is_bound,
+            'can_delete': can_submit and not is_bound,
         })
 
     return {'forms': form_groups, 'my_reservations': my_reservations}
@@ -107,14 +110,18 @@ def _build_activity_records(user, request_args):
 def listening_registration():
     """Information officer activity center."""
     user = User.query.get(session['user_id'])
+    can_submit = can_submit_lecture_form(user)
     active_tab = request.args.get('tab', 'registration')
     if active_tab not in {'registration', 'records'}:
         active_tab = 'registration'
+    if not can_submit:
+        active_tab = 'records'
     records = _build_activity_records(user, request.args)
     semester_configured = bool((SystemSetting.get('teaching_first_week_monday') or '').strip())
     return render_template(
         'user/activity_center.html',
         user=user,
+        can_submit_lecture_form=can_submit,
         active_tab=active_tab,
         semester_configured=semester_configured,
         **records,
@@ -142,7 +149,7 @@ def api_available_courses():
         banned_course_ids = db.session.query(ListeningBan.course_id).filter_by(user_id=user_id).subquery()
         
         # 基础查询
-        query = Course.query.filter(~Course.id.in_(banned_course_ids))
+        query = current_course_query().filter(~Course.id.in_(banned_course_ids))
         
         # 搜索过滤
         if search_query:
@@ -196,7 +203,7 @@ def api_available_courses():
 
 
 @user_bp.route('/api/course_registration_history')
-@login_required
+@submission_required(api=True)
 def api_course_registration_history():
     """获取特定课程的登记历史（最新5条）"""
     try:
@@ -255,7 +262,7 @@ def api_course_registration_history():
 
 
 @user_bp.route('/api/create_reservation', methods=['POST'])
-@login_required
+@submission_required(api=True)
 def api_create_reservation():
     """创建听课登记"""
     try:
@@ -291,7 +298,7 @@ def api_create_reservation():
         # 移除唯一性检查，允许重复登记（作为历史记录）
         
         # 检查该课程组是否存在且用户有权限听课
-        course_exists = Course.query.filter_by(
+        course_exists = current_course_query().filter_by(
             course_code=course_code,
             selection_code=selection_code
         ).first()
@@ -299,7 +306,7 @@ def api_create_reservation():
         if not course_exists:
             return jsonify({
                 'success': False,
-                'message': '课程不存在'
+                'message': '课程不存在或已不在当前课表，请重新选择课程'
             }), 400
         
         # 检查是否被禁听
@@ -362,7 +369,7 @@ def api_create_reservation():
 
 
 @user_bp.route('/api/cancel_reservation', methods=['POST'])
-@login_required
+@submission_required(api=True)
 def api_cancel_reservation():
     """取消听课登记（Round 8A-R1：canonical binding guard + 确定性目标选择）"""
     try:
@@ -430,6 +437,7 @@ def api_my_reservations():
     """获取我的听课登记列表"""
     try:
         user_id = session['user_id']
+        can_submit = can_submit_lecture_form(db.session.get(User, user_id))
         
         reservations = Reservation.query.filter_by(user_id=user_id).order_by(Reservation.created_at.desc()).all()
         logical_bind_counts = get_registration_logical_form_counts(
@@ -457,8 +465,8 @@ def api_my_reservations():
                     'created_at': r.created_at.strftime('%Y-%m-%d %H:%M'),
                     'is_bound': is_bound,
                     'bind_count': bind_count,
-                    'can_edit': not is_bound,
-                    'can_delete': not is_bound,
+                    'can_edit': can_submit and not is_bound,
+                    'can_delete': can_submit and not is_bound,
                     'courses': []
                 }
                 
@@ -485,7 +493,7 @@ def api_my_reservations():
 
 
 @user_bp.route('/api/my_reservations/<int:reservation_id>', methods=['PUT'])
-@login_required
+@submission_required(api=True)
 def api_update_my_reservation(reservation_id):
     try:
         user_id = session['user_id']
@@ -505,6 +513,13 @@ def api_update_my_reservation(reservation_id):
         if not is_valid_time:
             return jsonify({'success': False, 'message': f'时间验证失败：{time_error}'}), 400
 
+        limit_allowed, limit_error = validate_course_weekly_registration_limit(
+            reservation.course_code, reservation.selection_code, listening_info,
+            exclude_registration_id=reservation.id,
+        )
+        if not limit_allowed:
+            return jsonify({'success': False, 'message': limit_error}), 400
+
         reservation.listening_info = listening_info
         reservation.is_used = False
         db.session.commit()
@@ -515,7 +530,7 @@ def api_update_my_reservation(reservation_id):
 
 
 @user_bp.route('/api/my_reservations/<int:reservation_id>', methods=['DELETE'])
-@login_required
+@submission_required(api=True)
 def api_delete_my_reservation(reservation_id):
     try:
         user_id = session['user_id']

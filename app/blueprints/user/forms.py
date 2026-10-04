@@ -1,15 +1,18 @@
 # -*- coding: utf-8 -*-
 """User blueprint domain module (Step 4 split)."""
-from flask import render_template, request, redirect, url_for, flash, session, jsonify
+from flask import render_template, request, redirect, url_for, flash, session, jsonify, current_app
 from app.models import (
     Course,
     CourseRegistration as Reservation,
     LectureForm,
     LectureFormDraft,
+    LectureSiteCapture,
     User,
     db,
 )
-from app.security import login_required
+from app.security import login_required, submission_required
+from app.services.academic_term import get_current_teaching_semester
+from app.services.teaching_calendar import parse_lecture_date
 from app.services.form_bindings import reconcile_registration_usage_flags
 from app.services.listening_assistant_contracts import SAFE_OVERRIDE_KEYS
 from app.services.listening_assistant_guide_contracts import (
@@ -23,6 +26,8 @@ from app.services.listening_assistant_evidence import (
     revalidate_selection,
 )
 from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
+from app.services.lecture_form_draft_concurrency import LectureFormDraftConflict, save_lecture_form_draft_atomic
+from sqlalchemy.orm.exc import StaleDataError
 from datetime import datetime, timedelta
 from app.utils.audit_tags import build_audit_tag, build_week_correction_tag
 from app.utils.leave_management import append_leave_system_note, get_pending_leave_makeup, record_leave_makeup_form
@@ -33,6 +38,12 @@ import re
 import unicodedata
 
 from . import user_bp
+
+
+@user_bp.context_processor
+def listening_assistant_page_defaults():
+    return {'assistant_default_semester': get_current_teaching_semester(),
+            'capture_enabled': current_app.config.get('LECTURE_CAPTURE_ENABLED',False)}
 
 
 LECTURE_FORM_DRAFT_KEY = 'submit_form'
@@ -76,7 +87,8 @@ _ASSISTANT_QUERY_DRAFT_KEYS = frozenset({
 _GUIDE_HISTORY_KEYS = frozenset({'kind', 'answer_code', 'custom_value'})
 _GUIDE_KINDS = frozenset({'memory', 'date', 'teacher', 'room', 'period', 'student_grade_class'})
 _GUIDE_ANSWER_CODES = frozenset({'A', 'B', 'C', 'D', 'NONE'})
-_MAX_GUIDE_HISTORY = MAX_GUIDED_QUESTIONS
+# The entry choice and final course selection do not consume fact questions.
+_MAX_GUIDE_HISTORY = MAX_GUIDED_QUESTIONS + 2
 _GUIDE_CANDIDATE_ID_PATTERN = re.compile(r'^[0-9A-Za-z._:~\-]+$')
 _GUIDE_PRIVATE_TEXT_PATTERN = re.compile(
     r'(?i)(password|passwd|token|secret|credential|凭据|密码|口令|签名|评价|反馈)'
@@ -141,7 +153,7 @@ def _normalize_guide_state(value):
         state = GuidedAssistantState.from_public_dict(value)
     except (TypeError, ValueError) as error:
         raise ValueError(f'invalid assistant.guide_state: {error}') from error
-    if len(state.asked_question_kinds) > MAX_GUIDED_QUESTIONS:
+    if len([kind for kind in state.asked_question_kinds if kind != 'memory']) > MAX_GUIDED_QUESTIONS:
         raise ValueError('assistant.guide_state.asked_question_kinds exceeds maximum count')
     if any(
         not _GUIDE_CANDIDATE_ID_PATTERN.fullmatch(candidate_id)
@@ -282,7 +294,10 @@ def _parse_draft_payload(draft):
             normalized = _normalize_draft_payload(legacy_payload)
         except ValueError:
             return {}
-    return normalized if normalized is not None else {}
+    normalized = normalized if normalized is not None else {}
+    if type(payload.get('site_capture_id')) is int and payload['site_capture_id'] > 0:
+        normalized['site_capture_id']=payload['site_capture_id']
+    return normalized
 
 
 def _normalize_draft_payload(raw_payload):
@@ -290,6 +305,8 @@ def _normalize_draft_payload(raw_payload):
         return None
     normalized = {}
     for key, value in raw_payload.items():
+        if key == 'site_capture_id':
+            continue
         if not isinstance(key, str):
             continue
         if key == 'assistant_payload':
@@ -415,8 +432,39 @@ def _find_recent_duplicate_submission(user_number, form_data, now_time):
     return None
 
 
+def _form_edit_data(form):
+    fields = (
+        'listener_name', 'listener_number', 'course_changes', 'lecture_date', 'class_period',
+        'lecture_location', 'teacher_name', 'teacher_college', 'course_title', 'student_grade_class',
+        'abnormal_situation', 'teaching_method', 'classroom_discipline', 'classroom_atmosphere',
+        'courseware_quality', 'overall_effect', 'quality_case', 'course_feedback', 'suggestions',
+        'student_signature1', 'contact_phone1', 'student_signature2', 'contact_phone2',
+        'registration_id', 'review_comment',
+    )
+    data = {field: getattr(form, field) for field in fields}
+    data['unique_id'] = form.unique_id or form.id
+    lecture_date = parse_lecture_date(form.lecture_date)
+    if lecture_date:
+        data['lecture_date'] = lecture_date.isoformat()
+        data['lecture_date_display'] = form.lecture_date
+    period = re.fullmatch(r'第?(\d+)(?:-(\d+))?节?', form.class_period or '')
+    data['start_period'] = period.group(1) if period else ''
+    data['end_period'] = (period.group(2) or period.group(1)) if period else ''
+    return data
+
+
+def _render_submitted_form(user, existing_version=None):
+    """Keep the user's posted inputs and edit context on a rejected submission."""
+    submitted = request.form.to_dict(flat=True)
+    if existing_version:
+        submitted.setdefault('unique_id', str(existing_version.unique_id or existing_version.id))
+        submitted.setdefault('review_comment', existing_version.review_comment)
+    return render_template('user/lecture_form.html', user=user, form_data=submitted,
+                           form=existing_version, edit_mode=existing_version is not None)
+
+
 @user_bp.route('/api/lecture_form_draft', methods=['GET', 'PUT', 'DELETE'])
-@login_required
+@submission_required(api=True, methods=('PUT', 'DELETE'))
 def lecture_form_draft():
     user_id = session['user_id']
 
@@ -444,16 +492,32 @@ def lecture_form_draft():
         return jsonify({'success': False, 'message': 'Draft payload must be a JSON object'}), 400
 
     draft = _load_lecture_form_draft(user_id)
-    if not draft:
-        draft = LectureFormDraft(user_id=user_id, draft_key=LECTURE_FORM_DRAFT_KEY)
-        db.session.add(draft)
-
-    draft.payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    draft.updated_at = datetime.now()
-    db.session.commit()
+    existing = _parse_draft_payload(draft)
+    if 'expected_site_capture_id' in body and body['expected_site_capture_id'] != existing.get('site_capture_id'):
+        return jsonify(success=False,message='听课记录已切换，请刷新后继续填写。'),409
+    if existing.get('site_capture_id'):
+        payload['site_capture_id']=existing['site_capture_id']
+    try:
+        # The earlier expected-capture check is a useful message, but cannot
+        # protect a request paused after reading A while another resumes B.
+        # Claim the exact raw draft/version before touching its photo record.
+        written_at=save_lecture_form_draft_atomic(user_id,LECTURE_FORM_DRAFT_KEY,draft,payload)
+        if existing.get('site_capture_id'):
+            capture=LectureSiteCapture.query.filter_by(id=existing['site_capture_id'],user_id=user_id,form_id=None).first()
+            if capture:
+                capture.draft_json=json.dumps(payload,ensure_ascii=False,sort_keys=True)
+                if capture.confirmed_candidate_id and (payload.get('assistant') or {}).get('candidate_id')!=capture.confirmed_candidate_id:
+                    capture.confirmed_candidate_id=None
+        db.session.commit()
+    except (LectureFormDraftConflict,StaleDataError):
+        db.session.rollback()
+        return jsonify(success=False,code='draft_conflict',message='听课草稿已更新或删除，请保留当前输入并刷新后继续填写。'),409
+    except Exception:
+        db.session.rollback()
+        raise
     return jsonify({
         'success': True,
-        'updated_at': draft.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+        'updated_at': written_at.strftime('%Y-%m-%d %H:%M:%S'),
     })
 
 
@@ -467,7 +531,7 @@ def my_forms():
 
 
 @user_bp.route('/delete_form/<int:form_id>', methods=['POST'])
-@login_required
+@submission_required(api=True)
 def delete_form(form_id):
     from app.models import LectureForm, ScoreRecord, CourseRegistration
     user = User.query.get(session['user_id'])
@@ -488,26 +552,51 @@ def delete_form(form_id):
     if latest_form.status != '待审核':
         return jsonify({'success': False, 'message': '仅支持删除待审核状态的表单'}), 400
 
-    registration_id = latest_form.registration_id
-    score_record = ScoreRecord.query.filter_by(form_id=latest_form.id).first()
-    if score_record:
-        db.session.delete(score_record)
-    db.session.delete(latest_form)
-    db.session.flush()
+    try:
+        registration_id = latest_form.registration_id
+        captures = LectureSiteCapture.query.filter_by(form_id=latest_form.id).all()
+        for capture in captures:
+            try:
+                previous = json.loads(capture.draft_json or '{}')
+            except (TypeError, ValueError):
+                previous = {}
+            payload = previous if isinstance(previous, dict) else {}
+            # The current form contains the latest manual evaluation. Preserve
+            # the independent photo and course-confirmation evidence for resume.
+            payload.update(_form_edit_data(latest_form))
+            payload.pop('unique_id', None)
+            payload.pop('review_comment', None)
+            payload['site_capture_id'] = capture.id
+            capture.draft_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            capture.form_id = None
 
-    if registration_id:
-        remains = LectureForm.query.filter_by(registration_id=registration_id).count()
-        if remains == 0:
-            registration = CourseRegistration.query.get(registration_id)
-            if registration:
-                db.session.delete(registration)
+        score_record = ScoreRecord.query.filter_by(form_id=latest_form.id).first()
+        if score_record:
+            db.session.delete(score_record)
+        db.session.delete(latest_form)
+        db.session.flush()
 
-    db.session.commit()
+        if registration_id:
+            remains = LectureForm.query.filter_by(registration_id=registration_id).count()
+            if remains == 0:
+                registration = db.session.get(CourseRegistration, registration_id)
+                if registration:
+                    db.session.delete(registration)
+                    for capture in captures:
+                        payload = json.loads(capture.draft_json)
+                        payload.pop('registration_id', None)
+                        capture.draft_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Failed to delete listener form and release its site records')
+        return jsonify({'success': False, 'message': '表单删除失败，请稍后重试'}), 500
     return jsonify({'success': True, 'message': '表单删除成功'})
 
 
 @user_bp.route('/submit_form', methods=['GET', 'POST'])
-@login_required
+@submission_required()
 def submit_form():
     """提交听课表单"""
     user = User.query.get(session['user_id'])
@@ -517,13 +606,38 @@ def submit_form():
         from datetime import datetime
         import difflib
 
+        site_capture = None
+        version_id=request.form.get('unique_id')
+        existing_version = LectureForm.query.filter(
+            db.or_(LectureForm.unique_id == int(version_id), LectureForm.id == int(version_id)),
+            LectureForm.listener_number == user.number,
+        ).order_by(LectureForm.id.desc()).first() if version_id and version_id.isdigit() else None
+        if current_app.config.get('LECTURE_CAPTURE_ENABLED') and not existing_version:
+            capture_id=_parse_draft_payload(_load_lecture_form_draft(user.id)).get('site_capture_id')
+            posted_capture=request.form.get('site_capture_id','')
+            if capture_id and posted_capture and str(capture_id)!=posted_capture:
+                flash('听课记录已切换，请刷新后提交。','error')
+                return _render_submitted_form(user, existing_version),400
+            capture_id=capture_id or (int(posted_capture) if posted_capture.isdigit() else None)
+            site_capture=LectureSiteCapture.query.filter_by(id=capture_id,user_id=user.id,is_archived=False).first() if capture_id else None
+            if not site_capture:
+                flash('请先拍摄门牌并保存这次听课记录。','error')
+                return _render_submitted_form(user, existing_version),400
+            if request.form.get('lecture_date')!=site_capture.received_at[:10]:
+                flash('听课日期与现场记录不一致，请核对后提交。','error')
+                return _render_submitted_form(user, existing_version),400
+            from app.services.listening_assistant_contracts import normalize_room
+            if not site_capture.building or not site_capture.room_number or normalize_room(request.form.get('lecture_location')) != normalize_room(f'{site_capture.building}-{site_capture.room_number}'):
+                flash('请先确认照片中的教室，并核对表单教室。','error')
+                return _render_submitted_form(user, existing_version),400
+
         assistant_selection = None
         try:
             assistant_payload = _extract_assistant_submission_payload()
         except ValueError:
             db.session.rollback()
-            flash('听课助手数据格式错误，请重新确认课程信息后提交。', 'error')
-            return render_template('user/lecture_form.html', user=user), 400
+            flash('填表助手数据格式错误，请重新确认课程信息后提交。', 'error')
+            return _render_submitted_form(user, existing_version), 400
 
         if assistant_payload is not None:
             try:
@@ -532,8 +646,8 @@ def submit_form():
                 # Revalidation happens before any form mutation.  Keep the
                 # route's normal HTML/flash error shape and fail closed.
                 db.session.rollback()
-                flash('听课助手信息已失效，请重新搜索并确认课程后提交。', 'error')
-                return render_template('user/lecture_form.html', user=user), 400
+                flash('填表助手信息已失效，请重新搜索并确认课程后提交。', 'error')
+                return _render_submitted_form(user, existing_version), 400
 
         if assistant_selection is not None:
             snapshot = assistant_selection.field_snapshot
@@ -601,7 +715,9 @@ def submit_form():
             student_grade_class = request.form['student_grade_class']
         
         # 获取关联的登记ID
-        registration_id = request.form.get('registration_id')
+        registration_id = (request.form.get('registration_id') or '').strip() or None
+        if registration_id is None and existing_version is not None:
+            registration_id = existing_version.registration_id
         audit_tag = '需要人工审核' # 默认需要人工审核
         
         # 如果选择了已登记课程，先做服务端归属验证，再进行自动审核判断
@@ -610,10 +726,10 @@ def submit_form():
             registration = Reservation.query.get(registration_id)
             if registration is None:
                 flash('所选听课登记不存在或已被删除，请刷新后重试。', 'error')
-                return render_template('user/lecture_form.html', user=user), 400
+                return _render_submitted_form(user, existing_version), 400
             if registration.user_id != user.id:
                 flash('无权使用该听课登记。', 'error')
-                return render_template('user/lecture_form.html', user=user), 403
+                return _render_submitted_form(user, existing_version), 403
 
             # 获取原始课程信息（仅用于自动审核相似度计算；Course 缺失不改变
             # HTTP 行为，也不影响 registration 绑定，audit_tag 保持默认人工审核）
@@ -699,7 +815,7 @@ def submit_form():
 
             if unique_id and unique_id.strip():
                 # 检查是否存在可更新的最新版本
-                latest_form = LectureForm.query.filter_by(unique_id=unique_id).order_by(LectureForm.id.desc()).first()
+                latest_form = existing_version
 
                 # 如果最新版本存在，且状态为'待审核'，且属于当前用户，则更新该版本
                 if latest_form and latest_form.status == '待审核' and latest_form.listener_number == user.number:
@@ -723,7 +839,13 @@ def submit_form():
             else:
                 # 全新表单
                 duplicate_form = _find_recent_duplicate_submission(user.number, form_data, datetime.now())
+                if site_capture and site_capture.form_id and (not duplicate_form or duplicate_form.id!=site_capture.form_id):
+                    db.session.rollback()
+                    flash('这次现场记录已提交，请新建听课记录。','error')
+                    return _render_submitted_form(user, existing_version),400
                 if duplicate_form:
+                    if site_capture:
+                        site_capture.form_id=duplicate_form.id
                     # Outcome B（duplicate accepted）：draft DELETE + optional
                     # leave makeup + registration mirror reconciliation →
                     # 恰好一次 commit，不因 leave_makeup 缺失而省略（P2）。
@@ -764,6 +886,8 @@ def submit_form():
             db.session.flush()
             if assistant_selection is not None:
                 create_evidence(user, target_form, assistant_selection)
+            if site_capture:
+                site_capture.form_id=target_form.id
             reconcile_registration_usage_flags(registration_ids_to_reconcile)
 
             if leave_makeup:
@@ -786,12 +910,13 @@ def submit_form():
         except Exception as e:
             db.session.rollback()
             flash(f'提交失败：{str(e)}', 'error')
+            return _render_submitted_form(user, existing_version)
     
     return render_template('user/lecture_form.html', user=user)
 
 
 @user_bp.route('/form/edit/<int:form_id>')
-@login_required
+@submission_required()
 def edit_form(form_id):
     """编辑/重填表单"""
     from app.models import LectureForm
@@ -806,43 +931,7 @@ def edit_form(form_id):
         return redirect(url_for('user.my_forms'))
     
     # 构建表单数据字典
-    form_data = {
-        'listener_name': form.listener_name,
-        'listener_number': form.listener_number,
-        'course_changes': form.course_changes,
-        'lecture_date': form.lecture_date,
-        'class_period': form.class_period,
-        'lecture_location': form.lecture_location,
-        'teacher_name': form.teacher_name,
-        'teacher_college': form.teacher_college,
-        'course_title': form.course_title,
-        'student_grade_class': form.student_grade_class,
-        'abnormal_situation': form.abnormal_situation,
-        'teaching_method': form.teaching_method,
-        'classroom_discipline': form.classroom_discipline,
-        'classroom_atmosphere': form.classroom_atmosphere,
-        'courseware_quality': form.courseware_quality,
-        'overall_effect': form.overall_effect,
-        'quality_case': form.quality_case,
-        'course_feedback': form.course_feedback,
-        'suggestions': form.suggestions,
-        'student_signature1': form.student_signature1,
-        'contact_phone1': form.contact_phone1,
-        'student_signature2': form.student_signature2,
-        'contact_phone2': form.contact_phone2,
-        'review_comment': form.review_comment,
-        'unique_id': form.unique_id or form.id
-    }
-    
-    # 处理日期格式
-    try:
-        date_str = form.lecture_date
-        if '星期' in date_str:
-            date_str = date_str.split('星期')[0]
-        date_str = date_str.replace('/', '-')
-        form_data['lecture_date'] = date_str
-    except:
-        pass
+    form_data = _form_edit_data(form)
         
     # 移除备注拆分逻辑
     # if '【备注】' in form.suggestions:

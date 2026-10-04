@@ -36,21 +36,12 @@ def test_adaptive_guide_starts_with_memory_question_and_required_hooks():
     assert 'D. 我自己填写' in TEMPLATE
 
 
-def test_legacy_additive_and_semester_entry_contract_is_preserved():
-    assert TEMPLATE.index('data-listening-assistant') < TEMPLATE.index('id="course-information"')
-    assert 'data-assistant-toggle' in TEMPLATE
-    assert 'data-assistant-panel' in TEMPLATE
-    assert re.search(
-        r'<label[^>]+for="assistantSemester"[^>]*>[^<]*课表学期',
-        TEMPLATE,
-    )
-    assert re.search(
-        r'<input[^>]+id="assistantSemester"[^>]+data-assistant-semester',
-        TEMPLATE,
-    )
-    assert 'placeholder="如 2026-2027-1"' in TEMPLATE
-    assert 'data-assistant-semester-error' in TEMPLATE
-    assert 'assistantSemesterLegacy' in TEMPLATE
+def test_semester_is_internal_admin_default_without_student_entry():
+    assert re.search(r'<input[^>]+type="hidden"[^>]+id="assistantSemester"[^>]+data-assistant-semester', TEMPLATE)
+    assert '切换课表学期' not in TEMPLATE
+    assert 'assistantSemesterLegacy' not in TEMPLATE
+    assert 'data-assistant-settings' not in TEMPLATE
+    assert 'data-assistant-fallback-panel' not in TEMPLATE
 
 
 def test_guide_client_uses_server_recomputed_answer_protocol():
@@ -90,9 +81,6 @@ def test_existing_csrf_and_endpoint_contracts_are_retained():
         assert endpoint in SCRIPT
     for hook in (
         'data-assistant-manual',
-        'data-assistant-rescue',
-        'data-assistant-select',
-        'data-assistant-reject',
         'data-assistant-backup-ack',
     ):
         assert hook in TEMPLATE
@@ -113,7 +101,7 @@ def test_guide_keeps_safe_dom_rendering_and_request_cancellation():
 def test_candidate_confirmation_retains_evidence_and_manual_safety_hooks():
     for marker in (
         '课程', '教师', '教室', '节次', '班级', '来源', 'conflicts',
-        '备用来源确认', 'room choice', 'period override', '手动填写', '都不是',
+        '旧课表信息与实际一致', '实际在哪间教室', '实际听课节次', '手动填写', '都不是',
         'data-assistant-source', 'data-assistant-conflict',
         'data-assistant-backup-ack', 'data-assistant-room-choice',
         'data-assistant-period-override',
@@ -136,7 +124,7 @@ def test_candidate_conflicts_have_reachable_overrides_and_fallback_keeps_filters
         'overrides.lecture_date',
         'originalRoomForFallback',
         'knownRoom !== cleanText(candidate.room)',
-        '请填写日期覆盖值',
+        '请选择实际听课日期',
         'fallbackPayload.period',
         'fallbackPayload.student_grade_class',
         "question.kind === 'memory' || question.kind === 'candidate'",
@@ -144,7 +132,7 @@ def test_candidate_conflicts_have_reachable_overrides_and_fallback_keeps_filters
     ):
         assert marker in TEMPLATE + SCRIPT
     assert TEMPLATE.count('id="assistantBackupAck"') == 1
-    assert 'id="assistantBackupAckLegacy"' in TEMPLATE
+    assert 'id="assistantBackupAckLegacy"' not in TEMPLATE
 
 
 def test_current_request_guards_and_provenance_clear_contracts_are_retained():
@@ -179,16 +167,11 @@ def test_current_request_guards_and_provenance_clear_contracts_are_retained():
         assert 'if (isCurrentRequest(request.requestId))' in body
 
 
-def test_legacy_candidate_region_and_inline_event_safety_remain_present():
-    candidate_start = TEMPLATE.index('data-assistant-candidates')
-    candidate_end = TEMPLATE.index('data-assistant-none', candidate_start)
-    candidate_region = TEMPLATE[candidate_start:candidate_end]
-    assert 'role="region"' in candidate_region
-    assert 'tabindex="0"' in candidate_region
+def test_only_live_guide_remains_with_inline_event_safety():
     assistant_panel = TEMPLATE[TEMPLATE.index('data-listening-assistant'):TEMPLATE.index('<!-- 基本信息 -->')]
     assert 'onclick=' not in assistant_panel
-    assert 'data-assistant-select' in candidate_region
-    assert 'data-assistant-reject' in candidate_region
+    assert 'data-assistant-legacy' not in assistant_panel
+    assert 'data-assistant-options' in assistant_panel
 
 
 def test_source_conflict_and_confirmation_contract_stays_additive():
@@ -280,3 +263,62 @@ def test_confirmation_only_applies_snapshot_after_successful_confirm_response():
     confirm_body = SCRIPT[confirm_start:confirm_end]
     assert confirm_body.index('await requestJson') < confirm_body.index('applyFieldSnapshot')
     assert confirm_body.index('applyFieldSnapshot') < confirm_body.index('storeAssistantPayload')
+
+
+def test_assistant_makes_drafts_and_prefilled_facts_explicit():
+    for marker in (
+        'data-assistant-draft-notice',
+        'data-assistant-clear-draft',
+        'data-assistant-use-form-facts',
+        'data-assistant-known-facts-summary',
+        'lecture-form-draft-loaded',
+        '新建表单',
+        '核对课程',
+        'localStorage',
+    ):
+        assert marker in TEMPLATE + SCRIPT
+
+
+def test_assistant_invalidates_stale_candidates_after_form_changes():
+    for marker in (
+        'assistantQueryFingerprint',
+        'markAssistantStateStale',
+        '已检测到表单信息变化，原候选已失效',
+        'data-assistant-form-context',
+    ):
+        assert marker in TEMPLATE + SCRIPT
+
+
+def test_assistant_confirmation_has_side_by_side_context_and_terminal_done_state():
+    for marker in (
+        'data-assistant-comparison',
+        'listening-assistant__comparison-table',
+        '你已填写',
+        '课表候选',
+        '已完成：候选已确认',
+        'elements.confirm.hidden = completed',
+    ):
+        assert marker in TEMPLATE + SCRIPT
+
+
+def test_legacy_confirmation_hook_does_not_duplicate_live_confirmation_hook():
+    assert len(re.findall(r'\bdata-assistant-confirm(?=\s|=)', TEMPLATE)) == 1
+    assert 'data-legacy-assistant-confirm' not in TEMPLATE
+
+
+def test_new_draft_clears_stale_date_and_period_display_text():
+    assert 'if (dateInput.value)' in TEMPLATE
+    assert 'dateDisplay.textContent = \'\'' in TEMPLATE
+    assert 'if (!startPeriod || !endPeriod)' in TEMPLATE
+    assert 'periodDisplay.textContent = \'\'' in TEMPLATE
+def test_completed_candidate_view_replaces_pending_confirmation_copy():
+    assert '已确认的候选与来源' in TEMPLATE + SCRIPT
+    assert '课程信息已填入。' in SCRIPT
+    assert 'data-completion-issues' in TEMPLATE
+    assert 'data-completion-recommendation' in TEMPLATE
+
+
+def test_draft_semester_does_not_override_admin_configuration():
+    assert 'elements.semester.value = draftSemester' not in SCRIPT
+    assert "assistant.source_kind === 'backup'" in SCRIPT
+    assert 'cleanText(assistant.semester) !== readSemester()' in SCRIPT

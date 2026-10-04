@@ -755,3 +755,23 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+def test_generated_candidate_hash_with_long_digit_run_is_valid_guide_provenance():
+    from app.services.listening_assistant_evidence import _normalize_guide_state
+    identifier = 'primary:1:5724bf241235226b5dd5b48e'
+    result = _normalize_guide_state({
+        'known_facts': {'date': '2026-04-07'}, 'candidate_ids': [identifier],
+        'asked_question_kinds': ['memory', 'teacher', 'date'], 'question_count': 2, 'stage': 'confirm',
+    })
+    assert result['candidate_ids'] == [identifier]
+
+
+def test_four_fact_questions_plus_entry_and_selection_fit_guide_provenance():
+    from app.services.listening_assistant_evidence import _normalize_guide_state, _normalize_guide_history
+    result = _normalize_guide_state({
+        'known_facts': {}, 'candidate_ids': [],
+        'asked_question_kinds': ['memory','teacher','date','room','period'],
+        'question_count': 4, 'stage': 'confirm',
+    })
+    assert result['question_count'] == 4
+    history = [{'kind':kind,'answer_code':'A','custom_value':None} for kind in ['memory','teacher','date','room','period','date']]
+    assert len(_normalize_guide_history(history)) == 6

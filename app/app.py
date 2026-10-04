@@ -43,6 +43,7 @@ def create_app(config_override: dict | None = None):
         User,
     )
     from app.utils.user_status import is_user_active
+    from app.utils.submission_permissions import can_submit_lecture_form
     from app.utils.manage_permissions import get_user_manage_permission
     from app.utils.review_permissions import get_user_review_permission
     from app.utils.storage_cleanup import run_scheduled_storage_cleanup
@@ -71,6 +72,7 @@ def create_app(config_override: dict | None = None):
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.abspath(DB_PATH)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['UPLOAD_FOLDER'] = env_path('UPLOAD_FOLDER', DEFAULT_UPLOAD_FOLDER)
+    app.config['LECTURE_CAPTURE_ENABLED'] = env_bool('LECTURE_CAPTURE_ENABLED', default=False)
     MAX_CONTENT_LENGTH_MB = env_int('MAX_CONTENT_LENGTH_MB', 16, minimum=1)
     app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH_MB * 1024 * 1024
     app.config['DEBUG'] = env_bool('FLASK_DEBUG', False)
@@ -186,6 +188,7 @@ def create_app(config_override: dict | None = None):
             return {
                 'current_user': AnonymousUser(),
                 'app_navigation': [],
+                'app_can_submit_lecture_form': False,
                 'current_endpoint': request.endpoint or '',
             }
 
@@ -193,7 +196,11 @@ def create_app(config_override: dict | None = None):
         review_permission = get_user_review_permission(user.id) if user.role == '管理员' else None
         manage_permission = get_user_manage_permission(user.id) if user.role == '管理员' else None
         current_endpoint = request.endpoint or ''
-        app_navigation = build_navigation(user, current_endpoint, review_permission, manage_permission)
+        submission_allowed = can_submit_lecture_form(user)
+        app_navigation = build_navigation(
+            user, current_endpoint, review_permission, manage_permission,
+            submission_allowed=submission_allowed,
+        )
         is_information_officer = user.role == '信息员'
         contextual_search_endpoints = {
             'admin.manage_departments',
@@ -205,10 +212,12 @@ def create_app(config_override: dict | None = None):
             'user.listening_registration',
             'user.course_feedback_management',
             'user.my_forms',
+            'user.course_lookup',
         }
         return {
             'current_user': user,
             'app_navigation': app_navigation,
+            'app_can_submit_lecture_form': submission_allowed,
             'current_endpoint': current_endpoint,
             'page_label': resolve_page_label(app_navigation, current_endpoint),
             'app_search_endpoint': 'user.my_forms' if is_information_officer else 'admin.view_forms',

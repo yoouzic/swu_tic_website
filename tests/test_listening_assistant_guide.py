@@ -31,10 +31,15 @@ def entry(
     period=(3, 4),
     course='数据结构',
     student_class='2024级计算机1班',
+    lecture_date=LOOKUP_DATE,
+    weekday=2,
+    start_week_raw=None,
+    venue_start_week_raw=None,
+    venue_period_raw=None,
 ):
     return ScheduleEntry(
         entry_id=f'primary:batch-current:{row}',
-        lecture_date=LOOKUP_DATE,
+        lecture_date=lecture_date,
         room=room,
         period=period,
         course_code=f'C{row:03d}',
@@ -43,18 +48,64 @@ def entry(
         teacher_name=teacher,
         teacher_college='计算机学院',
         student_grade_class=student_class,
-        weekday=2,
+        weekday=weekday,
         semester=SEMESTER,
         source_kind='primary',
         source_label='当前权威课表',
         source_batch_id='batch-current',
         source_row=row,
+        start_week_raw=start_week_raw,
+        venue_start_week_raw=venue_start_week_raw,
+        venue_period_raw=venue_period_raw,
     )
 
 
 def make_service(entries):
     loader = LoaderSpy(entries)
     return ListeningAssistantService(schedule_loader=loader), loader
+
+
+def test_skip_factual_question_preserves_facts_and_asks_a_different_dimension():
+    service,_=make_service([entry(i,teacher=f'教师{i}',room=f'8-{300+i}',period=(i,i+1)) for i in range(1,7)])
+    guide=ListeningAssistantGuideService(service)
+    start=guide.start(known_facts={'date':LOOKUP_DATE.isoformat()})
+    result=guide.answer(start.state,question_kind=start.question.kind,option_code='SKIP',custom_value=None)
+    assert result.state.known_facts==start.state.known_facts
+    assert result.state.question_count==start.state.question_count+1
+    assert result.question is None or result.question.kind!=start.question.kind
+
+
+def test_skipping_all_questions_is_bounded_and_never_writes_unknown_as_a_fact():
+    service,_=make_service([entry(i,teacher=f'教师{i}',room=f'8-{300+i}',period=(i,i+1)) for i in range(1,7)])
+    guide=ListeningAssistantGuideService(service)
+    result=guide.answer(guide.start().state,question_kind='memory',option_code='A',custom_value=None)
+    steps=0
+    while result.state.stage=='question':
+        result=guide.answer(result.state,question_kind=result.question.kind,option_code='SKIP',custom_value=None)
+        steps+=1
+        assert steps<=4
+    assert result.state.known_facts=={}
+    assert result.state.stage in ('manual','candidate','confirm')
+
+
+def test_skip_initial_memory_has_manual_exit():
+    service,_=make_service([]);guide=ListeningAssistantGuideService(service)
+    result=guide.answer(guide.start().state,question_kind='memory',option_code='SKIP',custom_value=None)
+    assert result.state.stage=='manual' and result.state.known_facts=={}
+
+
+def test_custom_answer_loads_schedule_once_without_repeating_the_old_query():
+    service, loader = make_service([entry(1)])
+    guide = ListeningAssistantGuideService(service)
+    initial = guide.start()
+    question = guide.answer(initial.state, question_kind='memory', option_code='A', custom_value=None)
+    loader.calls.clear()
+
+    result = guide.answer(question.state, question_kind='date', option_code=None, custom_value=LOOKUP_DATE.isoformat())
+
+    assert result.state.known_facts['date'] == LOOKUP_DATE.isoformat()
+    assert result.candidates
+    assert len(loader.calls) == 1
 
 
 def test_search_partial_accepts_empty_facts_and_recomputes_primary_candidates():
@@ -147,6 +198,65 @@ def test_memory_a_selects_date_then_d_custom_date_is_one_fact():
     )
     assert after_date.state.known_facts == {'date': '2026-09-29'}
     assert after_date.state.question_count == 1
+
+
+@pytest.mark.parametrize(
+    ('memory_code', 'fact_kind', 'fact_value'),
+    (
+        ('B', 'teacher', '张三'),
+        ('C', 'room', '8-0309'),
+    ),
+)
+def test_memory_teacher_or_room_without_dates_continues_by_asking_for_date(
+    memory_code,
+    fact_kind,
+    fact_value,
+):
+    service, _ = make_service([
+        entry(
+            1,
+            teacher='张三',
+            room='8-0309',
+            lecture_date=None,
+            weekday=2,
+            start_week_raw='1-16',
+            venue_start_week_raw='1-16',
+            venue_period_raw='第3-4节',
+        ),
+        entry(
+            2,
+            teacher='李四',
+            room='8-0310',
+            lecture_date=None,
+            weekday=2,
+            start_week_raw='1-16',
+            venue_start_week_raw='1-16',
+            venue_period_raw='第3-4节',
+        ),
+    ])
+    guide = ListeningAssistantGuideService(service)
+    memory = guide.start(semester=SEMESTER)
+
+    fact_question = guide.answer(
+        memory.state,
+        question_kind='memory',
+        option_code=memory_code,
+        custom_value=None,
+        semester=SEMESTER,
+    )
+    after_fact = guide.answer(
+        fact_question.state,
+        question_kind=fact_kind,
+        option_code=None,
+        custom_value=fact_value,
+        semester=SEMESTER,
+    )
+
+    assert after_fact.state.stage == 'question'
+    expected_fact = '8-309' if fact_kind == 'room' else fact_value
+    assert after_fact.state.known_facts[fact_kind] == expected_fact
+    assert after_fact.question is not None
+    assert after_fact.question.kind == 'date'
 
 
 def test_guide_dynamically_chooses_teacher_room_and_period_and_stable_top_three():
@@ -372,6 +482,7 @@ def test_memory_d_cannot_write_multiple_facts_in_one_answer():
     ('known_facts', 'question_kind', 'uncertain'),
     (
         ({'date': '2026-09-29'}, 'teacher', '不确定'),
+        ({'date': '2026-09-29'}, 'teacher', '我不知道'),
         ({'date': '2026-09-29', 'teacher': '张三'}, 'room', '未知'),
         ({'date': '2026-09-29', 'teacher': '张三', 'room': '8-0309'}, 'period', '不清楚'),
     ),
@@ -457,3 +568,53 @@ def test_public_result_does_not_leak_private_fields():
     serialized = str(public).lower()
 
     assert all(secret not in serialized for secret in ('phone', 'signature', 'credential', 'evaluation'))
+
+
+def test_option_batches_include_courses_beyond_the_display_limit():
+    service, _ = make_service([
+        entry(i, teacher=f'教师{i:02}', course=f'课程{i:02}') for i in range(1, 31)
+    ])
+    guide = ListeningAssistantGuideService(service)
+    initial = guide.start(known_facts={'date': LOOKUP_DATE.isoformat()})
+    question = initial.question.to_public_dict()
+    batches = question['option_batches']
+    assert len(initial.candidates) == 20
+    assert len(initial.state.candidate_ids) == 20
+    assert len(batches) == 10
+    assert [o['value'] for batch in batches for o in batch] == [f'教师{i:02}' for i in range(1, 31)]
+    assert all([o['code'] for o in batch] == ['A', 'B', 'C'] for batch in batches)
+    selected = guide.answer(initial.state, question_kind='teacher', option_code=None, custom_value=batches[-1][-1]['value'])
+    assert selected.state.stage == 'confirm'
+    assert selected.candidates[0].teacher_name == '教师30'
+    assert selected.state.question_count == initial.state.question_count + 1
+
+
+def test_long_class_group_does_not_break_the_question_or_remove_courses():
+    service, _ = make_service([
+        entry(i, student_class=('班级' + '甲' * 130 if i == 6 else f'班级{i}'), period=(1, 2) if i <= 3 else (3, 4))
+        for i in range(1, 7)
+    ])
+    guide = ListeningAssistantGuideService(service)
+    initial = guide.start(known_facts={'date': LOOKUP_DATE.isoformat()})
+    assert initial.question.kind == 'period'
+    assert len(initial.candidates) == 6
+    reachable = set()
+    for option in initial.question.options:
+        result = guide.answer(initial.state, question_kind='period', option_code=option.code, custom_value=None)
+        assert result.state.stage in {'candidate', 'manual'}
+        assert result.state.question_count == 1
+        reachable.update(candidate.course_title + candidate.candidate_id for candidate in result.candidates)
+    assert len(reachable) == 6
+
+
+def test_first_batch_prioritizes_more_covered_courses_and_keeps_other_answers():
+    names = ['教师甲'] * 5 + ['教师乙'] * 3 + ['教师丙'] * 2 + ['教师丁']
+    service, _ = make_service([entry(i, teacher=name) for i, name in enumerate(names, 1)])
+    guide = ListeningAssistantGuideService(service)
+    result = guide.start(known_facts={'date': LOOKUP_DATE.isoformat()})
+    assert result.question.kind == 'teacher'
+    assert [o.value for o in result.question.options] == ['教师甲', '教师乙', '教师丙']
+    assert [o.candidate_count for o in result.question.options] == [5, 3, 2]
+    assert {o.value for batch in result.question.option_batches for o in batch} == set(names)
+    answered = guide.answer(result.state, question_kind='teacher', option_code='A', custom_value=None)
+    assert answered.state.known_facts['teacher'] == '教师甲'

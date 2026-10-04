@@ -102,6 +102,30 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         db.session.commit()
         return batches
 
+    def test_primary_loader_does_not_materialize_unused_raw_snapshot_rows(self):
+        self._persist(schedule_frame())
+        with patch('app.services.schedule_snapshots._rows_for_batch', side_effect=AssertionError('raw snapshot must not be loaded')):
+            self.assertEqual(len(load_schedule_entries(semester=SEMESTER)), 1)
+
+    def test_memory_only_search_does_not_materialize_entire_index(self):
+        from app.services.listening_assistant import ListeningAssistantService
+        self._persist(schedule_frame())
+        with patch('app.services.listening_assistant_schedule._as_contract', side_effect=AssertionError('date-less index cannot yield a candidate')):
+            result = ListeningAssistantService(semester=SEMESTER).search_partial({})
+            self.assertEqual(result.candidates, ())
+
+    def test_dated_search_only_materializes_the_requested_weekday(self):
+        from app.services.listening_assistant import ListeningAssistantService
+        from app.services import listening_assistant_schedule as schedule
+        first = schedule_frame()
+        second = schedule_frame(teacher='李四')
+        second.loc[0, '星期几'] = 4
+        self._persist(pd.concat([first, second], ignore_index=True))
+        with patch.object(schedule, '_as_contract', wraps=schedule._as_contract) as convert:
+            result = ListeningAssistantService(semester=SEMESTER).search_partial({'date':'2026-09-30'})
+            self.assertEqual(convert.call_count, 1)
+            self.assertEqual([item.teacher_name for item in result.candidates], ['张三'])
+
     def test_model_table_contains_batch_provenance_and_search_fields(self):
         inspector = inspect(db.engine)
         self.assertTrue(inspector.has_table('listening_assistant_schedule_entries'))

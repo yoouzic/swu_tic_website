@@ -450,6 +450,26 @@ class LectureFormDraft(db.Model):
         return f'<LectureFormDraft user={self.user_id} key={self.draft_key}>'
 
 
+class LectureSiteCapture(db.Model):
+    """Private photo and site context retained independently of form drafts."""
+    __tablename__ = 'lecture_site_captures'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    photo_key = db.Column(db.String(80), nullable=False, unique=True)
+    received_at = db.Column(db.String(40), nullable=False)
+    client_captured_at = db.Column(db.String(40), nullable=True)
+    location_json = db.Column(db.Text, nullable=False, default='{}')
+    room_number = db.Column(db.String(16), nullable=True)
+    building = db.Column(db.String(80), nullable=True)
+    period_number = db.Column(db.Integer, nullable=True)
+    ocr_status = db.Column(db.String(30), nullable=False, default='pending')
+    ocr_alternatives_json = db.Column(db.Text, nullable=False, default='[]')
+    draft_json = db.Column(db.Text, nullable=False, default='{}')
+    is_archived = db.Column(db.Boolean, nullable=False, default=False)
+    confirmed_candidate_id = db.Column(db.String(120), nullable=True)
+    form_id = db.Column(db.Integer, db.ForeignKey('lecture_forms.id'), nullable=True, index=True)
+
+
 class ListeningAssistantEvidence(db.Model):
     """Safe provenance for a confirmed listening-assistant selection.
 
@@ -737,6 +757,33 @@ class ScheduleImportBatch(db.Model):
 
     def __repr__(self):
         return f'<ScheduleImportBatch {self.id} {self.semester} {self.status}>'
+
+
+class ScheduleCourseMapping(db.Model):
+    """Presence marks an imported batch's exact Course membership complete.
+
+    An explicit completion row distinguishes an intentionally empty mapping
+    from older snapshots which predate batch-linked courses.
+    """
+    __tablename__ = 'schedule_course_mappings'
+
+    batch_id = db.Column(db.Integer, db.ForeignKey('schedule_import_batches.id', ondelete='CASCADE'),
+                         primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
+
+
+class ScheduleCourseMembership(db.Model):
+    """Exact Course rows belonging to one immutable schedule import batch."""
+    __tablename__ = 'schedule_course_memberships'
+
+    id = db.Column(db.Integer, primary_key=True)
+    batch_id = db.Column(db.Integer, db.ForeignKey('schedule_import_batches.id', ondelete='CASCADE'),
+                         nullable=False, index=True)
+    course_id = db.Column(db.Integer, db.ForeignKey('courses.id', ondelete='CASCADE'),
+                          nullable=False, index=True)
+    __table_args__ = (
+        db.UniqueConstraint('batch_id', 'course_id', name='uq_schedule_batch_course'),
+    )
 
 
 class ScheduleImportRow(db.Model):

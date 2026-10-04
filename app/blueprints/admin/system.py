@@ -294,6 +294,11 @@ def clear_table():
             # 用户表特殊处理：保留超级管理员账户
             deleted_count = model_class.query.filter(model_class.role != '超级管理员').delete()
         else:
+            if table_name == 'courses':
+                from app.models import ScheduleCourseMembership
+                from app.services.current_courses import ensure_current_course_schema
+                ensure_current_course_schema()
+                ScheduleCourseMembership.query.delete()
             # 其他表直接清空
             deleted_count = model_class.query.delete()
         

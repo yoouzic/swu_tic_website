@@ -206,6 +206,30 @@ class LectureFormDraftTest(unittest.TestCase):
         self.assertEqual(saved['assistant']['guide_state'], payload['assistant']['guide_state'])
         self.assertEqual(saved['assistant']['history'], payload['assistant']['history'])
 
+    def test_four_fact_answers_plus_entry_and_course_selection_can_be_saved(self):
+        self._login_as(self.user)
+        assistant = {
+            'guide_state': {
+                'known_facts': {'date': '2026-03-23', 'room': '28-301', 'period': '第10-11节', 'teacher': '王莲涔'},
+                'candidate_ids': ['primary:1:2227'],
+                'asked_question_kinds': ['memory', 'date', 'room', 'period', 'teacher'],
+                'question_count': 4,
+                'stage': 'confirm',
+            },
+            'history': [
+                {'kind': kind, 'answer_code': 'A', 'custom_value': None}
+                for kind in ['memory', 'date', 'room', 'period', 'teacher', 'teacher']
+            ],
+        }
+        response = self.client.put('/user/api/lecture_form_draft', json={'data': {'assistant': assistant}})
+        self.assertEqual(response.status_code, 200, response.get_json())
+        saved = self.client.get('/user/api/lecture_form_draft').get_json()['data']['assistant']
+        self.assertEqual(saved, assistant)
+
+        assistant['history'].append({'kind': 'teacher', 'answer_code': 'A', 'custom_value': None})
+        response = self.client.put('/user/api/lecture_form_draft', json={'data': {'assistant': assistant}})
+        self.assertEqual(response.status_code, 400)
+
     def test_assistant_draft_rejects_unknown_nested_guide_keys(self):
         self._login_as(self.user)
         payload = {
@@ -351,6 +375,15 @@ class LectureFormDraftTest(unittest.TestCase):
         self.assertEqual(LectureForm.query.filter_by(listener_number=self.user.number).count(), 1)
         self.assertEqual(LectureFormDraft.query.filter_by(user_id=self.user.id).count(), 0)
 
+    def test_browser_empty_registration_and_version_fields_allow_new_submission(self):
+        self._login_as(self.user)
+        payload = self._valid_form_payload()
+        payload.update(registration_id='', unique_id='')
+        response = self.client.post('/user/submit_form', data=payload)
+        self.assertEqual(response.status_code, 302)
+        submitted = LectureForm.query.filter_by(listener_number=self.user.number).one()
+        self.assertIsNone(submitted.registration_id)
+
     def test_assistant_source_unavailable_uses_normal_form_error_path(self):
         self._login_as(self.user)
         payload = self._valid_form_payload()
@@ -363,7 +396,7 @@ class LectureFormDraftTest(unittest.TestCase):
             response = self.client.post('/user/submit_form', data=payload)
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn('听课助手信息已失效', response.get_data(as_text=True))
+        self.assertIn('填表助手信息已失效', response.get_data(as_text=True))
         self.assertEqual(
             LectureForm.query.filter_by(listener_number=self.user.number).count(),
             0,

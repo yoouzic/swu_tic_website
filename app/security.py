@@ -4,13 +4,14 @@ from functools import wraps
 
 from flask import flash, jsonify, redirect, request, session, url_for
 
-from app.models import User
+from app.models import User, db
 from app.utils.permission_feedback import (
     flash_forbidden,
     forbidden_json,
     resolve_permission_resource,
 )
 from app.utils.user_status import is_user_active
+from app.utils.submission_permissions import can_submit_lecture_form
 
 
 def login_required(f):
@@ -69,4 +70,34 @@ def role_required(role):
                 return redirect(url_for('main.index'))
             return f(*args, **kwargs)
         return decorated_function
+    return decorator
+
+
+def submission_required(*, api=False, methods=None):
+    """Guard personal fill actions, including mixed read/write API endpoints."""
+    guarded_methods = frozenset(method.upper() for method in methods) if methods is not None else None
+
+    def decorator(view):
+        @wraps(view)
+        def decorated(*args, **kwargs):
+            user_id = session.get('user_id')
+            user = db.session.get(User, user_id) if user_id is not None else None
+            if user is None or not is_user_active(user):
+                if user_id is not None:
+                    session.clear()
+                message = '请先登录' if user_id is None else '账号已离任或不可用，请联系管理员'
+                if api:
+                    return jsonify(success=False, data=None, message=message), 401
+                flash(message, 'warning')
+                return redirect(url_for('auth.login'))
+            if guarded_methods is not None and request.method not in guarded_methods:
+                return view(*args, **kwargs)
+            if not can_submit_lecture_form(user):
+                message = '当前账号没有个人填报权限，请返回工作台或联系管理员。'
+                if api:
+                    return jsonify(success=False, data=None, message=message), 403
+                flash(message, 'error')
+                return redirect(url_for('main.index'))
+            return view(*args, **kwargs)
+        return decorated
     return decorator

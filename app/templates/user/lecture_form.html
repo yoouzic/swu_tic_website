@@ -2,13 +2,15 @@
 {% from "partials/_page_header.html" import page_header %}
 
 {% block title %}填写听课表单{% endblock %}
+{% block body_class %}lecture-form-page{% endblock %}
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/listening-assistant.css') }}">
+{% if capture_enabled and not form %}<link rel="stylesheet" href="{{ url_for('static', filename='css/site-capture.css') }}">{% endif %}
 {% endblock %}
 
 {% block content %}
-{{ page_header('填写听课表单', '按分区完成听课信息、课堂评价和签名，系统会持续保存草稿。') }}
+{{ page_header('填写听课表单') }}
 <div class="lecture-form-layout">
     <nav class="form-section-nav" aria-label="表单分区">
         <a href="#basic-information">基本信息</a>
@@ -18,6 +20,7 @@
         <a href="#signature-information">签名信息</a>
     </nav>
     <div class="lecture-form-content">
+    {% if capture_enabled and not form %}{% include 'user/_site_capture.html' %}{% endif %}
     {% if form_data is defined %}
     <script>
         var initialFormData = {{ form_data | tojson }};
@@ -108,7 +111,7 @@
         }
     </script>
     {% endif %}
-    <div class="row justify-content-center">
+    <div class="row justify-content-center lecture-form-sheet">
         <div class="col-md-10">
             <div class="card">
                 <div class="section-heading">
@@ -118,35 +121,48 @@
                     <div id="draftSaveStatus" class="draft-save-status" role="status" aria-live="polite">尚未保存</div>
                     <form method="POST" action="{{ url_for('user.submit_form') }}" id="lectureForm">
                         <!-- 关联登记ID (隐藏域) -->
-                        <input type="hidden" id="registration_id" name="registration_id">
+                        <input type="hidden" id="registration_id" name="registration_id" value="{{ form_data.get('registration_id', '') or '' if form_data is defined else '' }}">
                         <!-- 唯一ID (用于版本控制，编辑/驳回重填时使用) -->
-                        <input type="hidden" id="unique_id" name="unique_id" value="{{ form.unique_id if form else '' }}">
+                        <input type="hidden" id="unique_id" name="unique_id" value="{{ form_data.get('unique_id', '') if form_data is defined else '' }}">
                         <input type="hidden" id="assistant_payload" name="assistant_payload" data-payload-namespace="listening-assistant" value="">
+                        {% if capture_enabled and not form %}<input type="hidden" id="site_capture_id" name="site_capture_id" value="">{% endif %}
 
-                        <!-- 听课助手：独立的查询/确认路径，不替换下面的手工填写流程 -->
-                        <section class="listening-assistant mb-4" data-listening-assistant data-assistant-state="find" aria-labelledby="listeningAssistantTitle">
+                        <!-- 填表助手 -->
+                        <section class="listening-assistant mb-4" data-listening-assistant data-assistant-semester="{{ assistant_default_semester }}" data-assistant-state="find" aria-labelledby="listeningAssistantTitle">
                             <div class="listening-assistant__header">
                                 <button type="button" class="listening-assistant__toggle" data-assistant-toggle aria-expanded="true" aria-controls="listeningAssistantPanel">
-                                    <span class="listening-assistant__title" id="listeningAssistantTitle"><i class="bi bi-compass" aria-hidden="true"></i> 听课助手</span>
+                                    <span class="listening-assistant__title" id="listeningAssistantTitle"><i class="bi bi-compass" aria-hidden="true"></i> 填表助手</span>
                                     <span class="listening-assistant__toggle-hint" data-assistant-toggle-hint>收起</span>
                                 </button>
-                                <span class="listening-assistant__state-badge" data-assistant-state-label>查找</span>
+                                <span class="listening-assistant__state-badge" data-assistant-state-label hidden>查找</span>
                             </div>
                             <div id="listeningAssistantPanel" class="listening-assistant__panel" data-assistant-panel>
-                                <p class="listening-assistant__intro">先用日期和教室或教师缩小范围，再由你选择并确认课程。助手只推荐课表信息，不会自动提交表单。</p>
-                                <div class="listening-assistant__status" data-assistant-status role="status" aria-live="polite">状态：引导已就绪。</div>
+                                <div class="listening-assistant__status" data-assistant-status hidden role="status" aria-live="polite"></div>
+                                <div class="listening-assistant__error-actions" data-assistant-error-actions hidden>
+                                    <button type="button" class="btn btn-outline-secondary" data-assistant-manual-entry>直接填写表单</button>
+                                </div>
+                                <div class="listening-assistant__draft-notice" data-assistant-draft-notice hidden role="status" aria-live="polite">
+                                    <span>草稿已恢复</span>
+                                    <button type="button" class="btn btn-outline-secondary" data-assistant-clear-draft>新建表单</button>
+                                </div>
 
                                 <div class="listening-assistant__guide" data-assistant-guide>
-                                    <div class="listening-assistant__history" data-assistant-history aria-live="polite" aria-label="历史答案摘要"></div>
-                                    <div class="listening-assistant__progress" data-assistant-progress role="status" aria-live="polite">问题 0 / 4</div>
-                                    <div class="listening-assistant__semester-field">
-                                        <label class="form-label" for="assistantSemester">课表学期</label>
-                                        <input type="text" class="form-control" id="assistantSemester" data-assistant-semester placeholder="如 2026-2027-1" autocomplete="off" aria-describedby="assistantSemesterHelp assistantSemesterError">
-                                        <small class="form-text" id="assistantSemesterHelp">请先填写课表学期，选择 A/B/C/D 后才会启动引导查询。</small>
-                                        <small class="listening-assistant__semester-error" data-assistant-semester-error role="alert" hidden></small>
+                                    <div class="listening-assistant__history" data-assistant-history hidden aria-live="polite" aria-label="已选条件"></div>
+                                    <div class="listening-assistant__progress" data-assistant-progress hidden role="status" aria-live="polite"></div>
+                                    <input type="hidden" id="assistantSemester" data-assistant-semester value="{{ assistant_default_semester }}">
+                                    <div class="listening-assistant__known-facts" data-assistant-known-facts data-assistant-form-context hidden role="status" aria-live="polite">
+                                        <strong>已填课程信息</strong>
+                                        <p data-assistant-known-facts-summary></p>
+                                        <div class="listening-assistant__actions">
+                                            <button type="button" class="btn btn-primary" data-assistant-use-form-facts>核对课程</button>
+                                            <button type="button" class="btn btn-outline-secondary" data-assistant-ignore-form-facts>重新选择</button>
+                                        </div>
                                     </div>
                                     <div class="listening-assistant__question-region" data-assistant-question-region aria-live="polite" aria-atomic="true">
-                                        <h3 class="listening-assistant__question" data-assistant-question>你还记得哪类信息？</h3>
+                                        <div class="listening-assistant__question-heading">
+                                            <h3 class="listening-assistant__question" data-assistant-question>你还记得哪类信息？</h3>
+                                            <button type="button" class="btn btn-outline-secondary" data-assistant-next-batch hidden>换一批</button>
+                                        </div>
                                         <div class="listening-assistant__options" data-assistant-options role="group" aria-label="回答选项">
                                             <button type="button" class="btn btn-outline-primary" data-assistant-option="A">A. 听课日期</button>
                                             <button type="button" class="btn btn-outline-primary" data-assistant-option="B">B. 授课教师</button>
@@ -158,163 +174,93 @@
                                             <input class="form-control" id="assistantCustomInput" data-assistant-custom-input autocomplete="off">
                                             <small class="form-text" data-assistant-custom-help></small>
                                             <div class="listening-assistant__actions">
-                                                <button type="button" class="btn btn-primary" data-assistant-custom-submit>提交这一项</button>
+                                                <button type="button" class="btn btn-primary" data-assistant-custom-submit>下一步</button>
                                                 <button type="button" class="btn btn-outline-secondary" data-assistant-custom-cancel>返回选项</button>
                                             </div>
                                         </div>
                                     </div>
                                     <div class="listening-assistant__guide-actions">
                                         <button type="button" class="btn btn-outline-secondary" data-assistant-back disabled>返回上一问</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-skip>我不知道，跳过此题</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-manual-entry>先手动填写</button>
                                     </div>
                                 </div>
 
                                 <div class="listening-assistant__candidate-confirm" data-assistant-candidate-confirm hidden aria-live="polite" aria-atomic="true">
                                     <div class="listening-assistant__candidate-summary" data-assistant-candidate-summary></div>
+                                    <div class="listening-assistant__comparison-table" data-assistant-comparison aria-label="当前填写与课表候选对照"></div>
                                     <div class="listening-assistant__confirmation-evidence" data-assistant-confirmation-evidence>
-                                        <p class="listening-assistant__evidence-title">确认前请核对课程、教师、教室、节次、班级和来源。</p>
-                                        <div class="listening-assistant__source" data-assistant-source></div>
+                                        <div data-assistant-source hidden></div>
+                                        <p data-assistant-evidence-title hidden></p>
                                         <div class="listening-assistant__conflicts" data-assistant-conflict></div>
                                         <div class="listening-assistant__backup-ack form-check" data-assistant-backup-ack-wrap hidden>
                                             <input class="form-check-input" type="checkbox" id="assistantBackupAck" data-assistant-backup-ack>
-                                            <label class="form-check-label" for="assistantBackupAck">我已知道这是备用课表线索，并已人工核对来源和课程信息。</label>
+                                            <label class="form-check-label" for="assistantBackupAck">这是旧课表信息，我已核对与实际听课一致。</label>
                                         </div>
                                         <fieldset class="listening-assistant__room-choice" data-assistant-room-choice-wrap hidden>
-                                            <legend>教室处理方式（room choice）</legend>
+                                            <legend>实际在哪间教室？</legend>
                                             <label><input type="radio" name="assistant_room_choice" value="candidate" data-assistant-room-choice> 使用课表教室</label>
                                             <label><input type="radio" name="assistant_room_choice" value="manual" data-assistant-room-choice> 保留手动教室</label>
                                         </fieldset>
                                         <label class="listening-assistant__date-override" data-assistant-date-override-wrap hidden>
-                                            日期覆盖（date override）
+                                            实际听课日期
                                             <input type="date" class="form-control" data-assistant-date-override>
                                         </label>
                                         <label class="listening-assistant__period-override" data-assistant-period-override-wrap hidden>
-                                            节次覆盖（period override）
+                                            实际听课节次
                                             <input class="form-control" data-assistant-period-override>
                                         </label>
                                     </div>
                                     <p class="listening-assistant__review-hint" data-assistant-review-hint role="status" aria-live="polite"></p>
                                     <div class="listening-assistant__actions">
-                                        <button type="button" class="btn btn-outline-secondary" data-assistant-none>这些都不是 / 都不是，改为手动填写</button>
-                                        <button type="button" class="btn btn-primary" data-assistant-confirm disabled>确认并补充空白字段</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-none>都不是，手动填写</button>
+                                        <button type="button" class="btn btn-primary" data-assistant-confirm disabled>是这节课，填入表单</button>
                                         <button type="button" class="btn btn-outline-secondary" data-assistant-back-to-guide>返回上一问</button>
-                                    </div>
-                                </div>
-
-                                <div class="listening-assistant__fallback-panel" data-assistant-fallback-panel hidden>
-                                    <button type="button" class="btn btn-outline-warning" data-assistant-fallback>这些都不是 / 改查备用课表</button>
-                                    <div class="listening-assistant__fallback-controls" data-assistant-fallback-controls hidden>
-                                        <label class="form-label" for="assistantFallbackDate">备用查询日期</label>
-                                        <input type="date" class="form-control" id="assistantFallbackDate" data-assistant-fallback-date>
-                                        <label class="form-label" for="assistantFallbackTeacher">备用查询教师</label>
-                                        <input type="text" class="form-control" id="assistantFallbackTeacher" data-assistant-fallback-teacher placeholder="请输入授课教师">
-                                        <small class="form-text" data-assistant-fallback-help>备用课表查询需要日期、授课教师和服务器提供的备用批次。</small>
-                                        <button type="button" class="btn btn-warning" data-assistant-fallback-submit disabled>查询备用课表</button>
+                                        <a class="btn btn-primary" href="#assistantCompletion" data-assistant-continue-review hidden>继续填表</a>
                                     </div>
                                 </div>
 
                                 <div class="listening-assistant__manual" data-assistant-manual-view hidden>
-                                    <p>已切换到手动填写。助手不会把不确定信息写入正式表单。</p>
-                                    <button type="button" class="btn btn-outline-secondary" data-assistant-restart>重新开始引导</button>
-                                </div>
-
-                                <div data-assistant-legacy hidden aria-hidden="true">
-
-                                <div class="listening-assistant__view" data-assistant-view="find">
-                                    <div class="listening-assistant__query-grid">
-                                        <div class="listening-assistant__field">
-                                            <label for="assistantDate" class="form-label">听课日期</label>
-                                            <input type="date" class="form-control" id="assistantDate" data-assistant-query="date" autocomplete="off">
-                                        </div>
-                                        <div class="listening-assistant__field">
-                                            <label for="assistantRoom" class="form-label">教室（可选）</label>
-                                            <input type="text" class="form-control" id="assistantRoom" data-assistant-query="room" placeholder="如 8-309" autocomplete="off">
-                                        </div>
-                                        <div class="listening-assistant__field">
-                                            <label for="assistantTeacher" class="form-label">授课教师（可选）</label>
-                                            <input type="text" class="form-control" id="assistantTeacher" data-assistant-query="teacher" placeholder="如 张老师" autocomplete="off">
-                                        </div>
-                                        <div class="listening-assistant__field">
-                                            <label for="assistantPeriod" class="form-label">节次（可选）</label>
-                                            <input type="text" class="form-control" id="assistantPeriod" data-assistant-query="period" placeholder="如 第3-4节" autocomplete="off">
-                                        </div>
-                                        <div class="listening-assistant__field listening-assistant__field--wide">
-                                            <label for="assistantSemester" class="form-label">课表学期（确认时需要）</label>
-                                            <input type="text" class="form-control" id="assistantSemesterLegacy" data-assistant-query="semester" placeholder="如 2026-2027-1" autocomplete="off">
-                                            <small class="form-text">只在你填写时作为查询参数发送；备用课表查询和最终确认需要明确学期。</small>
-                                        </div>
-                                    </div>
+                                    <p data-assistant-manual-message role="status" aria-live="polite">请在下方填写课程信息。</p>
                                     <div class="listening-assistant__actions">
-                                        <button type="button" class="btn btn-primary" data-assistant-search><i class="bi bi-search" aria-hidden="true"></i> 查找课表候选</button>
+                                        <button type="button" class="btn btn-outline-primary" data-assistant-edit-answer hidden>修改上一项</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-restart>重新查找</button>
+                                        <a class="btn btn-outline-secondary" href="#course-information">手动填写课程信息</a>
                                     </div>
                                 </div>
 
-                                <div class="listening-assistant__candidate-list" data-assistant-candidates role="region" aria-live="polite" aria-label="课表候选结果" tabindex="0">
-                                    <div class="listening-assistant__empty" data-assistant-candidates-empty>输入查询条件后，这里会显示候选课程。</div>
-                                    <template data-assistant-candidate-template>
-                                        <article data-assistant-card tabindex="0"><button type="button" data-assistant-select>选择此候选</button><button type="button" data-assistant-reject>排除</button></article>
-                                    </template>
-                                </div>
-
-                                <div class="listening-assistant__none-action">
-                                    <p>候选可能不完整或不准确，请由你判断。</p>
-                                    <button type="button" class="btn btn-outline-secondary" data-assistant-none><i class="bi bi-slash-circle" aria-hidden="true"></i> 都不是 / 手动填写</button>
-                                </div>
-
-                                <div class="listening-assistant__view" data-assistant-view="rescue" hidden>
-                                    <div class="listening-assistant__state-heading"><span class="listening-assistant__state-icon" aria-hidden="true"><i class="bi bi-life-preserver"></i></span><div><h3 class="h6 mb-1">救援查询</h3><p class="mb-0">当前课表没有合适结果，或你已排除这些候选。</p></div></div>
-                                    <div class="alert alert-warning listening-assistant__backup-explanation" data-assistant-backup-explanation>
-                                        <strong>请注意：</strong>下一步会查询你明确选择的备用课表来源。备用课表只是线索，必须核对来源和课程后才能确认。
-                                        <div class="mt-2">备用来源批次：<code data-assistant-source-batch>尚未获得</code></div>
-                                    </div>
-                                    <div class="listening-assistant__rescue-fields">
-                                        <div class="listening-assistant__field">
-                                            <label for="assistantFallbackReason" class="form-label">救援原因</label>
-                                            <select class="form-select" id="assistantFallbackReason" data-assistant-fallback-reason>
-                                                <option value="no_result">当前课表无结果</option>
-                                                <option value="rejected_candidates">我已排除当前候选</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <p class="listening-assistant__inline-message" data-assistant-rescue-message role="status" aria-live="polite"></p>
-                                    <div class="listening-assistant__actions">
-                                        <button type="button" class="btn btn-primary" data-assistant-rescue disabled><i class="bi bi-arrow-repeat" aria-hidden="true"></i> 查询已选择的备用课表</button>
-                                        <button type="button" class="btn btn-outline-secondary" data-assistant-manual>直接手动填写</button>
-                                        <button type="button" class="btn btn-link" data-assistant-find-again>返回查找</button>
-                                    </div>
-                                </div>
-
-                                <div class="listening-assistant__view" data-assistant-view="review" hidden>
-                                    <div class="listening-assistant__state-heading"><span class="listening-assistant__state-icon" aria-hidden="true"><i class="bi bi-check2-square"></i></span><div><h3 class="h6 mb-1">复核并确认</h3><p class="mb-0">确认后只补充现有表单中的空白基础字段；已有手工内容不会被覆盖。</p></div></div>
-                                    <div class="listening-assistant__review" data-assistant-review></div>
-                                    <div class="listening-assistant__override-fields" data-assistant-override-fields></div>
-                                    <div class="listening-assistant__backup-ack form-check" data-assistant-backup-ack-wrap hidden>
-                                        <input class="form-check-input" type="checkbox" id="assistantBackupAckLegacy" data-assistant-backup-ack>
-                                        <label class="form-check-label" for="assistantBackupAckLegacy">我已知道这是备用课表线索，并已人工核对来源和课程信息。</label>
-                                    </div>
-                                    <p class="listening-assistant__review-hint" data-assistant-review-hint role="status" aria-live="polite"></p>
-                                    <div class="listening-assistant__actions">
-                                        <button type="button" class="btn btn-primary" data-assistant-confirm disabled><i class="bi bi-check2" aria-hidden="true"></i> 确认并补充空白字段</button>
-                                        <button type="button" class="btn btn-outline-secondary" data-assistant-back>返回候选</button>
-                                    </div>
-                                </div>
-
-                                <div class="listening-assistant__view" data-assistant-view="manual" hidden>
-                                    <div class="listening-assistant__state-heading"><span class="listening-assistant__state-icon" aria-hidden="true"><i class="bi bi-pencil-square"></i></span><div><h3 class="h6 mb-1">手动填写</h3><p class="mb-0">已保留原有表单流程。请在下方课程信息和其他分区中继续填写，助手不会提交表单。</p></div></div>
-                                    <div class="listening-assistant__actions"><button type="button" class="btn btn-outline-secondary" data-assistant-find-again>返回助手查找</button></div>
-                                </div>
-
-                                <div class="listening-assistant__view" data-assistant-view="done" hidden>
-                                    <div class="alert alert-success mb-0" data-assistant-done-message role="status" aria-live="polite">已确认课表信息。空白基础字段已补充，请继续完成评价和签名后再提交。</div>
-                                    <div class="listening-assistant__actions"><button type="button" class="btn btn-outline-secondary" data-assistant-find-again>重新查找</button></div>
-                                </div>
-
-                                <div class="listening-assistant__view" data-assistant-view="error" hidden>
-                                    <div class="alert alert-danger" data-assistant-error-message role="alert">听课助手暂时无法完成这一步。</div>
-                                    <div class="listening-assistant__actions"><button type="button" class="btn btn-primary" data-assistant-retry>重试</button><button type="button" class="btn btn-outline-secondary" data-assistant-manual>改为手动填写</button></div>
-                                </div>
-                                </div>
                             </div>
                         </section>
+
+                        <div data-site-review-guide {% if capture_enabled and not form %}hidden{% endif %}>
+                            <div class="form-completion-assistant" id="assistantCompletion" data-form-completion hidden>
+                                <div data-completion-issues>
+                                    <h3 class="listening-assistant__question">这次课程有变化、异常或不足建议吗？</h3>
+                                    <div class="listening-assistant__actions">
+                                        <button type="button" class="btn btn-outline-primary" data-completion-issue-answer="none">均无</button>
+                                        <button type="button" class="btn btn-outline-primary" data-completion-issue-answer="some">有，我来填写</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-completion-issue-answer="skip">我不知道，稍后填写</button>
+                                    </div>
+                                </div>
+                                <div data-completion-recommendation hidden>
+                                    <h3 class="listening-assistant__question">是否推荐这节课？</h3>
+                                    <p class="form-completion-assistant__condition">使用PPT演示、讲授、师生互动，且四项评价均为“非常好”。</p>
+                                    <div class="listening-assistant__actions">
+                                        <button type="button" class="btn btn-outline-primary" data-completion-recommend-answer="yes">符合条件，推荐</button>
+                                        <button type="button" class="btn btn-outline-primary" data-completion-recommend-answer="no">不推荐</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-completion-recommend-answer="skip">我不知道，稍后填写</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-completion-back>返回上一题</button>
+                                    </div>
+                                </div>
+                                <div class="form-completion-assistant__summary" data-completion-summary hidden>
+                                    <button type="button" class="btn btn-outline-secondary" data-completion-edit>修改回答</button>
+                                </div>
+                                <div class="form-completion-assistant__checklist" data-completion-checklist hidden>
+                                    <p data-completion-count role="status" aria-live="polite"></p>
+                                    <div class="listening-assistant__actions" data-completion-missing></div>
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- 基本信息 -->
                         <div id="basic-information" class="row mb-4 form-section">
@@ -526,6 +472,7 @@
                                         <option value="推荐">推荐</option>
                                         <option value="不推荐">不推荐</option>
                                     </select>
+                                    <small class="form-text" data-completion-recommendation-hint hidden role="status">推荐需使用三种教学方法，且四项评价均为“非常好”。</small>
                                 </div>
                             </div>
                         </div>
@@ -664,6 +611,10 @@ let lectureFormDraftTimer = null;
 let lectureFormDraftDirty = false;
 let lectureFormDraftSubmitting = false;
 let lectureFormDraftSaveController = null;
+window.lectureFormSiteCaptureId = null;
+let lectureFormDraftLoadSequence = 0;
+let lectureFormDraftEditRevision = 0;
+let lectureFormDraftSavePromise = null;
 
 // 页面加载完成后检查未使用的登记
 document.addEventListener('DOMContentLoaded', function() {
@@ -775,7 +726,15 @@ function updateDateWithWeekday() {
             displaySpan.className = 'form-text text-muted';
             dateInput.parentNode.appendChild(displaySpan);
         }
-        displaySpan.textContent = `完整时间：${formattedDate}`;
+        displaySpan.hidden = false;
+        displaySpan.textContent = weekday;
+    } else {
+        hiddenInput.value = '';
+        const dateDisplay = document.getElementById('date-display');
+        if (dateDisplay) {
+            dateDisplay.textContent = '';
+            dateDisplay.hidden = true;
+        }
     }
 }
 
@@ -785,33 +744,42 @@ function updateClassPeriod() {
     const endPeriod = document.getElementById('end_period').value;
     const hiddenInput = document.getElementById('class_period');
     
-    if (startPeriod && endPeriod) {
-        if (parseInt(startPeriod) > parseInt(endPeriod)) {
-            window.appFeedback('开始节次不能大于结束节次！');
-            document.getElementById('end_period').value = '';
-            return;
+    if (!startPeriod || !endPeriod) {
+        hiddenInput.value = '';
+        const periodDisplay = document.getElementById('period-display');
+        if (periodDisplay) {
+            periodDisplay.textContent = '';
+            periodDisplay.hidden = true;
         }
-        
-        let periodText;
-        if (startPeriod === endPeriod) {
-            periodText = `第${startPeriod}节`;
-        } else {
-            periodText = `第${startPeriod}-${endPeriod}节`;
-        }
-        
-        hiddenInput.value = periodText;
-        
-        // 显示在选择框下方
-        let displaySpan = document.getElementById('period-display');
-        if (!displaySpan) {
-            displaySpan = document.createElement('small');
-            displaySpan.id = 'period-display';
-            displaySpan.className = 'form-text text-muted';
-            document.getElementById('class_period').parentNode.appendChild(displaySpan);
-        } else {
-            displaySpan.textContent = `完整节次：${periodText}`;
-        }
+        return;
     }
+
+    if (parseInt(startPeriod) > parseInt(endPeriod)) {
+        window.appFeedback('开始节次不能大于结束节次！');
+        document.getElementById('end_period').value = '';
+        updateClassPeriod();
+        return;
+    }
+
+    let periodText;
+    if (startPeriod === endPeriod) {
+        periodText = `第${startPeriod}节`;
+    } else {
+        periodText = `第${startPeriod}-${endPeriod}节`;
+    }
+
+    hiddenInput.value = periodText;
+
+    // 显示在选择框下方
+    let periodDisplay = document.getElementById('period-display');
+    if (!periodDisplay) {
+        periodDisplay = document.createElement('small');
+        periodDisplay.id = 'period-display';
+        periodDisplay.className = 'form-text text-muted';
+        document.getElementById('class_period').parentNode.appendChild(periodDisplay);
+    }
+    periodDisplay.hidden = false;
+    periodDisplay.textContent = periodText;
 }
 
 function syncCoursewareQualityWithTeachingMethod() {
@@ -911,6 +879,7 @@ function applyLectureFormDraftData(data) {
     if (!data || typeof data !== 'object') {
         return;
     }
+    window.lectureFormSiteCaptureId = data.site_capture_id || null;
     const assistantSource = data.assistant || data.assistant_payload;
     const assistantPayload = parseAssistantPayloadObject(assistantSource);
     const assistantInput = document.getElementById('assistant_payload');
@@ -918,7 +887,9 @@ function applyLectureFormDraftData(data) {
         assistantInput.value = assistantPayload ? JSON.stringify(assistantPayload) : '';
     }
     Object.keys(data).forEach(key => {
-        if (key === 'assistant' || key === 'assistant_payload') {
+        // Readonly listener fields come from the current server-rendered profile.
+        if (key === 'assistant' || key === 'assistant_payload' ||
+            key === 'listener_name' || key === 'listener_number') {
             return;
         }
         const selector = `[name="${CSS.escape(key)}"]`;
@@ -941,6 +912,8 @@ function applyLectureFormDraftData(data) {
                 checkbox.checked = methods.includes(checkbox.value);
             }
         });
+    } else {
+        ['tm_ppt','tm_lecture','tm_interactive'].forEach(id=>{const checkbox=document.getElementById(id);if(checkbox)checkbox.checked=false;});
     }
     if (data.start_period) {
         const startEl = document.getElementById('start_period');
@@ -968,52 +941,89 @@ function applyLectureFormDraftData(data) {
 
 async function loadLectureFormDraft() {
     if (lectureFormIsEditMode) {
-        return;
+        return false;
     }
     try {
+        const sequence = ++lectureFormDraftLoadSequence;
+        const editRevision = lectureFormDraftEditRevision;
         const response = await fetch(lectureFormDraftUrl);
         const result = await response.json();
+        if (sequence !== lectureFormDraftLoadSequence || editRevision !== lectureFormDraftEditRevision) return false;
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || '草稿读取失败');
+        }
         if (result.success && result.exists) {
             applyLectureFormDraftData(result.data);
+            window.dispatchEvent(new CustomEvent('lecture-form-draft-loaded', {
+                detail: {data: result.data, updated_at: result.updated_at}
+            }));
             setLectureDraftStatus(`已保存 ${formatLectureDraftTime(result.updated_at)}`, 'success');
+            return true;
         }
+        return false;
     } catch (error) {
+        setLectureDraftStatus('草稿读取失败，请检查网络后重试', 'error');
         console.error('Failed to load lecture form draft:', error);
+        return false;
     }
 }
 
 async function saveLectureFormDraft() {
     if (lectureFormIsEditMode || lectureFormDraftSubmitting) {
-        return;
+        return false;
     }
-    const data = collectLectureFormDraftData();
-    lectureFormDraftDirty = false;
-    setLectureDraftStatus('正在保存', 'saving');
-    const saveController = new AbortController();
-    lectureFormDraftSaveController = saveController;
+    if (lectureFormDraftSavePromise) return await lectureFormDraftSavePromise;
+    const operation = (async () => {
+        // One write at a time; navigation succeeds only after the latest input
+        // is stored. Continuous editing gets a bounded retry rather than a
+        // false "saved" status or an unbounded navigation wait.
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            if (lectureFormDraftSubmitting) return false;
+            const data = collectLectureFormDraftData();
+            const snapshot = JSON.stringify(data);
+            const captureId = window.lectureFormSiteCaptureId;
+            const generation = lectureFormDraftLoadSequence;
+            const editRevision = lectureFormDraftEditRevision;
+            lectureFormDraftDirty = false;
+            setLectureDraftStatus('正在保存', 'saving');
+            const saveController = new AbortController();
+            lectureFormDraftSaveController = saveController;
+            try {
+                const response = await fetch(lectureFormDraftUrl, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    signal: saveController.signal,
+                    body: JSON.stringify({data, expected_site_capture_id:captureId})
+                });
+                const result = await response.json();
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || 'save failed');
+                }
+                if (generation !== lectureFormDraftLoadSequence || captureId !== window.lectureFormSiteCaptureId || lectureFormDraftSubmitting) return false;
+                if (editRevision === lectureFormDraftEditRevision && snapshot === JSON.stringify(collectLectureFormDraftData())) {
+                    lectureFormDraftDirty = false;
+                    setLectureDraftStatus(`已保存 ${formatLectureDraftTime(result.updated_at)}`, 'success');
+                    return true;
+                }
+                lectureFormDraftDirty = true;
+            } catch (error) {
+                if (error.name === 'AbortError') return false;
+                lectureFormDraftDirty = true;
+                setLectureDraftStatus('保存失败，请检查网络后重试', 'error');
+                console.error('Failed to save lecture form draft:', error);
+                return false;
+            } finally {
+                if (lectureFormDraftSaveController === saveController) lectureFormDraftSaveController = null;
+            }
+        }
+        setLectureDraftStatus('内容仍在修改，稍后自动保存', 'pending');
+        return false;
+    })();
+    lectureFormDraftSavePromise = operation;
     try {
-        const response = await fetch(lectureFormDraftUrl, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            signal: saveController.signal,
-            body: JSON.stringify({data})
-        });
-        const result = await response.json();
-        if (!response.ok || !result.success) {
-            throw new Error(result.message || 'save failed');
-        }
-        setLectureDraftStatus(`已保存 ${formatLectureDraftTime(result.updated_at)}`, 'success');
-    } catch (error) {
-        if (error.name === 'AbortError') {
-            return;
-        }
-        lectureFormDraftDirty = true;
-        setLectureDraftStatus('保存失败，请检查网络后重试', 'error');
-        console.error('Failed to save lecture form draft:', error);
+        return await operation;
     } finally {
-        if (lectureFormDraftSaveController === saveController) {
-            lectureFormDraftSaveController = null;
-        }
+        if (lectureFormDraftSavePromise === operation) lectureFormDraftSavePromise = null;
     }
 }
 
@@ -1021,6 +1031,7 @@ function scheduleLectureFormDraftSave() {
     if (lectureFormIsEditMode || lectureFormDraftSubmitting) {
         return;
     }
+    ++lectureFormDraftEditRevision;
     lectureFormDraftDirty = true;
     setLectureDraftStatus('尚未保存', 'pending');
     window.clearTimeout(lectureFormDraftTimer);
@@ -1028,6 +1039,7 @@ function scheduleLectureFormDraftSave() {
 }
 
 async function deleteLectureFormDraft() {
+    ++lectureFormDraftLoadSequence;
     window.clearTimeout(lectureFormDraftTimer);
     lectureFormDraftTimer = null;
     lectureFormDraftDirty = false;
@@ -1165,6 +1177,7 @@ document.addEventListener('DOMContentLoaded', function() {
     form.addEventListener('input', scheduleLectureFormDraftSave);
     form.addEventListener('change', scheduleLectureFormDraftSave);
     form.addEventListener('reset', function() {
+        ++lectureFormDraftLoadSequence;
         window.clearTimeout(lectureFormDraftTimer);
         lectureFormDraftDirty = false;
         window.setTimeout(deleteLectureFormDraft, 0);
@@ -1182,4 +1195,6 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 <script src="{{ url_for('static', filename='js/listening-assistant.js') }}"></script>
+<script src="{{ url_for('static', filename='js/form-completion-assistant.js') }}"></script>
+{% if capture_enabled and not form %}<script src="{{ url_for('static', filename='js/site-location.js') }}"></script><script src="{{ url_for('static', filename='js/site-context-guide.js') }}"></script><script src="{{ url_for('static', filename='js/site-capture.js') }}"></script><script src="{{ url_for('static', filename='js/site-door-crop.js') }}"></script><script src="{{ url_for('static', filename='js/site-building-map.js') }}"></script>{% endif %}
 {% endblock %}
