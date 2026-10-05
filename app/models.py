@@ -445,6 +445,8 @@ class LectureFormDraft(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     draft_key = db.Column(db.String(50), nullable=False, default='submit_form')
     payload_json = db.Column(db.Text, nullable=False, default='{}')
+    # Server-owned entry policy; client draft JSON cannot grant this exemption.
+    entry_mode = db.Column(db.String(16), nullable=False, default='photo', server_default='photo')
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
 

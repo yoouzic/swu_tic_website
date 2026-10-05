@@ -1612,6 +1612,8 @@ def delete_form(form_id):
         score_record = ScoreRecord.query.filter_by(form_id=form_id).first()
         if score_record:
             db.session.delete(score_record)
+        from app.services.submission_receipts import delete_form_submission_receipts
+        delete_form_submission_receipts([form_id])
         db.session.delete(form_to_delete)
         db.session.flush()
 
@@ -1674,6 +1676,8 @@ def delete_form_group(group_id):
         for score_record in score_records:
             db.session.delete(score_record)
 
+        from app.services.submission_receipts import delete_form_submission_receipts
+        delete_form_submission_receipts(form_ids)
         for form in group_forms:
             db.session.delete(form)
         db.session.flush()

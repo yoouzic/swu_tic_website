@@ -13,7 +13,7 @@ class LectureFormDraftConflict(Exception):
     """A draft changed, disappeared, or was created by another request."""
 
 
-def save_lecture_form_draft_atomic(user_id, draft_key, original_draft, payload):
+def save_lecture_form_draft_atomic(user_id, draft_key, original_draft, payload, *, entry_mode=None):
     """Write only the exact raw draft/version originally read by this request.
 
     This performs no commit. Once the SQL write succeeds, associated photo
@@ -22,12 +22,18 @@ def save_lecture_form_draft_atomic(user_id, draft_key, original_draft, payload):
     course confirmation and photo upload, without database-specific JSON APIs.
     """
     serialized=json.dumps(payload,ensure_ascii=False,sort_keys=True)
+    # Switching to a photo record revokes an old manual draft's exemption.
+    policy = ('photo' if payload.get('site_capture_id') else entry_mode or
+              (original_draft.entry_mode if original_draft is not None else None) or 'photo')
+    if policy not in ('manual', 'photo', 'legacy'):
+        raise ValueError('Invalid server draft entry policy')
     written_at=datetime.now()
     try:
         with db.session.no_autoflush:
             if original_draft is None or inspect(original_draft).transient or inspect(original_draft).pending:
                 draft=original_draft if original_draft is not None else LectureFormDraft(user_id=user_id,draft_key=draft_key)
                 draft.payload_json=serialized
+                draft.entry_mode=policy
                 draft.updated_at=written_at
                 db.session.add(draft)
                 db.session.flush()
@@ -43,7 +49,7 @@ def save_lecture_form_draft_atomic(user_id, draft_key, original_draft, payload):
                 LectureFormDraft.draft_key==draft_key,
                 LectureFormDraft.payload_json==original_draft.payload_json,
                 timestamp_condition,
-            ).values(payload_json=serialized,updated_at=written_at).execution_options(synchronize_session=False)
+            ).values(payload_json=serialized,updated_at=written_at,entry_mode=policy).execution_options(synchronize_session=False)
             matched=db.session.execute(statement).rowcount
         if matched!=1:
             raise LectureFormDraftConflict('听课草稿已更新或删除，请保留当前输入并刷新后继续填写。')
@@ -60,5 +66,6 @@ def save_lecture_form_draft_atomic(user_id, draft_key, original_draft, payload):
     # Avoid an ORM flush/onupdate rewriting the successful version claim. The
     # route may still use the loaded object, but this SQL write is authoritative.
     set_committed_value(original_draft,'payload_json',serialized)
+    set_committed_value(original_draft,'entry_mode',policy)
     set_committed_value(original_draft,'updated_at',written_at)
     return written_at

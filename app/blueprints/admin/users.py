@@ -17,6 +17,7 @@ from app.utils.password_audit import record_password_audit
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, active_user_filter, is_user_active
 from app.services.form_bindings import get_registration_logical_form_counts
 from app.services.profile_stats import build_user_profile_stats
+from app.services.lecture_form_concurrency import serialize_new_submission
 from app.services.organization_membership import (
     assign_user_to_group,
     canonical_group_user_criteria,
@@ -859,10 +860,16 @@ def delete_user(user_id):
         password = data.get('password')
         if not password or not check_password_hash(current_user.password_hash, password):
             return jsonify({'success': False, 'message': '密码验证失败，无法删除用户'}), 403
+
+        # Share the submitting actor's transaction lock before checking its
+        # forms. No new form can slip between COUNT and physical deletion.
+        serialize_new_submission(user_to_delete.id)
+        db.session.refresh(user_to_delete)
         
         # 检查是否有相关的听课表单
         forms_count = LectureForm.query.filter_by(listener_number=user_to_delete.number).count()
         if forms_count > 0:
+            db.session.rollback()
             return jsonify({'success': False, 'message': f'无法删除用户，该用户有 {forms_count} 条听课记录'}), 400
         
         delete_snapshot = _snapshot_user_for_movement(user_to_delete)
@@ -884,6 +891,8 @@ def delete_user(user_id):
             }]
         )
         
+        from app.services.submission_receipts import delete_user_submission_receipts
+        delete_user_submission_receipts(user_to_delete.id)
         db.session.delete(user_to_delete)
         db.session.commit()
         

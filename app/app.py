@@ -137,6 +137,9 @@ def create_app(config_override: dict | None = None):
     from app.services.registration_course_identity import ensure_registration_course_identity_schema
     with app.app_context():
         ensure_registration_course_identity_schema()
+    with app.app_context():
+        from app.services.lecture_form_draft_entry_schema import ensure_lecture_form_draft_entry_schema
+        ensure_lecture_form_draft_entry_schema()
     csrf.init_app(app)
 
     @app.errorhandler(CSRFError)
@@ -252,6 +255,8 @@ def init_database():
         db.create_all()
         from app.services.registration_course_identity import ensure_registration_course_identity_schema
         ensure_registration_course_identity_schema()
+        from app.services.lecture_form_draft_entry_schema import ensure_lecture_form_draft_entry_schema
+        ensure_lecture_form_draft_entry_schema()
         from app.services.assessment_override_schema import ensure_assessment_override_schema
         ensure_assessment_override_schema()
 
