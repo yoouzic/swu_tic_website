@@ -187,6 +187,14 @@ def update_teaching_settings():
                 'message': '需交表数必须是大于等于0的整数',
             }), 400
 
+        boolean_fields = (
+            'check_dept_review', 'check_center_review', 'show_auto_review_details',
+            'enable_typos_check', 'course_weekly_limit_enabled',
+        )
+        for field in boolean_fields:
+            if field in data and not isinstance(data[field], bool):
+                return jsonify({'success': False, 'message': f'{field}必须为布尔值'}), 400
+
         settings_map = {
             'teaching_first_week_monday': first_week_raw,
             'teaching_week_start_day': str(week_start_day),

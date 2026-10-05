@@ -28,6 +28,15 @@ from . import admin_bp
 from .shared import _active_user_query, _create_personnel_movement_record, _serialize_user_basic, _set_user_unassigned, _snapshot_user_for_movement
 
 
+def _positive_group_capacity(value):
+    """Accept the integer string emitted by the existing FormData UI."""
+    if isinstance(value, str) and value.isascii() and value.isdigit():
+        value = int(value)
+    if type(value) is int and value > 0:
+        return value
+    return None
+
+
 def _build_group_payload(group, users, *, name=None, department=None, description=None, max_members=None, is_virtual=False):
     group_name = name if name is not None else group.name
     group_department = department if department is not None else group.department
@@ -268,7 +277,9 @@ def add_department():
                  ),
              }), 403
              
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         name = data.get('name', '').strip()
         description = data.get('description', '').strip()
         manager_id_raw = data.get('manager_id')
@@ -406,7 +417,9 @@ def update_department(dept_id):
                     ),
                 }), 403
         
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         
         old_name = dept.name
         new_name = data.get('name', '').strip()
@@ -493,7 +506,10 @@ def disband_department(dept_id):
     """解散部门：删除组织记录，成员转入未分配部门。"""
     try:
         user = User.query.get(session['user_id'])
-        password = request.get_json().get('password') if request.get_json() else None
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
+        password = data.get('password')
         
         # 验证密码
         if not password or not check_password_hash(user.password_hash, password):
@@ -627,12 +643,16 @@ def add_group():
                 ),
             }), 403
             
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         name = data.get('name', '').strip()
         department = data.get('department', '').strip()
         leader = data.get('leader', '').strip()
         description = data.get('description', '').strip()
-        max_members = data.get('max_members', 10)
+        max_members = _positive_group_capacity(data.get('max_members', 10))
+        if max_members is None:
+            return jsonify({'success': False, 'message': '小组容量必须是大于0的整数'}), 400
         
         if not name:
             return jsonify({'success': False, 'message': '小组名称不能为空'}), 400
@@ -830,13 +850,17 @@ def update_group(group_id):
                          ),
                      }), 403
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         
         name = data.get('name', '').strip()
         department = data.get('department', '').strip()
         leader = data.get('leader', '').strip()
         description = data.get('description', '').strip()
-        max_members = data.get('max_members', 10)
+        max_members = _positive_group_capacity(data.get('max_members', 10))
+        if max_members is None:
+            return jsonify({'success': False, 'message': '小组容量必须是大于0的整数'}), 400
         
         if not name:
             return jsonify({'success': False, 'message': '小组名称不能为空'}), 400
@@ -992,7 +1016,9 @@ def disband_group(group_id):
                 }), 403
          
         # 验证密码
-        data = request.get_json() or {}
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         password = data.get('password')
         if not password or not check_password_hash(user.password_hash, password):
             return jsonify({'success': False, 'message': '密码验证失败，无法解散小组'}), 403
@@ -1072,7 +1098,9 @@ def move_members_to_group(group_id):
                  ),
              }), 403
         
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         user_ids = data.get('user_ids', [])
         
         if not user_ids:
@@ -1119,7 +1147,9 @@ def move_members_to_department(dept_id):
     try:
         dept = Department.query.get_or_404(dept_id)
         
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         user_ids = data.get('user_ids', [])
         
         if not user_ids:

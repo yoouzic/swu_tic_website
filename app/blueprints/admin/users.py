@@ -14,7 +14,7 @@ from app.utils.submission_permissions import (
     submission_permission_revoked,
 )
 from app.utils.password_audit import record_password_audit
-from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, is_user_active
+from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, active_user_filter, is_user_active
 from app.services.form_bindings import get_registration_logical_form_counts
 from app.services.profile_stats import build_user_profile_stats
 from app.services.organization_membership import (
@@ -27,6 +27,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import json
 from . import admin_bp
 from .shared import _active_user_query, _create_personnel_movement_record, _serialize_user_basic, _snapshot_user_for_movement, generate_random_password
+
+
+USER_ROLES = ('信息员', '管理员', '超级管理员')
 
 
 def _can_view_managed_user(current_user, target_user, manage_permission):
@@ -261,7 +264,13 @@ def add_user():
                  ),
              }), 403
         
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
+        text_fields = ('name', 'department', 'gender', 'grade', 'college', 'major', 'dormitory', 'phone', 'qq', 'student_id', 'role', 'password')
+        for field in text_fields:
+            if field in data and not isinstance(data[field], str):
+                return jsonify({'success': False, 'message': f'{field}必须为文本'}), 400
         
         # 必填字段验证
         name = data.get('name', '').strip()
@@ -275,6 +284,8 @@ def add_user():
         qq = data.get('qq', '').strip()
         student_id = data.get('student_id', '').strip()
         role = data.get('role', '').strip()
+        if role not in USER_ROLES:
+            return jsonify({'success': False, 'message': '角色必须为信息员、管理员或超级管理员'}), 400
         
         # 权限检查：非超级管理员只能添加本部门用户
         if manage_permission != '超级管理员':
@@ -517,7 +528,22 @@ def update_user(user_id):
                  ),
              }), 403
              
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
+        text_fields = ('name', 'department', 'gender', 'grade', 'college', 'major', 'dormitory', 'phone', 'qq', 'student_id', 'role', 'password', 'new_password')
+        for field in text_fields:
+            if field in data and not isinstance(data[field], str):
+                return jsonify({'success': False, 'message': f'{field}必须为文本'}), 400
+        if 'name' in data and not data['name'].strip():
+            return jsonify({'success': False, 'message': '姓名不能为空'}), 400
+        if 'role' in data:
+            new_role = data['role'].strip()
+            if new_role not in USER_ROLES:
+                return jsonify({'success': False, 'message': '角色必须为信息员、管理员或超级管理员'}), 400
+            if user.role == '超级管理员' and new_role != '超级管理员':
+                if not User.query.filter(User.role == '超级管理员', User.id != user.id, active_user_filter()).first():
+                    return jsonify({'success': False, 'message': '不能降级最后一个在任超级管理员'}), 400
         before_snapshot = _snapshot_user_for_movement(user)
         password_changed = False
         if 'new_password' not in data and 'password' in data:
@@ -731,7 +757,9 @@ def depart_user(user_id):
                 ),
             }), 403
 
-        data = request.get_json() or {}
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         password = data.get('password')
         if not password or not check_password_hash(current_user.password_hash, password):
             return jsonify({'success': False, 'message': '密码验证失败，无法办理离任'}), 403
@@ -825,7 +853,9 @@ def delete_user(user_id):
              return jsonify({'success': False, 'message': '不能删除当前登录账号'}), 400
         
         # 验证密码
-        data = request.get_json() or {}
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         password = data.get('password')
         if not password or not check_password_hash(current_user.password_hash, password):
             return jsonify({'success': False, 'message': '密码验证失败，无法删除用户'}), 403
@@ -1064,7 +1094,9 @@ def update_user_permissions(user_id):
                  ),
              }), 403
         
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         permission_ids = data.get('permission_ids', [])
         
         # 非超级管理员只能授予自身拥有的、且不高于自身级别的权限。
