@@ -6,6 +6,8 @@
         if(!root)return;
         const form=document.getElementById('lectureForm');
         const el=key=>root.querySelector(`[data-site-${key}]`);
+        const scheduleReady=root.dataset.scheduleReady!=='false';
+        const classroomButton=el('find')||el('classroom');
         let record=null,stream=null,location={},busy=false,reviewMode=false,newRecord=false,recordRevision=0,formRevision=0;
         let locationSession=null;
         function endLocation(){if(locationSession){locationSession.ended=true;locationSession.sampler.stop();}locationSession=null;}
@@ -115,13 +117,13 @@
             el('new').hidden=false;el('open').hidden=true;
             el('review').hidden=!data.course_confirmed;
             el('map-row').hidden=!!data.course_confirmed;el('corrections').hidden=!!data.course_confirmed;
-            if(switching){el('corrections').open=false;el('tools').open=false;}
+            if(switching){el('corrections').open=!scheduleReady;el('tools').open=false;}
             el('time').textContent=data.received_at.slice(0,16).replace('T',' ');
             const roomInput=document.getElementById('siteRoom');
             const buildingInput=document.getElementById('siteBuilding');
             if(switching||!roomInput.value)roomInput.value=data.room_number||'';
             if(switching||!buildingInput.value)buildingInput.value=data.building||'';
-            status(data.course_confirmed?'课程已确认，可以填写评价。':'照片已保存，待确认课程。');
+            status(data.course_confirmed?'课程已确认，可以填写评价。':(scheduleReady?'照片已保存，待确认课程。':'照片已保存，请确认教学楼和门牌，再手动填写课程。'));
             window.dispatchEvent?.(new CustomEvent('lecture-site-capture-loaded',{detail:data}));
         }
         function clearRecord(){
@@ -130,7 +132,7 @@
             const captureInput=document.getElementById('site_capture_id');if(captureInput)captureInput.value='';
             el('record').hidden=true;el('new').hidden=true;el('open').disabled=false;
             el('open').textContent='拍门牌';el('open').hidden=false;el('review').hidden=true;el('time').textContent='';
-            status('拍摄门牌，查找本次课程。');el('courses').replaceChildren();setMode(false);
+            status(scheduleReady?'拍摄门牌，查找本次课程。':'拍摄门牌，确认本次教室。');el('courses')?.replaceChildren();setMode(false);
         }
         async function restore(id){
             const revision=++recordRevision;
@@ -161,7 +163,7 @@
             catch(error){throw new Error(error.name==='NotAllowedError'?'请允许相机权限后重新拍摄。':'相机未能打开，请检查后重试。');}
             if(version!==formRevision){next.getTracks().forEach(track=>track.stop());return;}
             stream=next;
-            el('video').srcObject=stream;el('camera').hidden=false;status('拍清楚门牌号即可，系统会自动识别并查找课程。');
+            el('video').srcObject=stream;el('camera').hidden=false;status(scheduleReady?'拍清楚门牌号即可，系统会自动识别并查找课程。':'拍清楚门牌号，识别结果仍需确认。');
             beginLocation();
         }
         el('open').addEventListener('click',()=>action(el('open'),async()=>{
@@ -209,15 +211,16 @@
                 else throw error;
             }
         }));
-        el('find').addEventListener('click',()=>action(el('find'),()=>withContextLock(async()=>{
+        classroomButton.addEventListener('click',()=>action(classroomButton,()=>withContextLock(async()=>{
             if(!record)throw new Error('请先拍摄门牌。');
             const id=record.id,version=formRevision;
             await ensureDraftSaved();
             if(version!==formRevision||record?.id!==id)throw new Error('记录已切换，请重新查找。');
-            status('正在查找课程…');el('courses').replaceChildren();
+            status(scheduleReady?'正在查找课程…':'正在保存教室…');el('courses')?.replaceChildren();
             const result=await request(`/user/api/site-capture/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({building:document.getElementById('siteBuilding').value,room_number:document.getElementById('siteRoom').value})});
             if(version!==formRevision||record?.id!==id)throw new Error('记录已切换，请重新查找。');
             showRecord(result.data);await ensureDraftLoaded();
+            if(!scheduleReady){status('教室已确认，请手动填写课程信息。');setMode(true);if(assistant)assistant.hidden=true;return;}
             if(window.SiteContextGuide){status('教室已确认，请继续核对助手选项。');return;}
             if(!result.candidates.length){status(result.message);return;}
             status('请选择本次听课的课程。');

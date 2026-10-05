@@ -63,7 +63,7 @@
                 </table>
             </div>
             {% else %}
-            <div id="reservationsEmptyState" class="activity-empty">暂无听课预约。{% if app_can_submit_lecture_form %}可以先切换到“听课登记”选择课程。{% endif %}</div>
+            <div id="reservationsEmptyState" class="activity-empty">暂无听课预约。{% if app_can_submit_lecture_form and schedule_availability.registration_ready %}可以先切换到“听课登记”选择课程。{% endif %}</div>
             {% endif %}
         </div>
     </div>

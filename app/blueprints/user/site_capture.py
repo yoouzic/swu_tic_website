@@ -15,6 +15,7 @@ from app.services.listening_assistant_contracts import AssistantQuery, normalize
 from app.services.listening_assistant_evidence import revalidate_selection, AssistantSelectionError
 from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
 from app.services.schedule_snapshots import resolve_current_schedule_snapshot
+from app.services.schedule_availability import current_schedule_availability
 from app.services.lecture_form_draft_concurrency import LectureFormDraftConflict, save_lecture_form_draft_atomic
 from . import user_bp
 from .forms import _load_lecture_form_draft, _parse_draft_payload, LECTURE_FORM_DRAFT_KEY
@@ -43,6 +44,20 @@ def _draft(user):
 
 
 def _public(record):
+    availability=current_schedule_availability()
+    try:
+        stored=json.loads(record.draft_json or '{}')
+        assistant=stored.get('assistant',{}) if isinstance(stored,dict) else {}
+    except (TypeError,ValueError):
+        assistant={}
+    confirmed=(isinstance(assistant,dict) and availability['candidates_ready']
+               and bool(record.confirmed_candidate_id)
+               and record.confirmed_candidate_id.startswith(f"primary:{availability['batch_id']}:")
+               and assistant.get('candidate_id')==record.confirmed_candidate_id
+               and assistant.get('stage') in {'confirmed','done','complete'}
+               and assistant.get('source_kind')=='primary'
+               and assistant.get('semester')==availability['semester']
+               and str(assistant.get('source_batch_id'))==str(availability['batch_id']))
     return {'id':record.id,'photo_url':url_for('user.site_capture_photo',capture_id=record.id),
             'received_at':record.received_at,'record_date':record.received_at[:10],
             'room_number':record.room_number,'building':record.building,
@@ -50,7 +65,8 @@ def _public(record):
             'alternatives':capture_service.decode_ocr_evidence(record.ocr_alternatives_json)['alternatives'],
             'has_location':bool(json.loads(record.location_json)),
             'location_accuracy':json.loads(record.location_json).get('accuracy'),
-            'course_confirmed':bool(record.confirmed_candidate_id),'submitted':bool(record.form_id)}
+            'course_confirmed':bool(confirmed),
+            'submitted':bool(record.form_id)}
 
 
 def _query(record):
@@ -198,12 +214,14 @@ def site_capture_context(user,capture_id):
         return jsonify(success=False,message='请确认楼栋和三至四位门牌号。'),400
     draft,payload=_draft(user)
     if payload.get('site_capture_id')!=record.id:return jsonify(success=False,message='请先打开这次听课的草稿。'),409
+    availability=current_schedule_availability()
     changed=(record.building,record.room_number)!=(building,number)
     record.building=building;record.room_number=number
-    if changed:
+    if changed or not availability['candidates_ready']:
         record.confirmed_candidate_id=None;payload.pop('assistant',None)
-        for field in ('teacher_name','teacher_college','course_title','student_grade_class','start_period','end_period','class_period'):
-            payload[field]=''
+        if changed and availability['candidates_ready']:
+            for field in ('teacher_name','teacher_college','course_title','student_grade_class','start_period','end_period','class_period'):
+                payload[field]=''
     query=_query(record);payload['lecture_location']=query.room;payload['lecture_date']=record.received_at[:10]
     try:
         save_lecture_form_draft_atomic(user.id,LECTURE_FORM_DRAFT_KEY,draft,payload)
@@ -213,6 +231,9 @@ def site_capture_context(user,capture_id):
         return jsonify(success=False,code='draft_conflict',message='听课草稿已更新，请保留当前输入并刷新后重新核对教室。'),409
     except Exception:
         db.session.rollback();raise
+    if not availability['candidates_ready']:
+        return jsonify(success=True,data=_public(record),candidates=[],
+                       message='教室已确认，请手动填写课程信息。')
     try:
         result=ListeningAssistantService(semester=get_current_teaching_semester()).search(query)
         candidates=sorted(result.candidates,key=lambda c:(not(record.period_number and c.period[0]<=record.period_number<=c.period[1]),c.period,c.course_title,c.candidate_id))
@@ -287,6 +308,10 @@ def site_capture_location(user,capture_id):
 def site_capture_suggestions(user,capture_id):
     from app.services.site_context_model import rank_site_candidates, validate_facts, FACT_KINDS
     _enabled();record=_owned(capture_id,user)
+    availability=current_schedule_availability()
+    if not availability['candidates_ready']:
+        return jsonify(success=False,message=availability['candidate_message'],
+                       data={'source_unavailable':True,'status':availability['status']}),503
     if record.is_archived:return jsonify(success=False,message='这次照片已被替换，请打开新的记录。'),409
     body=request.get_json(silent=True) if request.method=='POST' else {}
     if not isinstance(body,dict):return jsonify(success=False,message='请求格式错误。'),400
@@ -327,6 +352,10 @@ def site_capture_suggestions(user,capture_id):
 @_assistant_login_required
 def site_capture_confirm(user,capture_id):
     _enabled();record=_owned(capture_id,user)
+    availability=current_schedule_availability()
+    if not availability['candidates_ready']:
+        return jsonify(success=False,message=availability['candidate_message'],
+                       data={'source_unavailable':True,'status':availability['status']}),503
     if record.form_id:return jsonify(success=False,message='这次记录已提交。'),409
     body=request.get_json(silent=True) or {};draft,payload=_draft(user)
     if not isinstance(body,dict):return jsonify(success=False,message='请求格式错误。'),400
@@ -339,6 +368,7 @@ def site_capture_confirm(user,capture_id):
     except (AssistantSelectionError,ScheduleSourceUnavailable,ValueError):
         db.session.rollback();return jsonify(success=False,message='课程已变化，请重新查找并确认。'),409
     record.confirmed_candidate_id=selected.candidate.candidate_id
+    selection['source_batch_id']=selected.source_batch_id
     selection['assistant_filled_fields']=['lecture_date','lecture_location','teacher_name','teacher_college','course_title','student_grade_class']
     selection['assistant_filled_groups']=['period']
     payload['assistant']=selection;payload.update(selected.field_snapshot)

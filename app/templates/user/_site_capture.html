@@ -1,7 +1,7 @@
-<section class="site-capture card mb-3" data-site-capture>
+<section class="site-capture card mb-3" data-site-capture data-schedule-ready="{{ 'true' if schedule_availability.candidates_ready else 'false' }}">
     <div class="card-body">
 <div class="site-capture__heading"><h2 class="h5 mb-0">现场听课记录</h2><span data-site-time></span></div>
-        <p class="text-muted" data-site-status role="status">拍摄门牌，查找本次课程。</p>
+        <p class="text-muted" data-site-status role="status">{{ '拍摄门牌，查找本次课程。' if schedule_availability.candidates_ready else '拍摄门牌，确认本次教室。' }}</p>
         <div class="site-capture__actions">
             <button type="button" class="btn btn-primary" data-site-open>拍门牌</button>
             <button type="button" class="btn btn-primary" data-site-review hidden>填写评价</button>
@@ -12,17 +12,19 @@
         </div>
         <div class="site-capture__record" data-site-record hidden>
             <div class="site-capture__lookup">
-                <div class="site-capture__map-row" data-site-map-row><h3 class="h6 mb-0">确认本次课程</h3><button type="button" class="btn btn-outline-secondary" data-site-map>地图选楼</button></div>
+                <div class="site-capture__map-row" data-site-map-row><h3 class="h6 mb-0">{{ '确认本次课程' if schedule_availability.candidates_ready else '确认本次教室' }}</h3><button type="button" class="btn btn-outline-secondary" data-site-map>地图选楼</button></div>
+                {% if schedule_availability.candidates_ready %}
                 <section class="site-context" data-site-context-guide hidden aria-label="现场线索听课助手">
                     <p class="text-muted mb-2" data-context-status role="status"></p><div data-context-content></div>
                 </section>
-                <details class="site-capture__corrections" data-site-corrections><summary>修改教学楼或门牌</summary>
+                {% endif %}
+                <details class="site-capture__corrections" data-site-corrections{% if not schedule_availability.candidates_ready %} open{% endif %}><summary>修改教学楼或门牌</summary>
                     <div class="site-capture__context">
                         <div><label class="form-label" for="siteBuilding">教学楼</label><input id="siteBuilding" class="form-control" list="siteBuildings" placeholder="如：8" maxlength="40"><datalist id="siteBuildings"></datalist></div>
                         <div><label class="form-label" for="siteRoom">门牌号</label><input id="siteRoom" class="form-control" inputmode="numeric" placeholder="如：0609" maxlength="5"></div>
                     </div>
-                    <div class="site-capture__actions"><button type="button" class="btn btn-primary" data-site-find>查找课程</button><button type="button" class="btn btn-link" data-site-manual>手动填写课程</button></div>
-                    <div class="site-capture__courses" data-site-courses></div>
+                    <div class="site-capture__actions">{% if schedule_availability.candidates_ready %}<button type="button" class="btn btn-primary" data-site-find>查找课程</button>{% else %}<button type="button" class="btn btn-primary" data-site-classroom>确认教室</button>{% endif %}<button type="button" class="btn btn-link" data-site-manual>手动填写课程</button></div>
+                    {% if schedule_availability.candidates_ready %}<div class="site-capture__courses" data-site-courses></div>{% endif %}
                 </details>
             </div>
             <div class="site-capture__footer">

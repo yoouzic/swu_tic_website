@@ -6,7 +6,7 @@ const source=fs.readFileSync('app/static/js/site-capture.js','utf8');
 function showRecordContext(record){
   const nodes=Object.fromEntries(['record','open','photo','time','new','review','map-row','corrections','tools'].map(key=>[key,{}]));
   const inputs={siteRoom:{value:'601'},siteBuilding:{value:'10'}};
-  const ctx={record,recordRevision:0,window:{},el:key=>nodes[key],status(){},document:{getElementById:key=>inputs[key]}};
+  const ctx={record,recordRevision:0,scheduleReady:true,window:{},el:key=>nodes[key],status(){},document:{getElementById:key=>inputs[key]}};
   vm.runInNewContext(source.slice(source.indexOf('        function showRecord('),source.indexOf('        async function restore(')),ctx);
   return {ctx,inputs,nodes};
 }

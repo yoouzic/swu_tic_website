@@ -14,14 +14,16 @@ class Node {
   scrollIntoView() {this.scrollCalls++;}
   dispatchEvent(event) { for (const callback of this.listeners[event.type] || []) callback(event); }
 }
-async function captureFixture(route) {
-  const nodes = Object.fromEntries(['status','camera','open','retake','manual','cancel','new','shoot','find','later','review','record','photo','time','pending','history','corrections','tools','courses','video','map-row'].map(id => [id, new Node()]));
+async function captureFixture(route, {scheduleReady=true}={}) {
+  const nodes = Object.fromEntries(['status','camera','open','retake','manual','cancel','new','shoot','find','classroom','later','review','record','photo','time','pending','history','corrections','tools','courses','video','map-row'].map(id => [id, new Node()]));
+  if(!scheduleReady){delete nodes.find;delete nodes.courses;}
   const inputs = Object.fromEntries(['siteRoom','siteBuilding','site_capture_id','siteBuildings','basic-information','course-information','classroom-review','feedback-information','signature-information'].map(id => [id, new Node()]));
   const form = new Node(), assistant = new Node(), reviewGuide = new Node(), completion = new Node(), nav = new Node(), window = new Node();form.inert=false;
   assistant.parentElement=form;reviewGuide.parentElement=form;completion.parentElement=reviewGuide;
   reviewGuide.hidden=true;completion.hidden=true;
   const timers = [];
   const root = new Node(); root.querySelector = selector => nodes[selector.match(/data-site-(.*?)\]/)[1]];
+  root.dataset.scheduleReady=String(scheduleReady);
   form.querySelector = () => new Node();
   let ready;
   const document = {
@@ -61,6 +63,23 @@ async function captureFixture(route) {
 const photo = id => ({id,photo_url:`/photo/${id}`,received_at:'2026-10-03T09:00:00',room_number:'601',building:'8',course_confirmed:false});
 const response = (data, ok=true) => ({ok,json:async () => data});
 const settle = () => new Promise(resolve => setImmediate(resolve));
+
+test('without a timetable classroom confirmation saves and reveals manual fields without course controls', async()=>{
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture/7'&&options.method==='PATCH')return response({success:true,data:photo(7),candidates:[]});
+    if(url==='/user/api/site-capture/7')return response({success:true,data:photo(7)});
+    throw new Error(url);
+  },{scheduleReady:false});
+  await fixture.window.fire('lecture-form-draft-loaded',{data:{site_capture_id:7}});await settle();
+  await fixture.nodes.classroom.click();
+  assert.equal(fixture.inputs['course-information'].hidden,false);
+  assert.match(fixture.nodes.status.textContent,/教室已确认/);
+  assert.equal(fixture.assistant.hidden,true);
+  assert.equal(fixture.nodes.corrections.open,true);
+  assert.equal(fixture.nodes.find,undefined);
+  assert.equal(fixture.nodes.courses,undefined);
+  assert.ok(!fixture.calls.some(call=>/suggestions|\/confirm/.test(call.url)));
+});
 
 test('failed new-photo upload retains the camera and reports the error when the active draft is still the old record', async () => {
   const fixture = await captureFixture(async url => {
