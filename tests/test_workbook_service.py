@@ -54,9 +54,18 @@ class AutosizeWorksheetTests(unittest.TestCase):
 
 
 class WorkbookResponseTests(unittest.TestCase):
-    def test_response_mime_and_attachment_filename(self):
+    def setUp(self):
         from app.app import create_app
-        app = create_app({'TESTING': True})
+        self.app = create_app({'TESTING': True, 'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:'})
+
+    def tearDown(self):
+        from app.models import db
+        with self.app.app_context():
+            db.session.remove()
+            db.engine.dispose()
+
+    def test_response_mime_and_attachment_filename(self):
+        app = self.app
 
         @app.route('/_test_workbook_response')
         def _respond():
@@ -76,8 +85,7 @@ class WorkbookResponseTests(unittest.TestCase):
         self.assertIn('测试文件.xlsx', unquote(disposition))
 
     def test_response_body_is_openable_workbook(self):
-        from app.app import create_app
-        app = create_app({'TESTING': True})
+        app = self.app
 
         @app.route('/_test_workbook_body')
         def _respond():
