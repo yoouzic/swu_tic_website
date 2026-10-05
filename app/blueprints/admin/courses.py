@@ -178,46 +178,32 @@ def get_courses():
 @role_required('超级管理员')
 def get_registration_statistics():
     try:
-        registration_rows = db.session.query(
-            CourseRegistration.course_code,
-            CourseRegistration.selection_code,
-            func.count(CourseRegistration.id).label('listen_count')
-        ).group_by(
-            CourseRegistration.course_code,
-            CourseRegistration.selection_code
-        ).all()
-
-        course_rows = Course.query.with_entities(
-            Course.id,
-            Course.course_code,
-            Course.selection_code,
-            Course.course_name,
-            Course.teacher_id
-        ).all()
-
+        from app.services.registration_course_identity import resolve_registration_course
         course_group_map = {}
-        for row in course_rows:
-            key = f"{row.course_code}_{row.selection_code}"
+        for registration in CourseRegistration.query.all():
+            course = resolve_registration_course(registration)
+            key = ('course', course.id) if course else (
+                'unresolved', registration.course_code, registration.selection_code,
+                registration.semester, registration.academic_year)
             if key not in course_group_map:
                 course_group_map[key] = {
-                    'course_code': row.course_code,
-                    'selection_code': row.selection_code,
-                    'course_name': row.course_name or '未命名课程',
-                    'teacher_id': row.teacher_id,
-                    'course_ids': []
+                    'course_code': registration.course_code,
+                    'selection_code': registration.selection_code,
+                    'course_name': course.course_name if course else '历史课程（身份待核实）',
+                    'teacher_id': course.teacher_id if course else None,
+                    'course_ids': [course.id] if course else [],
+                    'semester': registration.semester,
+                    'academic_year': registration.academic_year,
+                    'identity_restricted': course is None,
+                    'listen_count': 0,
                 }
-            course_group_map[key]['course_ids'].append(row.id)
+            course_group_map[key]['listen_count'] += 1
 
         teacher_ids = [item['teacher_id'] for item in course_group_map.values() if item['teacher_id']]
         teacher_map = {t.teacher_id: t for t in Teacher.query.filter(Teacher.teacher_id.in_(teacher_ids)).all()} if teacher_ids else {}
 
         teacher_stats_map = {}
-        for row in registration_rows:
-            key = f"{row.course_code}_{row.selection_code}"
-            course_group = course_group_map.get(key)
-            if not course_group:
-                continue
-
+        for course_group in course_group_map.values():
             teacher_id = course_group['teacher_id'] or 'UNKNOWN'
             teacher_obj = teacher_map.get(course_group['teacher_id']) if course_group['teacher_id'] else None
             teacher_name = teacher_obj.name if teacher_obj else '未匹配教师'
@@ -233,14 +219,17 @@ def get_registration_statistics():
                     'courses': []
                 }
 
-            teacher_stats_map[teacher_id]['total_listen_count'] += int(row.listen_count or 0)
+            teacher_stats_map[teacher_id]['total_listen_count'] += course_group['listen_count']
             teacher_stats_map[teacher_id]['course_ids'].extend(course_group['course_ids'])
             teacher_stats_map[teacher_id]['courses'].append({
                 'course_code': course_group['course_code'],
                 'selection_code': course_group['selection_code'],
                 'course_name': course_group['course_name'],
-                'listen_count': int(row.listen_count or 0),
-                'course_ids': course_group['course_ids']
+                'listen_count': course_group['listen_count'],
+                'course_ids': course_group['course_ids'],
+                'semester': course_group['semester'],
+                'academic_year': course_group['academic_year'],
+                'identity_restricted': course_group['identity_restricted'],
             })
 
         teacher_stats = list(teacher_stats_map.values())

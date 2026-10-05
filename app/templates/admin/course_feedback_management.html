@@ -1254,6 +1254,7 @@ function toggleSelectAll() {
     updateGroupCheckboxes();
 }
 
+let selectedRegistrationCourseId = null;
 // 打开登记模态框
 function openReservationModal(recordId) {
     // 查找课程记录
@@ -1285,6 +1286,7 @@ function openReservationModal(recordId) {
     document.getElementById('regCode').textContent = `课程号: ${courseGroup.course_code} | 选课号: ${courseGroup.selection_code}`;
     
     document.getElementById('regCourseCode').value = courseGroup.course_code;
+    selectedRegistrationCourseId = record.id;
     document.getElementById('regSelectionCode').value = courseGroup.selection_code;
     document.getElementById('regListeningInfo').value = ''; // 清空之前的输入
     clearReservationAlert();
@@ -1369,6 +1371,7 @@ function loadHistory(isAll, forcedTargetWeek) {
     }
     
     const params = new URLSearchParams({
+        course_id: selectedRegistrationCourseId,
         course_code: courseCode,
         selection_code: selectionCode,
         limit: limit
@@ -1522,6 +1525,7 @@ function submitReservation() {
     
     const data = {
         course_code: courseCode,
+        course_id: selectedRegistrationCourseId,
         selection_code: selectionCode,
         listening_info: listeningInfo
     };

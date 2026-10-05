@@ -14,6 +14,8 @@ from app.security import login_required, submission_required
 from app.services.academic_term import get_current_teaching_semester
 from app.services.teaching_calendar import parse_lecture_date
 from app.services.form_bindings import reconcile_registration_usage_flags
+from app.services.current_courses import current_course_query
+from app.services.schedule_availability import current_schedule_availability, site_capture_assistance_enabled
 from app.services.listening_assistant_contracts import SAFE_OVERRIDE_KEYS
 from app.services.listening_assistant_guide_contracts import (
     MAX_GUIDED_FACT_LENGTH,
@@ -27,6 +29,7 @@ from app.services.listening_assistant_evidence import (
 )
 from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
 from app.services.lecture_form_draft_concurrency import LectureFormDraftConflict, save_lecture_form_draft_atomic
+from app.services.registration_course_identity import resolve_registration_course
 from sqlalchemy.orm.exc import StaleDataError
 from datetime import datetime, timedelta
 from app.utils.audit_tags import build_audit_tag, build_week_correction_tag
@@ -731,12 +734,14 @@ def submit_form():
                 flash('无权使用该听课登记。', 'error')
                 return _render_submitted_form(user, existing_version), 403
 
+            applicable_course = resolve_registration_course(registration, current_only=True)
+            # Existing owned reservations remain valid binding facts even when
+            # their old Course is missing/retired. Only current authority may
+            # supply a course-check label; history must not prove a new course.
+
             # 获取原始课程信息（仅用于自动审核相似度计算；Course 缺失不改变
             # HTTP 行为，也不影响 registration 绑定，audit_tag 保持默认人工审核）
-            course = Course.query.filter_by(
-                course_code=registration.course_code,
-                selection_code=registration.selection_code
-            ).first()
+            course = applicable_course
 
             if course:
                 # 比较关键字段差异

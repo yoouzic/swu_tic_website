@@ -11,6 +11,8 @@ class WorkspaceSnapshot:
     total_users: int = 0
     failed_jobs: int = 0
     draft_saved: bool = False
+    schedule_ready: bool = True
+    registration_ready: bool = True
 
 
 def _build_review_tasks(pending_forms):
@@ -24,8 +26,12 @@ def _build_review_tasks(pending_forms):
 
 
 def load_workspace_snapshot(user):
+    from app.services.schedule_availability import current_schedule_availability
+    availability = current_schedule_availability()
+    capabilities = {'schedule_ready': availability['candidates_ready'],
+                    'registration_ready': availability['registration_ready']}
     if user.role not in ('信息员', '管理员', '超级管理员'):
-        return WorkspaceSnapshot()
+        return WorkspaceSnapshot(**capabilities)
 
     from app.models import CourseRegistration, LectureForm, LectureFormDraft, User, db
     from app.utils.review_permissions import (
@@ -39,6 +45,7 @@ def load_workspace_snapshot(user):
 
     if user.role == '信息员':
         return WorkspaceSnapshot(
+            **capabilities,
             total_forms=latest_forms.filter_by(listener_number=user.number).count(),
             reservation_count=CourseRegistration.query.filter_by(user_id=user.id).count(),
             draft_saved=LectureFormDraft.query.filter_by(user_id=user.id, draft_key='submit_form').first() is not None,
@@ -54,6 +61,7 @@ def load_workspace_snapshot(user):
     ).count()
     if user.role == '管理员':
         return WorkspaceSnapshot(
+            **capabilities,
             pending_forms=pending,
             department_users=User.query.filter_by(department=user.department, is_active=True).count(),
             department_forms=latest_forms.join(User, LectureForm.listener_number == User.number).filter(
@@ -61,6 +69,7 @@ def load_workspace_snapshot(user):
             ).count(),
         )
     return WorkspaceSnapshot(
+        **capabilities,
         pending_forms=pending,
         total_users=User.query.filter_by(is_active=True).count(),
         total_forms=latest_forms.count(),
@@ -73,8 +82,9 @@ def build_workspace(user, snapshot):
             'role': user.role,
             'role_slug': 'course-lookup',
             'title': f'你好，{user.name}',
-            'summary': '查找当前课表中的课程信息。',
-            'primary_action': {'label': '查询课表', 'endpoint': 'user.course_lookup'},
+            'summary': '查找当前课表中的课程信息。' if snapshot.schedule_ready else '查看已提交的记录。',
+            'primary_action': ({'label': '查询课表', 'endpoint': 'user.course_lookup'}
+                               if snapshot.schedule_ready else {'label': '查看记录', 'endpoint': 'user.my_forms'}),
             'metrics': [],
             'tasks': [],
             'quick_actions': [],
@@ -99,8 +109,8 @@ def build_workspace(user, snapshot):
                 {'label': '我的预约', 'value': snapshot.reservation_count},
             ],
             'tasks': tasks,
-            'quick_actions': [
-                {'label': '听课登记', 'endpoint': 'user.listening_registration'},
+            'quick_actions': ([{'label': '听课登记', 'endpoint': 'user.listening_registration'}]
+                              if snapshot.registration_ready else []) + [
                 {'label': '查看记录', 'endpoint': 'user.my_forms'},
             ],
         }

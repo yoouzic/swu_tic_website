@@ -396,7 +396,9 @@ class LectureBan(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)  # 用户ID
-    course_id = db.Column(db.String(50), db.ForeignKey('courses.course_code'), nullable=False)  # 课程号（外键指向courses.course_code）
+    # Legacy course-wide rule: this text is a course code, not a Course row ID.
+    # Course codes repeat across terms and cannot be a foreign-key parent.
+    course_id = db.Column(db.String(50), nullable=False)
     
     created_at = db.Column(db.DateTime, default=datetime.now)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)  # 创建人
@@ -414,6 +416,11 @@ class CourseRegistration(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     course_code = db.Column(db.String(50), nullable=False)  # 课程号
     selection_code = db.Column(db.String(50), nullable=False)  # 选课课号
+    course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=True, index=True)
+    semester = db.Column(db.String(20), nullable=True)
+    academic_year = db.Column(db.String(20), nullable=True)
+    identity_status = db.Column(db.String(32), nullable=True, default='pending')
+    identity_evidence_json = db.Column(db.Text, nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)  # 用户ID
     listening_info = db.Column(db.Text, nullable=True)  # 登记时的备注信息（如计划听课时间地点）
     
@@ -423,6 +430,7 @@ class CourseRegistration(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
     
     user = db.relationship('User', backref='registrations')
+    course = db.relationship('Course', backref='registrations')
     
     # 移除唯一约束，允许重复登记（作为历史记录）
     # __table_args__ = (db.UniqueConstraint('course_code', 'selection_code', 'user_id', name='unique_course_user_reservation'),)

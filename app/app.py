@@ -48,6 +48,7 @@ def create_app(config_override: dict | None = None):
     from app.utils.review_permissions import get_user_review_permission
     from app.utils.storage_cleanup import run_scheduled_storage_cleanup
     from app.ui.navigation import build_navigation, resolve_page_label
+    from app.services.schedule_availability import current_schedule_availability
 
     app = Flask(__name__)
 
@@ -133,6 +134,9 @@ def create_app(config_override: dict | None = None):
 
     # 4. Extensions
     db.init_app(app)
+    from app.services.registration_course_identity import ensure_registration_course_identity_schema
+    with app.app_context():
+        ensure_registration_course_identity_schema()
     csrf.init_app(app)
 
     @app.errorhandler(CSRFError)
@@ -197,9 +201,12 @@ def create_app(config_override: dict | None = None):
         manage_permission = get_user_manage_permission(user.id) if user.role == '管理员' else None
         current_endpoint = request.endpoint or ''
         submission_allowed = can_submit_lecture_form(user)
+        schedule_availability = current_schedule_availability()
         app_navigation = build_navigation(
             user, current_endpoint, review_permission, manage_permission,
             submission_allowed=submission_allowed,
+            schedule_ready=schedule_availability['candidates_ready'],
+            registration_ready=schedule_availability['registration_ready'],
         )
         is_information_officer = user.role == '信息员'
         contextual_search_endpoints = {
@@ -218,6 +225,7 @@ def create_app(config_override: dict | None = None):
             'current_user': user,
             'app_navigation': app_navigation,
             'app_can_submit_lecture_form': submission_allowed,
+            'schedule_availability': schedule_availability,
             'current_endpoint': current_endpoint,
             'page_label': resolve_page_label(app_navigation, current_endpoint),
             'app_search_endpoint': 'user.my_forms' if is_information_officer else 'admin.view_forms',
@@ -242,6 +250,8 @@ def init_database():
     from app.models import Department, Permission
     with app.app_context():
         db.create_all()
+        from app.services.registration_course_identity import ensure_registration_course_identity_schema
+        ensure_registration_course_identity_schema()
 
         # 创建默认部门
         if not Department.query.first():

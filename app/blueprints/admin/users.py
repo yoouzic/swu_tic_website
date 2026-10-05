@@ -112,16 +112,19 @@ def _build_user_reservations(user, search='', date_from='', date_to=''):
     )
 
     for registration in registrations:
-        course = Course.query.filter_by(
-            course_code=registration.course_code,
-            selection_code=registration.selection_code
-        ).first()
+        from app.services.registration_course_identity import resolve_registration_course
+        course = resolve_registration_course(registration)
         bind_count = logical_bind_counts.get(registration.id, 0)
         item = {
             'id': registration.id,
             'course_code': registration.course_code,
             'selection_code': registration.selection_code,
-            'course_name': course.course_name if course else '课程已删除',
+            'course_id': registration.course_id,
+            'semester': registration.semester,
+            'academic_year': registration.academic_year,
+            'identity_status': registration.identity_status,
+            'identity_restricted': course is None,
+            'course_name': course.course_name if course else '历史课程（身份待核实）',
             'teacher_name': course.teacher.name if course and course.teacher else '未知',
             'class_time': course.class_time if course else '',
             'class_location': course.class_location if course else '',

@@ -432,10 +432,15 @@ def _guide_service(semester: str) -> ListeningAssistantGuideService:
 
 
 def _configured_assistant_semester() -> str:
-    semester = get_current_teaching_semester().strip()
-    if not semester:
-        raise ScheduleSourceUnavailable(status='CURRENT_SEMESTER_UNSET', message='课表暂未配置，请联系管理员。')
-    return semester
+    from app.services.schedule_availability import current_schedule_availability
+    if not get_current_teaching_semester().strip():
+        raise ScheduleSourceUnavailable(status='CURRENT_SEMESTER_UNSET',
+                                        message='本学期课表未导入，请联系管理员。')
+    availability = current_schedule_availability()
+    if not availability['candidates_ready']:
+        raise ScheduleSourceUnavailable(status=availability['status'],
+                                        message=availability['candidate_message'])
+    return availability['semester']
 
 
 def _public_guide_result(result, semester: str) -> dict[str, Any]:

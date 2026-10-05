@@ -6,7 +6,7 @@
 {% block content %}
 {{ page_header('课程查询', metadata=['当前学期：' + current_semester] if current_semester else []) }}
 <div id="courseLookup" data-candidates-url="{{ url_for('user.listening_assistant_candidates') }}" data-semester="{{ current_semester }}">
-    {% if current_semester %}
+    {% if schedule_availability.candidates_ready %}
     <div class="activity-panel mb-4">
         <div class="activity-panel__body">
             <form id="courseLookupForm" method="GET" action="{{ url_for('user.course_lookup') }}" class="row g-3 align-items-end">
@@ -31,11 +31,11 @@
     <div id="lookupStatus" class="alert alert-secondary" role="status" aria-live="polite">请选择日期，并填写教室或教师。</div>
     <div id="lookupResults" class="row g-3"></div>
     {% else %}
-    <div class="alert alert-warning" role="status">课表暂未配置，请联系管理员。</div>
+    <div class="alert alert-warning" role="status">{{ schedule_availability.candidate_message }}</div>
     {% endif %}
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/course-lookup.js') }}"></script>
+{% if schedule_availability.candidates_ready %}<script src="{{ url_for('static', filename='js/course-lookup.js') }}"></script>{% endif %}
 {% endblock %}

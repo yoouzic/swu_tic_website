@@ -295,7 +295,16 @@ def clear_table():
             deleted_count = model_class.query.filter(model_class.role != '超级管理员').delete()
         else:
             if table_name == 'courses':
-                from app.models import ScheduleCourseMembership
+                from app.models import CourseRegistration, ScheduleCourseMembership
+                # SQLite can recycle IDs after a bulk clear. Preserve all
+                # historical reservations and course-specific bans instead
+                # of allowing those IDs to identify a newly imported course.
+                # Legacy rows lacking a course_id also retain their catalog
+                # evidence; clearing it would enable a later wrong inference.
+                if (CourseRegistration.query.first() is not None
+                        or ListeningBan.query.first() is not None):
+                    return jsonify(success=False, code='historical_course_references',
+                                   message='存在听课登记或禁听记录，不能清空课程；请直接导入新课表以保留历史。'), 400
                 from app.services.current_courses import ensure_current_course_schema
                 ensure_current_course_schema()
                 ScheduleCourseMembership.query.delete()

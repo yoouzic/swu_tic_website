@@ -44,6 +44,7 @@ NAVIGATION = (
                 'exclude_roles': ('超级管理员',),
                 'submission': False,
                 'active_endpoints': ('user.course_lookup',),
+                'schedule_required': True,
             },
             {
                 'label': '我的记录',
@@ -161,7 +162,8 @@ def resolve_page_label(groups, endpoint):
     return PAGE_LABELS.get(endpoint, '当前页面')
 
 
-def build_navigation(user, endpoint='', review_permission=None, manage_permission=None, submission_allowed=None):
+def build_navigation(user, endpoint='', review_permission=None, manage_permission=None, submission_allowed=None,
+                     schedule_ready=True, registration_ready=True):
     """Return navigation groups visible to ``user`` with one active endpoint."""
     if not getattr(user, 'is_authenticated', False) or not is_user_active(user):
         return []
@@ -174,6 +176,8 @@ def build_navigation(user, endpoint='', review_permission=None, manage_permissio
     for group_definition in NAVIGATION:
         items = []
         for definition in group_definition['items']:
+            if definition.get('schedule_required') and not schedule_ready:
+                continue
             if definition.get('roles') and user.role not in definition['roles']:
                 continue
             if user.role in definition.get('exclude_roles', ()):
@@ -186,6 +190,10 @@ def build_navigation(user, endpoint='', review_permission=None, manage_permissio
             if user.role != '超级管理员' and requirement == 'manage' and not manage_permission:
                 continue
             item = deepcopy(definition)
+            if item['endpoint'] == 'user.submit_form':
+                item['label'] = '填写听课表'
+            elif item['endpoint'] == 'user.listening_registration' and not registration_ready:
+                item['label'] = '我的记录'
             active_endpoints = item.pop('active_endpoints', (item['endpoint'],))
             item['active'] = endpoint in active_endpoints
             items.append(item)

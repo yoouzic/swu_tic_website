@@ -125,14 +125,14 @@ def current_course_status(semester=None):
 def current_course_query(semester=None, *, all_semesters=False):
     """Return a Course query suitable for existing search/filter composition.
 
-The Course-only compatibility path is limited to installations with no formal
-semester or snapshot authority at all. Once authority is configured, absence
-or invalid authority yields an empty query.
+New operational queries always require configured snapshot authority.
+Course-only historical installations never become a current schedule.
 """
     ensure_current_course_schema()
-    if _is_course_only_legacy():
-        query = Course.query
-        return query.filter(Course.semester == semester) if semester else query
+    if all_semesters and _is_course_only_legacy():
+        # Explicit administration/history queries keep their legacy data;
+        # default queries used by new registration and audit tags fail closed.
+        return Course.query.filter(Course.semester == semester) if semester else Course.query
     semesters = [semester] if semester else [None]
     if all_semesters and semester is None:
         semesters = [row[0] for row in db.session.query(ScheduleImportBatch.semester).distinct().all()]
