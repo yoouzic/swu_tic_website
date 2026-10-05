@@ -21,6 +21,12 @@ class LocalDebugDataTest(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp_dir.name, 'lecture_forms-debug.db')
+        import pandas as pd
+        self.schedule_path = Path(self.temp_dir.name, 'test-schedule.xlsx')
+        pd.DataFrame([{'学年': '2025-2026', '学期': '2', '姓名': '测试教师',
+                       '教师所属学院': '测试学院', '课程名称': '测试课程', '星期几': '1',
+                       '上课节次': '第3-4节', '上课地点': '8-309',
+                       '教学班组成': '2025测试01班', '起始周': '1-20'}]).to_excel(self.schedule_path, index=False)
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -35,6 +41,7 @@ class LocalDebugDataTest(unittest.TestCase):
             'DATABASE_URL': '',
             'SECRET_KEY': 'local-debug-test',
             'PYTHONUTF8': '1',
+            'LOCAL_DEBUG_SCHEDULE_FILE': str(self.schedule_path),
         })
         if extra_env:
             env.update(extra_env)
@@ -67,6 +74,33 @@ class LocalDebugDataTest(unittest.TestCase):
         self.assertEqual(users['user001']['role'], '信息员')
         for student_id in ('super', 'manager', 'user001'):
             self.assertTrue(check_password_hash(users[student_id]['password_hash'], '1234564'))
+
+    def test_prepare_configures_one_current_schedule_and_reuses_it_on_restart(self):
+        for _ in range(2):
+            result = self.run_prepare()
+            self.assertEqual(result.returncode, 0, result.stderr)
+        con = sqlite3.connect(self.db_path)
+        try:
+            self.assertEqual(con.execute("select value from system_settings where key='teaching_current_semester'").fetchone()[0], '2025-2026-2')
+            self.assertEqual(con.execute('select count(*) from schedule_import_batches').fetchone()[0], 1)
+            self.assertEqual(con.execute('select count(*) from listening_assistant_schedule_entries').fetchone()[0], 1)
+        finally:
+            con.close()
+
+    def test_prepare_reports_missing_timetable_without_creating_a_snapshot(self):
+        result = self.run_prepare(extra_env={'LOCAL_DEBUG_SCHEDULE_FILE': str(Path(self.temp_dir.name, 'missing.xlsx'))})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('调试课表不存在', result.stderr)
+
+    def test_prepare_refuses_a_workbook_with_multiple_semesters(self):
+        import pandas as pd
+        frame = pd.read_excel(self.schedule_path)
+        other = frame.copy()
+        other['学期'] = '1'
+        pd.concat([frame, other]).to_excel(self.schedule_path, index=False)
+        result = self.run_prepare()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('一个学期的一份课表', result.stderr)
 
     def test_prepare_resets_all_admin_roles_but_not_unrelated_information_officer(self):
         first = self.run_prepare()

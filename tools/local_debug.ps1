@@ -1,5 +1,6 @@
 ﻿param(
-    [string]$Action = 'menu'
+    [string]$Action = 'menu',
+    [string]$Profile = 'default'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,6 +21,16 @@ $DatabasePath = Join-Path $RuntimeRoot 'lecture_forms-debug.db'
 $LogPath = Join-Path $StorageRoot 'logs\local-debug.log'
 $ConsoleLogPath = Join-Path $StorageRoot 'logs\local-debug-console.log'
 $DefaultPort = 5087
+if ($Profile -eq 'no-schedule') {
+    $RuntimeRoot = Resolve-DebugRoot $env:LOCAL_DEBUG_RUNTIME_ROOT (Join-Path $RepoRoot 'data\instance\no-schedule-debug')
+    $StorageRoot = Resolve-DebugRoot $env:LOCAL_DEBUG_STORAGE_ROOT (Join-Path $RepoRoot 'data\storage\no-schedule-debug')
+    $PidPath = Join-Path $RuntimeRoot 'local-debug.pid'
+    $StatePath = Join-Path $RuntimeRoot 'local-debug-state.json'
+    $DatabasePath = Join-Path $RuntimeRoot 'lecture_forms-debug.db'
+    $LogPath = Join-Path $StorageRoot 'logs\local-debug.log'
+    $ConsoleLogPath = Join-Path $StorageRoot 'logs\local-debug-console.log'
+    $DefaultPort = 5088
+}
 $SharedPassword = '1234564'
 $HealthTimeoutSeconds = 30
 $Port = $null
@@ -97,15 +108,29 @@ function Set-DebugEnvironment {
     $env:INSTANCE_DIR = $RuntimeRoot
     $env:SQLITE_DB_PATH = $DatabasePath
     $env:UPLOAD_FOLDER = Join-Path $StorageRoot 'uploads'
+    $env:LECTURE_CAPTURE_ENABLED = 'true'
     $env:LOCAL_DEBUG_LOG_PATH = $LogPath
     $env:DATABASE_URL = ''
     $env:SECRET_KEY = 'local-debug-only-secret'
     $env:PYTHONUTF8 = '1'
+    if ($Profile -eq 'no-schedule') {
+        $env:LOCAL_DEBUG_PROFILE = 'no-schedule'
+        $env:LOCAL_DEBUG_STORAGE_ROOT = $StorageRoot
+        $env:FLASK_ENV = 'development'
+        $env:FLASK_DEBUG = '0'
+        $env:SESSION_COOKIE_SECURE = 'false'
+        $env:STORAGE_CLEANUP_ENABLED = 'false'
+        $env:DEEPSEEK_API_KEY = ''
+        $env:DEEPSEEK_BASE_URL = 'http://127.0.0.1:1/disabled'
+    } else {
+        $env:LOCAL_DEBUG_PROFILE = 'default'
+    }
 }
 
 function Invoke-PythonCommand($Python, [string[]]$Arguments) {
     $output = & $Python.Exe @($Python.Prefix) @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "Python command failed with exit code $LASTEXITCODE" }
+    if ($LASTEXITCODE -ne 0) { throw "Python command failed with exit code $LASTEXITCODE : $($output -join [Environment]::NewLine)" }
+    $output | Where-Object { [string]$_ -like '当前调试课表*' -or [string]$_ -like '无课表测试*' } | ForEach-Object { Write-Host $_ }
 }
 
 function Read-RecordedPid {
@@ -187,6 +212,12 @@ function Get-RecordedServiceRecord {
     $pidFileExists = Test-Path -LiteralPath $PidPath
     $stateFileExists = Test-Path -LiteralPath $StatePath
     $state = Read-RecordedState
+    if ($state -and ($Profile -eq 'no-schedule' -or $state.profile -eq 'no-schedule')) {
+        if ($state.profile -ne $Profile -or [string]::IsNullOrWhiteSpace([string]$state.database) -or
+            [IO.Path]::GetFullPath([string]$state.database) -ne $DatabasePath) {
+            throw '记录的进程属于其他测试环境，拒绝启动或关闭；请使用独立目录。'
+        }
+    }
     $pidFromFile = Read-RecordedPid
     $recordedPort = $null
     $recordedUrl = $null
@@ -381,6 +412,9 @@ function Start-LocalDebug {
     if ($record.IdentityMatches) {
         if (Test-Http $record.TargetUrl) {
             Write-MenuResult '提示' "服务已经运行：$($record.TargetUrl)"
+            if ($Profile -eq 'no-schedule') {
+                try { Open-DebugUrl $record.TargetUrl } catch { Write-MenuResult '提示' '请手动打开上述地址。' }
+            }
             return
         }
         throw "记录的调试服务进程仍存在，但网页不可访问：$($record.TargetUrl)"
@@ -395,7 +429,13 @@ function Start-LocalDebug {
     if (Test-TcpPort $Port) { throw (Get-PortOccupancyMessage $Port) }
 
     $python = Resolve-PythonCommand
-    Invoke-PythonCommand $python @('tools/prepare_local_debug.py', '--password', $SharedPassword)
+    if ($Profile -eq 'no-schedule') {
+        Write-MenuResult '准备' '正在初始化独立无全校课表测试环境…'
+        Invoke-PythonCommand $python @('tools/prepare_no_schedule_debug.py', '--password', $SharedPassword)
+    } else {
+        Write-MenuResult '准备' '正在初始化测试账号和当前课表…'
+        Invoke-PythonCommand $python @('tools/prepare_local_debug.py', '--password', $SharedPassword)
+    }
 
     $prefixText = ($python.Prefix | ForEach-Object { $_ }) -join ' '
     $pythonText = '"' + $python.Exe + '"'
@@ -431,6 +471,7 @@ function Start-LocalDebug {
             url = $Url
             python = $python.Exe
             database = $DatabasePath
+            profile = $Profile
         }
         Set-Content -LiteralPath $PidPath -Value $process.Id -Encoding ascii
         $launchState | ConvertTo-Json | Set-Content -LiteralPath $StatePath -Encoding utf8
@@ -523,6 +564,10 @@ function Show-Menu {
         Clear-Host
         $status = Get-DebugStatus
         Write-Host 'SWU TIC 本地调试'
+        if ($Profile -eq 'no-schedule') {
+            Write-Host '无全校课表测试：user001 信息员 / leader 小组长 / manager 部长'
+            Write-Host 'center 中心 / super 超管；初始密码 1234564'
+        }
         Write-Host "状态：$($status.Label)"
         Write-Host "地址：$($status.Url)"
         Write-Host ''
@@ -563,7 +608,8 @@ $locationPushed = $false
 try {
     Push-Location $RepoRoot
     $locationPushed = $true
-    $validActions = @('menu', 'start', 'stop', 'restart', 'status', 'open')
+    if (@('default','no-schedule') -notcontains $Profile) { throw "未知测试环境：$Profile" }
+    $validActions = @('menu', 'launch', 'start', 'stop', 'restart', 'status', 'open')
     if ($validActions -notcontains $Action) {
         throw "未知操作：$Action"
     }
@@ -572,6 +618,7 @@ try {
     $Url = "http://127.0.0.1:$Port"
     switch ($Action) {
         'menu' { Show-Menu }
+        'launch' { Start-LocalDebug; Show-Menu }
         'start' { Start-LocalDebug }
         'stop' { Stop-LocalDebug }
         'restart' { Stop-LocalDebug -Quiet; Start-LocalDebug }
