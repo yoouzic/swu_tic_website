@@ -252,6 +252,8 @@ def init_database():
         db.create_all()
         from app.services.registration_course_identity import ensure_registration_course_identity_schema
         ensure_registration_course_identity_schema()
+        from app.services.assessment_override_schema import ensure_assessment_override_schema
+        ensure_assessment_override_schema()
 
         # 创建默认部门
         if not Department.query.first():

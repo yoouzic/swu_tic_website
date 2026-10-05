@@ -3,6 +3,9 @@ import json
 import re
 
 from ..models import AssessmentOverride, LectureForm, SystemSetting
+from ..services.assessment_override_scope import (
+    current_override_semester, override_applies_to_semester, override_semester_filter,
+)
 
 
 LEAVE_OVERRIDE_TYPE = 'leave'
@@ -36,6 +39,7 @@ def get_teaching_settings():
         'first_week_date': config.first_week_date,
         'week_start_day': config.week_start_day,
         'required_submission': required_submission,
+        'semester': current_override_semester(),
         'total_weeks': config.total_weeks,
     }, None
 
@@ -93,7 +97,7 @@ def _latest_form_groups_for_user_number(user_number):
     for unique_id, form_list in group_map.items():
         sorted_forms = sorted(
             form_list,
-            key=lambda f: ((f.created_at or datetime.min), f.id),
+            key=lambda f: f.id,
             reverse=True,
         )
         groups.append({
@@ -190,6 +194,19 @@ def add_leave_makeup_form(record, form, source='auto', operator_user_id=None):
     return filtered
 
 
+def form_matches_leave_semester(record, form, settings=None):
+    if settings is None:
+        settings, error = get_teaching_settings()
+        if error:
+            return False
+    semester = (settings or {}).get('semester', current_override_semester())
+    if not override_applies_to_semester(record, semester) or not form:
+        return False
+    # A week correction tag cannot turn a prior semester's lecture into makeup.
+    lecture_date = parse_lecture_date_value(form.lecture_date)
+    return get_teaching_week_no(lecture_date, settings) is not None
+
+
 def record_leave_makeup_form(user, leave_status, form, source='auto', operator_user_id=None):
     if not user or not leave_status or not form:
         return None
@@ -201,13 +218,18 @@ def record_leave_makeup_form(user, leave_status, form, source='auto', operator_u
         user_id=user.id,
         override_type=LEAVE_OVERRIDE_TYPE,
     ).first()
-    if not record:
+    if not override_applies_to_semester(record):
+        return None
+    if form.listener_number != user.number or not form_matches_leave_semester(record, form):
         return None
     add_leave_makeup_form(record, form, source=source, operator_user_id=operator_user_id)
     return record
 
 
 def build_leave_status_payload(record, current_week, user=None, settings=None):
+    semester = (settings or {}).get('semester', current_override_semester())
+    if not override_applies_to_semester(record, semester):
+        return None
     if not record or not current_week or current_week < record.start_week:
         return None
     makeup_forms = get_leave_makeup_forms(record)
@@ -227,6 +249,7 @@ def build_leave_status_payload(record, current_week, user=None, settings=None):
     payload = {
         'override_id': record.id,
         'user_id': record.user_id,
+        'semester': record.semester,
         'status': status,
         'status_label': status_label,
         'start_week': record.start_week,
@@ -263,10 +286,11 @@ def get_user_relevant_leave_statuses(user, settings=None, current_week=None):
         if err:
             return []
 
-    records = AssessmentOverride.query.filter_by(
-        user_id=user.id,
-        override_type=LEAVE_OVERRIDE_TYPE,
-    ).order_by(AssessmentOverride.start_week.asc(), AssessmentOverride.end_week.asc()).all()
+    records = AssessmentOverride.query.filter(
+        AssessmentOverride.user_id == user.id,
+        AssessmentOverride.override_type == LEAVE_OVERRIDE_TYPE,
+        override_semester_filter(settings.get('semester', current_override_semester())),
+    ).populate_existing().order_by(AssessmentOverride.start_week.asc(), AssessmentOverride.end_week.asc()).all()
 
     statuses = []
     for record in records:

@@ -668,6 +668,8 @@ class AssessmentOverride(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    # NULL retains legacy rules whose semester has not been explicitly verified.
+    semester = db.Column(db.String(50), nullable=True, index=True)
     start_week = db.Column(db.Integer, nullable=False)     # 生效起始周（教学周编号）
     end_week = db.Column(db.Integer, nullable=False)       # 生效结束周（教学周编号）
 
@@ -691,8 +693,8 @@ class AssessmentOverride(db.Model):
     creator = db.relationship('User', foreign_keys=[created_by])
 
     __table_args__ = (
-        db.UniqueConstraint('user_id', 'start_week', 'end_week', 'override_type',
-                            name='unique_user_week_override'),
+        db.UniqueConstraint('user_id', 'semester', 'start_week', 'end_week', 'override_type',
+                            name='unique_user_semester_week_override'),
     )
 
     def __repr__(self):

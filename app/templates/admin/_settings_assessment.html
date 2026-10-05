@@ -1,6 +1,7 @@
 <div class="activity-panel">
     <div class="activity-panel__header"><h2>考核对象与指标设定</h2><p>设置免于考核和请假规则，规则会影响部门月度考评统计。</p></div>
     <div class="activity-panel__body">
+        <div class="alert alert-warning" id="overrideScopeWarning" role="status" hidden></div>
         <div class="d-flex flex-wrap gap-2 mb-3">
             <button class="btn btn-primary" id="btnLoadMembers" type="button">查询成员</button>
             <button class="btn btn-outline-secondary" id="btnSelectAllDepts" type="button">全选部门</button>
@@ -38,6 +39,16 @@
     </div>
 </div>
 
+{% if is_super_admin %}
+<div class="modal fade" id="assignRuleSemesterModal" tabindex="-1" aria-labelledby="assignRuleSemesterTitle" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h2 class="modal-title fs-5" id="assignRuleSemesterTitle">核实历史规则学期</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button></div>
+        <div class="modal-body"><p>请查验原始记录后填写所属学期。保存后该规则仅对所填学期生效。</p><label class="form-label" for="assignedRuleSemester">所属学期</label><input class="form-control" id="assignedRuleSemester" maxlength="50" placeholder="请输入已核实的学期"></div>
+        <div class="modal-footer"><button class="btn btn-secondary" type="button" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" type="button" id="btnAssignRuleSemester">确认归属</button></div>
+    </div></div>
+</div>
+{% endif %}
+
 <div class="modal fade" id="addRuleModal" tabindex="-1" aria-labelledby="addRuleTitle" aria-hidden="true">
     <div class="modal-dialog"><div class="modal-content">
         <div class="modal-header"><h2 class="modal-title fs-5" id="addRuleTitle">添加特殊考核规则</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button></div>
@@ -57,6 +68,7 @@
     const isSuperAdmin = {{ is_super_admin|tojson }};
     let currentMembersData = null;
     let pendingRuleUserIds = [];
+    let pendingSemesterOverrideId = null;
     const feedback = (text, variant) => window.appFeedback ? window.appFeedback(text, variant) : console.warn(text);
     const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (s) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
 
@@ -81,6 +93,11 @@
         return map[type] || `<span class="badge bg-secondary">${escapeHtml(type)}</span>`;
     }
     function renderMembers(data) {
+        const warning = document.getElementById('overrideScopeWarning');
+        warning.textContent = data.scope_warning || '';
+        warning.hidden = !data.scope_warning;
+        document.getElementById('ruleStartWeek').max = data.total_weeks || 20;
+        document.getElementById('ruleEndWeek').max = data.total_weeks || 20;
         const root = document.getElementById('memberBody');
         const departments = data.departments || [];
         if (departments.length === 0) { root.innerHTML = '<div class="activity-empty">无可展示的成员。</div>'; document.getElementById('memberSelectionToolbar').hidden = true; document.getElementById('batchActionBar').hidden = true; return; }
@@ -93,7 +110,11 @@
                 html += `<div class="list-group-item"><div class="d-flex align-items-center gap-2"><input class="form-check-input member-checkbox" type="checkbox" value="${member.user_id}" data-name="${escapeHtml(member.name)}"><strong>${escapeHtml(member.name)}</strong><span class="text-muted">(${escapeHtml(member.number || '-')})</span><button class="btn btn-sm btn-outline-primary ms-auto" type="button" onclick="openAddRuleModal([{id:${member.user_id},name:'${escapeHtml(member.name)}'}])"><i class="bi bi-plus-circle" aria-hidden="true"></i> 添加规则</button></div>`;
                 const overrides = member.overrides || [];
                 if (!overrides.length) html += '<div class="text-muted small mt-1 ms-4">无特殊考核规则</div>';
-                for (const ov of overrides) html += `<div class="d-flex align-items-center gap-2 mt-1 ms-4"><span>${renderOverrideTypeBadge(ov.override_type)}</span><span class="small">第${ov.start_week}-${ov.end_week}周</span><span class="small text-muted">(${escapeHtml(ov.reason)})</span><button class="btn btn-sm btn-outline-danger ms-auto" type="button" onclick="deleteOverride(${ov.id})">删除</button></div>`;
+                for (const ov of overrides) {
+                    const scope = ov.scope_status === 'unassigned' ? '未归属学期 · 暂不生效' : `${escapeHtml(ov.semester)} · ${ov.applies_to_current_semester ? '本学期' : '历史学期'}`;
+                    const assign = isSuperAdmin && ov.scope_status === 'unassigned' ? `<button class="btn btn-sm btn-outline-primary" type="button" onclick="openAssignRuleSemester(${ov.id})">设置归属</button>` : '';
+                    html += `<div class="d-flex flex-wrap align-items-center gap-2 mt-1 ms-4"><span>${renderOverrideTypeBadge(ov.override_type)}</span><span class="small">第${ov.start_week}-${ov.end_week}周</span><span class="small text-muted">${scope}</span><span class="small text-muted">(${escapeHtml(ov.reason)})</span>${assign}<button class="btn btn-sm btn-outline-danger ms-auto" type="button" onclick="deleteOverride(${ov.id})">删除</button></div>`;
+                }
                 html += '</div>';
             }
             html += '</div></section>';
@@ -118,7 +139,7 @@
         document.getElementById('ruleTargetMembers').textContent = users.map((user) => user.name).join('，');
         document.getElementById('ruleType').value = 'exempt';
         document.getElementById('ruleStartWeek').value = '1';
-        document.getElementById('ruleEndWeek').value = '20';
+        document.getElementById('ruleEndWeek').value = currentMembersData?.total_weeks || 20;
         document.getElementById('ruleReason').value = '';
         bootstrap.Modal.getOrCreateInstance(document.getElementById('addRuleModal')).show();
     };
@@ -129,12 +150,13 @@
     }
     function saveRule() {
         const overrideType = document.getElementById('ruleType').value;
-        const startWeek = Number.parseInt(document.getElementById('ruleStartWeek').value, 10);
-        const endWeek = Number.parseInt(document.getElementById('ruleEndWeek').value, 10);
+        const startWeek = Number(document.getElementById('ruleStartWeek').value);
+        const endWeek = Number(document.getElementById('ruleEndWeek').value);
         const reason = document.getElementById('ruleReason').value.trim();
         if (!reason) { feedback('请填写理由', 'warning'); return; }
         if (!Number.isInteger(startWeek) || !Number.isInteger(endWeek) || startWeek < 1 || endWeek < 1) { feedback('周次必须为大于 0 的整数', 'warning'); return; }
         if (startWeek > endWeek) { feedback('起始周不能大于结束周', 'warning'); return; }
+        if (endWeek > (currentMembersData?.total_weeks || 20)) { feedback('周次不能超过当前总教学周数', 'warning'); return; }
         const button = document.getElementById('btnSaveRule');
         button.disabled = true;
         button.textContent = '保存中...';
@@ -154,6 +176,23 @@
             loadMembers();
         }).catch(() => feedback('删除失败，请稍后重试', 'error'));
     };
+    window.openAssignRuleSemester = (overrideId) => {
+        pendingSemesterOverrideId = overrideId;
+        document.getElementById('assignedRuleSemester').value = '';
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('assignRuleSemesterModal')).show();
+    };
+    function assignRuleSemester() {
+        const semester = document.getElementById('assignedRuleSemester').value.trim();
+        if (!semester) { feedback('请填写已核实的所属学期', 'warning'); return; }
+        const button = document.getElementById('btnAssignRuleSemester');
+        button.disabled = true;
+        fetch(`/admin/api/assessment-overrides/${pendingSemesterOverrideId}/semester`, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({semester})}).then((r) => r.json()).then((data) => {
+            if (!data.success) { feedback(data.message || '归属设置失败', 'error'); return; }
+            feedback(data.message, 'success');
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('assignRuleSemesterModal')).hide();
+            loadMembers();
+        }).catch(() => feedback('归属设置失败，请稍后重试', 'error')).finally(() => { button.disabled = false; });
+    }
     function selectAllMembers() { document.querySelectorAll('.member-checkbox').forEach((el) => { el.checked = true; }); updateSelectionCount(); }
     function invertMembers() { document.querySelectorAll('.member-checkbox').forEach((el) => { el.checked = !el.checked; }); updateSelectionCount(); }
     function clearMemberSelection() { document.querySelectorAll('.member-checkbox').forEach((el) => { el.checked = false; }); updateSelectionCount(); }
@@ -168,6 +207,7 @@
         document.getElementById('btnClearMembers').addEventListener('click', clearMemberSelection);
         document.getElementById('btnBatchAddRule').addEventListener('click', openBatchAddRuleModal);
         document.getElementById('btnSaveRule').addEventListener('click', saveRule);
+        document.getElementById('btnAssignRuleSemester')?.addEventListener('click', assignRuleSemester);
     }
     document.addEventListener('DOMContentLoaded', initPage);
 })();

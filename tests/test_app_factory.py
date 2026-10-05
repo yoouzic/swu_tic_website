@@ -21,13 +21,26 @@ def _route_counts(flask_app):
     return len(rules), admin, user
 
 
+def _route_contract(flask_app):
+    return sorted(
+        (rule.endpoint, rule.rule, tuple(sorted(rule.methods)))
+        for rule in flask_app.url_map.iter_rules()
+    )
+
+
 class AppFactoryTests(unittest.TestCase):
     def test_module_singleton_import_succeeds(self):
         self.assertIsNotNone(app)
         self.assertTrue(hasattr(create_app, '__call__'))
 
     def test_singleton_route_contract(self):
-        self.assertEqual(_route_counts(app), (185, 129, 37))
+        self.assertEqual(_route_counts(app), (186, 130, 37))
+        self.assertTrue(any(
+            rule.endpoint == 'admin.assign_assessment_override_semester'
+            and rule.rule == '/admin/api/assessment-overrides/<int:override_id>/semester'
+            and 'PUT' in rule.methods
+            for rule in app.url_map.iter_rules()
+        ))
 
     def test_secondary_app_route_contract_and_override_consistency(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -41,7 +54,8 @@ class AppFactoryTests(unittest.TestCase):
                 'AUTOMATION_UPLOAD_DIR': str(automation_upload_dir),
                 'DEEPSEEK_MODEL': 'override-model',
             })
-            self.assertEqual(_route_counts(a2), (185, 129, 37))
+            self.assertEqual(_route_counts(a2), (186, 130, 37))
+            self.assertEqual(_route_contract(a2), _route_contract(app))
             self.assertEqual(a2.config['DEEPSEEK_MODEL'], 'override-model')
             self.assertEqual(
                 a2.config['AUTOMATION_PUBLIC_CONFIG']['DEEPSEEK_MODEL'],
