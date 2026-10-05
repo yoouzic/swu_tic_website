@@ -1,0 +1,198 @@
+{
+  "way:368605820": {
+    "code": "1",
+    "expected_name": "西南大学文学院",
+    "evidence_url": "https://www.swu.edu.cn/info/1153/2395.htm",
+    "map_evidence_url": "https://120th.swu.edu.cn/xyhj/xydt.htm",
+    "reason": "官网确认雨僧楼为第1教学楼及文学院用楼，校方北碚总图的文学院位置与该轮廓相符。",
+    "verification": "document_correspondence_not_field_survey"
+  },
+  "way:843421765": {
+    "code": "4",
+    "expected_name": "新闻传媒学院",
+    "evidence_url": "https://www.swu.edu.cn/info/1153/2392.htm",
+    "map_evidence_url": "https://120th.swu.edu.cn/xyhj/xydt.htm",
+    "reason": "对应咏修楼A栋的学院轮廓；B栋不沿用此轮廓。",
+    "verification": "document_correspondence_not_field_survey",
+    "model_variants": [
+      "A"
+    ]
+  },
+  "way:843465314": {
+    "code": "5",
+    "expected_name": "西南大学外国语学院",
+    "evidence_url": "https://www.swu.edu.cn/info/1153/2376.htm",
+    "map_evidence_url": "https://120th.swu.edu.cn/xyhj/xydt.htm",
+    "reason": "官网确认弘礼楼为第5教学楼、外国语学院用楼，与校方总图学院位置对应。",
+    "verification": "document_correspondence_not_field_survey"
+  },
+  "way:368605817": {
+    "code": "11",
+    "expected_name": "西南大学田家炳教育书院",
+    "evidence_url": "https://www.swu.edu.cn/info/1153/2334.htm",
+    "map_evidence_url": "https://120th.swu.edu.cn/xyhj/xydt.htm",
+    "reason": "OSM专名田家炳教育书院与官网第11教学楼名称一致。",
+    "verification": "document_correspondence_not_field_survey"
+  },
+  "way:843421773": {
+    "code": "15",
+    "expected_name": "西南大学美术学院",
+    "evidence_url": "https://www.swu.edu.cn/info/1153/16901.htm",
+    "map_evidence_url": "https://120th.swu.edu.cn/xyhj/xydt.htm",
+    "reason": "官网确认至美楼为第15教学楼、美术学院用楼，与总图东侧美术学院位置相符。",
+    "verification": "document_correspondence_not_field_survey"
+  },
+  "way:843465313": {
+    "code": "23",
+    "expected_name": "西南大学心理学部",
+    "evidence_url": "https://www.swu.edu.cn/info/1153/2360.htm",
+    "map_evidence_url": "https://120th.swu.edu.cn/xyhj/xydt.htm",
+    "reason": "官网确认润心楼为第23教学楼、心理学部用楼，与总图相邻外国语学院位置相符。",
+    "verification": "document_correspondence_not_field_survey"
+  },
+  "way:350242130": {
+    "code": "24",
+    "expected_name": "西南大学地理科学学院",
+    "evidence_url": "https://www.swu.edu.cn/info/1153/2361.htm",
+    "map_evidence_url": "https://120th.swu.edu.cn/xyhj/xydt.htm",
+    "reason": "官网确认启智楼为第24教学楼、地理科学学院用楼，与北区楼群位置对应。",
+    "verification": "document_correspondence_not_field_survey"
+  },
+  "way:304932135": {
+    "code": "35",
+    "expected_name": "西南大学资源与环境学院",
+    "evidence_url": "https://www.swu.edu.cn/info/1153/2331.htm",
+    "map_evidence_url": "https://120th.swu.edu.cn/xyhj/xydt.htm",
+    "reason": "官网确认逸夫楼为第35教学楼、资源环境学院用楼，南区总图及照片双翼结构与轮廓对应。",
+    "verification": "document_correspondence_not_field_survey"
+  },
+  "way:305935506": {
+    "code": "39",
+    "expected_name": "食品科学学院",
+    "evidence_url": "https://www.swu.edu.cn/info/1153/2370.htm",
+    "map_evidence_url": "https://120th.swu.edu.cn/xyhj/xydt.htm",
+    "reason": "两个食品学院轮廓需区分：校方北碚总图将39教标在40教北侧，本对象为北侧轮廓；结合弘忠楼门廊照片对应。",
+    "verification": "document_correspondence_not_field_survey"
+  },
+  "way:840969992": {
+    "code": "40",
+    "expected_name": "食品科学学院",
+    "evidence_url": "https://www.swu.edu.cn/info/1153/2369.htm",
+    "map_evidence_url": "https://120th.swu.edu.cn/xyhj/xydt.htm",
+    "reason": "两个食品学院轮廓需区分：校方北碚总图将40教标在39教南侧，本对象为南侧轮廓；结合弘实楼长条主体照片对应。",
+    "verification": "document_correspondence_not_field_survey"
+  },
+  "way:843421762": {
+    "code": "6",
+    "expected_name": null,
+    "evidence_url": "https://www.amap.com/ssr/place/B0FFF33VMQ",
+    "official_evidence_url": "https://www.swu.edu.cn/info/1153/2333.htm",
+    "reason": "高德独立楼号地点与OSM轮廓空间对应；以近似坐标变换核对包含关系，保留原OSM轮廓，不将高德坐标直接写入WGS84地图。",
+    "verification": "cross_map_correspondence_not_field_survey",
+    "poi_coordinate_system": "GCJ-02",
+    "poi_coordinates": [
+      106.427334,
+      29.821762
+    ],
+    "approx_wgs84_for_matching": [
+      106.4233011675834,
+      29.824246374028892
+    ],
+    "checked_on": "2026-10-02"
+  },
+  "relation:12528371": {
+    "code": "9",
+    "expected_name": null,
+    "evidence_url": "https://www.amap.com/ssr/place/B0017948WL",
+    "official_evidence_url": "https://www.swu.edu.cn/info/1153/2349.htm",
+    "reason": "高德独立楼号地点与OSM轮廓空间对应；以近似坐标变换核对包含关系，保留原OSM轮廓，不将高德坐标直接写入WGS84地图。",
+    "verification": "cross_map_correspondence_not_field_survey",
+    "poi_coordinate_system": "GCJ-02",
+    "poi_coordinates": [
+      106.429626,
+      29.826274
+    ],
+    "approx_wgs84_for_matching": [
+      106.42559461801687,
+      29.82876029552248
+    ],
+    "checked_on": "2026-10-02"
+  },
+  "way:843421806": {
+    "code": "17",
+    "expected_name": null,
+    "evidence_url": "https://www.amap.com/ssr/place/B0JGN5XWIG",
+    "official_evidence_url": "https://www.swu.edu.cn/info/1153/2389.htm",
+    "reason": "高德独立楼号地点与OSM轮廓空间对应；以近似坐标变换核对包含关系，保留原OSM轮廓，不将高德坐标直接写入WGS84地图。",
+    "verification": "cross_map_correspondence_not_field_survey",
+    "poi_coordinate_system": "GCJ-02",
+    "poi_coordinates": [
+      106.432974,
+      29.829512
+    ],
+    "approx_wgs84_for_matching": [
+      106.42894541622792,
+      29.832001788301383
+    ],
+    "checked_on": "2026-10-02"
+  },
+  "way:925243983": {
+    "code": "16",
+    "expected_name": null,
+    "evidence_url": "https://www.amap.com/ssr/place/B00170AGY2",
+    "official_evidence_url": "https://www.swu.edu.cn/info/1153/16902.htm",
+    "reason": "高德独立楼号地点与OSM轮廓空间对应；以近似坐标变换核对包含关系，保留原OSM轮廓，不将高德坐标直接写入WGS84地图。 课表原16教对应厚乐楼A栋，原19教对应B栋，两处POI分别落入不同轮廓。",
+    "verification": "cross_map_correspondence_not_field_survey",
+    "poi_coordinate_system": "GCJ-02",
+    "poi_coordinates": [
+      106.427422,
+      29.821148
+    ],
+    "approx_wgs84_for_matching": [
+      106.42338926749174,
+      29.82363250530368
+    ],
+    "checked_on": "2026-10-02",
+    "numbering_evidence_url": "https://music.swu.edu.cn/info/1032/4253.htm"
+  },
+  "way:843421759": {
+    "code": "19",
+    "expected_name": "西南大学音乐学院",
+    "evidence_url": "https://www.amap.com/ssr/place/B001793F19",
+    "official_evidence_url": "https://www.swu.edu.cn/info/1153/16903.htm",
+    "reason": "高德独立楼号地点与OSM轮廓空间对应；以近似坐标变换核对包含关系，保留原OSM轮廓，不将高德坐标直接写入WGS84地图。 课表原16教对应厚乐楼A栋，原19教对应B栋，两处POI分别落入不同轮廓。",
+    "verification": "cross_map_correspondence_not_field_survey",
+    "poi_coordinate_system": "GCJ-02",
+    "poi_coordinates": [
+      106.427343,
+      29.820731
+    ],
+    "approx_wgs84_for_matching": [
+      106.42331023814896,
+      29.823215464040096
+    ],
+    "checked_on": "2026-10-02",
+    "numbering_evidence_url": "https://music.swu.edu.cn/info/1032/4253.htm",
+    "model_variants": [
+      "B"
+    ]
+  },
+  "way:843465275": {
+    "code": "3",
+    "expected_name": "西南大学马克思主义学院",
+    "evidence_url": "https://www.amap.com/ssr/place/B001793E9K",
+    "official_evidence_url": "https://www.swu.edu.cn/info/1153/2393.htm",
+    "reason": "高德独立楼号地点与OSM轮廓空间对应；以近似坐标变换核对包含关系，保留原OSM轮廓，不将高德坐标直接写入WGS84地图。",
+    "verification": "cross_map_correspondence_not_field_survey",
+    "poi_coordinate_system": "GCJ-02",
+    "poi_coordinates": [
+      106.427965,
+      29.826716
+    ],
+    "approx_wgs84_for_matching": [
+      106.42393230917871,
+      29.82920059445453
+    ],
+    "checked_on": "2026-10-02"
+  }
+}
