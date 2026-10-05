@@ -76,8 +76,11 @@ class AutoReviewEngine:
         # The complete source decision now lives in review_schedule_source.
         resolution = resolve_review_schedule_source(
             explicit_schedule_path=schedule_path,
+            allow_unconfigured_legacy_fallback=False,
         )
         self.schedule_source_kind = resolution.kind
+        self.schedule_canonical_status = resolution.canonical_status
+        self.schedule_semester = resolution.semester
         self.schedule_path = resolution.schedule_path
         self.schedule_df = resolution.dataframe
 
@@ -244,6 +247,9 @@ class AutoReviewEngine:
 
     def _validate_course_matching(self, form_like: Any, issues: List[str], fixes: List[str]) -> Optional[Dict[str, Any]]:
         """验证课程信息匹配"""
+        if self.schedule_df is None or self.schedule_df.empty:
+            # Missing authority is coverage, not evidence of a wrong field.
+            return None
         teacher_name = getattr(form_like, 'teacher_name', None)
         teacher_college = getattr(form_like, 'teacher_college', None)
         course_title = getattr(form_like, 'course_title', None)
@@ -375,6 +381,36 @@ class AutoReviewEngine:
         
         return week_info
 
+    def _review_coverage(self, issues, course_info):
+        """Separate executed checks from unavailable school-schedule evidence."""
+        available = self.schedule_df is not None and not self.schedule_df.empty
+        if available:
+            message = ''
+        elif self.schedule_canonical_status == 'CURRENT_SEMESTER_UNSET':
+            message = '当前教学学期未设置，课程及课表时间地点未核验；请人工核实。'
+        else:
+            message = '本学期课表不可用，课程及课表时间地点未核验；请人工核实。'
+        checks_passed = not issues
+        return {
+            'checks_passed': checks_passed,
+            'passed': checks_passed and available,
+            'classification': '建议复核' if issues else ('无明显风险' if available else '系统无法判断'),
+            'requires_manual_review': bool(issues) or not available,
+            'warnings': [message] if message else [],
+            'check_results': {
+                'school_schedule': {
+                    'available': available,
+                    'skipped': not available,
+                    'coverage': 'complete' if available else 'none',
+                    'status': ('matched' if course_info else 'not_matched') if available else 'unavailable',
+                    'source_kind': self.schedule_source_kind,
+                    'canonical_status': self.schedule_canonical_status,
+                    'semester': self.schedule_semester,
+                    'message': message,
+                },
+            },
+        }
+
     def _validate_teaching_evaluation(self, form_like: Any, issues: List[str], fixes: List[str]) -> None:
         """验证教学评价信息"""
         # 验证主要教学方法
@@ -456,7 +492,7 @@ class AutoReviewEngine:
             'course': form.course_title,
             'issues': issues,
             'fixes': fixes,
-            'passed': len(issues) == 0,
+            **self._review_coverage(issues, course_info),
             'reviewer_info': reviewer_info,
             'course_info': course_info,
             'notes': week_info  # 备注信息
@@ -486,7 +522,7 @@ class AutoReviewEngine:
             'course': getattr(form_like, 'course_title', ''),
             'issues': issues,
             'fixes': fixes,
-            'passed': len(issues) == 0,
+            **self._review_coverage(issues, course_info),
             'reviewer_info': reviewer_info,
             'course_info': course_info,
             'notes': week_info,  # 备注信息

@@ -30,6 +30,7 @@ from app.services.review_application import (
 )
 from app.services.review_scores import ScoreValidationError, normalize_score_items
 from app.services.review_reference_data import search_review_reference_data
+from app.services.review_schedule_source import resolve_review_schedule_source
 from app.services.review_concurrency import ReviewConflict, claim_review_form, validate_opened_review_revision
 from app.services.lecture_form_validation import review_field_errors
 
@@ -1713,7 +1714,9 @@ def auto_check_form():
                  ),
              }), 403
 
-        form_data = request.get_json()
+        form_data = _json_object_request()
+        if form_data is None:
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         
         # 构造类似 LectureForm 的对象供 auto_review 使用
         class FormLike:
@@ -1747,8 +1750,9 @@ def auto_check_form():
         result = engine.review_any(form)
         
         return jsonify({'success': True, 'result': result})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+    except Exception:
+        current_app.logger.exception('Immediate auto-review failed')
+        return jsonify({'success': False, 'message': '自动检查失败，请稍后重试'}), 500
 
 
 @admin_bp.route('/api/review/reference_data', methods=['POST'])
@@ -1768,12 +1772,16 @@ def get_reference_data():
                  ),
              }), 403
 
-        form_data = request.get_json()
+        form_data = _json_object_request()
+        if form_data is None:
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         
-        result = search_review_reference_data(form_data)
+        schedule = resolve_review_schedule_source(allow_unconfigured_legacy_fallback=False)
+        result = search_review_reference_data(form_data, schedule_df=schedule.dataframe)
         
         return jsonify({'success': True, 'result': result})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+    except Exception:
+        current_app.logger.exception('Review reference lookup failed')
+        return jsonify({'success': False, 'message': '参考数据查询失败，请稍后重试'}), 500
 
 

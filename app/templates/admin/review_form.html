@@ -477,6 +477,7 @@
             <i class="bi bi-chevron-right" aria-hidden="true"></i>
         </button>
         <div class="reference-drawer-body">
+            {% if schedule_availability.ready %}
             <section class="reference-section">
                 <button type="button" class="reference-section-header" aria-controls="scheduleReferenceSection" aria-expanded="true" onclick="toggleReferenceSection('scheduleReferenceSection', event.currentTarget)">
                     <span><i class="bi bi-calendar3 me-2"></i> 全校课表</span>
@@ -489,6 +490,9 @@
                     <div id="scheduleResults">点击“查看参考数据”后加载</div>
                 </div>
             </section>
+            {% else %}
+            <p class="text-muted mb-3">本学期课表未导入，课程信息请人工核对。</p>
+            {% endif %}
             <section class="reference-section">
                 <button type="button" class="reference-section-header" aria-controls="contactsReferenceSection" aria-expanded="true" onclick="toggleReferenceSection('contactsReferenceSection', event.currentTarget)">
                     <span><i class="bi bi-journal-bookmark me-2"></i> 通讯录</span>
@@ -1389,9 +1393,11 @@ function getStatusClass(status) {
 function showReferenceData(trigger) {
     const formData = collectFormData();
     openReferenceDrawer(trigger);
-    document.getElementById('scheduleResults').innerHTML = '<div class="text-center"><i class="bi bi-arrow-repeat icon-spin"></i> 正在搜索...</div>';
+    const scheduleResults = document.getElementById('scheduleResults');
+    const scheduleCount = document.getElementById('scheduleCount');
+    if (scheduleResults) scheduleResults.innerHTML = '<div class="text-center"><i class="bi bi-arrow-repeat icon-spin"></i> 正在搜索...</div>';
     document.getElementById('contactsResults').innerHTML = '<div class="text-center"><i class="bi bi-arrow-repeat icon-spin"></i> 正在搜索...</div>';
-    document.getElementById('scheduleCount').textContent = '0';
+    if (scheduleCount) scheduleCount.textContent = '0';
     document.getElementById('contactsCount').textContent = '0';
     
     fetch('/admin/api/review/reference_data', {
@@ -1409,16 +1415,16 @@ function showReferenceData(trigger) {
             const contactMatches = result.contact_matches || [];
             renderScheduleResults(scheduleMatches);
             renderContactsResults(contactMatches);
-            document.getElementById('scheduleCount').textContent = scheduleMatches.length;
+            if (scheduleCount) scheduleCount.textContent = scheduleMatches.length;
             document.getElementById('contactsCount').textContent = contactMatches.length;
         } else {
-            document.getElementById('scheduleResults').textContent = '搜索失败：' + data.message;
+            if (scheduleResults) scheduleResults.textContent = '搜索失败：' + data.message;
             document.getElementById('contactsResults').textContent = '搜索失败：' + data.message;
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        document.getElementById('scheduleResults').textContent = '请求失败';
+        if (scheduleResults) scheduleResults.textContent = '请求失败';
         document.getElementById('contactsResults').textContent = '请求失败';
     });
 }
@@ -1558,6 +1564,7 @@ function describeContactMatch(match) {
 
 function renderScheduleResults(matches) {
     const container = document.getElementById('scheduleResults');
+    if (!container) return;
     if (!matches || matches.length === 0) {
         container.innerHTML = '<div class="alert alert-warning">未找到匹配的课程信息</div>';
         return;
