@@ -25,6 +25,7 @@ from app.models import (
 )
 from app.utils.review_permissions import get_reviewable_users
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
+from tests.review_request_utils import post_opened_review
 
 ROLE_INFO = '信息员'
 ROLE_ADMIN = '管理员'
@@ -198,30 +199,30 @@ class FunctionalSecurityFixesTest(unittest.TestCase):
             'selection_code': 'S1',
             'listening_info': '第1周星期一第1节',
         })
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('系统设置', response.get_json()['message'])
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()['code'], 'current_schedule_unavailable')
 
     def test_registration_page_disables_button_when_semester_not_configured(self):
         self._login(self.officer_a)
         response = self.client.get('/user/listening_registration')
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
-        self.assertIn('配置学期起始周', html)
-        self.assertIn('id="submitReservationButton"', html)
-        self.assertIn('disabled', html)
+        self.assertNotIn('id="submitReservationButton"', html)
+        self.assertNotIn('id="registration-tab"', html)
+        self.assertIn('填写听课表', html)
 
     # P1-10: unique_id NULL fallback
     def test_submit_review_handles_unique_id_null(self):
         self._login(self.dept_manager)
         form = self._form(self.officer_a, unique_id=None)
-        response = self.client.post(f'/admin/api/review/submit/{form.id}', json=self._review_payload(form))
+        response = post_opened_review(self.client, f'/admin/api/review/submit/{form.id}', json=self._review_payload(form))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()['new_status'], '部门已审核')
 
     def test_reject_handles_unique_id_null(self):
         self._login(self.dept_manager)
         form = self._form(self.officer_a, unique_id=None)
-        response = self.client.post(f'/admin/api/review/reject/{form.id}', json={'reason': 'no'})
+        response = post_opened_review(self.client, f'/admin/api/review/reject/{form.id}', json={'reason': 'no'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()['new_status'], '已驳回')
 

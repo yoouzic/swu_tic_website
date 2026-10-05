@@ -23,7 +23,7 @@ class NavigationTest(unittest.TestCase):
         for role in ('信息员', '管理员'):
             with self.subTest(role=role):
                 groups = build_navigation(self.user(role), 'user.submit_form', submission_allowed=True)
-                assistant = self.item(groups, '填表助手')
+                assistant = self.item(groups, '填写听课表')
 
                 self.assertEqual(assistant['endpoint'], 'user.submit_form')
                 self.assertTrue(assistant['active'])
@@ -33,7 +33,7 @@ class NavigationTest(unittest.TestCase):
         groups = build_navigation(self.user('信息员'), 'user.my_forms')
 
         registration = self.item(groups, '听课与填报')
-        assistant = self.item(groups, '填表助手')
+        assistant = self.item(groups, '填写听课表')
 
         self.assertTrue(registration['active'])
         self.assertFalse(assistant['active'])
@@ -42,7 +42,7 @@ class NavigationTest(unittest.TestCase):
         groups = build_navigation(self.user('信息员'), 'user.submit_form')
 
         registration = self.item(groups, '听课与填报')
-        assistant = self.item(groups, '填表助手')
+        assistant = self.item(groups, '填写听课表')
 
         self.assertTrue(assistant['active'])
         self.assertFalse(registration['active'])
@@ -51,7 +51,7 @@ class NavigationTest(unittest.TestCase):
         groups = build_navigation(self.user('信息员'), 'user.edit_form')
 
         registration = self.item(groups, '听课与填报')
-        assistant = self.item(groups, '填表助手')
+        assistant = self.item(groups, '填写听课表')
 
         self.assertFalse(assistant['active'])
         self.assertTrue(registration['active'])
@@ -63,14 +63,14 @@ class NavigationTest(unittest.TestCase):
                 labels = [item['label'] for item in self.items(groups)]
                 self.assertIn('课程查询', labels)
                 self.assertIn('我的记录', labels)
-                self.assertNotIn('填表助手', labels)
+                self.assertNotIn('填写听课表', labels)
                 self.assertNotIn('听课与填报', labels)
                 self.assertTrue(self.item(groups, '课程查询')['active'])
 
     def test_super_has_no_personal_fill_entry_even_with_supplied_capability(self):
         groups = build_navigation(self.user('超级管理员'), submission_allowed=True)
         labels = [item['label'] for item in self.items(groups)]
-        self.assertNotIn('填表助手', labels)
+        self.assertNotIn('填写听课表', labels)
         self.assertNotIn('听课与填报', labels)
         self.assertNotIn('课程查询', labels)
 
@@ -108,7 +108,7 @@ class NavigationTest(unittest.TestCase):
 
         labels = [item['label'] for item in self.items(groups)]
 
-        self.assertIn('填表助手', labels)
+        self.assertIn('填写听课表', labels)
 
 
 if __name__ == '__main__':

@@ -12,8 +12,11 @@ from sqlalchemy import select
 from app.app import create_app
 from app.models import (
     Course, CourseRegistration, LectureForm, LectureFormDraft, LectureSiteCapture,
-    Permission, RolePermission, SystemSetting, User, db,
+    Permission, RolePermission, ScheduleCourseMembership, SystemSetting, User, db,
 )
+from app.services.registration_course_identity import stamp_registration_course
+from tests.review_request_utils import opened_listener_revision
+from tests.schedule_fixture import seed_current_schedule
 
 
 def _photo():
@@ -200,10 +203,19 @@ def test_denied_accounts_keep_owned_history_reads_and_readonly_flags(route_case,
     before = _snapshot(case)
     draft = case.client.get('/user/api/lecture_form_draft')
     assert draft.status_code == 200
-    assert draft.get_json()['data']['site_capture_id'] == history.capture_id
-    for suffix in ('', '/photo', '/map', '/suggestions'):
+    # With no current candidates the editable draft is manual-only, while the
+    # owned photo and persisted historical binding remain available as history.
+    assert 'site_capture_id' not in draft.get_json()['data']
+    stored_draft = LectureFormDraft.query.filter_by(user_id=user.id).one()
+    assert json.loads(stored_draft.payload_json)['site_capture_id'] == history.capture_id
+    for suffix in ('', '/photo', '/map'):
         assert case.client.get(f'/user/api/site-capture/{history.capture_id}{suffix}').status_code == 200
-    assert case.client.post(f'/user/api/site-capture/{history.capture_id}/suggestions', json={'facts': {}}).status_code == 200
+    for method in ('GET', 'POST'):
+        unavailable = case.client.open(f'/user/api/site-capture/{history.capture_id}/suggestions',
+                                       method=method, json={'facts': {}})
+        assert unavailable.status_code == 503
+        assert unavailable.get_json()['success'] is False
+        assert unavailable.get_json()['data']['source_unavailable'] is True
     assert case.client.get('/user/api/site-capture/settings').status_code == 200
     assert case.client.get('/user/api/site-capture/records').get_json()['data'][0]['id'] == history.capture_id
     reservations = case.client.get('/user/api/my_reservations').get_json()['data']
@@ -230,8 +242,14 @@ def test_denied_accounts_keep_owned_history_reads_and_readonly_flags(route_case,
 @pytest.mark.parametrize('user_key', ['officer', 'permitted_manager'])
 def test_capable_accounts_can_keep_mutating_their_records(route_case, monkeypatch, user_key):
     case = route_case
+    batch = seed_current_schedule('2026-2027-1')
+    case.course.semester = '2026-2027-1'
+    db.session.add(ScheduleCourseMembership(batch_id=batch.id, course_id=case.course.id))
+    db.session.commit()
     user = _login(case, user_key, session_role='超级管理员')
     history = _seed_history(case, user)
+    stamp_registration_course(db.session.get(CourseRegistration, history.reservation_id), case.course)
+    db.session.commit()
     assert case.client.get('/user/submit_form').status_code == 200
     assert case.client.get(f'/user/form/edit/{history.form_id}').status_code == 200
     assert case.client.get('/user/api/course_registration_history?course_code=R100&selection_code=R200').status_code == 200
@@ -246,7 +264,9 @@ def test_capable_accounts_can_keep_mutating_their_records(route_case, monkeypatc
                           json={'listening_info': '第2周星期一第5-6节'}).status_code == 200
     assert db.session.get(CourseRegistration, history.reservation_id).listening_info == '第2周星期一第5-6节'
     assert case.client.delete(f'/user/api/my_reservations/{history.reservation_id}').status_code == 200
-    submitted = case.client.post('/user/submit_form', data=dict(history.payload, unique_id=str(history.form_id)))
+    payload = dict(history.payload, unique_id=str(history.form_id))
+    payload.update(opened_listener_revision(case.client, history.form_id))
+    submitted = case.client.post('/user/submit_form', data=payload)
     assert submitted.status_code == 302
     assert f'/user/success/{history.form_id}' in submitted.headers['Location']
     assert case.client.post(f'/user/delete_form/{history.form_id}').status_code == 200

@@ -13,6 +13,8 @@ def setup_capture(tmp_path):
     from app.app import app
     case.app = app
     case.app.config.update(LECTURE_CAPTURE_ENABLED=True, LECTURE_CAPTURE_FOLDER=str(tmp_path))
+    from tests.schedule_fixture import seed_current_schedule
+    seed_current_schedule('2025-2026-2')
     case._login_as(case.user)
     yield case
     case.app.config['LECTURE_CAPTURE_ENABLED']=False
@@ -92,7 +94,7 @@ def test_missing_photo_and_forged_version_do_not_bypass_trial_requirement(setup_
     case=setup_capture
     assert case.client.post('/user/submit_form',data=case._valid_form_payload()).status_code==400
     payload=case._valid_form_payload();payload['unique_id']='99999'
-    assert case.client.post('/user/submit_form',data=payload).status_code==400
+    assert case.client.post('/user/submit_form',data=payload).status_code==404
 
 
 def test_submission_keeps_photo_after_draft_is_deleted(setup_capture):

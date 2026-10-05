@@ -15,6 +15,7 @@ from app.models import (
 )
 from app.services.listening_assistant_contracts import ScheduleEntry
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
+from tests.schedule_fixture import seed_current_schedule
 
 
 class CourseLookupPermissionsTest(unittest.TestCase):
@@ -37,6 +38,7 @@ class CourseLookupPermissionsTest(unittest.TestCase):
             self.users[role] = user
         db.session.add(SystemSetting(key='teaching_current_semester', value='2026-2027-1'))
         db.session.commit()
+        seed_current_schedule('2026-2027-1')
 
     def tearDown(self):
         cleanup_sqlite_database(db, drop_all=True)
@@ -93,7 +95,8 @@ class CourseLookupPermissionsTest(unittest.TestCase):
         db.session.commit()
         self.login('教师')
         html = self.client.get('/user/course_lookup').get_data(as_text=True)
-        self.assertIn('课表暂未配置，请联系管理员', html)
+        self.assertIn('本学期课表未导入', html)
+        self.assertNotIn('id="courseLookupForm"', html)
         self.assertNotIn('name="semester"', html)
 
     def test_manager_navigation_uses_database_permission_and_ignores_session_role(self):

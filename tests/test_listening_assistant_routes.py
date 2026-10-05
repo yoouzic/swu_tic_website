@@ -78,6 +78,8 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
         db.create_all()
         self.client = app.test_client()
         self.user = self._create_user('1001', 'student-1001', role='信息员')
+        from tests.schedule_fixture import seed_current_schedule
+        seed_current_schedule(SEMESTER)
         self.primary = [
             schedule_entry(source_row=1),
             schedule_entry(source_row=2, teacher_name='李老师', room='9-101'),

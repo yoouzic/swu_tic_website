@@ -16,6 +16,7 @@ from app.app import app
 from app.models import (
     LectureForm,
     ListeningAssistantEvidence,
+    SystemSetting,
     User,
     db,
 )
@@ -94,6 +95,7 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
         self.app_context.push()
         db.drop_all()
         db.create_all()
+        SystemSetting.set('teaching_current_semester', SEMESTER)
         self.client = app.test_client()
         self.user = self._create_user('1001', 'student-1001')
         self._login_as(self.user)
@@ -648,7 +650,7 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
         self.assertEqual(form.course_title, '数据结构')
         self.assertEqual(ListeningAssistantEvidence.query.filter_by(user_id=self.user.id).count(), 1)
 
-    def test_submit_preserves_explicitly_cleared_assistant_overrides(self):
+    def test_submit_preserves_explicitly_cleared_assistant_overrides_and_blocks_incomplete_form(self):
         service, _loader = self._service(primary=[schedule_entry()])
         assistant_payload, _candidate = self._payload(service)
         assistant_payload['overrides'] = {
@@ -685,22 +687,18 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
         ):
             response = self.client.post('/user/submit_form', data=form_data)
 
-        self.assertEqual(response.status_code, 302)
-        form = LectureForm.query.filter_by(listener_number=self.user.number).first()
-        for field_name in (
-            'lecture_date',
-            'class_period',
-            'lecture_location',
-            'teacher_name',
-            'teacher_college',
-            'course_title',
-            'student_grade_class',
-        ):
-            self.assertEqual(getattr(form, field_name), '')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(LectureForm.query.filter_by(listener_number=self.user.number).count(), 0)
+        self.assertEqual(ListeningAssistantEvidence.query.filter_by(user_id=self.user.id).count(), 0)
+        html = response.get_data(as_text=True)
+        self.assertNotIn('value="张老师"', html)
+        self.assertNotIn('value="数据结构"', html)
 
     def test_submit_does_not_hide_operational_revalidation_errors(self):
+        service, _loader = self._service(primary=[schedule_entry()])
+        assistant_payload, _candidate = self._payload(service)
         form_data = self._valid_form_payload()
-        form_data['assistant_payload'] = json.dumps({'stage': 'confirmed'})
+        form_data['assistant_payload'] = json.dumps(assistant_payload)
 
         for error in (
             RuntimeError('database unavailable'),

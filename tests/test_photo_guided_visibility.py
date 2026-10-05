@@ -17,8 +17,10 @@ for key, value in {
     os.environ[key] = value
 
 from app.app import app
-from app.models import db, User
+from app.models import db, User, SystemSetting
+from app.services.schedule_availability import current_schedule_availability
 from tests.app_test_utils import configure_sqlite_database, cleanup_sqlite_database
+from tests.schedule_fixture import seed_current_schedule
 
 
 class Hierarchy(HTMLParser):
@@ -63,6 +65,12 @@ class PhotoGuideVisibilityTest(unittest.TestCase):
         db.session.add(user)
         db.session.commit()
         cls.user_id = user.id
+        cls.semester = '2026-2027-1'
+        seed_current_schedule(cls.semester)
+        availability = current_schedule_availability()
+        assert availability['status'] == 'READY', availability
+        assert availability['candidates_ready'], availability
+        assert availability['registration_ready'], availability
 
     @classmethod
     def tearDownClass(cls):
@@ -70,8 +78,9 @@ class PhotoGuideVisibilityTest(unittest.TestCase):
         cls.context.pop()
         TEMP.cleanup()
 
-    def page(self, capture):
+    def page(self, capture, *, current_schedule=True):
         app.config['LECTURE_CAPTURE_ENABLED'] = capture
+        SystemSetting.set('teaching_current_semester', self.semester if current_schedule else '')
         with app.test_client() as client:
             with client.session_transaction() as session:
                 session.update(user_id=self.user_id, user_role='信息员')
@@ -95,6 +104,14 @@ class PhotoGuideVisibilityTest(unittest.TestCase):
     def test_standard_form_does_not_require_photo_review_gate_to_activate_questions(self):
         gate = self.page(False).one('data-site-review-guide')
         self.assertNotIn('hidden', gate['attrs'])
+
+    def test_photo_mode_without_current_schedule_keeps_manual_evaluation_visible(self):
+        hierarchy = self.page(True, current_schedule=False)
+        gate = hierarchy.one('data-site-review-guide')
+        question = hierarchy.one('data-form-completion')
+        self.assertNotIn('hidden', gate['attrs'])
+        self.assertIn(gate, question['ancestors'])
+        self.assertFalse(any('hidden' in parent['attrs'] for parent in question['ancestors']))
 
     def test_evaluation_component_remains_in_the_real_submission_form(self):
         question = self.page(True).one('data-form-completion')
