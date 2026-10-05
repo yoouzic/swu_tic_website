@@ -43,12 +43,14 @@ Route A legacy mapping preserved verbatim (see submit_review):
                       versions keep their historical ScoreRecords)
 """
 import enum
+from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from app.models import LectureForm, ScoreRecord, ScoreItem, db
 from app.services.review_mutation import append_review_modification_note
 from app.utils.review_drafts import delete_review_form_draft
+from app.services.review_concurrency import claim_review_form
 
 
 class VersionAction(enum.Enum):
@@ -99,7 +101,9 @@ def execute_review_mutation(plan):
     adapter keeps its existing error contract.
     """
     try:
+        claimed_at = claim_review_form(plan.original_form, plan.logical_id)
         target_form = _apply_version_mutation(plan)
+        target_form.updated_at = max(target_form.updated_at or datetime.min, claimed_at)
         db.session.flush()  # 统一 flush：新表单ID可见，且先于任何 replacement INSERT 发出 DELETE
         _apply_score_mutation(plan, target_form)
         _apply_audit_note(plan, target_form)
@@ -128,6 +132,7 @@ def _apply_version_mutation(plan):
         return target_form
     target_form = LectureForm(**plan.resolved_fields)
     target_form.created_at = plan.original_form.created_at  # 继承创建时间
+    target_form.updated_at = datetime.now()
     db.session.add(target_form)
     return target_form
 

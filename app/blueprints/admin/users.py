@@ -9,10 +9,15 @@ from app.security import role_required
 from app.utils.review_permissions import get_user_review_permission
 from app.utils.permission_feedback import build_forbidden_message, flash_forbidden
 from app.utils.manage_permissions import get_user_manage_permission
+from app.utils.submission_permissions import (
+    set_submission_permission_revoked,
+    submission_permission_revoked,
+)
 from app.utils.password_audit import record_password_audit
-from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, is_user_active
+from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, active_user_filter, is_user_active
 from app.services.form_bindings import get_registration_logical_form_counts
 from app.services.profile_stats import build_user_profile_stats
+from app.services.lecture_form_concurrency import serialize_new_submission
 from app.services.organization_membership import (
     assign_user_to_group,
     canonical_group_user_criteria,
@@ -23,6 +28,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import json
 from . import admin_bp
 from .shared import _active_user_query, _create_personnel_movement_record, _serialize_user_basic, _snapshot_user_for_movement, generate_random_password
+
+
+USER_ROLES = ('信息员', '管理员', '超级管理员')
 
 
 def _can_view_managed_user(current_user, target_user, manage_permission):
@@ -108,16 +116,19 @@ def _build_user_reservations(user, search='', date_from='', date_to=''):
     )
 
     for registration in registrations:
-        course = Course.query.filter_by(
-            course_code=registration.course_code,
-            selection_code=registration.selection_code
-        ).first()
+        from app.services.registration_course_identity import resolve_registration_course
+        course = resolve_registration_course(registration)
         bind_count = logical_bind_counts.get(registration.id, 0)
         item = {
             'id': registration.id,
             'course_code': registration.course_code,
             'selection_code': registration.selection_code,
-            'course_name': course.course_name if course else '课程已删除',
+            'course_id': registration.course_id,
+            'semester': registration.semester,
+            'academic_year': registration.academic_year,
+            'identity_status': registration.identity_status,
+            'identity_restricted': course is None,
+            'course_name': course.course_name if course else '历史课程（身份待核实）',
             'teacher_name': course.teacher.name if course and course.teacher else '未知',
             'class_time': course.class_time if course else '',
             'class_location': course.class_location if course else '',
@@ -254,7 +265,13 @@ def add_user():
                  ),
              }), 403
         
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
+        text_fields = ('name', 'department', 'gender', 'grade', 'college', 'major', 'dormitory', 'phone', 'qq', 'student_id', 'role', 'password')
+        for field in text_fields:
+            if field in data and not isinstance(data[field], str):
+                return jsonify({'success': False, 'message': f'{field}必须为文本'}), 400
         
         # 必填字段验证
         name = data.get('name', '').strip()
@@ -268,6 +285,8 @@ def add_user():
         qq = data.get('qq', '').strip()
         student_id = data.get('student_id', '').strip()
         role = data.get('role', '').strip()
+        if role not in USER_ROLES:
+            return jsonify({'success': False, 'message': '角色必须为信息员、管理员或超级管理员'}), 400
         
         # 权限检查：非超级管理员只能添加本部门用户
         if manage_permission != '超级管理员':
@@ -510,7 +529,22 @@ def update_user(user_id):
                  ),
              }), 403
              
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
+        text_fields = ('name', 'department', 'gender', 'grade', 'college', 'major', 'dormitory', 'phone', 'qq', 'student_id', 'role', 'password', 'new_password')
+        for field in text_fields:
+            if field in data and not isinstance(data[field], str):
+                return jsonify({'success': False, 'message': f'{field}必须为文本'}), 400
+        if 'name' in data and not data['name'].strip():
+            return jsonify({'success': False, 'message': '姓名不能为空'}), 400
+        if 'role' in data:
+            new_role = data['role'].strip()
+            if new_role not in USER_ROLES:
+                return jsonify({'success': False, 'message': '角色必须为信息员、管理员或超级管理员'}), 400
+            if user.role == '超级管理员' and new_role != '超级管理员':
+                if not User.query.filter(User.role == '超级管理员', User.id != user.id, active_user_filter()).first():
+                    return jsonify({'success': False, 'message': '不能降级最后一个在任超级管理员'}), 400
         before_snapshot = _snapshot_user_for_movement(user)
         password_changed = False
         if 'new_password' not in data and 'password' in data:
@@ -604,6 +638,15 @@ def update_user(user_id):
                 user.password_hash = generate_password_hash(data['new_password'])
                 password_changed = True
         
+        if before_snapshot.get('role') != user.role:
+            # Role transitions do not silently carry a personal submission grant.
+            fill_permission = Permission.query.filter_by(name='填表').first()
+            if fill_permission:
+                RolePermission.query.filter_by(
+                    role=f'特殊角色_{user.id}', permission_id=fill_permission.id,
+                ).delete()
+            set_submission_permission_revoked(user.id, True)
+
         after_snapshot = _snapshot_user_for_movement(user)
         movement_changes = []
         if before_snapshot.get('department') != after_snapshot.get('department'):
@@ -715,13 +758,32 @@ def depart_user(user_id):
                 ),
             }), 403
 
-        data = request.get_json() or {}
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         password = data.get('password')
         if not password or not check_password_hash(current_user.password_hash, password):
             return jsonify({'success': False, 'message': '密码验证失败，无法办理离任'}), 403
 
         if not is_user_active(user_to_depart):
             return jsonify({'success': True, 'message': '该用户已处于离任状态'})
+
+        # Count logical forms by newest physical version, never historical timestamps.
+        latest_forms = {}
+        for form in LectureForm.query.filter_by(listener_number=user_to_depart.number).order_by(LectureForm.id.desc()).all():
+            latest_forms.setdefault(form.logical_id, form)
+        outstanding_count = sum(
+            form.status in ('待审核', '部门已审核')
+            for form in latest_forms.values()
+        )
+        if outstanding_count:
+            return jsonify({
+                'success': False,
+                'code': 'outstanding_reviews',
+                'message': f'该用户还有{outstanding_count}份未结听课表，请先在审核队列完成审核或驳回，再办理离任。',
+                'outstanding_count': outstanding_count,
+                'action': {'label': '处理未结听课表', 'url': url_for('admin.review_forms')},
+            }), 409
 
         before_snapshot = _snapshot_user_for_movement(user_to_depart)
         user_to_depart.is_active = False
@@ -792,20 +854,29 @@ def delete_user(user_id):
              return jsonify({'success': False, 'message': '不能删除当前登录账号'}), 400
         
         # 验证密码
-        data = request.get_json() or {}
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         password = data.get('password')
         if not password or not check_password_hash(current_user.password_hash, password):
             return jsonify({'success': False, 'message': '密码验证失败，无法删除用户'}), 403
+
+        # Share the submitting actor's transaction lock before checking its
+        # forms. No new form can slip between COUNT and physical deletion.
+        serialize_new_submission(user_to_delete.id)
+        db.session.refresh(user_to_delete)
         
         # 检查是否有相关的听课表单
         forms_count = LectureForm.query.filter_by(listener_number=user_to_delete.number).count()
         if forms_count > 0:
+            db.session.rollback()
             return jsonify({'success': False, 'message': f'无法删除用户，该用户有 {forms_count} 条听课记录'}), 400
         
         delete_snapshot = _snapshot_user_for_movement(user_to_delete)
 
         # 删除相关的特殊角色权限
         RolePermission.query.filter_by(role=f'特殊角色_{user_to_delete.id}').delete()
+        set_submission_permission_revoked(user_to_delete.id, False)
 
         _create_personnel_movement_record(
             current_user.id,
@@ -820,6 +891,8 @@ def delete_user(user_id):
             }]
         )
         
+        from app.services.submission_receipts import delete_user_submission_receipts
+        delete_user_submission_receipts(user_to_delete.id)
         db.session.delete(user_to_delete)
         db.session.commit()
         
@@ -971,6 +1044,10 @@ def get_user_permissions(user_id):
                 RolePermission.role == user.role
             ).all()
             user_permissions = [perm.id for perm in role_permissions]
+
+        if submission_permission_revoked(user.id):
+            fill_ids = {perm.id for perm in all_permissions if perm.name == '填表'}
+            user_permissions = [perm_id for perm_id in user_permissions if perm_id not in fill_ids]
         
         return jsonify({
             'success': True, 
@@ -1026,7 +1103,9 @@ def update_user_permissions(user_id):
                  ),
              }), 403
         
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
         permission_ids = data.get('permission_ids', [])
         
         # 非超级管理员只能授予自身拥有的、且不高于自身级别的权限。
@@ -1077,11 +1156,16 @@ def update_user_permissions(user_id):
         RolePermission.query.filter_by(role=f'特殊角色_{user.id}').delete()
         
         # 添加新的权限
+        has_submission_permission = False
         for perm_id in permission_ids:
             permission = Permission.query.get(perm_id)
             if permission:
                 role_perm = RolePermission(role=f'特殊角色_{user.id}', permission_id=perm_id)
                 db.session.add(role_perm)
+                has_submission_permission = has_submission_permission or permission.name == '填表'
+
+        # An empty personal set falls back to role defaults, so revocation is explicit.
+        set_submission_permission_revoked(user.id, not has_submission_permission)
         
         # 更新用户角色为管理员
         if user.role != '超级管理员':

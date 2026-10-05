@@ -69,7 +69,7 @@ class ReviewMutationScoreAtomicityCorrectnessTest(_ReviewMutationCompatibilityBa
         self.assertEqual(response.status_code, 500)
         body = response.get_json()
         self.assertFalse(body['success'])
-        self.assertTrue(body['message'].startswith('审核提交失败：second score item fault'))
+        self.assertEqual(body['message'], '审核提交失败，请稍后重试')
         rows = self._logical_rows(form)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].status, '待审核')
@@ -100,7 +100,7 @@ class ReviewMutationScoreAtomicityCorrectnessTest(_ReviewMutationCompatibilityBa
             side_effect=RuntimeError('replacement item fault'),
         ):
             stage2 = self._submit_b(v2_id, {
-                'form_data': {'course_feedback': 'feedback-stage2'},
+                'form_data': {'course_feedback': 'feedback-stage2 ' * 4},
                 'review_comment': 'center pass',
                 'score_data': [self._positive_score(reason='stage2', dept=3.0, pers=2.0)],
             })
@@ -108,7 +108,7 @@ class ReviewMutationScoreAtomicityCorrectnessTest(_ReviewMutationCompatibilityBa
         self.assertEqual(stage2.status_code, 500)
         body = stage2.get_json()
         self.assertFalse(body['success'])
-        self.assertEqual(body['message'], 'replacement item fault')
+        self.assertEqual(body['message'], '审核提交失败，请稍后重试')
 
         db.session.expire_all()
         rows = self._logical_rows(form)
@@ -149,7 +149,7 @@ class ReviewMutationScoreAtomicityCorrectnessTest(_ReviewMutationCompatibilityBa
             side_effect=RuntimeError('commit fault'),
         ):
             stage2 = self._submit_b(v2_id, {
-                'form_data': {'course_feedback': 'feedback-stage2'},
+                'form_data': {'course_feedback': 'feedback-stage2 ' * 4},
                 'review_comment': 'center pass',
                 'score_data': [self._positive_score(reason='stage2', dept=3.0, pers=2.0)],
             })
@@ -157,7 +157,7 @@ class ReviewMutationScoreAtomicityCorrectnessTest(_ReviewMutationCompatibilityBa
         self.assertEqual(stage2.status_code, 500)
         body = stage2.get_json()
         self.assertFalse(body['success'])
-        self.assertEqual(body['message'], 'commit fault')
+        self.assertEqual(body['message'], '审核提交失败，请稍后重试')
 
         db.session.expire_all()
         rows = self._logical_rows(form)

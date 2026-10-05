@@ -23,6 +23,9 @@
                 </div>
                 <div class="page-header__actions course-page-actions">
                     {% if is_course_management %}
+                    <a href="{{ url_for('user.course_lookup') }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-search"></i> 查询课表
+                    </a>
                     <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#columnSettingsModal">
                         <i class="bi bi-gear"></i> 列设置
                     </button>
@@ -1251,6 +1254,7 @@ function toggleSelectAll() {
     updateGroupCheckboxes();
 }
 
+let selectedRegistrationCourseId = null;
 // 打开登记模态框
 function openReservationModal(recordId) {
     // 查找课程记录
@@ -1282,6 +1286,7 @@ function openReservationModal(recordId) {
     document.getElementById('regCode').textContent = `课程号: ${courseGroup.course_code} | 选课号: ${courseGroup.selection_code}`;
     
     document.getElementById('regCourseCode').value = courseGroup.course_code;
+    selectedRegistrationCourseId = record.id;
     document.getElementById('regSelectionCode').value = courseGroup.selection_code;
     document.getElementById('regListeningInfo').value = ''; // 清空之前的输入
     clearReservationAlert();
@@ -1366,6 +1371,7 @@ function loadHistory(isAll, forcedTargetWeek) {
     }
     
     const params = new URLSearchParams({
+        course_id: selectedRegistrationCourseId,
         course_code: courseCode,
         selection_code: selectionCode,
         limit: limit
@@ -1411,7 +1417,7 @@ function renderRecentHistory(data) {
         const statusBadge = item.is_used ? 
             '<span class="badge bg-success float-end">已填表</span>' : 
             '<span class="badge bg-secondary float-end">未填表</span>';
-        const highlightStyle = item.is_highlighted ? 'style="background-color:#fff1f1;border-left:4px solid #dc3545;"' : '';
+        const highlightStyle = item.is_highlighted ? 'style="background-color:var(--status-danger-soft);border-left:4px solid var(--color-status-danger);"' : '';
         const weekBadge = item.teaching_week ?
             `<span class="badge ${item.is_highlighted ? 'bg-danger' : 'bg-light text-dark border'}">${item.is_highlighted ? '当前' : ''}第${item.teaching_week}周</span>` :
             '<span class="badge bg-light text-muted border">未识别周次</span>';
@@ -1519,6 +1525,7 @@ function submitReservation() {
     
     const data = {
         course_code: courseCode,
+        course_id: selectedRegistrationCourseId,
         selection_code: selectionCode,
         listening_info: listeningInfo
     };
@@ -2831,13 +2838,8 @@ function showAlert(message, type) {
 
 <style>
 .course-feedback-page .table th {
-    background-color: #f8f9fa;
     border-top: none;
     font-weight: 600;
-}
-
-.course-feedback-page .table-active {
-    background-color: rgb(155 73 60 / .1);
 }
 
 .course-feedback-page .btn-group-sm > .btn, .course-feedback-page .btn-sm {
@@ -2869,24 +2871,10 @@ function showAlert(message, type) {
 
 /* 课程分组样式 */
 .course-group-main {
-    background-color: #f8f9fa;
     font-weight: 500;
 }
 
-.course-group-main:hover {
-    background-color: #e9ecef;
-}
-
-.course-detail-row {
-    background-color: #ffffff;
-}
-
-.course-detail-row:hover {
-    background-color: #f8f9fa;
-}
-
 .course-detail-row td {
-    border-top: 1px solid #e9ecef;
     font-size: 0.9em;
 }
 
@@ -2995,12 +2983,10 @@ function showAlert(message, type) {
     border: 1px solid #dee2e6;
     border-radius: 6px;
     margin-bottom: 10px;
-    background-color: #f8f9fa;
 }
 
 .department-header {
     padding: 12px 15px;
-    background-color: #e9ecef;
     border-bottom: 1px solid #dee2e6;
     cursor: pointer;
     display: flex;
@@ -3016,13 +3002,11 @@ function showAlert(message, type) {
 .group-item {
     border-left: 3px solid var(--color-accent);
     margin: 8px 15px;
-    background-color: white;
     border-radius: 4px;
 }
 
 .group-header {
     padding: 10px 12px;
-    background-color: #f1f3f4;
     cursor: pointer;
     display: flex;
     justify-content: space-between;
@@ -3045,7 +3029,6 @@ function showAlert(message, type) {
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s;
-    background-color: white;
 }
 
 .tree-user-item:hover {

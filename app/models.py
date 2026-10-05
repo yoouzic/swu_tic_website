@@ -396,7 +396,9 @@ class LectureBan(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)  # 用户ID
-    course_id = db.Column(db.String(50), db.ForeignKey('courses.course_code'), nullable=False)  # 课程号（外键指向courses.course_code）
+    # Legacy course-wide rule: this text is a course code, not a Course row ID.
+    # Course codes repeat across terms and cannot be a foreign-key parent.
+    course_id = db.Column(db.String(50), nullable=False)
     
     created_at = db.Column(db.DateTime, default=datetime.now)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)  # 创建人
@@ -414,6 +416,11 @@ class CourseRegistration(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     course_code = db.Column(db.String(50), nullable=False)  # 课程号
     selection_code = db.Column(db.String(50), nullable=False)  # 选课课号
+    course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=True, index=True)
+    semester = db.Column(db.String(20), nullable=True)
+    academic_year = db.Column(db.String(20), nullable=True)
+    identity_status = db.Column(db.String(32), nullable=True, default='pending')
+    identity_evidence_json = db.Column(db.Text, nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)  # 用户ID
     listening_info = db.Column(db.Text, nullable=True)  # 登记时的备注信息（如计划听课时间地点）
     
@@ -423,6 +430,7 @@ class CourseRegistration(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
     
     user = db.relationship('User', backref='registrations')
+    course = db.relationship('Course', backref='registrations')
     
     # 移除唯一约束，允许重复登记（作为历史记录）
     # __table_args__ = (db.UniqueConstraint('course_code', 'selection_code', 'user_id', name='unique_course_user_reservation'),)
@@ -437,6 +445,8 @@ class LectureFormDraft(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     draft_key = db.Column(db.String(50), nullable=False, default='submit_form')
     payload_json = db.Column(db.Text, nullable=False, default='{}')
+    # Server-owned entry policy; client draft JSON cannot grant this exemption.
+    entry_mode = db.Column(db.String(16), nullable=False, default='photo', server_default='photo')
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -448,6 +458,98 @@ class LectureFormDraft(db.Model):
 
     def __repr__(self):
         return f'<LectureFormDraft user={self.user_id} key={self.draft_key}>'
+
+
+class LectureSiteCapture(db.Model):
+    """Private photo and site context retained independently of form drafts."""
+    __tablename__ = 'lecture_site_captures'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    photo_key = db.Column(db.String(80), nullable=False, unique=True)
+    received_at = db.Column(db.String(40), nullable=False)
+    client_captured_at = db.Column(db.String(40), nullable=True)
+    location_json = db.Column(db.Text, nullable=False, default='{}')
+    room_number = db.Column(db.String(16), nullable=True)
+    building = db.Column(db.String(80), nullable=True)
+    period_number = db.Column(db.Integer, nullable=True)
+    ocr_status = db.Column(db.String(30), nullable=False, default='pending')
+    ocr_alternatives_json = db.Column(db.Text, nullable=False, default='[]')
+    draft_json = db.Column(db.Text, nullable=False, default='{}')
+    is_archived = db.Column(db.Boolean, nullable=False, default=False)
+    confirmed_candidate_id = db.Column(db.String(120), nullable=True)
+    form_id = db.Column(db.Integer, db.ForeignKey('lecture_forms.id'), nullable=True, index=True)
+
+
+class ListeningAssistantEvidence(db.Model):
+    """Safe provenance for a confirmed listening-assistant selection.
+
+    JSON columns are intentionally stored as text so this additive model keeps
+    the same SQLite/PostgreSQL portability as the older application tables.
+    The evidence service is the write boundary and serializes only normalized
+    schedule/course data plus explicit user confirmation actions; form
+    evaluation text, signatures, phone numbers, credentials, and arbitrary
+    request payloads do not belong in this table.
+    """
+
+    __tablename__ = 'listening_assistant_evidence'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey('users.id'),
+        nullable=False,
+        index=True,
+    )
+    lecture_form_id = db.Column(
+        db.Integer,
+        db.ForeignKey('lecture_forms.id'),
+        nullable=True,
+        index=True,
+    )
+
+    source_kind = db.Column(db.String(16), nullable=False)
+    source_batch_id = db.Column(db.String(100), nullable=False)
+    semester = db.Column(db.String(50), nullable=False)
+    template_version = db.Column(db.String(100), nullable=False)
+
+    query_json = db.Column(db.Text, nullable=False, default='{}')
+    candidate_json = db.Column(db.Text, nullable=False, default='{}')
+    overrides_json = db.Column(db.Text, nullable=False, default='{}')
+    confirmation_json = db.Column(db.Text, nullable=False, default='{}')
+
+    confirmed_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now, index=True)
+
+    user = db.relationship('User', backref='listening_assistant_evidence')
+    lecture_form = db.relationship(
+        'LectureForm',
+        backref='listening_assistant_evidence',
+    )
+
+    __table_args__ = (
+        db.Index(
+            'ix_listening_assistant_evidence_user_created',
+            'user_id',
+            'created_at',
+        ),
+        db.Index(
+            'ix_listening_assistant_evidence_form_created',
+            'lecture_form_id',
+            'created_at',
+        ),
+        db.Index(
+            'ix_listening_assistant_evidence_source',
+            'source_kind',
+            'source_batch_id',
+            'semester',
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f'<ListeningAssistantEvidence user={self.user_id} '
+            f'form={self.lecture_form_id} source={self.source_kind}>'
+        )
 
 # 系统设置：用于保存学期第一周星期一日期等键值
 class SystemSetting(db.Model):
@@ -568,6 +670,8 @@ class AssessmentOverride(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    # NULL retains legacy rules whose semester has not been explicitly verified.
+    semester = db.Column(db.String(50), nullable=True, index=True)
     start_week = db.Column(db.Integer, nullable=False)     # 生效起始周（教学周编号）
     end_week = db.Column(db.Integer, nullable=False)       # 生效结束周（教学周编号）
 
@@ -591,8 +695,8 @@ class AssessmentOverride(db.Model):
     creator = db.relationship('User', foreign_keys=[created_by])
 
     __table_args__ = (
-        db.UniqueConstraint('user_id', 'start_week', 'end_week', 'override_type',
-                            name='unique_user_week_override'),
+        db.UniqueConstraint('user_id', 'semester', 'start_week', 'end_week', 'override_type',
+                            name='unique_user_semester_week_override'),
     )
 
     def __repr__(self):
@@ -652,6 +756,12 @@ class ScheduleImportBatch(db.Model):
         cascade='all, delete-orphan',
         order_by='ScheduleImportRow.source_row',
     )
+    listening_assistant_entries = db.relationship(
+        'ListeningAssistantScheduleEntry',
+        backref='batch',
+        cascade='all, delete-orphan',
+        order_by='ListeningAssistantScheduleEntry.source_row',
+    )
 
     __table_args__ = (
         db.Index('ix_schedule_import_batch_semester_status', 'semester', 'status'),
@@ -659,6 +769,33 @@ class ScheduleImportBatch(db.Model):
 
     def __repr__(self):
         return f'<ScheduleImportBatch {self.id} {self.semester} {self.status}>'
+
+
+class ScheduleCourseMapping(db.Model):
+    """Presence marks an imported batch's exact Course membership complete.
+
+    An explicit completion row distinguishes an intentionally empty mapping
+    from older snapshots which predate batch-linked courses.
+    """
+    __tablename__ = 'schedule_course_mappings'
+
+    batch_id = db.Column(db.Integer, db.ForeignKey('schedule_import_batches.id', ondelete='CASCADE'),
+                         primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
+
+
+class ScheduleCourseMembership(db.Model):
+    """Exact Course rows belonging to one immutable schedule import batch."""
+    __tablename__ = 'schedule_course_memberships'
+
+    id = db.Column(db.Integer, primary_key=True)
+    batch_id = db.Column(db.Integer, db.ForeignKey('schedule_import_batches.id', ondelete='CASCADE'),
+                         nullable=False, index=True)
+    course_id = db.Column(db.Integer, db.ForeignKey('courses.id', ondelete='CASCADE'),
+                          nullable=False, index=True)
+    __table_args__ = (
+        db.UniqueConstraint('batch_id', 'course_id', name='uq_schedule_batch_course'),
+    )
 
 
 class ScheduleImportRow(db.Model):
@@ -696,6 +833,100 @@ class ScheduleImportRow(db.Model):
 
     def __repr__(self):
         return f'<ScheduleImportRow {self.id} batch={self.batch_id} row={self.source_row}>'
+
+
+class ListeningAssistantScheduleEntry(db.Model):
+    """Additive, batch-linked index for universal listening-assistant reads.
+
+    The searchable text is normalized at write time, while the ``*_raw``
+    columns retain the source cells needed to explain a recommendation.  This
+    table is deliberately separate from the legacy ``Course`` aggregate so a
+    schedule import can be replaced or retired without rewriting that model.
+    """
+
+    __tablename__ = 'listening_assistant_schedule_entries'
+
+    id = db.Column(db.Integer, primary_key=True)
+    batch_id = db.Column(
+        db.Integer,
+        db.ForeignKey('schedule_import_batches.id'),
+        nullable=False,
+        index=True,
+    )
+    source_row = db.Column(db.Integer, nullable=False)
+
+    semester = db.Column(db.String(50), nullable=False, index=True)
+    academic_year = db.Column(db.String(20), nullable=True)
+    semester_raw = db.Column(db.Text, nullable=True)
+    academic_year_raw = db.Column(db.Text, nullable=True)
+
+    course_code = db.Column(db.String(100), nullable=True)
+    course_code_raw = db.Column(db.Text, nullable=True)
+    selection_code = db.Column(db.String(100), nullable=True)
+    selection_code_raw = db.Column(db.Text, nullable=True)
+    teacher_name = db.Column(db.Text, nullable=True)
+    teacher_name_raw = db.Column(db.Text, nullable=True)
+    teacher_college = db.Column(db.Text, nullable=True)
+    teacher_college_raw = db.Column(db.Text, nullable=True)
+    course_title = db.Column(db.Text, nullable=True)
+    course_title_raw = db.Column(db.Text, nullable=True)
+    student_grade_class = db.Column(db.Text, nullable=True)
+    student_grade_class_raw = db.Column(db.Text, nullable=True)
+
+    venue_id = db.Column(db.String(100), nullable=True)
+    venue_id_raw = db.Column(db.Text, nullable=True)
+    location_normalized = db.Column(db.Text, nullable=True)
+    location_raw = db.Column(db.Text, nullable=True)
+
+    start_week_raw = db.Column(db.Text, nullable=True)
+    weekday_raw = db.Column(db.Text, nullable=True)
+    period_raw = db.Column(db.Text, nullable=True)
+    venue_start_week_raw = db.Column(db.Text, nullable=True)
+    venue_period_raw = db.Column(db.Text, nullable=True)
+
+    # Parsed lookup values are additive conveniences; raw columns remain the
+    # source of truth when a workbook value is malformed or ambiguous.
+    weekday = db.Column(db.Integer, nullable=True)
+    period_start = db.Column(db.Integer, nullable=True)
+    period_end = db.Column(db.Integer, nullable=True)
+    venue_period_start = db.Column(db.Integer, nullable=True)
+    venue_period_end = db.Column(db.Integer, nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            'batch_id',
+            'source_row',
+            name='uq_listening_assistant_schedule_batch_source',
+        ),
+        db.Index(
+            'ix_listening_assistant_schedule_batch_semester',
+            'batch_id',
+            'semester',
+        ),
+        db.Index(
+            'ix_listening_assistant_schedule_batch_location_raw',
+            'batch_id',
+            'location_raw',
+        ),
+        db.Index(
+            'ix_listening_assistant_schedule_batch_location',
+            'batch_id',
+            'location_normalized',
+        ),
+        db.Index(
+            'ix_listening_assistant_schedule_batch_teacher',
+            'batch_id',
+            'teacher_name',
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f'<ListeningAssistantScheduleEntry batch={self.batch_id} '
+            f'row={self.source_row}>'
+        )
 
 
 class ScheduleSemesterSelection(db.Model):

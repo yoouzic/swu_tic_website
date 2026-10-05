@@ -1,8 +1,10 @@
 import tempfile
 import unittest
 from collections import Counter
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from werkzeug.security import generate_password_hash
 
@@ -582,7 +584,10 @@ class BusinessAcceptanceHumanFlowTest(unittest.TestCase):
         officer_actor = BusinessActor(app, officer.student_id, self.password)
         self.assertIn(officer_actor.login().status_code, {200, 302})
         repaired = form_data_for_resubmission(rejected)
-        repaired['course_feedback'] = '该老师讲解清楚，课堂互动自然，学生理解良好。'
+        repaired['course_feedback'] = (
+            '该老师讲解清楚，课堂互动自然，学生理解良好。教师先介绍学习目标，'
+            '再结合具体例题说明重点，课堂练习后逐项回应学生疑问，课程组织完整。'
+        )
         resubmitted = officer_actor.resubmit(rejected.id, repaired)
         self.assertEqual(resubmitted.status, STATUS_PENDING)
         self.assertNotEqual(resubmitted.id, rejected.id)
@@ -619,6 +624,69 @@ class BusinessAcceptanceHumanFlowTest(unittest.TestCase):
         )
         self.assertEqual(super_result.status, STATUS_CENTER)
         self.assertEqual(super_result.reviewer_id, super_actor.user_id)
+
+    def test_actor_review_posts_the_exact_revision_from_its_single_opened_get(self):
+        actor = self.actors['groups'][0]
+        actor.login()
+        forms = self._forms_for_group(0, 0)
+        for action, form in zip(('approve', 'reject'), forms):
+            with self.subTest(action=action):
+                opened = []
+                original_get_form = actor.get_form
+
+                def record_detail(form_id):
+                    detail = original_get_form(form_id)
+                    opened.append(detail)
+                    return detail
+
+                with mock.patch.object(actor, 'get_form', side_effect=record_detail), \
+                        mock.patch.object(actor.client, 'post', wraps=actor.client.post) as post:
+                    getattr(actor, action)(form.id, '精确页面版本审核')
+
+                self.assertEqual(len(opened), 1)
+                self.assertEqual(post.call_count, 1)
+                sent = post.call_args.kwargs['json']
+                for key in ('expected_form_id', 'expected_form_updated_at'):
+                    self.assertEqual(sent[key], opened[0][key])
+
+    def test_actor_does_not_refresh_or_retry_a_revision_changed_after_its_get(self):
+        actor = self.actors['groups'][0]
+        actor.login()
+        forms = self._forms_for_group(0, 0)
+        for action, form in zip(('approve', 'reject'), forms):
+            with self.subTest(action=action):
+                original_get_form = actor.get_form
+                concurrent_versions = []
+                conflicts = []
+                original_post = actor.client.post
+
+                def concurrently_review(form_id):
+                    detail = original_get_form(form_id)
+                    changed = db.session.get(LectureForm, int(form_id))
+                    changed.course_title = '并发更新后的合成课程'
+                    changed.updated_at += timedelta(seconds=1)
+                    db.session.commit()
+                    concurrent_versions.extend(version_ids(form.unique_id))
+                    return detail
+
+                def record_conflict(*args, **kwargs):
+                    response = original_post(*args, **kwargs)
+                    conflicts.append(response)
+                    return response
+
+                with mock.patch.object(actor, 'get_form', side_effect=concurrently_review) as get, \
+                        mock.patch.object(actor.client, 'post', side_effect=record_conflict) as post:
+                    with self.assertRaises(HumanFlowError):
+                        getattr(actor, action)(form.id, '旧页面审核应被拒绝')
+
+                self.assertEqual(get.call_count, 1)
+                self.assertEqual(post.call_count, 1)
+                self.assertEqual(conflicts[0].status_code, 409)
+                self.assertEqual(conflicts[0].get_json()['code'], 'review_conflict')
+                self.assertEqual(version_ids(form.unique_id), concurrent_versions)
+                latest = db.session.get(LectureForm, concurrent_versions[-1])
+                self.assertEqual(latest.course_title, '并发更新后的合成课程')
+                self.assertEqual(latest.status, STATUS_PENDING)
 
     def _snapshot_model(self, form_id):
         form = db.session.get(LectureForm, int(form_id))

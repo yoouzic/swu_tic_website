@@ -133,7 +133,7 @@ def _extract_legacy_form_rows(df):
 
 def _parse_form_import_rows(file_storage):
     try:
-        df_named = pd.read_excel(file_storage, sheet_name=0)
+        df_named = pd.read_excel(file_storage, sheet_name=0, dtype=str)
     except Exception:
         return [], 'Excel读取失败，请检查文件格式'
     rows = _extract_named_form_rows(df_named)
@@ -141,7 +141,7 @@ def _parse_form_import_rows(file_storage):
         return rows, None
     try:
         file_storage.stream.seek(0)
-        df_legacy = pd.read_excel(file_storage, sheet_name=0, header=None)
+        df_legacy = pd.read_excel(file_storage, sheet_name=0, header=None, dtype=str)
     except Exception:
         return [], 'Excel读取失败，请检查文件格式'
     legacy_rows = _extract_legacy_form_rows(df_legacy)

@@ -1,18 +1,26 @@
 {% extends "base.html" %}
 {% from "partials/_page_header.html" import page_header %}
+{% set registration_available = app_can_submit_lecture_form and schedule_availability.registration_ready %}
+{% set active_tab = active_tab if registration_available else 'records' %}
 
-{% block title %}听课与填报 - 西大听课工作台{% endblock %}
+{% block title %}{{ '听课与填报' if app_can_submit_lecture_form else '我的记录' }} - 西大听课工作台{% endblock %}
 
 {% block content %}
-{{ page_header('听课与填报', '登记听课安排，管理预约并查看已提交表单。', '填写听课表', url_for('user.submit_form')) }}
+{% if app_can_submit_lecture_form %}
+{{ page_header('听课与填报', '查看预约、已提交表单和审核意见。', '填写听课表', url_for('user.submit_form')) }}
+{% else %}
+{{ page_header('我的记录', '查看预约、已提交表单和审核意见。', '查询课表' if schedule_availability.candidates_ready else '', url_for('user.course_lookup') if schedule_availability.candidates_ready else '') }}
+{% endif %}
 <div class="activity-center" data-active-tab="{{ active_tab }}">
-    <div class="activity-tabs" role="tablist" aria-label="听课与填报">
-        <button type="button" id="registration-tab" role="tab" data-activity-tab="registration" aria-selected="{{ 'true' if active_tab == 'registration' else 'false' }}">听课登记</button>
+    <div class="activity-tabs" role="tablist" aria-label="{{ '听课与填报' if app_can_submit_lecture_form else '我的记录' }}">
+        {% if registration_available %}<button type="button" id="registration-tab" role="tab" data-activity-tab="registration" aria-selected="{{ 'true' if active_tab == 'registration' else 'false' }}">听课登记</button>{% endif %}
         <button type="button" id="records-tab" role="tab" data-activity-tab="records" aria-selected="{{ 'true' if active_tab == 'records' else 'false' }}">预约与表单</button>
     </div>
+    {% if registration_available %}
     <section data-activity-panel="registration" aria-labelledby="registration-tab"{% if active_tab != 'registration' %} hidden{% endif %}>
         {% include 'user/_registration_panel.html' %}
     </section>
+    {% endif %}
     <section data-activity-panel="records" aria-labelledby="records-tab"{% if active_tab != 'records' %} hidden{% endif %}>
         {% include 'user/_records_panel.html' %}
     </section>

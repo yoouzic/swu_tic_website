@@ -37,7 +37,7 @@
         document.getElementById('previewFirstWeek').textContent = settings.first_week_monday || '未设置';
         document.getElementById('previewCurrentSemester').textContent = settings.current_semester || '未设置';
         document.getElementById('previewTotalWeeks').textContent = settings.total_weeks || 20;
-        document.getElementById('previewRequiredSubmit').textContent = settings.required_submission_count || 1;
+        document.getElementById('previewRequiredSubmit').textContent = settings.required_submission_count ?? 1;
         const errorFree = [];
         if (settings.check_dept_review) errorFree.push('部门审核无修改');
         if (settings.check_center_review) errorFree.push('中心审核无修改');
@@ -50,7 +50,7 @@
         document.getElementById('firstWeekMonday').value = settings.first_week_monday || '';
         document.getElementById('currentSemester').value = settings.current_semester || '';
         document.getElementById('totalWeeks').value = settings.total_weeks || 20;
-        document.getElementById('requiredSubmission').value = settings.required_submission_count || 1;
+        document.getElementById('requiredSubmission').value = settings.required_submission_count ?? 1;
         document.getElementById('weekStartDay').value = settings.week_start_day || 0;
         document.getElementById('reviewerDisplayMode').value = settings.reviewer_display_mode || 'name';
         document.getElementById('courseWeeklyLimitEnabled').checked = Boolean(settings.course_weekly_limit_enabled);

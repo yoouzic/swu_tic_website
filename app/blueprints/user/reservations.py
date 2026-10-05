@@ -11,13 +11,20 @@ from app.models import (
     User,
     db,
 )
-from app.security import login_required
+from app.security import login_required, submission_required
+from app.services.current_courses import current_course_query
+from app.services.registration_course_identity import (
+    resolve_current_course_input, resolve_registration_course,
+    registrations_for_course, stamp_registration_course,
+)
+from app.services.schedule_availability import current_schedule_availability
+from app.services.teaching_calendar import parse_lecture_date
 from app.services.form_bindings import (
     get_registration_logical_form_counts,
     registration_has_form_binding,
 )
-from sqlalchemy import and_
 from app.utils.time_validator import validate_listening_time, TimeValidator
+from app.utils.submission_permissions import can_submit_lecture_form
 from app.utils.course_registration_limits import (
     get_current_teaching_week_no,
     parse_listening_week_no,
@@ -31,34 +38,34 @@ def _build_activity_records(user, request_args):
     """Build the existing form and reservation view model for the activity center."""
     from collections import defaultdict
 
+    can_submit = can_submit_lecture_form(user)
     search = request_args.get('search', '')
-    date_from = request_args.get('date_from', '')
-    date_to = request_args.get('date_to', '')
+    date_from = parse_lecture_date(request_args.get('date_from', ''))
+    date_to = parse_lecture_date(request_args.get('date_to', ''))
 
     query = LectureForm.query.filter_by(listener_number=user.number)
-    if search:
-        query = query.filter(
-            db.or_(
-                LectureForm.course_title.contains(search),
-                LectureForm.teacher_name.contains(search),
-                LectureForm.lecture_location.contains(search)
-            )
-        )
-
-    if date_from:
-        query = query.filter(LectureForm.lecture_date >= date_from)
-    if date_to:
-        query = query.filter(LectureForm.lecture_date <= date_to)
-
-    all_forms = query.order_by(LectureForm.updated_at.desc()).all()
+    all_forms = query.order_by(LectureForm.id.desc()).all()
     grouped_forms = defaultdict(list)
     for form in all_forms:
-        unique_key = form.unique_id if form.unique_id else f"single_{form.id}"
+        unique_key = form.unique_id or form.id
         grouped_forms[unique_key].append(form)
 
     form_groups = []
     for unique_id, versions in grouped_forms.items():
-        versions.sort(key=lambda item: item.updated_at or item.created_at, reverse=True)
+        versions.sort(key=lambda item: item.id, reverse=True)
+        if search and not any(
+            search.casefold() in (getattr(versions[0], field) or '').casefold()
+            for field in ('course_title', 'teacher_name', 'lecture_location')
+        ):
+            continue
+        lecture_date = parse_lecture_date(versions[0].lecture_date)
+        if date_from or date_to:
+            if lecture_date is None:
+                continue
+            if date_from and lecture_date < date_from:
+                continue
+            if date_to and lecture_date > date_to:
+                continue
         form_groups.append({
             'unique_id': unique_id,
             'latest_form': versions[0],
@@ -77,17 +84,20 @@ def _build_activity_records(user, request_args):
     )
     my_reservations = []
     for reservation in registrations:
-        course = Course.query.filter_by(
-            course_code=reservation.course_code,
-            selection_code=reservation.selection_code,
-        ).first()
+        course = resolve_registration_course(reservation)
+        current_course = resolve_registration_course(reservation, current_only=True)
         bind_count = logical_bind_counts.get(reservation.id, 0)
         is_bound = bind_count > 0
         my_reservations.append({
             'id': reservation.id,
             'course_code': reservation.course_code,
             'selection_code': reservation.selection_code,
-            'course_name': course.course_name if course else '课程已删除',
+            'course_id': reservation.course_id,
+            'semester': reservation.semester,
+            'academic_year': reservation.academic_year,
+            'identity_status': reservation.identity_status,
+            'identity_restricted': current_course is None,
+            'course_name': course.course_name if course else '历史课程（身份待核实）',
             'teacher_name': course.teacher.name if course and course.teacher else '未知',
             'class_time': course.class_time if course else '',
             'class_location': course.class_location if course else '',
@@ -95,8 +105,8 @@ def _build_activity_records(user, request_args):
             'created_at': reservation.created_at,
             'is_bound': is_bound,
             'bind_count': bind_count,
-            'can_edit': not is_bound,
-            'can_delete': not is_bound,
+            'can_edit': can_submit and not is_bound and current_course is not None,
+            'can_delete': can_submit and not is_bound,
         })
 
     return {'forms': form_groups, 'my_reservations': my_reservations}
@@ -107,16 +117,22 @@ def _build_activity_records(user, request_args):
 def listening_registration():
     """Information officer activity center."""
     user = User.query.get(session['user_id'])
+    can_submit = can_submit_lecture_form(user)
     active_tab = request.args.get('tab', 'registration')
+    availability = current_schedule_availability()
     if active_tab not in {'registration', 'records'}:
         active_tab = 'registration'
+    if not can_submit or not availability['registration_ready']:
+        active_tab = 'records'
     records = _build_activity_records(user, request.args)
     semester_configured = bool((SystemSetting.get('teaching_first_week_monday') or '').strip())
     return render_template(
         'user/activity_center.html',
         user=user,
+        can_submit_lecture_form=can_submit,
         active_tab=active_tab,
         semester_configured=semester_configured,
+        schedule_availability=availability,
         **records,
     )
 
@@ -132,6 +148,10 @@ def course_feedback_management():
 @login_required
 def api_available_courses():
     """获取可听课程列表（支持搜索和分页）"""
+    availability = current_schedule_availability()
+    if not availability['registration_ready']:
+        return jsonify(success=False, message=availability['registration_message'],
+                       status=availability['status'], code='current_schedule_unavailable'), 503
     try:
         user_id = session['user_id']
         search_query = request.args.get('q', '').strip()
@@ -142,7 +162,7 @@ def api_available_courses():
         banned_course_ids = db.session.query(ListeningBan.course_id).filter_by(user_id=user_id).subquery()
         
         # 基础查询
-        query = Course.query.filter(~Course.id.in_(banned_course_ids))
+        query = current_course_query().filter(~Course.id.in_(banned_course_ids))
         
         # 搜索过滤
         if search_query:
@@ -196,7 +216,7 @@ def api_available_courses():
 
 
 @user_bp.route('/api/course_registration_history')
-@login_required
+@submission_required(api=True)
 def api_course_registration_history():
     """获取特定课程的登记历史（最新5条）"""
     try:
@@ -212,16 +232,25 @@ def api_course_registration_history():
         if not course_code or not selection_code:
             return jsonify({'success': False, 'data': []})
             
-        registrations = Reservation.query.filter_by(
-            course_code=course_code,
-            selection_code=selection_code
-        ).order_by(Reservation.created_at.desc()).limit(limit).all()
+        selected_course_id = request.args.get('course_id')
+        if selected_course_id is not None:
+            course = resolve_current_course_input(course_code, selection_code, selected_course_id)
+            if course is None:
+                return jsonify(success=False, message='课程身份无法确定，请重新选择当前课表课程', data=[]), 400
+            registrations = registrations_for_course(course.id)[:max(0, min(limit, 100))]
+        else:
+            # The legacy read API can show historical two-code records even
+            # without a current timetable. Each row retains its own identity;
+            # it is never relabelled as the new term's matching course.
+            registrations = Reservation.query.filter_by(course_code=course_code,selection_code=selection_code).order_by(
+                Reservation.created_at.desc(),Reservation.id.desc()).limit(max(0,min(limit,100))).all()
         
         logical_bind_counts = get_registration_logical_form_counts(
             [r.id for r in registrations]
         )
         data = []
         for r in registrations:
+            historical_course = resolve_registration_course(r)
             bind_count = logical_bind_counts.get(r.id, 0)
             # Round 8A：is_used 兼容字段的值源收敛为 canonical binding
             # （is_bound）；字段名与 JSON shape 保留，模板消费方不受影响。
@@ -232,6 +261,9 @@ def api_course_registration_history():
             user_number = registrant.number if registrant else ''
             data.append({
                 'id': r.id,
+                'course_id': historical_course.id if historical_course is not None else None,
+                'semester': r.semester,
+                'academic_year': r.academic_year,
                 'user_name': user_name,
                 'user_number': user_number,
                 'user_display': f'{user_name}（{user_number}）' if user_number else user_name,
@@ -255,12 +287,16 @@ def api_course_registration_history():
 
 
 @user_bp.route('/api/create_reservation', methods=['POST'])
-@login_required
+@submission_required(api=True)
 def api_create_reservation():
     """创建听课登记"""
+    availability = current_schedule_availability()
+    if not availability['registration_ready']:
+        return jsonify(success=False, message=availability['registration_message'],
+                       status=availability['status'], code='current_schedule_unavailable'), 503
     try:
         user_id = session['user_id']
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         
         course_code = data.get('course_code')
         selection_code = data.get('selection_code')
@@ -291,29 +327,16 @@ def api_create_reservation():
         # 移除唯一性检查，允许重复登记（作为历史记录）
         
         # 检查该课程组是否存在且用户有权限听课
-        course_exists = Course.query.filter_by(
-            course_code=course_code,
-            selection_code=selection_code
-        ).first()
+        course_exists = resolve_current_course_input(course_code, selection_code, data.get('course_id'))
         
         if not course_exists:
             return jsonify({
                 'success': False,
-                'message': '课程不存在'
+                'message': '课程不存在、身份不明确或已不在当前课表，请重新选择课程'
             }), 400
         
         # 检查是否被禁听
-        banned = ListeningBan.query.filter(
-            and_(
-                ListeningBan.user_id == user_id,
-                ListeningBan.course_id.in_(
-                    db.session.query(Course.id).filter_by(
-                        course_code=course_code,
-                        selection_code=selection_code
-                    )
-                )
-            )
-        ).first()
+        banned = ListeningBan.query.filter_by(user_id=user_id, course_id=course_exists.id).first()
         
         if banned:
             return jsonify({
@@ -324,7 +347,8 @@ def api_create_reservation():
         limit_allowed, limit_error = validate_course_weekly_registration_limit(
             course_code,
             selection_code,
-            listening_info
+            listening_info,
+            course_id=course_exists.id,
         )
         if not limit_allowed:
             return jsonify({
@@ -340,6 +364,7 @@ def api_create_reservation():
             listening_info=listening_info,
             is_used=False
         )
+        stamp_registration_course(reservation, course_exists)
         
         db.session.add(reservation)
         db.session.commit()
@@ -349,6 +374,9 @@ def api_create_reservation():
             'message': '听课登记成功',
             'data': {
                 'id': reservation.id,
+                'course_id': reservation.course_id,
+                'semester': reservation.semester,
+                'academic_year': reservation.academic_year,
                 'created_at': reservation.created_at.strftime('%Y-%m-%d %H:%M')
             }
         })
@@ -362,7 +390,7 @@ def api_create_reservation():
 
 
 @user_bp.route('/api/cancel_reservation', methods=['POST'])
-@login_required
+@submission_required(api=True)
 def api_cancel_reservation():
     """取消听课登记（Round 8A-R1：canonical binding guard + 确定性目标选择）"""
     try:
@@ -382,11 +410,24 @@ def api_cancel_reservation():
         # binding 分类。模型允许重复登记，无序 .first() 目标歧义；legacy cancel
         # 只删除“最新的 canonical unbound registration”，绝不参考 is_used
         # mirror，绝不删除已绑定表单的登记（binding graph 保护）。
-        matches = Reservation.query.filter_by(
-            course_code=course_code,
-            selection_code=selection_code,
-            user_id=user_id
-        ).order_by(Reservation.created_at.desc(), Reservation.id.desc()).all()
+        course = resolve_current_course_input(course_code, selection_code, data.get('course_id'))
+        if course is None:
+            matches = Reservation.query.filter_by(course_code=course_code, selection_code=selection_code, user_id=user_id).order_by(
+                Reservation.created_at.desc(), Reservation.id.desc()).all()
+            if not matches:
+                return jsonify(success=False, message='未找到预定记录'), 404
+            # Compatibility for the old cancellation API when no current
+            # course exists: one historical identity may still be cancelled.
+            # Multiple terms/ambiguous migrated rows require an explicit row
+            # deletion; a forged selected ID never takes this fallback.
+            identities = {(r.course_id, r.semester, r.academic_year) for r in matches}
+            if (data.get('course_id') is not None
+                    or current_course_query().filter_by(course_code=course_code, selection_code=selection_code).first()
+                    or len(identities) != 1
+                    or any(r.identity_status in {'ambiguous', 'missing'} for r in matches)):
+                return jsonify(success=False, message='课程身份无法确定，请通过历史记录删除具体预约'), 400
+        else:
+            matches = registrations_for_course(course.id, user_id=user_id)
 
         if not matches:
             return jsonify({
@@ -430,6 +471,7 @@ def api_my_reservations():
     """获取我的听课登记列表"""
     try:
         user_id = session['user_id']
+        can_submit = can_submit_lecture_form(db.session.get(User, user_id))
         
         reservations = Reservation.query.filter_by(user_id=user_id).order_by(Reservation.created_at.desc()).all()
         logical_bind_counts = get_registration_logical_form_counts(
@@ -441,24 +483,28 @@ def api_my_reservations():
             bind_count = logical_bind_counts.get(r.id, 0)
             is_bound = bind_count > 0
             # 获取课程组信息
-            courses = Course.query.filter_by(
-                course_code=r.course_code,
-                selection_code=r.selection_code
-            ).all()
+            exact_course = resolve_registration_course(r)
+            current_course = resolve_registration_course(r, current_only=True)
+            courses = [exact_course] if exact_course else []
             
             if courses:
                 course_info = {
                     'id': r.id,
                     'course_code': r.course_code,
                     'selection_code': r.selection_code,
+                    'course_id': r.course_id,
+                    'semester': r.semester,
+                    'academic_year': r.academic_year,
+                    'identity_status': r.identity_status,
+                    'identity_restricted': current_course is None,
                     'course_name': courses[0].course_name,
                     'offering_college': courses[0].offering_college,
                     'listening_info': r.listening_info,
                     'created_at': r.created_at.strftime('%Y-%m-%d %H:%M'),
                     'is_bound': is_bound,
                     'bind_count': bind_count,
-                    'can_edit': not is_bound,
-                    'can_delete': not is_bound,
+                    'can_edit': can_submit and not is_bound and current_course is not None,
+                    'can_delete': can_submit and not is_bound,
                     'courses': []
                 }
                 
@@ -471,6 +517,16 @@ def api_my_reservations():
                     })
                 
                 result.append(course_info)
+            else:
+                result.append({
+                    'id': r.id, 'course_code': r.course_code, 'selection_code': r.selection_code,
+                    'course_id': r.course_id, 'semester': r.semester, 'academic_year': r.academic_year,
+                    'identity_status': r.identity_status, 'identity_restricted': True,
+                    'course_name': '历史课程（身份待核实）', 'offering_college': '',
+                    'listening_info': r.listening_info, 'created_at': r.created_at.strftime('%Y-%m-%d %H:%M'),
+                    'is_bound': is_bound, 'bind_count': bind_count, 'can_edit': False,
+                    'can_delete': can_submit and not is_bound, 'courses': [],
+                })
         
         return jsonify({
             'success': True,
@@ -485,7 +541,7 @@ def api_my_reservations():
 
 
 @user_bp.route('/api/my_reservations/<int:reservation_id>', methods=['PUT'])
-@login_required
+@submission_required(api=True)
 def api_update_my_reservation(reservation_id):
     try:
         user_id = session['user_id']
@@ -495,6 +551,11 @@ def api_update_my_reservation(reservation_id):
 
         if registration_has_form_binding(reservation.id):
             return jsonify({'success': False, 'message': '该登记已绑定听课反馈表单，不能修改'}), 400
+        course = resolve_registration_course(reservation, current_only=True)
+        if course is None:
+            return jsonify(success=False, message='该历史登记不属于可确定的当前课程，不能修改；可保留或删除后重新登记'), 400
+        if ListeningBan.query.filter_by(user_id=user_id, course_id=course.id).first():
+            return jsonify(success=False, message='您被禁止听取该课程'), 403
 
         data = request.get_json() or {}
         listening_info = (data.get('listening_info') or '').strip()
@@ -504,6 +565,14 @@ def api_update_my_reservation(reservation_id):
         is_valid_time, time_error = validate_listening_time(listening_info)
         if not is_valid_time:
             return jsonify({'success': False, 'message': f'时间验证失败：{time_error}'}), 400
+
+        limit_allowed, limit_error = validate_course_weekly_registration_limit(
+            reservation.course_code, reservation.selection_code, listening_info,
+            exclude_registration_id=reservation.id,
+            course_id=course.id,
+        )
+        if not limit_allowed:
+            return jsonify({'success': False, 'message': limit_error}), 400
 
         reservation.listening_info = listening_info
         reservation.is_used = False
@@ -515,7 +584,7 @@ def api_update_my_reservation(reservation_id):
 
 
 @user_bp.route('/api/my_reservations/<int:reservation_id>', methods=['DELETE'])
-@login_required
+@submission_required(api=True)
 def api_delete_my_reservation(reservation_id):
     try:
         user_id = session['user_id']
@@ -538,6 +607,8 @@ def api_delete_my_reservation(reservation_id):
 @login_required
 def api_unused_reservations():
     """获取未使用的听课登记（Round 8A：availability 以 canonical binding 为准）"""
+    if not current_schedule_availability()['registration_ready']:
+        return jsonify(success=True, data=[])
     try:
         user_id = session['user_id']
         # Round 8A：availability 不再由 legacy is_used flag 过滤——查询当前
@@ -558,14 +629,14 @@ def api_unused_reservations():
         result = []
         for r in unbound_reservations:
             # 获取课程信息
-            course = Course.query.filter_by(
-                course_code=r.course_code,
-                selection_code=r.selection_code
-            ).first()
+            course = resolve_registration_course(r, current_only=True)
             
             if course:
                 result.append({
                     'id': r.id,
+                    'course_id': course.id,
+                    'semester': r.semester,
+                    'academic_year': r.academic_year,
                     'course_name': course.course_name,
                     'teacher_name': course.teacher.name if course.teacher else '未知',
                     'teacher_college': course.teacher.college if course.teacher else '未知',
@@ -581,7 +652,10 @@ def api_unused_reservations():
                         'lecture_location': course.class_location,
                         'student_grade_class': course.class_composition,
                         'course_code': course.course_code,
-                        'selection_code': course.selection_code
+                        'selection_code': course.selection_code,
+                        'course_id': course.id,
+                        'semester': course.semester,
+                        'academic_year': course.academic_year,
                     }
                 })
         

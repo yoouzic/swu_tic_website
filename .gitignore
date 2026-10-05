@@ -53,3 +53,24 @@ scripts/
 # Local audit scratch artifacts
 .venv-audit/
 /SWU_TIC_*.zip
+
+# Local implementation worktrees
+.worktrees/
+
+# Local rehearsal evidence, screenshots, generated packages and private timetable
+/output/
+/2025-2026-2全校课表260413.xlsx
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+node_modules/
+.playwright-cli/
+playwright-report/
+test-results/
+
+# SQLite sidecars may contain the same private data as the database
+*.db-*
+*.sqlite-*
+*.sqlite3-*

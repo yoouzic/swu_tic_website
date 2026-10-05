@@ -127,6 +127,19 @@ class ReferenceDataRouteTest(unittest.TestCase):
         self.assertEqual(data['contact_matches'][0]['id'], self.super_admin.number)
         read_excel.assert_not_called()
 
+    def test_unconfigured_semester_with_legacy_file_does_not_read_old_school_schedule(self):
+        legacy = Path(self.temp_dir.name) / 'old-school.xlsx'
+        SystemSetting.set('auto_review_schedule_path', str(legacy))
+        with mock.patch('app.services.review_schedule_source._read_excel',
+                        return_value=canonical_source_df()) as read_excel:
+            response = self._post({'listener_number': self.super_admin.number,
+                                   'teacher_name': '张三', 'course_title': '数据结构'})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        data = response.get_json()['result']
+        self.assertEqual(data['schedule_matches'], [])
+        self.assertEqual(len(data['contact_matches']), 1)
+        read_excel.assert_not_called()
+
     def test_invalid_authority_route_returns_empty_schedule_without_legacy_read(self):
         from app.models import ScheduleImportBatch, ScheduleSemesterSelection
         other = ScheduleImportBatch(

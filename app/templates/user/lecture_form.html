@@ -1,10 +1,18 @@
 {% extends "base.html" %}
 {% from "partials/_page_header.html" import page_header %}
+{% set candidates_ready = schedule_availability.candidates_ready %}
+{% set registration_ready = schedule_availability.registration_ready %}
 
 {% block title %}填写听课表单{% endblock %}
+{% block body_class %}lecture-form-page{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/listening-assistant.css') }}">
+{% if capture_enabled and not form %}<link rel="stylesheet" href="{{ url_for('static', filename='css/site-capture.css') }}">{% endif %}
+{% endblock %}
 
 {% block content %}
-{{ page_header('填写听课表单', '按分区完成听课信息、课堂评价和签名，系统会持续保存草稿。') }}
+{{ page_header('填写听课表单') }}
 <div class="lecture-form-layout">
     <nav class="form-section-nav" aria-label="表单分区">
         <a href="#basic-information">基本信息</a>
@@ -14,6 +22,7 @@
         <a href="#signature-information">签名信息</a>
     </nav>
     <div class="lecture-form-content">
+    {% if capture_enabled and not form %}{% include 'user/_site_capture.html' %}{% endif %}
     {% if form_data is defined %}
     <script>
         var initialFormData = {{ form_data | tojson }};
@@ -30,6 +39,12 @@
             // 遍历数据并填充
             for (const key in data) {
                 if (data.hasOwnProperty(key)) {
+                    if (['csrf_token', 'entry_mode', 'manual_entry_allowed'].includes(key) ||
+                        (!lectureFormIsEditMode && ['unique_id', 'expected_form_id', 'expected_form_updated_at'].includes(key)) ||
+                        (!lectureScheduleReady && key === 'assistant_payload') ||
+                        (!lectureRegistrationReady && !lectureFormIsEditMode && key === 'registration_id')) {
+                        continue;
+                    }
                     const value = data[key];
                     const element = document.getElementById(key);
                     
@@ -104,7 +119,7 @@
         }
     </script>
     {% endif %}
-    <div class="row justify-content-center">
+    <div class="row justify-content-center lecture-form-sheet">
         <div class="col-md-10">
             <div class="card">
                 <div class="section-heading">
@@ -114,9 +129,152 @@
                     <div id="draftSaveStatus" class="draft-save-status" role="status" aria-live="polite">尚未保存</div>
                     <form method="POST" action="{{ url_for('user.submit_form') }}" id="lectureForm">
                         <!-- 关联登记ID (隐藏域) -->
-                        <input type="hidden" id="registration_id" name="registration_id">
+                        <input type="hidden" id="registration_id" name="registration_id" value="{{ form_data.get('registration_id', '') or '' if form_data is defined else '' }}">
                         <!-- 唯一ID (用于版本控制，编辑/驳回重填时使用) -->
-                        <input type="hidden" id="unique_id" name="unique_id" value="{{ form.unique_id if form else '' }}">
+                        <input type="hidden" id="unique_id" name="unique_id" value="{{ form_data.get('unique_id', '') if form_data is defined and form else '' }}">
+                        <input type="hidden" id="expected_form_id" name="expected_form_id" value="{{ form_data.get('expected_form_id', form.id) if form_data is defined and form else (form.id if form else '') }}">
+                        <input type="hidden" id="expected_form_updated_at" name="expected_form_updated_at" value="{{ form_data.get('expected_form_updated_at', form.updated_at.isoformat() if form.updated_at else '') if form_data is defined and form else (form.updated_at.isoformat() if form and form.updated_at else '') }}">
+                        <input type="hidden" id="assistant_payload" name="assistant_payload" data-payload-namespace="listening-assistant" value="">
+                        {% if capture_enabled and not form %}<input type="hidden" id="site_capture_id" name="site_capture_id" value="">{% endif %}
+
+                        <!-- 填表助手 -->
+                        {% if candidates_ready %}
+                        <section class="listening-assistant mb-4" data-listening-assistant data-assistant-semester="{{ assistant_default_semester }}" data-assistant-state="find" aria-labelledby="listeningAssistantTitle">
+                            <div class="listening-assistant__header">
+                                <button type="button" class="listening-assistant__toggle" data-assistant-toggle aria-expanded="true" aria-controls="listeningAssistantPanel">
+                                    <span class="listening-assistant__title" id="listeningAssistantTitle"><i class="bi bi-compass" aria-hidden="true"></i> 填表助手</span>
+                                    <span class="listening-assistant__toggle-hint" data-assistant-toggle-hint>收起</span>
+                                </button>
+                                <span class="listening-assistant__state-badge" data-assistant-state-label hidden>查找</span>
+                            </div>
+                            <div id="listeningAssistantPanel" class="listening-assistant__panel" data-assistant-panel>
+                                <div class="listening-assistant__status" data-assistant-status hidden role="status" aria-live="polite"></div>
+                                <div class="listening-assistant__error-actions" data-assistant-error-actions hidden>
+                                    <button type="button" class="btn btn-outline-secondary" data-assistant-manual-entry>直接填写表单</button>
+                                </div>
+                                <div class="listening-assistant__draft-notice" data-assistant-draft-notice hidden role="status" aria-live="polite">
+                                    <span>草稿已恢复</span>
+                                    <button type="button" class="btn btn-outline-secondary" data-assistant-clear-draft>新建表单</button>
+                                </div>
+
+                                <div class="listening-assistant__guide" data-assistant-guide>
+                                    <div class="listening-assistant__history" data-assistant-history hidden aria-live="polite" aria-label="已选条件"></div>
+                                    <div class="listening-assistant__progress" data-assistant-progress hidden role="status" aria-live="polite"></div>
+                                    <input type="hidden" id="assistantSemester" data-assistant-semester value="{{ assistant_default_semester }}">
+                                    <div class="listening-assistant__known-facts" data-assistant-known-facts data-assistant-form-context hidden role="status" aria-live="polite">
+                                        <strong>已填课程信息</strong>
+                                        <p data-assistant-known-facts-summary></p>
+                                        <div class="listening-assistant__actions">
+                                            <button type="button" class="btn btn-primary" data-assistant-use-form-facts>核对课程</button>
+                                            <button type="button" class="btn btn-outline-secondary" data-assistant-ignore-form-facts>重新选择</button>
+                                        </div>
+                                    </div>
+                                    <div class="listening-assistant__question-region" data-assistant-question-region aria-live="polite" aria-atomic="true">
+                                        <div class="listening-assistant__question-heading">
+                                            <h3 class="listening-assistant__question" data-assistant-question>你还记得哪类信息？</h3>
+                                            <button type="button" class="btn btn-outline-secondary" data-assistant-next-batch hidden>换一批</button>
+                                        </div>
+                                        <div class="listening-assistant__options" data-assistant-options role="group" aria-label="回答选项">
+                                            <button type="button" class="btn btn-outline-primary" data-assistant-option="A">A. 听课日期</button>
+                                            <button type="button" class="btn btn-outline-primary" data-assistant-option="B">B. 授课教师</button>
+                                            <button type="button" class="btn btn-outline-primary" data-assistant-option="C">C. 教室</button>
+                                            <button type="button" class="btn btn-outline-secondary" data-assistant-option="D">D. 我自己填写</button>
+                                        </div>
+                                        <div class="listening-assistant__custom" data-assistant-custom hidden>
+                                            <label class="form-label" data-assistant-custom-label for="assistantCustomInput">自定义填写</label>
+                                            <input class="form-control" id="assistantCustomInput" data-assistant-custom-input autocomplete="off">
+                                            <small class="form-text" data-assistant-custom-help></small>
+                                            <div class="listening-assistant__actions">
+                                                <button type="button" class="btn btn-primary" data-assistant-custom-submit>下一步</button>
+                                                <button type="button" class="btn btn-outline-secondary" data-assistant-custom-cancel>返回选项</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="listening-assistant__guide-actions">
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-back disabled>返回上一问</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-skip>我不知道，跳过此题</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-manual-entry>先手动填写</button>
+                                    </div>
+                                </div>
+
+                                <div class="listening-assistant__candidate-confirm" data-assistant-candidate-confirm hidden aria-live="polite" aria-atomic="true">
+                                    <div class="listening-assistant__candidate-summary" data-assistant-candidate-summary></div>
+                                    <div class="listening-assistant__comparison-table" data-assistant-comparison aria-label="当前填写与课表候选对照"></div>
+                                    <div class="listening-assistant__confirmation-evidence" data-assistant-confirmation-evidence>
+                                        <div data-assistant-source hidden></div>
+                                        <p data-assistant-evidence-title hidden></p>
+                                        <div class="listening-assistant__conflicts" data-assistant-conflict></div>
+                                        <div class="listening-assistant__backup-ack form-check" data-assistant-backup-ack-wrap hidden>
+                                            <input class="form-check-input" type="checkbox" id="assistantBackupAck" data-assistant-backup-ack>
+                                            <label class="form-check-label" for="assistantBackupAck">这是旧课表信息，我已核对与实际听课一致。</label>
+                                        </div>
+                                        <fieldset class="listening-assistant__room-choice" data-assistant-room-choice-wrap hidden>
+                                            <legend>实际在哪间教室？</legend>
+                                            <label><input type="radio" name="assistant_room_choice" value="candidate" data-assistant-room-choice> 使用课表教室</label>
+                                            <label><input type="radio" name="assistant_room_choice" value="manual" data-assistant-room-choice> 保留手动教室</label>
+                                        </fieldset>
+                                        <label class="listening-assistant__date-override" data-assistant-date-override-wrap hidden>
+                                            实际听课日期
+                                            <input type="date" class="form-control" data-assistant-date-override>
+                                        </label>
+                                        <label class="listening-assistant__period-override" data-assistant-period-override-wrap hidden>
+                                            实际听课节次
+                                            <input class="form-control" data-assistant-period-override>
+                                        </label>
+                                    </div>
+                                    <p class="listening-assistant__review-hint" data-assistant-review-hint role="status" aria-live="polite"></p>
+                                    <div class="listening-assistant__actions">
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-none>都不是，手动填写</button>
+                                        <button type="button" class="btn btn-primary" data-assistant-confirm disabled>是这节课，填入表单</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-back-to-guide>返回上一问</button>
+                                        <a class="btn btn-primary" href="#assistantCompletion" data-assistant-continue-review hidden>继续填表</a>
+                                    </div>
+                                </div>
+
+                                <div class="listening-assistant__manual" data-assistant-manual-view hidden>
+                                    <p data-assistant-manual-message role="status" aria-live="polite">请在下方填写课程信息。</p>
+                                    <div class="listening-assistant__actions">
+                                        <button type="button" class="btn btn-outline-primary" data-assistant-edit-answer hidden>修改上一项</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-assistant-restart>重新查找</button>
+                                        <a class="btn btn-outline-secondary" href="#course-information">手动填写课程信息</a>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </section>
+                        {% else %}
+                        <p class="text-muted" role="status">{{ schedule_availability.candidate_message }}，请手动填写课程信息。</p>
+                        {% endif %}
+
+                        <div data-site-review-guide {% if capture_enabled and not form %}hidden{% endif %}>
+                            <div class="form-completion-assistant" id="assistantCompletion" data-form-completion hidden>
+                                <div data-completion-issues>
+                                    <h3 class="listening-assistant__question">这次课程有变化、异常或不足建议吗？</h3>
+                                    <div class="listening-assistant__actions">
+                                        <button type="button" class="btn btn-outline-primary" data-completion-issue-answer="none">均无</button>
+                                        <button type="button" class="btn btn-outline-primary" data-completion-issue-answer="some">有，我来填写</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-completion-issue-answer="skip">我不知道，稍后填写</button>
+                                    </div>
+                                </div>
+                                <div data-completion-recommendation hidden>
+                                    <h3 class="listening-assistant__question">是否推荐这节课？</h3>
+                                    <p class="form-completion-assistant__condition">使用PPT演示、讲授、师生互动，且四项评价均为“非常好”。</p>
+                                    <div class="listening-assistant__actions">
+                                        <button type="button" class="btn btn-outline-primary" data-completion-recommend-answer="yes">符合条件，推荐</button>
+                                        <button type="button" class="btn btn-outline-primary" data-completion-recommend-answer="no">不推荐</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-completion-recommend-answer="skip">我不知道，稍后填写</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-completion-back>返回上一题</button>
+                                    </div>
+                                </div>
+                                <div class="form-completion-assistant__summary" data-completion-summary hidden>
+                                    <button type="button" class="btn btn-outline-secondary" data-completion-edit>修改回答</button>
+                                </div>
+                                <div class="form-completion-assistant__checklist" data-completion-checklist hidden>
+                                    <p data-completion-count role="status" aria-live="polite"></p>
+                                    <div class="listening-assistant__actions" data-completion-missing></div>
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- 基本信息 -->
                         <div id="basic-information" class="row mb-4 form-section">
@@ -328,6 +486,7 @@
                                         <option value="推荐">推荐</option>
                                         <option value="不推荐">不推荐</option>
                                     </select>
+                                    <small class="form-text" data-completion-recommendation-hint hidden role="status">推荐需使用三种教学方法，且四项评价均为“非常好”。</small>
                                 </div>
                             </div>
                         </div>
@@ -423,6 +582,7 @@
 </div>
 
 <!-- 登记选择模态框 -->
+{% if registration_ready and not form %}
 <div class="modal fade" id="unusedRegistrationsModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
@@ -458,15 +618,27 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <script>
 const lectureFormIsEditMode = {{ 'true' if form else 'false' }};
+const lectureScheduleReady = {{ 'true' if candidates_ready else 'false' }};
+const lectureCaptureReady = {{ 'true' if capture_enabled else 'false' }};
+const lectureRegistrationReady = {{ 'true' if registration_ready else 'false' }};
+const lectureCurrentSemester = {{ schedule_availability.semester | tojson }};
+const lectureCurrentScheduleBatchId = {{ schedule_availability.batch_id | tojson }};
 const lectureFormDraftUrl = "{{ url_for('user.lecture_form_draft') }}";
 let lectureFormDraftTimer = null;
 let lectureFormDraftDirty = false;
 let lectureFormDraftSubmitting = false;
+let lectureFormDraftSaveController = null;
+window.lectureFormSiteCaptureId = null;
+let lectureFormDraftLoadSequence = 0;
+let lectureFormDraftEditRevision = 0;
+let lectureFormDraftSavePromise = null;
 
 // 页面加载完成后检查未使用的登记
+{% if registration_ready and not form %}
 document.addEventListener('DOMContentLoaded', function() {
     checkUnusedRegistrations();
 });
@@ -484,31 +656,47 @@ function checkUnusedRegistrations() {
 
 function renderUnusedRegistrations(data) {
     const tbody = document.getElementById('unusedRegistrationsBody');
-    tbody.innerHTML = '';
-    
+    tbody.replaceChildren();
+
     data.forEach(item => {
-        const rawDataStr = encodeURIComponent(JSON.stringify(item.raw_data));
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td><strong>${item.course_name}</strong></td>
-            <td>${item.teacher_name}</td>
-            <td><small>${item.listening_info || '无'}</small></td>
-            <td>
-                <button class="btn btn-sm btn-success" onclick="selectRegistration('${item.id}', '${rawDataStr}')">
-                    <i class="bi bi-check2"></i> 选择此课
-                </button>
-            </td>
-        `;
+
+        const courseCell = document.createElement('td');
+        const courseName = document.createElement('strong');
+        courseName.textContent = item.course_name || '';
+        courseCell.appendChild(courseName);
+
+        const teacherCell = document.createElement('td');
+        teacherCell.textContent = item.teacher_name || '';
+
+        const listeningCell = document.createElement('td');
+        const listeningInfo = document.createElement('small');
+        listeningInfo.textContent = item.listening_info || '无';
+        listeningCell.appendChild(listeningInfo);
+
+        const actionCell = document.createElement('td');
+        const selectButton = document.createElement('button');
+        selectButton.type = 'button';
+        selectButton.className = 'btn btn-sm btn-success';
+        const icon = document.createElement('i');
+        icon.className = 'bi bi-check2';
+        selectButton.append(icon, document.createTextNode(' 选择此课'));
+        selectButton.addEventListener('click', () => selectRegistration(item.id, item.raw_data));
+        actionCell.appendChild(selectButton);
+
+        tr.append(courseCell, teacherCell, listeningCell, actionCell);
         tbody.appendChild(tr);
     });
-    
+
     const modal = new bootstrap.Modal(document.getElementById('unusedRegistrationsModal'));
     modal.show();
 }
 
-function selectRegistration(id, rawDataEncoded) {
+function selectRegistration(id, rawDataInput) {
     try {
-        const rawData = JSON.parse(decodeURIComponent(rawDataEncoded));
+        const rawData = typeof rawDataInput === 'string'
+            ? JSON.parse(decodeURIComponent(rawDataInput))
+            : (rawDataInput && typeof rawDataInput === 'object' ? rawDataInput : {});
         
         // 设置隐藏域
         document.getElementById('registration_id').value = id;
@@ -534,6 +722,7 @@ function selectRegistration(id, rawDataEncoded) {
     }
 }
 
+{% endif %}
 // 时间自动补全星期几
 function updateDateWithWeekday() {
     const dateInput = document.getElementById('lecture_date');
@@ -560,7 +749,15 @@ function updateDateWithWeekday() {
             displaySpan.className = 'form-text text-muted';
             dateInput.parentNode.appendChild(displaySpan);
         }
-        displaySpan.textContent = `完整时间：${formattedDate}`;
+        displaySpan.hidden = false;
+        displaySpan.textContent = weekday;
+    } else {
+        hiddenInput.value = '';
+        const dateDisplay = document.getElementById('date-display');
+        if (dateDisplay) {
+            dateDisplay.textContent = '';
+            dateDisplay.hidden = true;
+        }
     }
 }
 
@@ -570,33 +767,42 @@ function updateClassPeriod() {
     const endPeriod = document.getElementById('end_period').value;
     const hiddenInput = document.getElementById('class_period');
     
-    if (startPeriod && endPeriod) {
-        if (parseInt(startPeriod) > parseInt(endPeriod)) {
-            window.appFeedback('开始节次不能大于结束节次！');
-            document.getElementById('end_period').value = '';
-            return;
+    if (!startPeriod || !endPeriod) {
+        hiddenInput.value = '';
+        const periodDisplay = document.getElementById('period-display');
+        if (periodDisplay) {
+            periodDisplay.textContent = '';
+            periodDisplay.hidden = true;
         }
-        
-        let periodText;
-        if (startPeriod === endPeriod) {
-            periodText = `第${startPeriod}节`;
-        } else {
-            periodText = `第${startPeriod}-${endPeriod}节`;
-        }
-        
-        hiddenInput.value = periodText;
-        
-        // 显示在选择框下方
-        let displaySpan = document.getElementById('period-display');
-        if (!displaySpan) {
-            displaySpan = document.createElement('small');
-            displaySpan.id = 'period-display';
-            displaySpan.className = 'form-text text-muted';
-            document.getElementById('class_period').parentNode.appendChild(displaySpan);
-        } else {
-            displaySpan.textContent = `完整节次：${periodText}`;
-        }
+        return;
     }
+
+    if (parseInt(startPeriod) > parseInt(endPeriod)) {
+        window.appFeedback('开始节次不能大于结束节次！');
+        document.getElementById('end_period').value = '';
+        updateClassPeriod();
+        return;
+    }
+
+    let periodText;
+    if (startPeriod === endPeriod) {
+        periodText = `第${startPeriod}节`;
+    } else {
+        periodText = `第${startPeriod}-${endPeriod}节`;
+    }
+
+    hiddenInput.value = periodText;
+
+    // 显示在选择框下方
+    let periodDisplay = document.getElementById('period-display');
+    if (!periodDisplay) {
+        periodDisplay = document.createElement('small');
+        periodDisplay.id = 'period-display';
+        periodDisplay.className = 'form-text text-muted';
+        document.getElementById('class_period').parentNode.appendChild(periodDisplay);
+    }
+    periodDisplay.hidden = false;
+    periodDisplay.textContent = periodText;
 }
 
 function syncCoursewareQualityWithTeachingMethod() {
@@ -637,6 +843,21 @@ function formatLectureDraftTime(timestamp) {
     return new Date().toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'});
 }
 
+function parseAssistantPayloadObject(value) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return value;
+    }
+    if (typeof value !== 'string' || !value.trim()) {
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(value);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch (error) {
+        return null;
+    }
+}
+
 function collectLectureFormDraftData() {
     const form = document.getElementById('lectureForm');
     const data = {};
@@ -666,6 +887,14 @@ function collectLectureFormDraftData() {
     formData.forEach((value, key) => {
         data[key] = value;
     });
+    for (const key of ['csrf_token', 'unique_id', 'expected_form_id', 'expected_form_updated_at',
+                       'entry_mode', 'manual_entry_allowed']) delete data[key];
+    if (!lectureRegistrationReady) delete data.registration_id;
+    const assistantPayload = parseAssistantPayloadObject(data.assistant_payload);
+    delete data.assistant_payload;
+    if (assistantPayload && lectureScheduleReady) {
+        data.assistant = assistantPayload;
+    }
     data.teaching_method = tmValues.join('、');
     data.start_period = document.getElementById('start_period')?.value || '';
     data.end_period = document.getElementById('end_period')?.value || '';
@@ -676,7 +905,36 @@ function applyLectureFormDraftData(data) {
     if (!data || typeof data !== 'object') {
         return;
     }
+    // Old ordinary/per-photo drafts may contain credentials from another
+    // session. Strip them from both form restoration and its event payload.
+    for (const key of ['csrf_token', 'unique_id', 'expected_form_id', 'expected_form_updated_at',
+                       'entry_mode', 'manual_entry_allowed']) delete data[key];
+    window.lectureFormSiteCaptureId = lectureCaptureReady ? (data.site_capture_id || null) : null;
+    if (!lectureCaptureReady) delete data.site_capture_id;
+    const assistantSource = data.assistant || data.assistant_payload;
+    const restoredAssistant = parseAssistantPayloadObject(assistantSource);
+    const restoredSourceCurrent = !['confirmed', 'done', 'complete'].includes(restoredAssistant?.stage) ||
+        (restoredAssistant?.source_kind === 'primary' &&
+         String(restoredAssistant?.source_batch_id) === String(lectureCurrentScheduleBatchId));
+    const assistantPayload = lectureScheduleReady && restoredSourceCurrent && restoredAssistant?.semester === lectureCurrentSemester
+        ? restoredAssistant : null;
+    // The restoration event receives this same object; strip unavailable
+    // provenance before any assistant listener can put it back into the form.
+    delete data.assistant;
+    delete data.assistant_payload;
+    if (assistantPayload) data.assistant = assistantPayload;
+    const assistantInput = document.getElementById('assistant_payload');
+    if (assistantInput) {
+        assistantInput.value = assistantPayload ? JSON.stringify(assistantPayload) : '';
+    }
     Object.keys(data).forEach(key => {
+        // Readonly listener fields come from the current server-rendered profile.
+        if (key === 'assistant' || key === 'assistant_payload' ||
+            key === 'listener_name' || key === 'listener_number' ||
+            key === 'unique_id' || key === 'expected_form_id' || key === 'expected_form_updated_at' ||
+            (key === 'registration_id' && !lectureRegistrationReady)) {
+            return;
+        }
         const selector = `[name="${CSS.escape(key)}"]`;
         document.querySelectorAll(selector).forEach(element => {
             if (element.type === 'checkbox' || element.type === 'radio') {
@@ -697,6 +955,8 @@ function applyLectureFormDraftData(data) {
                 checkbox.checked = methods.includes(checkbox.value);
             }
         });
+    } else {
+        ['tm_ppt','tm_lecture','tm_interactive'].forEach(id=>{const checkbox=document.getElementById(id);if(checkbox)checkbox.checked=false;});
     }
     if (data.start_period) {
         const startEl = document.getElementById('start_period');
@@ -724,42 +984,89 @@ function applyLectureFormDraftData(data) {
 
 async function loadLectureFormDraft() {
     if (lectureFormIsEditMode) {
-        return;
+        return false;
     }
     try {
+        const sequence = ++lectureFormDraftLoadSequence;
+        const editRevision = lectureFormDraftEditRevision;
         const response = await fetch(lectureFormDraftUrl);
         const result = await response.json();
+        if (sequence !== lectureFormDraftLoadSequence || editRevision !== lectureFormDraftEditRevision) return false;
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || '草稿读取失败');
+        }
         if (result.success && result.exists) {
             applyLectureFormDraftData(result.data);
+            window.dispatchEvent(new CustomEvent('lecture-form-draft-loaded', {
+                detail: {data: result.data, updated_at: result.updated_at}
+            }));
             setLectureDraftStatus(`已保存 ${formatLectureDraftTime(result.updated_at)}`, 'success');
+            return true;
         }
+        return false;
     } catch (error) {
+        setLectureDraftStatus('草稿读取失败，请检查网络后重试', 'error');
         console.error('Failed to load lecture form draft:', error);
+        return false;
     }
 }
 
 async function saveLectureFormDraft() {
     if (lectureFormIsEditMode || lectureFormDraftSubmitting) {
-        return;
+        return false;
     }
-    const data = collectLectureFormDraftData();
-    lectureFormDraftDirty = false;
-    setLectureDraftStatus('正在保存', 'saving');
-    try {
-        const response = await fetch(lectureFormDraftUrl, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({data})
-        });
-        const result = await response.json();
-        if (!response.ok || !result.success) {
-            throw new Error(result.message || 'save failed');
+    if (lectureFormDraftSavePromise) return await lectureFormDraftSavePromise;
+    const operation = (async () => {
+        // One write at a time; navigation succeeds only after the latest input
+        // is stored. Continuous editing gets a bounded retry rather than a
+        // false "saved" status or an unbounded navigation wait.
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            if (lectureFormDraftSubmitting) return false;
+            const data = collectLectureFormDraftData();
+            const snapshot = JSON.stringify(data);
+            const captureId = window.lectureFormSiteCaptureId;
+            const generation = lectureFormDraftLoadSequence;
+            const editRevision = lectureFormDraftEditRevision;
+            lectureFormDraftDirty = false;
+            setLectureDraftStatus('正在保存', 'saving');
+            const saveController = new AbortController();
+            lectureFormDraftSaveController = saveController;
+            try {
+                const response = await fetch(lectureFormDraftUrl, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    signal: saveController.signal,
+                    body: JSON.stringify({data, expected_site_capture_id:captureId})
+                });
+                const result = await response.json();
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || 'save failed');
+                }
+                if (generation !== lectureFormDraftLoadSequence || captureId !== window.lectureFormSiteCaptureId || lectureFormDraftSubmitting) return false;
+                if (editRevision === lectureFormDraftEditRevision && snapshot === JSON.stringify(collectLectureFormDraftData())) {
+                    lectureFormDraftDirty = false;
+                    setLectureDraftStatus(`已保存 ${formatLectureDraftTime(result.updated_at)}`, 'success');
+                    return true;
+                }
+                lectureFormDraftDirty = true;
+            } catch (error) {
+                if (error.name === 'AbortError') return false;
+                lectureFormDraftDirty = true;
+                setLectureDraftStatus('保存失败，请检查网络后重试', 'error');
+                console.error('Failed to save lecture form draft:', error);
+                return false;
+            } finally {
+                if (lectureFormDraftSaveController === saveController) lectureFormDraftSaveController = null;
+            }
         }
-        setLectureDraftStatus(`已保存 ${formatLectureDraftTime(result.updated_at)}`, 'success');
-    } catch (error) {
-        lectureFormDraftDirty = true;
-        setLectureDraftStatus('保存失败，请检查网络后重试', 'error');
-        console.error('Failed to save lecture form draft:', error);
+        setLectureDraftStatus('内容仍在修改，稍后自动保存', 'pending');
+        return false;
+    })();
+    lectureFormDraftSavePromise = operation;
+    try {
+        return await operation;
+    } finally {
+        if (lectureFormDraftSavePromise === operation) lectureFormDraftSavePromise = null;
     }
 }
 
@@ -767,6 +1074,7 @@ function scheduleLectureFormDraftSave() {
     if (lectureFormIsEditMode || lectureFormDraftSubmitting) {
         return;
     }
+    ++lectureFormDraftEditRevision;
     lectureFormDraftDirty = true;
     setLectureDraftStatus('尚未保存', 'pending');
     window.clearTimeout(lectureFormDraftTimer);
@@ -774,8 +1082,20 @@ function scheduleLectureFormDraftSave() {
 }
 
 async function deleteLectureFormDraft() {
+    ++lectureFormDraftLoadSequence;
+    window.clearTimeout(lectureFormDraftTimer);
+    lectureFormDraftTimer = null;
+    lectureFormDraftDirty = false;
+    if (lectureFormDraftSaveController) {
+        lectureFormDraftSaveController.abort();
+        lectureFormDraftSaveController = null;
+    }
     try {
-        await fetch(lectureFormDraftUrl, {method: 'DELETE'});
+        const response = await fetch(lectureFormDraftUrl, {method: 'DELETE'});
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || 'delete failed');
+        }
         setLectureDraftStatus('草稿已清除', 'pending');
     } catch (error) {
         console.error('Failed to delete lecture form draft:', error);
@@ -900,6 +1220,7 @@ document.addEventListener('DOMContentLoaded', function() {
     form.addEventListener('input', scheduleLectureFormDraftSave);
     form.addEventListener('change', scheduleLectureFormDraftSave);
     form.addEventListener('reset', function() {
+        ++lectureFormDraftLoadSequence;
         window.clearTimeout(lectureFormDraftTimer);
         lectureFormDraftDirty = false;
         window.setTimeout(deleteLectureFormDraft, 0);
@@ -916,4 +1237,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+{% if candidates_ready %}<script src="{{ url_for('static', filename='js/listening-assistant.js') }}"></script>{% endif %}
+<script src="{{ url_for('static', filename='js/form-completion-assistant.js') }}"></script>
+{% if capture_enabled and not form %}<script src="{{ url_for('static', filename='js/site-location.js') }}"></script>{% if candidates_ready %}<script src="{{ url_for('static', filename='js/site-context-guide.js') }}"></script>{% endif %}<script src="{{ url_for('static', filename='js/site-capture.js') }}"></script><script src="{{ url_for('static', filename='js/site-door-crop.js') }}"></script><script src="{{ url_for('static', filename='js/site-building-map.js') }}"></script>{% endif %}
 {% endblock %}

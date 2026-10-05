@@ -54,16 +54,22 @@ shell.querySelector = (selector) => ({{
 }}[selector] || null);
 shell.querySelectorAll = (selector) => selector === '[data-shell-close]' ? [backdrop] : [];
 
+const userMenu = target('user-menu');
+const userToggle = target('user-toggle');
+const userLink = target('user-link');
+userMenu.querySelector = () => userToggle;
+userMenu.contains = (element) => element === userLink || element === userToggle;
 const body = target('body');
 global.document = {{
   body,
   activeElement: toggle,
   addEventListener(type, handler) {{ documentEvents[type] = handler; }},
   querySelector(selector) {{ return selector === '.app-shell' ? shell : null; }},
-  querySelectorAll() {{ return []; }},
+  querySelectorAll(selector) {{ return selector === '.app-user-menu' ? [userMenu] : []; }},
   getElementById() {{ return null; }},
 }};
-global.window = {{}};
+const media = {{ matches: true, addEventListener(type, fn) {{ this.changed = fn; }} }};
+global.window = {{ matchMedia: () => media }};
 
 eval({json.dumps(script)});
 documentEvents.DOMContentLoaded();
@@ -89,6 +95,20 @@ assert.equal(body.classList.contains('is-shell-nav-open'), false);
 assert.equal(frame.inert, false);
 assert.equal(frame.getAttribute('aria-hidden'), undefined);
 assert.equal(document.activeElement, toggle);
+
+toggle.events.click();
+media.matches = false;
+if (media.changed) media.changed(media);
+assert.equal(frame.inert, false, 'desktop content must unlock after crossing the nav breakpoint');
+assert.equal(body.classList.contains('is-shell-nav-open'), false);
+assert.equal(shell.classList.contains('is-nav-open'), false);
+
+document.activeElement = userLink;
+userMenu.events['hidden.bs.dropdown']?.();
+assert.equal(document.activeElement, userToggle, 'closing the user menu restores keyboard focus');
+document.activeElement = toggle;
+userMenu.events['hidden.bs.dropdown']?.();
+assert.equal(document.activeElement, toggle, 'outside clicks must not steal focus');
 """
         result = subprocess.run([node, '-e', harness], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)

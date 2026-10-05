@@ -5,8 +5,10 @@
 from flask import render_template, request, redirect, url_for, session, jsonify, current_app
 from app.models import User, Teacher, Venue, Course, ListeningBan, CourseRegistration, db, SystemSetting
 from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 from app.security import login_required, role_required
 from app.services.workbook import workbook_response
+from app.services.current_courses import current_course_query
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME, is_user_active
 import pandas as pd
 import openpyxl
@@ -54,7 +56,9 @@ def get_courses():
         time_slot = request.args.get('time_slot', '')
         
         # 构建查询
-        query = Course.query
+        current_query = current_course_query(all_semesters=True)
+        semester_query = current_query.filter(Course.semester == semester) if semester else current_query
+        query = semester_query
         
         # 搜索功能
         if search:
@@ -82,7 +86,7 @@ def get_courses():
             query = query.filter(Course.class_period == time_slot)
         
         # 获取所有符合条件的课程记录
-        all_courses = query.all()
+        all_courses = query.options(joinedload(Course.teacher), joinedload(Course.venue)).all()
         
         # 按课程号和选课课号分组
         course_groups = {}
@@ -143,10 +147,10 @@ def get_courses():
         has_next = page < total_pages
         
         # 获取筛选选项
-        semesters = db.session.query(Course.semester).distinct().filter(Course.semester.isnot(None)).all()
+        semesters = current_query.with_entities(Course.semester).distinct().filter(Course.semester.isnot(None)).all()
         semesters = [s[0] for s in semesters if s[0]]  # 提取学期值并过滤空值
         
-        time_slots = db.session.query(Course.class_period).distinct().filter(Course.class_period.isnot(None)).all()
+        time_slots = semester_query.with_entities(Course.class_period).distinct().filter(Course.class_period.isnot(None)).all()
         time_slots = [t[0] for t in time_slots if t[0]]  # 提取时间段值并过滤空值
         
         return jsonify({
@@ -174,46 +178,32 @@ def get_courses():
 @role_required('超级管理员')
 def get_registration_statistics():
     try:
-        registration_rows = db.session.query(
-            CourseRegistration.course_code,
-            CourseRegistration.selection_code,
-            func.count(CourseRegistration.id).label('listen_count')
-        ).group_by(
-            CourseRegistration.course_code,
-            CourseRegistration.selection_code
-        ).all()
-
-        course_rows = Course.query.with_entities(
-            Course.id,
-            Course.course_code,
-            Course.selection_code,
-            Course.course_name,
-            Course.teacher_id
-        ).all()
-
+        from app.services.registration_course_identity import resolve_registration_course
         course_group_map = {}
-        for row in course_rows:
-            key = f"{row.course_code}_{row.selection_code}"
+        for registration in CourseRegistration.query.all():
+            course = resolve_registration_course(registration)
+            key = ('course', course.id) if course else (
+                'unresolved', registration.course_code, registration.selection_code,
+                registration.semester, registration.academic_year)
             if key not in course_group_map:
                 course_group_map[key] = {
-                    'course_code': row.course_code,
-                    'selection_code': row.selection_code,
-                    'course_name': row.course_name or '未命名课程',
-                    'teacher_id': row.teacher_id,
-                    'course_ids': []
+                    'course_code': registration.course_code,
+                    'selection_code': registration.selection_code,
+                    'course_name': course.course_name if course else '历史课程（身份待核实）',
+                    'teacher_id': course.teacher_id if course else None,
+                    'course_ids': [course.id] if course else [],
+                    'semester': registration.semester,
+                    'academic_year': registration.academic_year,
+                    'identity_restricted': course is None,
+                    'listen_count': 0,
                 }
-            course_group_map[key]['course_ids'].append(row.id)
+            course_group_map[key]['listen_count'] += 1
 
         teacher_ids = [item['teacher_id'] for item in course_group_map.values() if item['teacher_id']]
         teacher_map = {t.teacher_id: t for t in Teacher.query.filter(Teacher.teacher_id.in_(teacher_ids)).all()} if teacher_ids else {}
 
         teacher_stats_map = {}
-        for row in registration_rows:
-            key = f"{row.course_code}_{row.selection_code}"
-            course_group = course_group_map.get(key)
-            if not course_group:
-                continue
-
+        for course_group in course_group_map.values():
             teacher_id = course_group['teacher_id'] or 'UNKNOWN'
             teacher_obj = teacher_map.get(course_group['teacher_id']) if course_group['teacher_id'] else None
             teacher_name = teacher_obj.name if teacher_obj else '未匹配教师'
@@ -229,14 +219,17 @@ def get_registration_statistics():
                     'courses': []
                 }
 
-            teacher_stats_map[teacher_id]['total_listen_count'] += int(row.listen_count or 0)
+            teacher_stats_map[teacher_id]['total_listen_count'] += course_group['listen_count']
             teacher_stats_map[teacher_id]['course_ids'].extend(course_group['course_ids'])
             teacher_stats_map[teacher_id]['courses'].append({
                 'course_code': course_group['course_code'],
                 'selection_code': course_group['selection_code'],
                 'course_name': course_group['course_name'],
-                'listen_count': int(row.listen_count or 0),
-                'course_ids': course_group['course_ids']
+                'listen_count': course_group['listen_count'],
+                'course_ids': course_group['course_ids'],
+                'semester': course_group['semester'],
+                'academic_year': course_group['academic_year'],
+                'identity_restricted': course_group['identity_restricted'],
             })
 
         teacher_stats = list(teacher_stats_map.values())
@@ -259,7 +252,7 @@ def get_teacher_detail(teacher_id):
         teacher = Teacher.query.get_or_404(teacher_id)
         
         # 获取该教师的课程
-        courses = Course.query.filter_by(teacher_id=teacher_id).all()
+        courses = current_course_query(all_semesters=True).filter_by(teacher_id=teacher_id).all()
         
         teacher_data = {
             'teacher_id': teacher.teacher_id,
@@ -295,7 +288,7 @@ def get_venue_detail(venue_id):
         venue = Venue.query.get_or_404(venue_id)
         
         # 获取该场地的课程
-        courses = Course.query.filter_by(venue_id=venue_id).all()
+        courses = current_course_query(all_semesters=True).filter_by(venue_id=venue_id).all()
         
         venue_data = {
             'venue_id': venue.venue_id,

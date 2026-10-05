@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import unittest
 from werkzeug.security import generate_password_hash
@@ -74,8 +75,19 @@ class WorkspaceRouteTest(unittest.TestCase):
         self.assertEqual(response.headers['Location'], '/')
 
     def test_login_redirects_every_role_to_root(self):
-        response = self.client.post('/auth/login', data={'student_id': self.information_officer.student_id, 'password': 'password'})
-        self.assertEqual(response.headers['Location'], '/')
+        for user in (self.information_officer, self.manager, self.super_admin):
+            with self.subTest(role=user.role), app.app_context():
+                client = app.test_client()
+                login_page = client.get('/auth/login')
+                token = re.search(r'name="csrf-token" content="([^"]+)"', login_page.get_data(as_text=True))
+                self.assertIsNotNone(token)
+                response = client.post('/auth/login', data={
+                    'student_id': user.student_id,
+                    'password': 'password',
+                    'csrf_token': token.group(1),
+                })
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.headers['Location'], '/')
 
 
 if __name__ == '__main__':

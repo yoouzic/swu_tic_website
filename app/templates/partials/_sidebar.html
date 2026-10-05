@@ -1,7 +1,7 @@
 <aside class="app-sidebar" id="appSidebar" aria-label="主导航">
     <a class="app-brand" href="{{ url_for('main.index') }}">
-        <span class="app-brand__name">西大听课工作台</span>
-        <span class="app-brand__meta">教学信息中心</span>
+        <span class="app-brand__mark" aria-hidden="true"><i class="bi bi-journal-bookmark"></i></span>
+        <span><span class="app-brand__name">西大听课工作台</span><span class="app-brand__meta">教学信息中心</span></span>
     </a>
     <nav class="app-nav">
         {% for group in app_navigation %}
@@ -17,7 +17,7 @@
         {% endfor %}
     </nav>
     <div class="app-sidebar__user">
-        <strong>{{ current_user.name }}</strong>
-        <span>{{ current_user.role }}</span>
+        <span class="app-sidebar__avatar" aria-hidden="true">{{ current_user.name[:1] }}</span>
+        <div class="app-sidebar__identity"><strong>{{ current_user.name }}</strong><span>{{ current_user.role }}</span></div>
     </div>
 </aside>

@@ -4,6 +4,10 @@
 
 from flask import render_template, request, redirect, url_for, session, jsonify
 from app.models import User, LectureForm, db, SystemSetting, AssessmentOverride
+from sqlalchemy.exc import IntegrityError
+from app.services.academic_term import normalize_semester_identifier
+from app.services.assessment_override_scope import (current_override_semester,
+    override_applies_to_semester, unassigned_override_warning)
 from datetime import datetime
 from app.security import login_required, role_required
 from app.services.assessment_calc import (
@@ -73,6 +77,14 @@ SNAPSHOT_TYPE_DEPARTMENT_MONTHLY = 'department_monthly_assessment'
 
 
 SNAPSHOT_TYPE_SUBMISSION_REWARD = 'submission_reward'
+
+
+def _configured_total_weeks():
+    try:
+        total = int(SystemSetting.get('teaching_total_weeks', '20') or 20)
+    except (TypeError, ValueError):
+        total = 20
+    return total if 1 <= total <= 52 else 20
 
 
 def _get_snapshot_record_or_404(snapshot_id, snapshot_type, current_user_id):
@@ -303,9 +315,10 @@ def get_submission_count_detail(user_id):
 
     for group_data in groups:
         latest_form = group_data['latest_form']
-        if not latest_form or not latest_form.created_at:
+        if not latest_form:
             continue
-        if latest_form.created_at < start_date or latest_form.created_at >= end_date:
+        filter_dt = build_review_form_filter_datetime(group_data, time_filter_type)
+        if not filter_dt or filter_dt < start_date or filter_dt >= end_date:
             continue
         forms_data = []
         for form in group_data['forms']:
@@ -336,7 +349,7 @@ def get_submission_count_detail(user_id):
             'forms': forms_data
         })
 
-    filtered_groups.sort(key=lambda x: x['latest_created_at'], reverse=True)
+    filtered_groups.sort(key=lambda x: x['filter_datetime'], reverse=True)
     return jsonify({
         'success': True,
         'user': {
@@ -367,7 +380,9 @@ def list_submission_count_snapshots():
 def save_submission_count_snapshot():
     if not has_assessment_stats_access(session['user_id']):
         return forbidden_json('交表统计快照')
-    data = request.get_json() or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': 'JSON 请求体必须是对象'}), 400
     start_date, end_date, err = parse_assessment_range(data.get('start_date'), data.get('end_date'))
     if err:
         return jsonify({'success': False, 'message': err}), 400
@@ -509,7 +524,9 @@ def list_department_monthly_assessment_snapshots():
 def save_department_monthly_assessment_snapshot():
     if not has_assessment_stats_access(session['user_id']):
         return forbidden_json('部门月度考评快照')
-    data = request.get_json() or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': 'JSON 请求体必须是对象'}), 400
     start_date, end_date, err = parse_assessment_range(data.get('start_date'), data.get('end_date'))
     if err:
         return jsonify({'success': False, 'message': err}), 400
@@ -853,13 +870,22 @@ def list_assessment_overrides():
         all_user_ids.extend([u.id for u in users])
 
     overrides_by_user = {}
+    semester = current_override_semester()
+    unassigned_count = 0
     if all_user_ids:
         overrides = AssessmentOverride.query.filter(
             AssessmentOverride.user_id.in_(all_user_ids)
         ).order_by(AssessmentOverride.start_week.asc(), AssessmentOverride.end_week.asc()).all()
         for ov in overrides:
+            applies = override_applies_to_semester(ov, semester)
+            scope_status = 'current' if applies else ('historical' if ov.semester else 'unassigned')
+            if scope_status == 'unassigned':
+                unassigned_count += 1
             overrides_by_user.setdefault(ov.user_id, []).append({
                 'id': ov.id,
+                'semester': ov.semester,
+                'scope_status': scope_status,
+                'applies_to_current_semester': applies,
                 'override_type': ov.override_type,
                 'override_value': ov.override_value,
                 'start_week': ov.start_week,
@@ -894,7 +920,10 @@ def list_assessment_overrides():
             'groups': groups,
         })
 
-    return jsonify({'success': True, 'departments': result_departments})
+    return jsonify({'success': True, 'departments': result_departments,
+                    'current_semester': semester, 'total_weeks': _configured_total_weeks(),
+                    'unassigned_override_count': unassigned_count,
+                    'scope_warning': unassigned_override_warning(unassigned_count)})
 
 
 @admin_bp.route('/api/assessment-overrides', methods=['POST'])
@@ -902,28 +931,44 @@ def list_assessment_overrides():
 def create_assessment_override():
     if not has_assessment_stats_access(session['user_id']):
         return forbidden_json('考评规则设置')
-    data = request.get_json() or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': 'JSON 请求体必须是对象'}), 400
+    semester = current_override_semester()
+    if not semester:
+        return jsonify({'success': False, 'message': '请先在教学设置中配置当前教学学期'}), 400
     user_ids = data.get('user_ids') or []
-    if not user_ids:
+    if not isinstance(user_ids, list) or not user_ids:
         return jsonify({'success': False, 'message': '请选择至少一个成员'}), 400
     try:
-        start_week = int(data.get('start_week'))
-        end_week = int(data.get('end_week'))
+        values = (data.get('start_week'), data.get('end_week'))
+        if any(isinstance(value, bool) or not isinstance(value, (int, str)) for value in values):
+            raise ValueError('week must be an integer')
+        start_week, end_week = (int(value) for value in values)
     except (TypeError, ValueError):
         return jsonify({'success': False, 'message': '起止周次必须为整数'}), 400
     if start_week < 1 or end_week < 1:
         return jsonify({'success': False, 'message': '周次必须大于0'}), 400
     if start_week > end_week:
         return jsonify({'success': False, 'message': '起始周不能大于结束周'}), 400
-    override_type = (data.get('override_type') or 'exempt').strip()
+    total_weeks = _configured_total_weeks()
+    if end_week > total_weeks:
+        return jsonify({'success': False, 'message': f'周次不能超过当前总教学周数({total_weeks}周)'}), 400
+    override_type = data.get('override_type') or 'exempt'
+    if not isinstance(override_type, str):
+        return jsonify({'success': False, 'message': '不支持的规则类型'}), 400
+    override_type = override_type.strip()
     if override_type not in ('exempt', 'custom_requirement', 'partial_exempt', LEAVE_OVERRIDE_TYPE):
         return jsonify({'success': False, 'message': '不支持的规则类型'}), 400
     if override_type == LEAVE_OVERRIDE_TYPE and get_user_manage_permission(session['user_id']) != '超级管理员':
         return jsonify({'success': False, 'message': '请假规则请在统计分析页为当前教学周发起'}), 403
-    reason = (data.get('reason') or '').strip()
-    if not reason:
+    reason = data.get('reason') or ''
+    if not isinstance(reason, str) or not reason.strip() or len(reason.strip()) > 200:
         return jsonify({'success': False, 'message': '请填写理由'}), 400
+    reason = reason.strip()
     override_value = data.get('override_value')
+    if override_value is not None and not isinstance(override_value, str):
+        return jsonify({'success': False, 'message': '规则参数必须是字符串或空值'}), 400
 
     accessible_users = resolve_assessment_users(session['user_id'], [str(uid) for uid in user_ids])
     accessible_ids = {u.id for u in accessible_users}
@@ -948,6 +993,7 @@ def create_assessment_override():
             continue
         existing = AssessmentOverride.query.filter_by(
             user_id=uid_int,
+            semester=semester,
             start_week=start_week,
             end_week=end_week,
             override_type=override_type,
@@ -957,6 +1003,7 @@ def create_assessment_override():
             continue
         record = AssessmentOverride(
             user_id=uid_int,
+            semester=semester,
             start_week=start_week,
             end_week=end_week,
             override_type=override_type,
@@ -977,6 +1024,46 @@ def create_assessment_override():
         'created_count': created_count,
         'skipped_count': skipped_count,
     })
+
+
+@admin_bp.route('/api/assessment-overrides/<int:override_id>/semester', methods=['PUT'])
+@login_required
+def assign_assessment_override_semester(override_id):
+    if get_user_manage_permission(session['user_id']) != '超级管理员':
+        return forbidden_json('历史考核规则学期归属')
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': 'JSON 请求体必须是对象'}), 400
+    try:
+        semester = normalize_semester_identifier(data.get('semester'))
+        if not semester:
+            raise ValueError('请明确填写历史规则所属学期')
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    record = db.session.get(AssessmentOverride, override_id)
+    if not record:
+        return jsonify({'success': False, 'message': '规则不存在'}), 404
+    if record.semester:
+        return jsonify({'success': False, 'message': '规则已归属学期，请保留历史记录'}), 409
+    duplicate = AssessmentOverride.query.filter_by(
+        user_id=record.user_id, semester=semester, start_week=record.start_week,
+        end_week=record.end_week, override_type=record.override_type,
+    ).first()
+    if duplicate:
+        return jsonify({'success': False, 'message': '该学期已有相同规则，历史记录已保留'}), 409
+    # Conditional assignment also prevents a stale migration page overwriting scope.
+    try:
+        changed = AssessmentOverride.query.filter_by(id=record.id).filter(
+            AssessmentOverride.semester.is_(None),
+        ).update({'semester': semester, 'updated_at': datetime.now()}, synchronize_session=False)
+        if changed != 1:
+            db.session.rollback()
+            return jsonify({'success': False, 'message': '规则归属已改变，请刷新后核实'}), 409
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': '该学期已有相同规则，历史记录已保留'}), 409
+    return jsonify({'success': True, 'message': f'历史规则已明确归属 {semester} 学期'})
 
 
 @admin_bp.route('/api/assessment-overrides/<int:override_id>', methods=['DELETE'])
@@ -1013,9 +1100,9 @@ def get_teaching_month_definitions():
     if custom:
         return jsonify({'success': True, 'is_custom': True, 'months': custom})
     defaults = []
-    for i in range(5):
-        start_week = i * 4 + 1
-        end_week = start_week + 3
+    total_weeks = _configured_total_weeks()
+    for i, start_week in enumerate(range(1, total_weeks + 1, 4)):
+        end_week = min(start_week + 3, total_weeks)
         defaults.append({
             'start_week': start_week,
             'end_week': end_week,
@@ -1029,7 +1116,9 @@ def get_teaching_month_definitions():
 def save_teaching_month_definitions():
     if not has_assessment_stats_access(session['user_id']):
         return forbidden_json('教学月设置')
-    data = request.get_json() or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': 'JSON 请求体必须是对象'}), 400
     months = data.get('months')
     if not months:
         SystemSetting.set('teaching_month_definitions', '')
@@ -1037,11 +1126,19 @@ def save_teaching_month_definitions():
     if not isinstance(months, list):
         return jsonify({'success': False, 'message': 'months 必须是数组'}), 400
 
+    # Match the calendar settings adapter's established safe default, without
+    # requiring a first-week date just to save a week-based month definition.
+    total_weeks = _configured_total_weeks()
+
     validated = []
     for idx, item in enumerate(months):
         try:
-            start_week = int(item.get('start_week'))
-            end_week = int(item.get('end_week'))
+            if not isinstance(item, dict):
+                raise ValueError('month must be an object')
+            values = (item.get('start_week'), item.get('end_week'))
+            if any(isinstance(value, bool) or not isinstance(value, (int, str)) for value in values):
+                raise ValueError('week must be an integer')
+            start_week, end_week = (int(value) for value in values)
         except (TypeError, ValueError):
             return jsonify({'success': False, 'message': f'第{idx + 1}项的周次必须为整数'}), 400
         if start_week < 1 or end_week < 1:
@@ -1051,8 +1148,22 @@ def save_teaching_month_definitions():
                 'success': False,
                 'message': f'第{idx + 1}项的起始周({start_week})不能大于结束周({end_week})',
             }), 400
+        if end_week > total_weeks:
+            return jsonify({
+                'success': False,
+                'message': f'第{idx + 1}项的周次不能超过当前总教学周数({total_weeks}周)',
+            }), 400
         label = str(item.get('label') or '').strip()
         validated.append({'start_week': start_week, 'end_week': end_week, 'label': label})
+
+    ordered = sorted(validated, key=lambda item: (item['start_week'], item['end_week']))
+    for previous, current in zip(ordered, ordered[1:]):
+        if current['start_week'] <= previous['end_week']:
+            return jsonify({
+                'success': False,
+                'message': f"教学月周次重叠：第{previous['start_week']}-{previous['end_week']}周"
+                           f"与第{current['start_week']}-{current['end_week']}周，请调整后保存",
+            }), 400
 
     SystemSetting.set('teaching_month_definitions', json.dumps(validated, ensure_ascii=False))
     return jsonify({'success': True, 'message': f'已保存自定义教学月设置（{len(validated)}个教学月）'})

@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from werkzeug.security import generate_password_hash
 
@@ -12,6 +13,7 @@ os.environ['SECRET_KEY'] = 'test-secret-key'
 
 from app.app import app
 from app.models import db, LectureForm, LectureFormDraft, User
+from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
 
 
@@ -134,6 +136,234 @@ class LectureFormDraftTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.get_json()['exists'])
 
+    def test_assistant_draft_is_strictly_namespaced_and_legacy_fields_are_preserved(self):
+        self._login_as(self.user)
+        payload = {
+            'course_title': 'Legacy Course',
+            'rejected_ids': ['legacy-id', 7, {'drop': 'nested'}],
+            'assistant': {
+                'stage': 'confirmed',
+                'query': {
+                    'lecture_date': '2026-09-18',
+                    'room': '8-309',
+                },
+                'rejected_ids': ['candidate-1', {'phone': '13800000000'}],
+                'source_kind': 'primary',
+                'source_batch_id': 'batch-current',
+                'semester': '2026-2027-1',
+                'candidate_id': 'primary:batch-current:abc',
+                'overrides': {
+                    'lecture_location': '9-101',
+                },
+                'template_version': 'task4-v1',
+                'assistant_filled_fields': [
+                    'lecture_date',
+                    'course_title',
+                    'contact_phone1',
+                    {'drop': 'nested'},
+                ],
+                'assistant_filled_groups': ['period', 'phones'],
+            },
+        }
+
+        response = self.client.put('/user/api/lecture_form_draft', json={'data': payload})
+        self.assertEqual(response.status_code, 200)
+        saved = self.client.get('/user/api/lecture_form_draft').get_json()['data']
+        self.assertEqual(saved['course_title'], 'Legacy Course')
+        self.assertEqual(saved['rejected_ids'], ['legacy-id', 7])
+        self.assertEqual(saved['assistant']['stage'], 'confirmed')
+        self.assertEqual(saved['assistant']['overrides']['lecture_location'], '9-101')
+        self.assertEqual(
+            saved['assistant']['assistant_filled_fields'],
+            ['lecture_date', 'course_title'],
+        )
+        self.assertEqual(saved['assistant']['assistant_filled_groups'], ['period'])
+
+    def test_guided_assistant_draft_round_trips_bounded_state_and_history(self):
+        self._login_as(self.user)
+        payload = {
+            'assistant': {
+                'stage': 'candidate',
+                'guide_state': {
+                    'known_facts': {'date': '2026-09-18', 'room': '8-309'},
+                    'candidate_ids': ['primary:batch-current:1'],
+                    'asked_question_kinds': ['memory', 'date'],
+                    'question_count': 1,
+                    'stage': 'candidate',
+                },
+                'history': [
+                    {'kind': 'memory', 'answer_code': 'A', 'custom_value': None},
+                    {'kind': 'date', 'answer_code': 'D', 'custom_value': '2026-09-18'},
+                ],
+                'template_version': 'task4-v1',
+            },
+        }
+
+        response = self.client.put('/user/api/lecture_form_draft', json={'data': payload})
+
+        self.assertEqual(response.status_code, 200)
+        saved = self.client.get('/user/api/lecture_form_draft').get_json()['data']
+        self.assertEqual(saved['assistant']['guide_state'], payload['assistant']['guide_state'])
+        self.assertEqual(saved['assistant']['history'], payload['assistant']['history'])
+
+    def test_four_fact_answers_plus_entry_and_course_selection_can_be_saved(self):
+        self._login_as(self.user)
+        assistant = {
+            'guide_state': {
+                'known_facts': {'date': '2026-03-23', 'room': '28-301', 'period': '第10-11节', 'teacher': '王莲涔'},
+                'candidate_ids': ['primary:1:2227'],
+                'asked_question_kinds': ['memory', 'date', 'room', 'period', 'teacher'],
+                'question_count': 4,
+                'stage': 'confirm',
+            },
+            'history': [
+                {'kind': kind, 'answer_code': 'A', 'custom_value': None}
+                for kind in ['memory', 'date', 'room', 'period', 'teacher', 'teacher']
+            ],
+        }
+        response = self.client.put('/user/api/lecture_form_draft', json={'data': {'assistant': assistant}})
+        self.assertEqual(response.status_code, 200, response.get_json())
+        saved = self.client.get('/user/api/lecture_form_draft').get_json()['data']['assistant']
+        self.assertEqual(saved, assistant)
+
+        assistant['history'].append({'kind': 'teacher', 'answer_code': 'A', 'custom_value': None})
+        response = self.client.put('/user/api/lecture_form_draft', json={'data': {'assistant': assistant}})
+        self.assertEqual(response.status_code, 400)
+
+    def test_assistant_draft_rejects_unknown_nested_guide_keys(self):
+        self._login_as(self.user)
+        payload = {
+            'assistant': {
+                'guide_state': {
+                    'known_facts': {},
+                    'candidate_ids': [],
+                    'asked_question_kinds': [],
+                    'question_count': 0,
+                    'stage': 'question',
+                    'candidate_snapshot': 'must not be accepted',
+                },
+            },
+        }
+
+        response = self.client.put('/user/api/lecture_form_draft', json={'data': payload})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(self.client.get('/user/api/lecture_form_draft').get_json()['exists'])
+
+    def test_assistant_draft_rejects_unsafe_candidate_ids_and_sensitive_history(self):
+        self._login_as(self.user)
+        base_state = {
+            'known_facts': {},
+            'candidate_ids': ['primary/batch/1'],
+            'asked_question_kinds': [],
+            'question_count': 0,
+            'stage': 'question',
+        }
+        for state, history in (
+            (base_state, []),
+            ({**base_state, 'candidate_ids': ['primary:batch:1']}, [
+                {'kind': 'room', 'answer_code': 'D', 'custom_value': '13800000000'},
+            ]),
+            ({**base_state, 'candidate_ids': ['primary:batch:1']}, [
+                {'kind': 'room', 'answer_code': 'D', 'custom_value': '138 0000 0000'},
+            ]),
+            ({**base_state, 'candidate_ids': ['primary:batch:1']}, [
+                {'kind': 'room', 'answer_code': 'D', 'custom_value': '１３８－００００－００００'},
+            ]),
+            ({**base_state, 'candidate_ids': ['primary:batch:1']}, [
+                {'kind': 'room', 'answer_code': 'D', 'custom_value': '教室\n8-309'},
+            ]),
+        ):
+            with self.subTest(state=state, history=history):
+                response = self.client.put(
+                    '/user/api/lecture_form_draft',
+                    json={'data': {'assistant': {'guide_state': state, 'history': history}}},
+                )
+                self.assertEqual(response.status_code, 400)
+
+    def test_assistant_draft_rejects_known_nested_values_with_unsupported_types(self):
+        self._login_as(self.user)
+        response = self.client.put(
+            '/user/api/lecture_form_draft',
+            json={
+                'data': {
+                    'assistant': {
+                        'overrides': {'course_title': {'secret': 'x'}},
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_legacy_assistant_unknown_fields_do_not_hide_form_draft(self):
+        self._login_as(self.user)
+        db.session.add(LectureFormDraft(
+            user_id=self.user.id,
+            draft_key='submit_form',
+            payload_json=json.dumps({
+                'course_title': 'Keep this form draft',
+                'assistant': {'stage': 'confirmed', 'obsolete_key': 'drop only this snapshot'},
+            }),
+        ))
+        db.session.commit()
+
+        response = self.client.get('/user/api/lecture_form_draft')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()['data']
+        self.assertEqual(payload['course_title'], 'Keep this form draft')
+        self.assertNotIn('assistant', payload)
+
+    def test_rewound_guide_draft_clears_old_confirmation_and_fill_provenance(self):
+        self._login_as(self.user)
+        payload = {
+            'assistant': {
+                'stage': 'confirmed',
+                'source_kind': 'primary',
+                'source_batch_id': 'batch-old',
+                'candidate_id': 'primary:batch-old:9',
+                'overrides': {'lecture_location': '9-101'},
+                'assistant_filled_fields': ['course_title'],
+                'assistant_filled_groups': ['period'],
+                'guide_state': {
+                    'known_facts': {'date': '2026-09-18'},
+                    'candidate_ids': [],
+                    'asked_question_kinds': ['memory'],
+                    'question_count': 0,
+                    'stage': 'question',
+                },
+                'history': [],
+            },
+        }
+
+        response = self.client.put('/user/api/lecture_form_draft', json={'data': payload})
+
+        self.assertEqual(response.status_code, 200)
+        saved = self.client.get('/user/api/lecture_form_draft').get_json()['data']['assistant']
+        self.assertEqual(saved['stage'], 'question')
+        for stale_key in (
+            'source_kind',
+            'source_batch_id',
+            'candidate_id',
+            'overrides',
+            'assistant_filled_fields',
+            'assistant_filled_groups',
+        ):
+            self.assertNotIn(stale_key, saved)
+
+    def test_assistant_draft_without_guide_payload_remains_legacy_compatible(self):
+        self._login_as(self.user)
+        payload = {'course_title': 'Legacy direct draft'}
+
+        response = self.client.put('/user/api/lecture_form_draft', json={'data': payload})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            self.client.get('/user/api/lecture_form_draft').get_json()['data'],
+            payload,
+        )
+
     def test_successful_form_submit_clears_current_user_draft(self):
         self._login_as(self.user)
         self.client.put('/user/api/lecture_form_draft', json={'data': {'course_title': 'Old Draft'}})
@@ -144,6 +374,33 @@ class LectureFormDraftTest(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(LectureForm.query.filter_by(listener_number=self.user.number).count(), 1)
         self.assertEqual(LectureFormDraft.query.filter_by(user_id=self.user.id).count(), 0)
+
+    def test_browser_empty_registration_and_version_fields_allow_new_submission(self):
+        self._login_as(self.user)
+        payload = self._valid_form_payload()
+        payload.update(registration_id='', unique_id='')
+        response = self.client.post('/user/submit_form', data=payload)
+        self.assertEqual(response.status_code, 302)
+        submitted = LectureForm.query.filter_by(listener_number=self.user.number).one()
+        self.assertIsNone(submitted.registration_id)
+
+    def test_assistant_source_unavailable_uses_normal_form_error_path(self):
+        self._login_as(self.user)
+        payload = self._valid_form_payload()
+        payload['assistant_payload'] = '{"stage":"confirmed"}'
+
+        with mock.patch(
+            'app.blueprints.user.forms.revalidate_selection',
+            side_effect=ScheduleSourceUnavailable(status='INVALID_AUTHORITY'),
+        ):
+            response = self.client.post('/user/submit_form', data=payload)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('填表助手信息已失效', response.get_data(as_text=True))
+        self.assertEqual(
+            LectureForm.query.filter_by(listener_number=self.user.number).count(),
+            0,
+        )
 
 
 if __name__ == '__main__':

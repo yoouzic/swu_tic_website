@@ -24,7 +24,7 @@ def latest_form_groups_for_users(listener_numbers):
         group_map[uid].append(form)
     groups = []
     for uid, form_list in group_map.items():
-        sorted_forms = sorted(form_list, key=lambda f: ((f.created_at or datetime.min), f.id), reverse=True)
+        sorted_forms = sorted(form_list, key=lambda f: f.id, reverse=True)
         latest_form = sorted_forms[0]
         groups.append({
             'unique_id': uid,

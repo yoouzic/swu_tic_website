@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -209,6 +210,27 @@ def form_data_from_detail(detail: Mapping[str, Any]) -> dict[str, Any]:
     return {field: detail.get(field, '') for field in FORM_FIELDS}
 
 
+def _opened_revision(detail: Mapping[str, Any]) -> dict[str, Any]:
+    keys = ('expected_form_id', 'expected_form_updated_at')
+    if any(key not in detail for key in keys):
+        raise HumanFlowError('opened form did not supply its exact revision')
+    return {key: detail[key] for key in keys}
+
+
+def _edit_page_revision(response) -> dict[str, Any]:
+    revision = {}
+
+    class RevisionInputs(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            attributes = dict(attrs)
+            name = attributes.get('name')
+            if tag == 'input' and name in ('expected_form_id', 'expected_form_updated_at'):
+                revision[name] = attributes.get('value', '')
+
+    RevisionInputs().feed(response.get_data(as_text=True))
+    return _opened_revision(revision)
+
+
 def first_stage_action(category: str, ordinal: int) -> str:
     if category not in FIRST_STAGE_CATEGORIES:
         raise HumanFlowError(f'unsupported automation category: {category}')
@@ -377,6 +399,7 @@ class BusinessActor:
         response = self.client.post(
             f'/admin/api/review/submit/{int(form_id)}',
             json={
+                **_opened_revision(detail),
                 'form_data': form_data_from_detail(detail),
                 'review_comment': review_comment,
                 'score_data': [],
@@ -391,7 +414,7 @@ class BusinessActor:
         unique_id = detail.get('unique_id') or form_id
         response = self.client.post(
             f'/admin/api/review/reject/{int(form_id)}',
-            json={'reason': reason},
+            json={'reason': reason, **_opened_revision(detail)},
         )
         payload = self._json(response)
         if payload.get('new_status') != '\u5df2\u9a73\u56de':
@@ -405,9 +428,11 @@ class BusinessActor:
         edit_response = self.client.get(f'/user/form/edit/{int(rejected_form_id)}')
         if edit_response.status_code != 200:
             raise HumanFlowError('information officer could not open rejected form edit route')
+        submitted = dict(payload)
+        submitted.update(_edit_page_revision(edit_response))
         response = self.client.post(
             '/user/submit_form',
-            data=dict(payload),
+            data=submitted,
             follow_redirects=False,
         )
         if response.status_code not in {302, 303}:
@@ -484,7 +509,8 @@ def _assert_manual_action(snapshot: FormSnapshot, actor: BusinessActor, comment:
 def _repair_payload(rejected: FormSnapshot) -> dict[str, Any]:
     payload = form_data_for_resubmission(rejected)
     payload['course_feedback'] = (
-        '该老师讲解清楚，课堂互动自然，学生理解良好，评价内容具体且可追溯。'
+        '该老师讲解清楚，课堂互动自然，学生理解良好。教师先说明本节学习目标，'
+        '再结合具体例题解释重点，并在练习后逐项回应学生疑问，评价内容具体且可追溯。'
     )
     payload['suggestions'] = payload.get('suggestions') or '无'
     return payload

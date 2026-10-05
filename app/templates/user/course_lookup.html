@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
+
+{% block title %}课程查询 - 西大听课工作台{% endblock %}
+
+{% block content %}
+{{ page_header('课程查询', metadata=['当前学期：' + current_semester] if current_semester else []) }}
+<div id="courseLookup" data-candidates-url="{{ url_for('user.listening_assistant_candidates') }}" data-semester="{{ current_semester }}">
+    {% if schedule_availability.candidates_ready %}
+    <div class="activity-panel mb-4">
+        <div class="activity-panel__body">
+            <form id="courseLookupForm" method="GET" action="{{ url_for('user.course_lookup') }}" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label for="lookupDate" class="form-label">日期</label>
+                    <input type="date" id="lookupDate" name="date" class="form-control" value="{{ lookup_date }}" required>
+                </div>
+                <div class="col-md-4">
+                    <label for="lookupRoom" class="form-label">教室</label>
+                    <input type="text" id="lookupRoom" name="room" class="form-control" maxlength="100" placeholder="如 8-309">
+                </div>
+                <div class="col-md-3">
+                    <label for="lookupTeacher" class="form-label">教师</label>
+                    <input type="text" id="lookupTeacher" name="teacher" class="form-control" maxlength="100">
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button type="submit" id="lookupSubmit" class="btn btn-primary">查询</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div id="lookupStatus" class="alert alert-secondary" role="status" aria-live="polite">请选择日期，并填写教室或教师。</div>
+    <div id="lookupResults" class="row g-3"></div>
+    {% else %}
+    <div class="alert alert-warning" role="status">{{ schedule_availability.candidate_message }}</div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if schedule_availability.candidates_ready %}<script src="{{ url_for('static', filename='js/course-lookup.js') }}"></script>{% endif %}
+{% endblock %}

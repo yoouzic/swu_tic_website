@@ -104,12 +104,17 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
         self.assertIsNone(engine.schedule_df)
         read_excel.assert_not_called()
 
-    def test_unset_semester_with_legacy_file_falls_back(self):
+    def test_unset_semester_with_legacy_file_keeps_engine_closed_but_explicit_helper_compatible(self):
         SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
         with mock.patch('app.services.review_schedule_source._read_excel', return_value=LEGACY_DF) as read_excel:
             engine = AutoReviewEngine()
-        self.assertEqual(engine.schedule_source_kind, 'legacy_fallback')
-        self.assertIsNotNone(engine.schedule_df)
+        self.assertEqual(engine.schedule_source_kind, 'none')
+        self.assertIsNone(engine.schedule_df)
+        read_excel.assert_not_called()
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=LEGACY_DF) as read_excel:
+            historical = resolve_review_schedule_source(allow_unconfigured_legacy_fallback=True)
+        self.assertEqual(historical.kind, 'legacy_fallback')
+        self.assertIsNotNone(historical.dataframe)
         read_excel.assert_called_once()
 
     def test_unset_semester_without_legacy_file_is_none(self):
@@ -117,6 +122,11 @@ class ScheduleSourceFailClosedTest(unittest.TestCase):
             engine = AutoReviewEngine()
         self.assertEqual(engine.schedule_source_kind, 'none')
         self.assertIsNone(engine.schedule_df)
+        read_excel.assert_not_called()
+        with mock.patch('app.services.review_schedule_source._read_excel', return_value=None) as read_excel:
+            historical = resolve_review_schedule_source(allow_unconfigured_legacy_fallback=True)
+        self.assertEqual(historical.kind, 'none')
+        self.assertIsNone(historical.dataframe)
         read_excel.assert_called_once()
 
     def test_ready_canonical_still_preferred_with_legacy_file(self):
