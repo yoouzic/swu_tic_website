@@ -45,6 +45,8 @@ class ActivityCenterTest(unittest.TestCase):
             sess['user_name'] = user.name
 
     def test_activity_center_supports_registration_and_records_tabs(self):
+        from tests.schedule_fixture import seed_current_schedule
+        seed_current_schedule()
         self.login_session(self.user)
         response = self.client.get('/user/listening_registration?tab=records')
         self.assertEqual(response.status_code, 200)

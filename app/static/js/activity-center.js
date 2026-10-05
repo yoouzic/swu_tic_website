@@ -1,5 +1,6 @@
 (function () {
     'use strict';
+    let selectedRegistrationCourseId = null;
 
     function setFeedback(element, message, tone) {
         if (!element) {
@@ -47,6 +48,7 @@
         }
 
         $('#courseCode').val(course.course_code || '');
+        selectedRegistrationCourseId = course.id;
         $('#selectionCode').val(course.selection_code || '');
         $('#dispCourseName').text(course.course_name || '未知');
         $('#dispTeacher').text(`${course.teacher_name || '未知'}${course.teacher_college ? ` (${course.teacher_college})` : ''}`);
@@ -140,6 +142,7 @@
             setFeedback(feedback, '正在加载登记历史', 'info');
         }
         $.get('/user/api/course_registration_history', {
+            course_id: selectedRegistrationCourseId,
             course_code: courseCode,
             selection_code: selectionCode,
             limit: showAll ? 100 : 5
@@ -168,6 +171,7 @@
     function submitReservation() {
         const feedback = document.getElementById('registrationFeedback');
         const payload = {
+            course_id: selectedRegistrationCourseId,
             course_code: $('#courseCode').val(),
             selection_code: $('#selectionCode').val(),
             listening_info: $('#listeningInfo').val()
@@ -231,6 +235,7 @@
     }
 
     function clearCourseSelection() {
+        selectedRegistrationCourseId = null;
         $('#courseCode').val('');
         $('#selectionCode').val('');
         const detail = document.getElementById('courseDetailSection');

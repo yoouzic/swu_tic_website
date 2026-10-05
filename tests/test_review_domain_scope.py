@@ -24,6 +24,7 @@ from app.services.review_domain import (
     partition_forms_by_review_scope,
 )
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
+from tests.review_request_utils import post_opened_review
 
 ROLE_INFO = '信息员'
 ROLE_ADMIN = '管理员'
@@ -245,7 +246,7 @@ class ReviewScopeRouteLegacyTests(_ScopeTestBase):
     def test_submit_review_no_permission_keeps_legacy_http_200(self):
         form = self._form(self.info_same.number)
         self._login(self.info_same)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{form.id}',
             json={},
         )
@@ -255,7 +256,7 @@ class ReviewScopeRouteLegacyTests(_ScopeTestBase):
     def test_submit_review_invalid_stage_keeps_legacy_http_200(self):
         form = self._form(self.info_same.number, status='中心已审核')
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{form.id}',
             json={},
         )
@@ -265,7 +266,7 @@ class ReviewScopeRouteLegacyTests(_ScopeTestBase):
     def test_submit_form_review_no_permission_returns_403(self):
         form = self._form(self.info_same.number)
         self._login(self.info_same)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/form/{form.id}',
             json={},
         )
@@ -275,7 +276,7 @@ class ReviewScopeRouteLegacyTests(_ScopeTestBase):
     def test_submit_form_review_invalid_stage_returns_403(self):
         form = self._form(self.info_same.number, status='中心已审核')
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/form/{form.id}',
             json={},
         )
@@ -285,7 +286,7 @@ class ReviewScopeRouteLegacyTests(_ScopeTestBase):
     def test_reject_no_permission_returns_403(self):
         form = self._form(self.info_same.number)
         self._login(self.info_same)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/reject/{form.id}',
             json={'reason': 'x'},
         )
@@ -295,7 +296,7 @@ class ReviewScopeRouteLegacyTests(_ScopeTestBase):
     def test_reject_invalid_stage_returns_403(self):
         form = self._form(self.info_same.number, status='中心已审核')
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/reject/{form.id}',
             json={'reason': 'x'},
         )
@@ -305,7 +306,7 @@ class ReviewScopeRouteLegacyTests(_ScopeTestBase):
     def test_reject_already_rejected_keeps_update_branch(self):
         form = self._form(self.info_same.number, status='已驳回')
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/reject/{form.id}',
             json={'reason': 'updated reason'},
         )
@@ -412,10 +413,10 @@ class ReviewScopeRouteLegacyTests(_ScopeTestBase):
         form.lecture_date = '原始日期'
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/form/{form.id}',
             json={
-                'form_data': {'lecture_date_display': '新日期'},
+                'form_data': {'lecture_date_display': '2026/06/05星期五'},
                 'review_comment': '',
             },
         )
@@ -423,7 +424,7 @@ class ReviewScopeRouteLegacyTests(_ScopeTestBase):
         body = response.get_json()
         self.assertTrue(body['success'])
         new_version = form.get_latest_version()
-        self.assertEqual(new_version.lecture_date, '新日期')
+        self.assertEqual(new_version.lecture_date, '2026/06/05星期五')
         self.assertIn('听课时间', new_version.review_comment or '')
 
     def test_submit_form_review_effective_class_period_change_is_audited(self):
@@ -431,7 +432,7 @@ class ReviewScopeRouteLegacyTests(_ScopeTestBase):
         form.class_period = '第1-2节'
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/form/{form.id}',
             json={
                 'form_data': {'start_period': '3', 'end_period': '4'},

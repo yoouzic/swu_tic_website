@@ -100,11 +100,16 @@ class CanonicalCutoverTest(unittest.TestCase):
         self.assertEqual(engine.schedule_source_kind, 'canonical_snapshot')
         read_excel.assert_not_called()
 
-    def test_non_ready_falls_back_to_legacy_excel(self):
+    def test_unconfigured_current_review_does_not_use_implicit_legacy_excel(self):
         SystemSetting.set('auto_review_schedule_path', str(self.legacy_path))
-        engine = AutoReviewEngine()
-        self.assertEqual(engine.schedule_source_kind, 'legacy_fallback')
-        self.assertEqual(str(engine.schedule_df.iloc[0]['姓名']), '李四')
+        with mock.patch('app.services.review_schedule_source._read_excel') as read_excel:
+            engine = AutoReviewEngine()
+        read_excel.assert_not_called()
+        self.assertEqual(engine.schedule_source_kind, 'none')
+        self.assertIsNone(engine.schedule_df)
+        result = engine.review_any(SimpleNamespace(suggestions='无'))
+        self.assertTrue(result['check_results']['school_schedule']['skipped'])
+        self.assertFalse(result['passed'])
 
     def test_fresh_deploy_with_canonical_only_works(self):
         self._make_canonical_ready()

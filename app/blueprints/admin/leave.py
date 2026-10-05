@@ -4,10 +4,13 @@
 
 from flask import request, session, jsonify
 from app.models import User, db, AssessmentOverride
+from app.services.assessment_override_scope import (current_override_semester,
+    override_applies_to_semester, override_semester_filter, unassigned_override_warning)
 from app.security import login_required
 from app.utils.permission_feedback import build_forbidden_message, build_forbidden_payload, forbidden_json
 from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.leave_management import LEAVE_OVERRIDE_TYPE, build_leave_status_payload, get_current_teaching_week as get_leave_current_teaching_week, get_form_effective_week_no as get_leave_form_effective_week_no, get_leave_makeup_forms, get_teaching_settings as get_leave_teaching_settings, set_leave_makeup_forms
+from app.utils.leave_management import form_matches_leave_semester
 from . import admin_bp
 from .shared import _active_user_query, _latest_form_groups_for_users
 
@@ -51,6 +54,7 @@ def get_leave_management_status():
     leave_records = AssessmentOverride.query.filter(
         AssessmentOverride.user_id.in_(user_ids),
         AssessmentOverride.override_type == LEAVE_OVERRIDE_TYPE,
+        override_semester_filter((settings or {}).get('semester', current_override_semester())),
     ).order_by(AssessmentOverride.start_week.asc(), AssessmentOverride.end_week.asc()).all() if user_ids else []
 
     current_leave_user_ids = set()
@@ -85,6 +89,10 @@ def get_leave_management_status():
 
     return jsonify({
         'success': True,
+        'current_semester': current_override_semester(),
+        'scope_warning': unassigned_override_warning(AssessmentOverride.query.filter(
+            AssessmentOverride.user_id.in_(user_ids), AssessmentOverride.semester.is_(None),
+        ).count()) if user_ids else '',
         'current_week': current_week,
         'settings_error': settings_err,
         'required_submission': int((settings or {}).get('required_submission') or 0),
@@ -109,11 +117,16 @@ def create_current_week_leave():
     settings, settings_err = get_leave_teaching_settings()
     if settings_err:
         return jsonify({'success': False, 'message': settings_err}), 400
+    semester = settings['semester']
+    if not semester:
+        return jsonify({'success': False, 'message': '请先在教学设置中配置当前教学学期'}), 400
     current_week, week_err = get_leave_current_teaching_week(settings)
     if week_err or not current_week:
         return jsonify({'success': False, 'message': week_err or '当前教学周不可用'}), 400
 
-    data = request.get_json() or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': 'JSON 请求体必须是对象'}), 400
     user_id = data.get('user_id')
     target_users = _resolve_department_leave_users(session['user_id'], [str(user_id)])
     if not target_users:
@@ -130,15 +143,20 @@ def create_current_week_leave():
     existing = AssessmentOverride.query.filter(
         AssessmentOverride.user_id == target_user.id,
         AssessmentOverride.override_type == LEAVE_OVERRIDE_TYPE,
+        override_semester_filter(semester),
         AssessmentOverride.start_week <= current_week,
         AssessmentOverride.end_week >= current_week,
     ).first()
     if existing:
         return jsonify({'success': False, 'message': f'{target_user.name} 当前教学周已处于请假中'}), 400
 
-    reason = (data.get('reason') or '').strip() or '超级管理员发起当前教学周请假'
+    reason = data.get('reason') or ''
+    if not isinstance(reason, str) or len(reason.strip()) > 200:
+        return jsonify({'success': False, 'message': '请假理由必须是不超过200字的字符串'}), 400
+    reason = reason.strip() or '超级管理员发起当前教学周请假'
     record = AssessmentOverride(
         user_id=target_user.id,
+        semester=semester,
         start_week=current_week,
         end_week=current_week,
         override_type=LEAVE_OVERRIDE_TYPE,
@@ -163,6 +181,8 @@ def _get_super_admin_leave_record(override_id):
     ).first()
     if not record:
         return None, jsonify({'success': False, 'message': '请假记录不存在'}), 404
+    if not override_applies_to_semester(record):
+        return None, jsonify({'success': False, 'message': '该请假记录不属于当前学期；请在考核规则设置中查看并核实归属'}), 409
     return record, None, None
 
 
@@ -211,6 +231,8 @@ def get_leave_makeup_form_options(override_id):
 
     form_options = []
     for group_data in _latest_form_groups_for_users([user.number]):
+        if not form_matches_leave_semester(record, group_data.get('latest_form'), settings):
+            continue
         item = _serialize_leave_form_option(group_data, settings, selected_unique_ids)
         if item:
             form_options.append(item)
@@ -221,6 +243,7 @@ def get_leave_makeup_form_options(override_id):
         'settings_error': settings_err,
         'leave': {
             'override_id': record.id,
+            'semester': record.semester,
             'user_id': record.user_id,
             'name': user.name,
             'number': user.number,
@@ -244,7 +267,11 @@ def update_leave_makeup_forms(override_id):
     if not user:
         return jsonify({'success': False, 'message': '请假人员不存在'}), 404
 
-    data = request.get_json() or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': 'JSON 请求体必须是对象'}), 400
+    if not isinstance(data.get('unique_ids', []), list):
+        return jsonify({'success': False, 'message': '补交表单编号必须是数组'}), 400
     selected_unique_ids = set()
     for raw_value in data.get('unique_ids') or []:
         try:
@@ -253,6 +280,9 @@ def update_leave_makeup_forms(override_id):
             continue
 
     selected_forms = []
+    settings, settings_err = get_leave_teaching_settings()
+    if settings_err:
+        return jsonify({'success': False, 'message': settings_err}), 400
     for group_data in _latest_form_groups_for_users([user.number]):
         latest_form = group_data.get('latest_form')
         if not latest_form:
@@ -263,7 +293,11 @@ def update_leave_makeup_forms(override_id):
         except (TypeError, ValueError):
             continue
         if normalized_unique_id in selected_unique_ids:
+            if not form_matches_leave_semester(record, latest_form, settings):
+                return jsonify({'success': False, 'message': '补交表单必须属于该请假规则的当前学期'}), 400
             selected_forms.append(latest_form)
+    if len(selected_forms) != len(selected_unique_ids):
+        return jsonify({'success': False, 'message': '所选补交表单不存在或不属于该成员'}), 400
 
     set_leave_makeup_forms(
         record,

@@ -13,6 +13,8 @@ import openpyxl
 from openpyxl.styles import Font
 
 from app.models import LectureForm, SystemSetting, ScoreRecord, ScoreItem, AssessmentOverride, db
+from app.services.assessment_override_scope import (current_override_semester,
+    override_semester_filter, unassigned_override_warning)
 from app.services.assessment_scope import resolve_selected_departments
 from app.services.excel_utils import autosize_worksheet
 from app.services.form_week_semantics import effective_form_week
@@ -76,7 +78,7 @@ def assessment_latest_form_groups_for_users(listener_numbers):
     for uid, form_list in group_map.items():
         sorted_forms = sorted(
             form_list,
-            key=lambda f: (assessment_form_latest_timestamp(f) or datetime.min, f.id),
+            key=lambda f: f.id,
             reverse=True
         )
         latest_form = sorted_forms[0]
@@ -129,6 +131,7 @@ def get_teaching_reward_settings():
         'first_week_date': config.first_week_date,
         'week_start_day': config.week_start_day,
         'required_submission': required_submission,
+        'semester': current_override_semester(),
         'total_weeks': config.total_weeks
     }, None
 
@@ -604,10 +607,18 @@ def build_department_monthly_assessment_payload(current_user_id, start_date, end
     if all_user_ids_for_exemption:
         exemption_records = AssessmentOverride.query.filter(
             AssessmentOverride.user_id.in_(all_user_ids_for_exemption),
-            AssessmentOverride.override_type.in_(ASSESSMENT_EXEMPT_OVERRIDE_TYPES)
+            AssessmentOverride.override_type.in_(ASSESSMENT_EXEMPT_OVERRIDE_TYPES),
+            override_semester_filter(reward_settings['semester']),
         ).all()
         for ov in exemption_records:
             exempt_map.setdefault(ov.user_id, []).append((ov.start_week, ov.end_week))
+        unassigned_count = AssessmentOverride.query.filter(
+            AssessmentOverride.user_id.in_(all_user_ids_for_exemption),
+            AssessmentOverride.semester.is_(None),
+        ).count()
+        payload['meta']['semester'] = reward_settings['semester']
+        payload['meta']['unassigned_override_count'] = unassigned_count
+        payload['meta']['scope_warning'] = unassigned_override_warning(unassigned_count)
 
     def _is_user_exempted(user_id, week_no):
         for s, e in exempt_map.get(user_id, []):
@@ -652,7 +663,6 @@ def build_department_monthly_assessment_payload(current_user_id, start_date, end
                 }
                 weeks.append(week_row)
                 week_map[wno] = week_row
-            month_summary_required = sum(w['required_submission'] for w in weeks)
             month_rows.append({
                 'month_no': month['month_no'],
                 'month_label': month['month_label'],
@@ -661,7 +671,7 @@ def build_department_monthly_assessment_payload(current_user_id, start_date, end
                 'end_date': month['end_date'],
                 'weeks': weeks,
                 'summary': {
-                    'required_submission': month_summary_required,
+                    'required_submission': 0,
                     'effective_count': 0,
                     'error_count': 0,
                     'extra_count': 0,

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>西南大学 · 教学楼定位映射核对</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f6f2;color:#203829;font:15px/1.6 system-ui,"Microsoft YaHei",sans-serif}main{max-width:1220px;margin:auto;padding:30px 24px}header{display:flex;justify-content:space-between;align-items:center;gap:16px}h1{font-size:26px;line-height:1.4;margin:8px 0}.tag{font-size:12px;letter-spacing:.08em;color:#52745a}.intro{max-width:760px;color:#53635b}.layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(290px,1fr);gap:22px;margin-top:24px}.mapbox{background:#e9efe6;border:1px solid #cdd8ca;border-radius:16px;overflow:hidden;position:relative}svg{display:block;width:100%;height:600px;cursor:crosshair;touch-action:manipulation}.mapnote{padding:12px 16px;color:#54634d;background:#fff9;line-height:1.6;font-size:12px}.controls{padding:22px;background:white;border:1px solid #dce4d8;border-radius:16px}h2{font-size:18px;margin:0 0 12px}.presets{display:flex;flex-wrap:wrap;gap:8px}button{font:inherit;border:1px solid #becfc0;border-radius:8px;padding:8px 12px;background:#f4f8f2;color:#294734;cursor:pointer}button:hover,button:focus-visible{background:#dbe9d7;outline:2px solid #648b68;outline-offset:2px}button.active{background:#294734;color:white}.accuracy{margin:22px 0}input{width:100%;accent-color:#356340}.summary{padding:12px 14px;background:#eef4eb;border-radius:8px;margin-bottom:16px}ol{margin:0;padding-left:26px}li{padding:8px 0;border-bottom:1px solid #edf0eb}.distance{color:#607168;font-size:13px}a{color:#385f45}small{display:block;color:#617069;margin:14px 0}.coords{font-variant-numeric:tabular-nums;font-size:12px;color:#647569;margin-top:10px;overflow-wrap:anywhere}.footprint{fill:#a3b599;stroke:#67805d;stroke-width:1.2}.footprint.nearby{fill:#b6d58e;stroke:#547b37}.building-label{font-size:13px;font-weight:600;fill:#29402d;paint-order:stroke;stroke:#f3f6ef;stroke-width:3px;pointer-events:none}.floor-label{font-size:11px;fill:#788c70;pointer-events:none}.hint{background:#fff8e8;padding:12px 14px;border-radius:8px;font-size:13px}footer{margin:22px 0;font-size:12px;color:#617069}@media(max-width:740px){main{padding:18px 14px}header{display:block}h1{font-size:22px}.layout{grid-template-columns:1fr;gap:14px}svg{height:430px}.controls{padding:18px}}
+</style>
+<main>
+<header><div><div class="tag">SWU / 北碚校区 / 位置候选核对</div><h1>定位有偏差，也能找到附近的楼</h1></div><span class="tag">14栋 · WGS84</span></header>
+<p class="intro">点击地图模拟定位，或选择下方场景。绿色建筑是附近教学楼候选；蓝色圆圈是输入的定位精度。附近范围另保留250米起始缓冲，由信息员确认教学楼。</p>
+<div class="layout">
+<div class="mapbox"><svg id="map" viewBox="0 0 760 600" role="img" aria-label="北碚校区14栋教学楼轮廓，可点击模拟定位"><g id="grid"></g><g id="buildings"></g><circle id="radiusCircle" fill="#b3d5dd" fill-opacity=".18" stroke="#387d8f" stroke-dasharray="7 5"/><circle id="accuracyCircle" fill="#8ec4df" fill-opacity=".23" stroke="#287ea3"/><circle id="marker" r="6" fill="#006f9c" stroke="white" stroke-width="3"/></svg><div class="mapnote">轮廓来源：© OpenStreetMap contributors，ODbL。虚线：候选搜索范围；实线：输入精度。公开地图尚未现场核验，未收录的教学楼仍需手动选择。</div></div>
+<section class="controls"><h2>模拟位置</h2><div class="presets"><button data-case="0">在8教</button><button data-case="1">8教偏到25教</button><button data-case="3">精度变差</button><button data-case="5">定位失败</button></div>
+<div class="accuracy"><label for="accuracy">输入定位精度：<strong id="accuracyValue">35米</strong></label><input id="accuracy" type="range" min="10" max="1000" value="35" step="5"></div>
+<div id="summary" class="summary" aria-live="polite">正在加载映射数据…</div><ol id="results"></ol><div id="coords" class="coords"></div><small>这里只验证附近楼栋映射。模拟位置不代表现场实测；不会确认课程或提交表单。</small>
+<div class="hint">8教与25教是重点核对场景。正确楼栋应保留在候选中，具体排序还可结合门牌号和当前课表。</div></section>
+</div><footer>仅使用本机服务与缓存的建筑数据，无在线底图。数据获取：2026-10-02。当前覆盖：7、8、10、14、22、25、26、27、28、29、32、33、37、38教。</footer>
+</main>
+<script>
+'use strict';
+const ns='http://www.w3.org/2000/svg',byId=id=>document.getElementById(id);
+let data,cases,simulatedLocation,requestRevision=0,lat0,lon0,xscale,scale;
+const yscale=111195;
+const toXY=([lon,lat])=>[380+(lon-lon0)*xscale*scale,300-(lat-lat0)*yscale*scale];
+const toLL=([x,y])=>[lon0+(x-380)/(scale*xscale),lat0-(y-300)/(scale*yscale)];
+function svgElement(tag,attrs,parent){const e=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,v);parent.append(e);return e;}
+function draw(){
+ const all=data.features.flatMap(f=>f.geometry.coordinates[0]),lons=all.map(p=>p[0]),lats=all.map(p=>p[1]);
+ const minlon=Math.min(...lons),maxlon=Math.max(...lons),minlat=Math.min(...lats),maxlat=Math.max(...lats);
+ lon0=(minlon+maxlon)/2;lat0=(minlat+maxlat)/2;xscale=111195*Math.cos(lat0*Math.PI/180);
+ scale=Math.min(620/((maxlon-minlon)*xscale),470/((maxlat-minlat)*yscale));
+ const grid=byId('grid');
+ for(let x=0;x<=760;x+=88)svgElement('line',{x1:x,y1:0,x2:x,y2:600,stroke:'#d8e1d3'},grid);
+ for(let y=0;y<=600;y+=88)svgElement('line',{x1:0,y1:y,x2:760,y2:y,stroke:'#d8e1d3'},grid);
+ svgElement('text',{x:20,y:30,class:'floor-label'},grid).textContent='北 ↑';
+ svgElement('line',{x1:20,y1:560,x2:20+200*scale,y2:560,stroke:'#597452','stroke-width':3},grid);
+ svgElement('text',{x:20,y:548,class:'floor-label'},grid).textContent='200米';
+ for(const f of data.features){
+  const p=f.properties,points=f.geometry.coordinates[0].map(toXY);
+  svgElement('polygon',{points:points.map(p=>p.join(',')).join(' '),class:'footprint','data-code':p.code},byId('buildings'));
+  const centre=points.slice(0,-1).reduce((a,p)=>[a[0]+p[0],a[1]+p[1]],[0,0]).map(v=>v/(points.length-1));
+  const offset=({'7':[20,10],'8':[12,-14],'14':[24,0],'25':[24,-8],'26':[-18,14],'27':[-22,-10],'28':[22,0],'29':[0,22],'32':[-14,-12],'33':[12,12]})[p.code]||[0,-10];
+  svgElement('text',{x:centre[0]+offset[0],y:centre[1]+offset[1],'text-anchor':'middle',class:'building-label'},byId('buildings')).textContent=p.code+'教';
+ }
+}
+async function update(){
+ const revision=++requestRevision;
+ byId('accuracyValue').textContent=byId('accuracy').value+'米';
+ const query=new URLSearchParams(simulatedLocation?{...simulatedLocation,accuracy:byId('accuracy').value}:{});
+ const result=await fetch('/nearby?'+query).then(r=>r.json());
+ if(revision!==requestRevision)return;
+ byId('results').replaceChildren();
+ const messages={location_unavailable:'定位失败：拍照仍可保存，教学楼手动选择。',location_too_coarse:'定位范围过大，请手动选择教学楼。',campus_unmapped:'该校区尚未收录，请手动选择。',no_mapped_building_nearby:'附近暂无已收录教学楼，请手动选择。'};
+ byId('summary').textContent=result.status==='ok'?`附近有${result.buildings.length}栋候选 · 搜索范围${result.radius_m}米`:messages[result.status];
+ const codes=new Set(result.buildings.map(b=>b.code));
+ for(const polygon of document.querySelectorAll('.footprint'))polygon.classList.toggle('nearby',codes.has(polygon.dataset.code));
+ for(const b of result.buildings){const li=document.createElement('li'),link=document.createElement('a'),detail=document.createElement('div');link.href=b.source_url;link.target='_blank';link.rel='noopener';link.textContent=b.code+'教';detail.className='distance';detail.textContent=`距建筑轮廓${b.distance_m}米 · 公开地图待核对`;li.append(link,detail);byId('results').append(li);}
+ for(const id of ['marker','accuracyCircle','radiusCircle'])byId(id).style.display=simulatedLocation?'':'none';
+ if(simulatedLocation){const [x,y]=toXY([simulatedLocation.longitude,simulatedLocation.latitude]);for(const id of ['marker','accuracyCircle','radiusCircle']){byId(id).setAttribute('cx',x);byId(id).setAttribute('cy',y);}byId('accuracyCircle').setAttribute('r',Number(byId('accuracy').value)*scale);byId('radiusCircle').setAttribute('r',(result.radius_m||0)*scale);byId('coords').textContent=`模拟 WGS84：${simulatedLocation.latitude.toFixed(6)}, ${simulatedLocation.longitude.toFixed(6)}`;}else byId('coords').textContent='模拟定位不可用 · 手动选楼入口保留';
+}
+function chooseCase(index){const c=cases[index];simulatedLocation=c.input;byId('accuracy').value=simulatedLocation?.accuracy||35;for(const b of document.querySelectorAll('[data-case]'))b.classList.toggle('active',Number(b.dataset.case)===index);return update();}
+for(const b of document.querySelectorAll('[data-case]'))b.addEventListener('click',()=>chooseCase(Number(b.dataset.case)).catch(showError));
+byId('accuracy').addEventListener('input',()=>update().catch(showError));
+byId('map').addEventListener('click',e=>{const point=byId('map').createSVGPoint();point.x=e.clientX;point.y=e.clientY;const transformed=point.matrixTransform(byId('map').getScreenCTM().inverse());const [longitude,latitude]=toLL([transformed.x,transformed.y]);simulatedLocation={longitude,latitude};for(const b of document.querySelectorAll('[data-case]'))b.classList.remove('active');update().catch(showError);});
+function showError(){byId('summary').textContent='本机映射服务暂不可用，请刷新重试。';}
+Promise.all([fetch('/dataset.json').then(r=>r.json()),fetch('/replay.json').then(r=>r.json())]).then(([d,c])=>{data=d;cases=c;draw();return chooseCase(1);}).catch(showError);
+</script>
+</html>

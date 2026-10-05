@@ -29,6 +29,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
         toggle?.addEventListener('click', () => setOpen(!shell.classList.contains('is-nav-open')));
+        const mobileNavigation = window.matchMedia('(max-width: 959px)');
+        mobileNavigation.addEventListener('change', (event) => {
+            if (!event.matches) setOpen(false);
+        });
         closeButtons.forEach((button) => button.addEventListener('click', () => setOpen(false)));
         sidebar?.querySelectorAll('a[href]').forEach((link) => link.addEventListener('click', () => setOpen(false)));
         document.addEventListener('keydown', (event) => {
@@ -57,6 +61,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const toggle = menu.querySelector('[data-bs-toggle="dropdown"]');
         menu.addEventListener('hidden.bs.dropdown', () => {
             toggle.focus();
+        });
+    });
+
+    document.querySelectorAll('.app-user-menu').forEach((menu) => {
+        const toggle = menu.querySelector('[data-bs-toggle="dropdown"]');
+        menu.addEventListener('hidden.bs.dropdown', () => {
+            if (menu.contains(document.activeElement)) toggle.focus();
         });
     });
 

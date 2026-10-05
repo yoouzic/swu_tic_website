@@ -187,6 +187,14 @@ def update_teaching_settings():
                 'message': '需交表数必须是大于等于0的整数',
             }), 400
 
+        boolean_fields = (
+            'check_dept_review', 'check_center_review', 'show_auto_review_details',
+            'enable_typos_check', 'course_weekly_limit_enabled',
+        )
+        for field in boolean_fields:
+            if field in data and not isinstance(data[field], bool):
+                return jsonify({'success': False, 'message': f'{field}必须为布尔值'}), 400
+
         settings_map = {
             'teaching_first_week_monday': first_week_raw,
             'teaching_week_start_day': str(week_start_day),
@@ -294,6 +302,20 @@ def clear_table():
             # 用户表特殊处理：保留超级管理员账户
             deleted_count = model_class.query.filter(model_class.role != '超级管理员').delete()
         else:
+            if table_name == 'courses':
+                from app.models import CourseRegistration, ScheduleCourseMembership
+                # SQLite can recycle IDs after a bulk clear. Preserve all
+                # historical reservations and course-specific bans instead
+                # of allowing those IDs to identify a newly imported course.
+                # Legacy rows lacking a course_id also retain their catalog
+                # evidence; clearing it would enable a later wrong inference.
+                if (CourseRegistration.query.first() is not None
+                        or ListeningBan.query.first() is not None):
+                    return jsonify(success=False, code='historical_course_references',
+                                   message='存在听课登记或禁听记录，不能清空课程；请直接导入新课表以保留历史。'), 400
+                from app.services.current_courses import ensure_current_course_schema
+                ensure_current_course_schema()
+                ScheduleCourseMembership.query.delete()
             # 其他表直接清空
             deleted_count = model_class.query.delete()
         

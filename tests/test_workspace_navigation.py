@@ -7,7 +7,7 @@ from app.ui.workspace import WorkspaceSnapshot, build_workspace
 
 class WorkspaceNavigationTest(unittest.TestCase):
     def user(self, role):
-        return SimpleNamespace(id=1, role=role)
+        return SimpleNamespace(id=1, role=role, is_authenticated=True, is_active=True)
 
     def labels(self, groups):
         return [item['label'] for group in groups for item in group['items']]

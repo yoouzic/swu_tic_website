@@ -337,12 +337,16 @@ def _rows_for_batch(batch: ScheduleImportBatch) -> List[ScheduleImportRow]:
 
 def resolve_current_schedule_snapshot(
     semester: Optional[str] = None,
+    *,
+    include_rows: bool = True,
 ) -> CurrentScheduleSelection:
     """Resolve the current teaching semester to a structured snapshot result.
 
     This is the only canonical schedule-selection boundary that Round 6B should
     consume.  It never maps an unset current semester to a blank-semester
     batch, and it never silently picks among ambiguous active rows.
+    Consumers with a separate index can set include_rows=False to resolve
+    the same authority without materializing the raw import snapshot.
     """
     if semester is None:
         semester = get_current_teaching_semester()
@@ -367,7 +371,7 @@ def resolve_current_schedule_snapshot(
             status=READY,
             semester=semester,
             batch=authority.batch,
-            rows=_rows_for_batch(authority.batch),
+            rows=_rows_for_batch(authority.batch) if include_rows else [],
         )
 
     # Selection row absent: the legacy exactly-one active fallback is allowed.
@@ -394,5 +398,5 @@ def resolve_current_schedule_snapshot(
         status=READY,
         semester=semester,
         batch=batch,
-        rows=_rows_for_batch(batch),
+        rows=_rows_for_batch(batch) if include_rows else [],
     )

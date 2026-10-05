@@ -1,0 +1,60 @@
+<section class="site-capture card mb-3" data-site-capture data-schedule-ready="{{ 'true' if schedule_availability.candidates_ready else 'false' }}">
+    <div class="card-body">
+<div class="site-capture__heading"><h2 class="h5 mb-0">现场听课记录</h2><span data-site-time></span></div>
+        <p class="text-muted" data-site-status role="status">{{ '拍摄门牌，查找本次课程。' if schedule_availability.candidates_ready else '拍摄门牌，确认本次教室。' }}</p>
+        <div class="site-capture__actions">
+            <button type="button" class="btn btn-primary" data-site-open>拍门牌</button>
+            <button type="button" class="btn btn-primary" data-site-review hidden>填写评价</button>
+        </div>
+        <div data-site-camera hidden>
+            <video data-site-video autoplay playsinline muted aria-label="门牌拍摄预览"></video>
+            <div class="site-capture__actions"><button type="button" class="btn btn-primary" data-site-shoot>拍照并保存</button><button type="button" class="btn btn-outline-secondary" data-site-cancel>取消</button></div>
+        </div>
+        <div class="site-capture__record" data-site-record hidden>
+            <div class="site-capture__lookup">
+                <div class="site-capture__map-row" data-site-map-row><h3 class="h6 mb-0">{{ '确认本次课程' if schedule_availability.candidates_ready else '确认本次教室' }}</h3><button type="button" class="btn btn-outline-secondary" data-site-map>地图选楼</button></div>
+                {% if schedule_availability.candidates_ready %}
+                <section class="site-context" data-site-context-guide hidden aria-label="现场线索听课助手">
+                    <p class="text-muted mb-2" data-context-status role="status"></p><div data-context-content></div>
+                </section>
+                {% endif %}
+                <details class="site-capture__corrections" data-site-corrections{% if not schedule_availability.candidates_ready %} open{% endif %}><summary>修改教学楼或门牌</summary>
+                    <div class="site-capture__context">
+                        <div><label class="form-label" for="siteBuilding">教学楼</label><input id="siteBuilding" class="form-control" list="siteBuildings" placeholder="如：8" maxlength="40"><datalist id="siteBuildings"></datalist></div>
+                        <div><label class="form-label" for="siteRoom">门牌号</label><input id="siteRoom" class="form-control" inputmode="numeric" placeholder="如：0609" maxlength="5"></div>
+                    </div>
+                    <div class="site-capture__actions">{% if schedule_availability.candidates_ready %}<button type="button" class="btn btn-primary" data-site-find>查找课程</button>{% else %}<button type="button" class="btn btn-primary" data-site-classroom>确认教室</button>{% endif %}<button type="button" class="btn btn-link" data-site-manual>手动填写课程</button></div>
+                    {% if schedule_availability.candidates_ready %}<div class="site-capture__courses" data-site-courses></div>{% endif %}
+                </details>
+            </div>
+            <div class="site-capture__footer">
+                <button type="button" class="btn btn-link" data-site-later>稍后补充</button>
+                <details class="site-capture__tools" data-site-tools><summary>照片与其他操作</summary>
+                    <img class="site-capture__photo" data-site-photo alt="本次听课的门牌照片">
+                    <div class="site-capture__actions">
+                        <button type="button" class="btn btn-outline-secondary" data-site-retake>重拍门牌</button>
+                        <button type="button" class="btn btn-outline-secondary" data-site-crop>框选门牌</button>
+                        <button type="button" class="btn btn-outline-secondary" data-site-new hidden>新建记录</button>
+                    </div>
+                </details>
+            </div>
+        </div>
+        <details class="site-capture__history" data-site-history hidden><summary>其他待补记录</summary><div class="site-capture__courses" data-site-pending></div></details>
+    </div>
+</section>
+<dialog class="site-evidence-dialog" data-door-crop aria-labelledby="doorCropTitle">
+    <div class="site-evidence-dialog__header"><h2 id="doorCropTitle">框选门牌数字</h2><button type="button" class="btn btn-outline-secondary" data-crop-close>关闭</button></div>
+    <p data-crop-status role="status"></p>
+    <canvas class="site-door-canvas" tabindex="0" aria-label="门牌照片框选区域，拖动选择；方向键移动，Shift加方向键调整大小"></canvas>
+    <div class="site-capture__actions"><button type="button" class="btn btn-primary" data-crop-run>识别框选区域</button><span>保留原照片，识别结果仍需核对。</span></div>
+</dialog>
+<dialog class="site-evidence-dialog site-map-dialog" data-building-map data-context-url="{{ url_for('static', filename='data/swu-campus-context.geojson') }}" aria-labelledby="buildingMapTitle">
+    <div class="site-evidence-dialog__header"><div><span class="site-map__eyebrow">校园位置参考</span><h2 id="buildingMapTitle">确认你所在的教学楼</h2></div><button type="button" class="btn btn-outline-secondary" data-map-close>关闭</button></div>
+    <p data-map-status role="status"></p>
+    <div class="site-map__layout"><div class="site-map__surface">
+        <div class="site-map__toolbar"><button type="button" data-map-zoom-in aria-label="放大地图">＋</button><button type="button" data-map-zoom-out aria-label="缩小地图">−</button><button type="button" data-map-selected disabled>定位所选</button><button type="button" data-map-overview>全部楼栋</button></div>
+        <svg role="group" aria-label="校园楼栋图，拖动平移，可用旁边列表选楼"></svg>
+        <p class="site-map__legend">蓝点：采集位置　浅绿：附近楼栋　金色立体楼栋：当前选择（高度示意）</p>
+    </div><aside><label for="siteMapSearch">搜索楼号或名称</label><input id="siteMapSearch" class="form-control" data-map-search placeholder="例如：8、25、46"><div data-map-list class="site-map__list"></div></aside></div>
+    <div class="site-map__selection"><span data-map-picked role="status" aria-live="polite">点击建筑或列表，再确认教学楼。</span><button type="button" class="btn btn-primary" data-map-use disabled>使用此教学楼</button></div>
+</dialog>

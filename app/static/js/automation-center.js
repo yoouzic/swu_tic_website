@@ -214,7 +214,7 @@
         const badge = row?.querySelector('[data-service-value]');
         if (!badge) return;
         badge.textContent = text(value, 'unchecked');
-        badge.className = `badge text-bg-${variant}`;
+        badge.className = `badge bg-${variant}`;
     };
 
     const renderHealth = (payload) => {

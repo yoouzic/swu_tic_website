@@ -36,6 +36,7 @@ from app.models import (
     CourseRegistration,
     LectureForm,
     LectureFormDraft,
+    SystemSetting,
     User,
     db,
 )
@@ -66,6 +67,9 @@ class SubmitFormTransactionTest(unittest.TestCase):
         self.app_context.push()
         db.drop_all()
         db.create_all()
+        SystemSetting.set('teaching_current_semester', '2025-2026-2')
+        SystemSetting.set('teaching_first_week_monday', '2026-03-02')
+        db.session.commit()
         self.client = app.test_client()
         self.user = self._create_user('1001', 'student-1001')
         self._login_as(self.user)
@@ -172,6 +176,7 @@ class SubmitFormTransactionTest(unittest.TestCase):
     def _make_leave_override(self, start_week=2, end_week=4):
         override = AssessmentOverride(
             user_id=self.user.id,
+            semester='2025-2026-2',
             start_week=start_week,
             end_week=end_week,
             override_type=LEAVE_OVERRIDE_TYPE,
@@ -266,7 +271,7 @@ class SubmitFormTransactionTest(unittest.TestCase):
         with mock.patch.object(db.session, 'commit', side_effect=RuntimeError('commit fault')):
             response = self._submit(registration_id=registration.id)
 
-        self.assertEqual(response.status_code, 200)  # 错误 flash + 表单页
+        self.assertEqual(response.status_code, 500)  # 失败状态 + 保留输入的表单页
         self.assertEqual(self._form_count(), 0)
         self.assertEqual(self._draft_count(), 1)
         self.assertFalse(self._durable_registration(registration.id).is_used)

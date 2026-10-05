@@ -32,6 +32,7 @@ DEBUG_DB = require_isolated_debug_database()
 
 from app.app import app
 from app.models import User, db
+from tools.debug_schedule import prepare_debug_schedule
 from tools.init_user import (
     DEFAULT_DEPARTMENT,
     DEFAULT_GROUP,
@@ -69,6 +70,9 @@ def prepare(password):
     if result:
         return result
     with app.app_context():
+        from app.services.lecture_site_capture import ensure_capture_schema
+        ensure_capture_schema()
+        print(prepare_debug_schedule())
         administrators = User.query.filter(User.role.in_(('管理员', '超级管理员'))).all()
         for user in administrators:
             user.password_hash = generate_password_hash(password)

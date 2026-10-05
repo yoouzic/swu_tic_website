@@ -38,7 +38,7 @@
                 </h2>
             </div>
             <div class="profile-section__body">
-                {% if user.role == '信息员' %}
+                {% if app_can_submit_lecture_form %}
                     <div class="d-grid gap-2">
                         <a href="{{ url_for('user.listening_registration') }}" class="btn btn-primary btn-sm">
                             <i class="bi bi-calendar-check"></i> 听课登记
@@ -50,7 +50,18 @@
                             <i class="bi bi-list-ul"></i> 我的表单
                         </a>
                     </div>
-                {% elif user.role in ['管理员', '超级管理员'] %}
+                {% endif %}
+                {% if not app_can_submit_lecture_form %}
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('user.course_lookup') }}" class="btn btn-primary btn-sm">
+                            <i class="bi bi-search"></i> 查询课表
+                        </a>
+                        <a href="{{ url_for('user.my_forms') }}" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-list-ul"></i> 我的记录
+                        </a>
+                    </div>
+                {% endif %}
+                {% if user.role in ['管理员', '超级管理员'] %}
                     <div class="d-grid gap-2">
                         {% if user.role == '管理员' %}
                             <a href="{{ url_for('admin.admin_dashboard') }}" class="btn btn-primary btn-sm">
@@ -61,9 +72,6 @@
                                 <i class="bi bi-speedometer2"></i> 管理面板
                             </a>
                         {% endif %}
-                        <a href="{{ url_for('user.my_forms') }}" class="btn btn-outline-secondary btn-sm">
-                            <i class="bi bi-list-ul"></i> 我的表单
-                        </a>
                         <a href="{{ url_for('admin.view_forms') }}" class="btn btn-outline-secondary btn-sm">
                             <i class="bi bi-file-earmark-text"></i> 查看表单
                         </a>
@@ -347,7 +355,7 @@
 {% endblock %}
 
 {% block scripts %}
-{% include 'main/_leave_reminder_modal.html' %}
+{% if app_can_submit_lecture_form %}{% include 'main/_leave_reminder_modal.html' %}{% endif %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const body = document.getElementById('assessmentItemsBody');

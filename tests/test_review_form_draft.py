@@ -15,6 +15,7 @@ os.environ['STORAGE_CLEANUP_ENABLED'] = '0'
 from app.app import app
 from app.models import db, LectureForm, LectureFormDraft, User
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
+from tests.review_request_utils import opened_review_revision, post_opened_review
 
 
 SUPER_ADMIN = '\u8d85\u7ea7\u7ba1\u7406\u5458'
@@ -110,6 +111,7 @@ class ReviewFormDraftTest(unittest.TestCase):
     def _review_payload(self):
         return {
             'form_data': {
+                **opened_review_revision(self.client, self.form.id),
                 'listener_name': self.form.listener_name,
                 'listener_number': self.form.listener_number,
                 'course_changes': '无',
@@ -191,7 +193,8 @@ class ReviewFormDraftTest(unittest.TestCase):
         # requires a department-approved source before the final submission.
         self.form.status = '部门已审核'
         db.session.commit()
-        submit_response = self.client.post(f'/admin/api/review/submit/{self.form.id}', json=payload)
+        payload['form_data'].update(opened_review_revision(self.client, self.form.id))
+        submit_response = post_opened_review(self.client, f'/admin/api/review/submit/{self.form.id}', json=payload)
 
         self.assertEqual(submit_response.status_code, 200)
         self.assertTrue(submit_response.get_json()['success'])

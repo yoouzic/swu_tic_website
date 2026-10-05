@@ -155,11 +155,11 @@ class LegacyReviewCompatTests(unittest.TestCase):
         self.assertEqual(engine._compute_week_from_date(date(2025, 9, 8)), 2)
         self.assertEqual(engine.semester_monday, date(2025, 9, 1))
 
-    def test_construction_no_longer_reads_feedback_excel(self):
+    def test_unconfigured_current_review_does_not_read_implicit_legacy_excel(self):
         self._set_canonical('2026-09-07', week_start='0', total_weeks='20')
         with mock.patch('app.services.review_schedule_source._read_excel', return_value=None) as read_excel:
             AutoReviewEngine()
-        self.assertEqual(read_excel.call_count, 1)
+        read_excel.assert_not_called()
 
 
 if __name__ == '__main__':

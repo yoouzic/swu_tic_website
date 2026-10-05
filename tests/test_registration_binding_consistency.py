@@ -33,10 +33,13 @@ from app.models import (
     CourseRegistration,
     LectureForm,
     LectureFormDraft,
+    ScheduleCourseMembership,
     User,
     db,
 )
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
+from tests.review_request_utils import opened_listener_revision
+from tests.schedule_fixture import seed_current_schedule
 
 
 INFO_MEMBER = '\u4fe1\u606f\u5458'
@@ -59,6 +62,7 @@ class RegistrationBindingConsistencyTest(unittest.TestCase):
         self.app_context.push()
         db.drop_all()
         db.create_all()
+        self.schedule_batch_id = seed_current_schedule().id
         self.client = app.test_client()
         self.user = self._create_user('1001', 'student-1001')
         self._login_as(self.user)
@@ -127,17 +131,24 @@ class RegistrationBindingConsistencyTest(unittest.TestCase):
 
     def _make_registration(self, course_code, selection_code, is_used=False, with_course=True):
         if with_course:
-            db.session.add(Course(
+            course = Course(
                 course_code=course_code,
                 selection_code=selection_code,
                 course_name=f'Course {course_code}',
-            ))
+                semester='2026-2027-1',
+            )
+            db.session.add(course)
+            db.session.flush()
+            db.session.add(ScheduleCourseMembership(batch_id=self.schedule_batch_id, course_id=course.id))
         registration = CourseRegistration(
             course_code=course_code,
             selection_code=selection_code,
             user_id=self.user.id,
             is_used=is_used,
         )
+        if with_course:
+            from app.services.registration_course_identity import stamp_registration_course
+            stamp_registration_course(registration, course)
         db.session.add(registration)
         db.session.commit()
         return registration
@@ -160,6 +171,7 @@ class RegistrationBindingConsistencyTest(unittest.TestCase):
             data['registration_id'] = str(registration_id)
         if unique_id is not None:
             data['unique_id'] = str(unique_id)
+            data.update(opened_listener_revision(self.client, unique_id))
         return self.client.post('/user/submit_form', data=data)
 
     def _save_draft(self):
@@ -348,7 +360,7 @@ class RegistrationBindingConsistencyTest(unittest.TestCase):
         with mock.patch.object(db.session, 'commit', side_effect=RuntimeError('commit fault')):
             response = self._submit(registration_id=reg_b.id, unique_id=form.unique_id)
 
-        self.assertEqual(response.status_code, 200)  # 错误 flash + 表单页
+        self.assertEqual(response.status_code, 500)  # 错误 flash + 表单页，事务回滚
         db.session.rollback()
         form_after = self._owned_pending_form()
         self.assertEqual(str(form_after.registration_id), str(reg_a.id))

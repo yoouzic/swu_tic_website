@@ -46,6 +46,7 @@ from app.models import (
 )
 from app.utils.review_permissions import can_review_status, get_next_status_after_review
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
+from tests.review_request_utils import post_opened_review
 
 ROUTE_A = '/admin/api/review/submit/{form_id}'
 ROUTE_B = '/admin/api/review/form/{form_id}'
@@ -225,10 +226,10 @@ class _ReviewMutationCompatibilityBase(unittest.TestCase):
         return values
 
     def _submit_a(self, form_id, payload):
-        return self.client.post(ROUTE_A.format(form_id=form_id), json=payload)
+        return post_opened_review(self.client, ROUTE_A.format(form_id=form_id), json=payload)
 
     def _submit_b(self, form_id, payload):
-        return self.client.post(ROUTE_B.format(form_id=form_id), json=payload)
+        return post_opened_review(self.client, ROUTE_B.format(form_id=form_id), json=payload)
 
     def _put_draft(self, form_id, comment='draft-comment'):
         response = self.client.put(
@@ -338,7 +339,7 @@ class ReviewMutationInputCompatibilityTest(_ReviewMutationCompatibilityBase):
         self.assertEqual(response.content_type, 'application/json')
         body = response.get_json()
         self.assertFalse(body['success'])
-        self.assertIn('404', body['message'])
+        self.assertEqual(body['message'], '审核提交失败，请稍后重试')
 
     def test_cross_scope_route_b_forbidden_without_mutation(self):
         """B object-level authorization fail-closed like A.
@@ -384,7 +385,7 @@ class ReviewMutationInputCompatibilityTest(_ReviewMutationCompatibilityBase):
         fields = self._full_form_data(form)
         fields['review_comment'] = 'form 通过'
         fields['score_data'] = json.dumps([self._positive_score()])
-        response = self.client.post(ROUTE_A.format(form_id=form.id), data=fields)
+        response = post_opened_review(self.client, ROUTE_A.format(form_id=form.id), data=fields)
         self.assertEqual(response.status_code, 200)
         body = response.get_json()
         self.assertTrue(body['success'])
@@ -401,7 +402,7 @@ class ReviewMutationInputCompatibilityTest(_ReviewMutationCompatibilityBase):
         fields = self._full_form_data(form)
         fields['review_comment'] = 'ok'
         fields['score_data'] = ''
-        response = self.client.post(ROUTE_A.format(form_id=form.id), data=fields)
+        response = post_opened_review(self.client, ROUTE_A.format(form_id=form.id), data=fields)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.get_json()['success'])
         new_form = db.session.get(LectureForm, response.get_json()['form_id'])
@@ -548,7 +549,7 @@ class ReviewMutationVersionCompatibilityTest(_ReviewMutationCompatibilityBase):
         self._login(self.center_admin)
         v2 = db.session.get(LectureForm, v2_id)
         stage2 = self._submit_a(v2_id, {
-            'form_data': self._full_form_data(v2, course_feedback='feedback-stage2'),
+            'form_data': self._full_form_data(v2, course_feedback='feedback-stage2 ' * 4),
             'review_comment': 'center pass',
             'score_data': [self._positive_score(reason='stage2', dept=3.0, pers=2.0)],
         })
@@ -568,7 +569,7 @@ class ReviewMutationVersionCompatibilityTest(_ReviewMutationCompatibilityBase):
         self.assertEqual(v2_after.course_feedback, 'feedback-base')
         self.assertEqual(v3.id, v3_id)
         self.assertEqual(v3.status, '中心已审核')
-        self.assertEqual(v3.course_feedback, 'feedback-stage2')
+        self.assertEqual(v3.course_feedback, 'feedback-stage2 ' * 4)
         logical_id = form.id
         for row in rows:
             self.assertEqual(row.unique_id, logical_id)
@@ -596,7 +597,7 @@ class ReviewMutationVersionCompatibilityTest(_ReviewMutationCompatibilityBase):
 
         self._login(self.center_admin)
         stage2 = self._submit_b(v2_id, {
-            'form_data': {'course_feedback': 'feedback-stage2'},
+            'form_data': {'course_feedback': 'feedback-stage2 ' * 4},
             'review_comment': 'center pass',
             'score_data': [],
         })
@@ -616,7 +617,7 @@ class ReviewMutationVersionCompatibilityTest(_ReviewMutationCompatibilityBase):
         self.assertEqual(base_after.unique_id, form.id)
         self.assertEqual(v2_after.id, v2_id)
         self.assertEqual(v2_after.status, '中心已审核')
-        self.assertEqual(v2_after.course_feedback, 'feedback-stage2')
+        self.assertEqual(v2_after.course_feedback, 'feedback-stage2 ' * 4)
         self.assertEqual(v2_after.unique_id, form.id)
         self.assertIs(base.get_latest_version(), v2_after)
 
@@ -643,7 +644,7 @@ class ReviewMutationVersionCompatibilityTest(_ReviewMutationCompatibilityBase):
 
         self._login(self.center_admin)
         stage2 = self._submit_b(v2_id, {
-            'form_data': {'course_feedback': 'feedback-stage2'},
+            'form_data': {'course_feedback': 'feedback-stage2 ' * 4},
             'review_comment': 'center pass',
             'score_data': [self._positive_score(reason='stage2', dept=3.0, pers=2.0)],
         })
@@ -661,7 +662,7 @@ class ReviewMutationVersionCompatibilityTest(_ReviewMutationCompatibilityBase):
         self.assertEqual(base_after.status, '待审核')
         self.assertEqual(v2_after.id, v2_id)
         self.assertEqual(v2_after.status, '中心已审核')
-        self.assertEqual(v2_after.course_feedback, 'feedback-stage2')
+        self.assertEqual(v2_after.course_feedback, 'feedback-stage2 ' * 4)
         records = ScoreRecord.query.filter_by(form_id=v2_id).all()
         self.assertEqual(len(records), 1)
         record = records[0]
@@ -856,7 +857,7 @@ class ReviewMutationTransactionCompatibilityTest(_ReviewMutationCompatibilityBas
         self.assertEqual(response.status_code, 500)
         body = response.get_json()
         self.assertFalse(body['success'])
-        self.assertTrue(body['message'].startswith('审核提交失败：score item fault'))
+        self.assertEqual(body['message'], '审核提交失败，请稍后重试')
         rows = self._logical_rows(form)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].status, '待审核')
@@ -886,7 +887,7 @@ class ReviewMutationTransactionCompatibilityTest(_ReviewMutationCompatibilityBas
         self.assertEqual(response.status_code, 500)
         body = response.get_json()
         self.assertFalse(body['success'])
-        self.assertEqual(body['message'], 'score item fault')
+        self.assertEqual(body['message'], '审核提交失败，请稍后重试')
         rows = self._logical_rows(form)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].status, '待审核')
@@ -914,7 +915,7 @@ class ReviewMutationTransactionCompatibilityTest(_ReviewMutationCompatibilityBas
         self.assertEqual(response.status_code, 500)
         body = response.get_json()
         self.assertFalse(body['success'])
-        self.assertTrue(body['message'].startswith('审核提交失败：commit fault'))
+        self.assertEqual(body['message'], '审核提交失败，请稍后重试')
         rows = self._logical_rows(form)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].status, '待审核')
@@ -933,7 +934,7 @@ class ReviewMutationTransactionCompatibilityTest(_ReviewMutationCompatibilityBas
         self.assertEqual(response.status_code, 500)
         body = response.get_json()
         self.assertFalse(body['success'])
-        self.assertEqual(body['message'], 'commit fault')
+        self.assertEqual(body['message'], '审核提交失败，请稍后重试')
         rows = self._logical_rows(form)
         self.assertEqual(len(rows), 1)
         self.assertEqual(ScoreRecord.query.count(), 0)
@@ -959,7 +960,7 @@ class ReviewMutationTransactionCompatibilityTest(_ReviewMutationCompatibilityBas
         self.assertEqual(response.status_code, 500)
         body = response.get_json()
         self.assertFalse(body['success'])
-        self.assertTrue(body['message'].startswith('审核提交失败：draft fault'))
+        self.assertEqual(body['message'], '审核提交失败，请稍后重试')
         self.assertEqual(len(self._logical_rows(form)), 1)
         self.assertEqual(ScoreRecord.query.count(), 0)
         self.assertTrue(self._draft_exists(form.id))
@@ -977,7 +978,7 @@ class ReviewMutationTransactionCompatibilityTest(_ReviewMutationCompatibilityBas
         self.assertEqual(response.status_code, 500)
         body = response.get_json()
         self.assertFalse(body['success'])
-        self.assertEqual(body['message'], 'draft fault')
+        self.assertEqual(body['message'], '审核提交失败，请稍后重试')
         self.assertEqual(len(self._logical_rows(form)), 1)
         self.assertTrue(self._draft_exists(form.id))
 
@@ -1027,21 +1028,15 @@ class ReviewMutationResponseCompatibilityTest(_ReviewMutationCompatibilityBase):
         self.assertEqual(body['modified_fields'], [])
 
     def test_partial_empty_form_data_route_a_fails_without_mutation(self):
-        """LD-6 substance still DEFERRED (8B-P1): omitted fields become None,
-        hit NOT NULL at flush, and surface as a server-style failure with zero
-        mutation — the input-validation gap is not fixed here.  The envelope
-        changed from HTTP 200 to HTTP 500 as a mechanical LD-2 ripple (this
-        path exits through A's outer except); the deferred part is the missing
-        proper 400 validation, not the status code.
-        (EXPECTED_DEFECT_CONTRACT_CHANGE: envelope only)"""
+        """Incomplete replacement payloads return field errors before mutation."""
         form = self._make_form(self.officer)
         self._login(self.dept_admin)
         response = self._submit_a(form.id, {'form_data': {}, 'review_comment': ''})
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 400)
         body = response.get_json()
         self.assertFalse(body['success'])
-        self.assertTrue(body['message'].startswith('审核提交失败：'))
-        self.assertIn('NOT NULL constraint failed', body['message'])
+        self.assertEqual(body['code'], 'invalid_form')
+        self.assertIn('teacher_name', body['field_errors'])
         rows = self._logical_rows(form)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].status, '待审核')
@@ -1080,7 +1075,7 @@ class ReviewMutationResponseCompatibilityTest(_ReviewMutationCompatibilityBase):
         form = self._make_form(self.officer)
         self._login(self.dept_admin)
         response = self._submit_a(form.id, {
-            'form_data': self._full_form_data(form, course_feedback='changed'),
+            'form_data': self._full_form_data(form, course_feedback='changed feedback ' * 4),
             'score_data': [],
         })
         self.assertEqual(response.status_code, 200)
@@ -1105,7 +1100,7 @@ class ReviewMutationResponseCompatibilityTest(_ReviewMutationCompatibilityBase):
         form = self._make_form(self.officer)
         self._login(self.dept_admin)
         response = self._submit_b(form.id, {
-            'form_data': {'course_feedback': 'changed'},
+            'form_data': {'course_feedback': 'changed feedback ' * 4},
         })
         self.assertEqual(response.status_code, 200)
         new_form = form.get_latest_version()
@@ -1119,8 +1114,8 @@ class ReviewMutationResponseCompatibilityTest(_ReviewMutationCompatibilityBase):
         """Section 十四 adapter divergence: the same semantic request using
         lecture_date_display/start_period/end_period INSTEAD OF raw
         lecture_date/class_period succeeds on B with computed values, but on A
-        the raw fields resolve to None -> NOT NULL -> HTTP 200 wrapped failure
-        with zero mutation. (UNKNOWN_POLICY: adapter difference)"""
+        the raw fields remain missing and now fail field validation before any
+        mutation. (UNKNOWN_POLICY: adapter difference)"""
         form = self._make_form(self.officer)
         adapter_data = {
             'lecture_date_display': '2026/06/05',
@@ -1138,10 +1133,9 @@ class ReviewMutationResponseCompatibilityTest(_ReviewMutationCompatibilityBase):
             'review_comment': 'x',
             'score_data': [],
         })
-        # LD-2 ripple (8B-P1): A's outer-except envelope is now 500; the
-        # deferred substance is unchanged — A does not understand the adapter
-        # fields and fails with zero mutation instead of validating.
-        self.assertEqual(response_a.status_code, 500)
+        # Route A requires its canonical fields; adapter aliases cannot bypass
+        # the strict field validation boundary.
+        self.assertEqual(response_a.status_code, 400)
         self.assertFalse(response_a.get_json()['success'])
         self.assertEqual(len(self._logical_rows(form)), 1)
 

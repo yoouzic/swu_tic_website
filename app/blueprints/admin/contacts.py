@@ -148,6 +148,19 @@ def download_passwords(filename):
     return redirect(url_for('admin.super_admin_dashboard'))
 
 
+class ContactIdentityConflict(ValueError):
+    """A personnel number belongs to a different student identity."""
+
+
+def _contact_identity_conflict(number, student_id):
+    """Use the same identity rule for preview and the execution preflight."""
+    by_student = User.query.filter_by(student_id=student_id).first()
+    by_number = User.query.filter_by(number=number).first()
+    if by_number is not None and (by_student is None or by_number.id != by_student.id):
+        return f'编号{number}已属于其他学号，不能覆盖，请核对编号和学号'
+    return None
+
+
 @admin_bp.route('/preview_import', methods=['POST'])
 @role_required('超级管理员')
 def preview_import():
@@ -179,6 +192,8 @@ def preview_import():
         errors = []
         preview_rows = []
         valid_rows = 0
+        seen_numbers = set()
+        seen_student_ids = set()
 
         for i, row in df.iterrows():
             rec = {col: str(row[col]).strip() for col in expected_cols}
@@ -214,6 +229,15 @@ def preview_import():
             # 重复检查（以学号判定）
             existing_user_by_sid = User.query.filter_by(student_id=student_id).first()
             is_duplicate = existing_user_by_sid is not None
+            conflict = _contact_identity_conflict(rec['编号'], student_id)
+            if conflict:
+                row_errors.append(conflict)
+            if rec['编号'] in seen_numbers:
+                row_errors.append('文件内编号重复')
+            if student_id in seen_student_ids:
+                row_errors.append('文件内学号重复')
+            seen_numbers.add(rec['编号'])
+            seen_student_ids.add(student_id)
 
             preview_rows.append({
                 'row_number': i + 1,
@@ -284,9 +308,15 @@ def _cleanup_generated_password_file(path):
 def confirm_import():
     """确认导入到数据库，生成随机密码并保存哈希，返回总用户数"""
     current_app.logger.info('通讯录导入开始')
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': '请求数据必须为JSON对象'}), 400
     import_id = data.get('import_id')
-    overwrite = bool(data.get('overwrite', False))
+    overwrite = data.get('overwrite', False)
+    if not isinstance(overwrite, bool):
+        return jsonify({'success': False, 'message': 'overwrite必须为布尔值'}), 400
+    if not isinstance(import_id, str) or not import_id:
+        return jsonify({'success': False, 'message': '导入会话已失效，请重新预览'}), 400
 
     # 所有权先行：同一 import_id 只有一个 confirm winner（durable claim，
     # CAS UPDATE 所有权，崩溃后 lease 到期可恢复）。
@@ -325,6 +355,20 @@ def confirm_import():
         skipped_count = 0
         password_list = []
 
+        # Preview is advisory: recheck the complete valid batch before any writes.
+        seen_numbers = set()
+        seen_student_ids = set()
+        for r in rows:
+            if r['has_error']:
+                continue
+            conflict = _contact_identity_conflict(r['number'], r['student_id'])
+            if conflict:
+                raise ContactIdentityConflict(conflict)
+            if r['number'] in seen_numbers or r['student_id'] in seen_student_ids:
+                raise ContactIdentityConflict('文件内编号或学号重复，请重新预览')
+            seen_numbers.add(r['number'])
+            seen_student_ids.add(r['student_id'])
+
         for r in rows:
             if r['has_error']:
                 skipped_count += 1
@@ -336,7 +380,8 @@ def confirm_import():
                 if not overwrite:
                     skipped_count += 1
                     continue
-                # 更新信息并重置密码
+                # 通讯录不能降级管理员或重置管理员凭据。
+                preserve_admin_credentials = user.role in ('管理员', '超级管理员')
                 user.number = r['number']
                 user.department = r['department']
                 user.name = r['name']
@@ -347,7 +392,8 @@ def confirm_import():
                 user.dormitory = r['dormitory']
                 user.phone = r['phone']
                 user.qq = r['qq']
-                user.role = r['role']
+                if not preserve_admin_credentials:
+                    user.role = r['role']
                 user.group = r['group']
                 # 保障部门/小组存在，并同步真实 group_id
                 if user.department and not Department.query.filter_by(name=user.department).first():
@@ -356,64 +402,27 @@ def confirm_import():
                     if not Group.query.filter_by(name=user.group, department=user.department).first() and user.group not in ['待分配', UNASSIGNED_GROUP_NAME]:
                         db.session.add(Group(name=user.group, department=user.department))
                 user.group_id = _resolve_group_id_for_import(user)
-                password = generate_random_password()
-                user.password_hash = generate_password_hash(password)
-                record_password_audit(
-                    actor_user_id=actor_user_id,
-                    target_user_id=user.id,
-                    action='import_overwrite_reset_password',
-                    details={'match_type': 'student_id', 'overwrite': True}
-                )
                 updated_count += 1
-                password_list.append({
-                    'number': user.number,
-                    'name': user.name,
-                    'student_id': user.student_id,
-                    'password': password
-                })
-            else:
-                # 编号重复处理
-                existed_by_number = User.query.filter_by(number=r['number']).first()
-                if existed_by_number:
-                    if not overwrite:
-                        skipped_count += 1
-                        continue
-                    # 按编号更新该用户
-                    user = existed_by_number
-                    user.department = r['department']
-                    user.name = r['name']
-                    user.gender = r['gender']
-                    user.grade = r['grade']
-                    user.college = r['college']
-                    user.major = r['major']
-                    user.dormitory = r['dormitory']
-                    user.phone = r['phone']
-                    user.qq = r['qq']
-                    user.student_id = r['student_id']
-                    user.role = r['role']
-                    user.group = r['group']
-                    # 保障部门/小组存在，并同步真实 group_id
-                    if user.department and not Department.query.filter_by(name=user.department).first():
-                        db.session.add(Department(name=user.department))
-                    if user.group and user.department:
-                        if not Group.query.filter_by(name=user.group, department=user.department).first() and user.group not in ['待分配', UNASSIGNED_GROUP_NAME]:
-                            db.session.add(Group(name=user.group, department=user.department))
-                    user.group_id = _resolve_group_id_for_import(user)
+                if not preserve_admin_credentials:
                     password = generate_random_password()
                     user.password_hash = generate_password_hash(password)
                     record_password_audit(
                         actor_user_id=actor_user_id,
                         target_user_id=user.id,
                         action='import_overwrite_reset_password',
-                        details={'match_type': 'number', 'overwrite': True}
+                        details={'match_type': 'student_id', 'overwrite': True}
                     )
-                    updated_count += 1
                     password_list.append({
                         'number': user.number,
                         'name': user.name,
                         'student_id': user.student_id,
                         'password': password
                     })
+            else:
+                # 身份仅按学号匹配，编号不能覆盖另一人。
+                existed_by_number = User.query.filter_by(number=r['number']).first()
+                if existed_by_number:
+                    raise ContactIdentityConflict(f"编号{r['number']}已属于其他学号，不能覆盖")
                 else:
                     # 新增用户
                     password = generate_random_password()
@@ -488,6 +497,11 @@ def confirm_import():
             },
         )
         db.session.commit()
+    except ContactIdentityConflict as e:
+        db.session.rollback()
+        _cleanup_generated_password_file(export_path)
+        release_import_preview_claim(claim)
+        return jsonify({'success': False, 'message': f'导入冲突：{str(e)}'}), 400
     except Exception as e:
         db.session.rollback()
         _cleanup_generated_password_file(export_path)

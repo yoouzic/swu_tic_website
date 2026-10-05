@@ -8,6 +8,6 @@ user_bp = Blueprint(
     url_prefix='/user',
 )
 
-from . import forms, profile, reservations  # noqa: E402,F401
+from . import forms, listening_assistant, site_capture, profile, reservations, course_lookup  # noqa: E402,F401
 
 __all__ = ['user_bp']

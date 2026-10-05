@@ -43,10 +43,12 @@ def create_app(config_override: dict | None = None):
         User,
     )
     from app.utils.user_status import is_user_active
+    from app.utils.submission_permissions import can_submit_lecture_form
     from app.utils.manage_permissions import get_user_manage_permission
     from app.utils.review_permissions import get_user_review_permission
     from app.utils.storage_cleanup import run_scheduled_storage_cleanup
     from app.ui.navigation import build_navigation, resolve_page_label
+    from app.services.schedule_availability import current_schedule_availability
 
     app = Flask(__name__)
 
@@ -71,6 +73,7 @@ def create_app(config_override: dict | None = None):
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.abspath(DB_PATH)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['UPLOAD_FOLDER'] = env_path('UPLOAD_FOLDER', DEFAULT_UPLOAD_FOLDER)
+    app.config['LECTURE_CAPTURE_ENABLED'] = env_bool('LECTURE_CAPTURE_ENABLED', default=False)
     MAX_CONTENT_LENGTH_MB = env_int('MAX_CONTENT_LENGTH_MB', 16, minimum=1)
     app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH_MB * 1024 * 1024
     app.config['DEBUG'] = env_bool('FLASK_DEBUG', False)
@@ -131,6 +134,12 @@ def create_app(config_override: dict | None = None):
 
     # 4. Extensions
     db.init_app(app)
+    from app.services.registration_course_identity import ensure_registration_course_identity_schema
+    with app.app_context():
+        ensure_registration_course_identity_schema()
+    with app.app_context():
+        from app.services.lecture_form_draft_entry_schema import ensure_lecture_form_draft_entry_schema
+        ensure_lecture_form_draft_entry_schema()
     csrf.init_app(app)
 
     @app.errorhandler(CSRFError)
@@ -169,6 +178,9 @@ def create_app(config_override: dict | None = None):
     from app.review_automation import init_review_automation
     init_review_automation(app)
 
+    from app.services.listening_assistant_cli import register_cli as register_listening_assistant_cli
+    register_listening_assistant_cli(app)
+
     # 7. Runtime directories
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -183,6 +195,7 @@ def create_app(config_override: dict | None = None):
             return {
                 'current_user': AnonymousUser(),
                 'app_navigation': [],
+                'app_can_submit_lecture_form': False,
                 'current_endpoint': request.endpoint or '',
             }
 
@@ -190,7 +203,14 @@ def create_app(config_override: dict | None = None):
         review_permission = get_user_review_permission(user.id) if user.role == '管理员' else None
         manage_permission = get_user_manage_permission(user.id) if user.role == '管理员' else None
         current_endpoint = request.endpoint or ''
-        app_navigation = build_navigation(user, current_endpoint, review_permission, manage_permission)
+        submission_allowed = can_submit_lecture_form(user)
+        schedule_availability = current_schedule_availability()
+        app_navigation = build_navigation(
+            user, current_endpoint, review_permission, manage_permission,
+            submission_allowed=submission_allowed,
+            schedule_ready=schedule_availability['candidates_ready'],
+            registration_ready=schedule_availability['registration_ready'],
+        )
         is_information_officer = user.role == '信息员'
         contextual_search_endpoints = {
             'admin.manage_departments',
@@ -202,10 +222,13 @@ def create_app(config_override: dict | None = None):
             'user.listening_registration',
             'user.course_feedback_management',
             'user.my_forms',
+            'user.course_lookup',
         }
         return {
             'current_user': user,
             'app_navigation': app_navigation,
+            'app_can_submit_lecture_form': submission_allowed,
+            'schedule_availability': schedule_availability,
             'current_endpoint': current_endpoint,
             'page_label': resolve_page_label(app_navigation, current_endpoint),
             'app_search_endpoint': 'user.my_forms' if is_information_officer else 'admin.view_forms',
@@ -230,6 +253,12 @@ def init_database():
     from app.models import Department, Permission
     with app.app_context():
         db.create_all()
+        from app.services.registration_course_identity import ensure_registration_course_identity_schema
+        ensure_registration_course_identity_schema()
+        from app.services.lecture_form_draft_entry_schema import ensure_lecture_form_draft_entry_schema
+        ensure_lecture_form_draft_entry_schema()
+        from app.services.assessment_override_schema import ensure_assessment_override_schema
+        ensure_assessment_override_schema()
 
         # 创建默认部门
         if not Department.query.first():

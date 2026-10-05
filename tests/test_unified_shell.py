@@ -22,27 +22,25 @@ class UnifiedShellTest(unittest.TestCase):
         self.assertNotIn("setAttribute('target', '_blank')", template)
         self.assertNotIn('code.jquery.com', template)
 
-    def test_design_tokens_are_charcoal_and_brick(self):
+    def test_controls_share_semantic_theme_tokens(self):
         css = Path('app/static/css/style.css').read_text(encoding='utf-8')
-        self.assertIn('--color-nav: #292d2b', css)
-        self.assertIn('--color-accent: #9b493c', css)
         self.assertIn('--bs-primary: var(--color-accent)', css)
-        self.assertIn('--bs-info: #7a6b55', css)
+        self.assertIn('--bs-info: var(--color-accent)', css)
         self.assertIn('--bs-gradient: none', css)
         self.assertIn('background-color: var(--color-accent) !important', css)
-        self.assertIn('background-color: #e8e2de !important', css)
+        self.assertIn('background-color: var(--color-accent-soft) !important', css)
         self.assertIn('overflow-wrap: anywhere', css)
         self.assertNotIn('#667eea', css)
         self.assertNotIn('linear-gradient', css)
 
-    def test_checked_form_controls_use_explicit_brick_mapping(self):
+    def test_checked_form_controls_use_theme_without_overriding_validation(self):
         css = Path('app/static/css/style.css').read_text(encoding='utf-8')
         checked_start = css.index('.form-check-input:checked')
         checked_block = css[checked_start:checked_start + 520]
         self.assertIn('background-color: var(--color-accent) !important', checked_block)
         self.assertIn('border-color: var(--color-accent-strong) !important', checked_block)
         self.assertIn('.form-check-input:focus', css)
-        self.assertIn('box-shadow: 0 0 0 .2rem rgb(155 73 60 / .2) !important', css)
+        self.assertIn('box-shadow: var(--focus-ring) !important', css)
         self.assertIn('.form-check-input.is-invalid:checked', css)
         self.assertIn('.form-check-input.is-valid:checked', css)
 

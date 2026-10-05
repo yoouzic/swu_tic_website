@@ -272,13 +272,13 @@ const departmentChart = new Chart(ctx, {
         datasets: [{
             data: {{ department_stats.data | tojson }},
             backgroundColor: [
-                '#9b493c',
-                '#28a745',
-                '#ffc107',
-                '#dc3545'
+                '#465a70',
+                getComputedStyle(document.documentElement).getPropertyValue('--chart-success').trim(),
+                getComputedStyle(document.documentElement).getPropertyValue('--chart-warning').trim(),
+                getComputedStyle(document.documentElement).getPropertyValue('--chart-danger').trim()
             ],
             borderWidth: 2,
-            borderColor: '#fff'
+            borderColor: '#f4f2ec'
         }]
     },
     options: {

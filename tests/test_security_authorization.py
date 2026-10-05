@@ -19,6 +19,7 @@ from app.models import (
 )
 from app.utils.review_permissions import get_reviewable_users
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
+from tests.review_request_utils import with_opened_review_revision, post_opened_review
 
 ROLE_INFO = '信息员'
 ROLE_ADMIN = '管理员'
@@ -172,7 +173,7 @@ class SecurityAuthorizationTest(unittest.TestCase):
             sess['user_name'] = user.name
 
     def _review_payload(self, form, extra_listener_number=None):
-        return {
+        return with_opened_review_revision(self.client, form.id, {
             'form_data': {
                 'listener_name': form.listener_name,
                 'listener_number': extra_listener_number or form.listener_number,
@@ -200,7 +201,7 @@ class SecurityAuthorizationTest(unittest.TestCase):
             },
             'review_comment': '通过',
             'score_data': [],
-        }
+        })
 
     # ---- P0-1 submit review ----
     def test_submit_review_cross_department_forbidden(self):
@@ -245,7 +246,7 @@ class SecurityAuthorizationTest(unittest.TestCase):
     def test_reject_same_department_pending_success(self):
         self._login(self.department_admin_a)
         form = self._make_form(self.officer_a, status='待审核')
-        response = self.client.post(f'/admin/api/review/reject/{form.id}', json={'reason': '需要补充'})
+        response = post_opened_review(self.client, f'/admin/api/review/reject/{form.id}', json={'reason': '需要补充'})
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertTrue(data.get('success'))

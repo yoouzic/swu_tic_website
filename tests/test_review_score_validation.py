@@ -23,6 +23,7 @@ from app.services.review_scores import (
     normalize_score_items,
 )
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
+from tests.review_request_utils import post_opened_review
 
 
 class ScoreNormalizerTests(unittest.TestCase):
@@ -315,7 +316,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{form.id}',
             json={
                 'score_data': [
@@ -333,7 +334,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/form/{form.id}',
             json={
                 'form_data': {},
@@ -352,7 +353,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/form/{form.id}',
             json={
                 'form_data': {},
@@ -381,7 +382,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         db.session.commit()
         draft = self._add_review_draft(form)
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{form.id}',
             data={'score_data': '{broken-json'},
             content_type='application/x-www-form-urlencoded',
@@ -400,7 +401,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{form.id}',
             json={
                 'score_data': [
@@ -416,7 +417,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{form.id}',
             json={
                 'score_data': [
@@ -432,7 +433,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/form/{form.id}',
             json={
                 'form_data': {},
@@ -449,7 +450,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{form.id}',
             json={
                 'form_data': {
@@ -494,7 +495,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{form.id}',
             json={
                 'form_data': {
@@ -539,7 +540,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{form.id}',
             data='null',
             content_type='application/json',
@@ -552,7 +553,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{form.id}',
             data='[]',
             content_type='application/json',
@@ -565,7 +566,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{form.id}',
             data='{broken',
             content_type='application/json',
@@ -578,7 +579,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/form/{form.id}',
             data='null',
             content_type='application/json',
@@ -591,7 +592,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/form/{form.id}',
             data='[]',
             content_type='application/json',
@@ -604,7 +605,7 @@ class ScoreRouteValidationTests(unittest.TestCase):
         form = self._form(status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/form/{form.id}',
             data='{broken',
             content_type='application/json',

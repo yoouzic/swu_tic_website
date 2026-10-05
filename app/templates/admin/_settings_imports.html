@@ -61,7 +61,14 @@
     function showFilePicker() { fileInput.click(); }
     function resetUpload() { selectedFile = null; fileInput.value = ''; importBtn.disabled = true; progressContainer.hidden = true; resultContainer.hidden = true; }
     function handleFileSelect(file) { selectedFile = file; importBtn.disabled = false; uploadArea.querySelector('h3').textContent = `已选择文件：${file.name}`; }
-    ['click', 'keydown'].forEach((eventName) => uploadArea.addEventListener(eventName, (event) => { if (eventName === 'click' || event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showFilePicker(); } }));
+    uploadArea.addEventListener('click', (event) => {
+        if (event.target === fileInput) return;
+        event.preventDefault(); showFilePicker();
+    });
+    uploadArea.addEventListener('keydown', (event) => {
+        if (event.target !== uploadArea) return;
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showFilePicker(); }
+    });
     document.getElementById('chooseScheduleFile').addEventListener('click', (event) => { event.stopPropagation(); showFilePicker(); });
     fileInput.addEventListener('change', (event) => { if (event.target.files?.[0]) handleFileSelect(event.target.files[0]); });
     uploadArea.addEventListener('dragover', (event) => { event.preventDefault(); uploadArea.classList.add('dragover'); });
@@ -76,9 +83,13 @@
             progressBar.style.width = '50%'; progressText.textContent = '格式验证通过，正在导入数据...';
             return fetch('{{ url_for('admin.import_schedule_data') }}', {method: 'POST', body: formData});
         }).then((response) => response.json()).then((data) => {
-            resultContainer.hidden = false; progressBar.style.width = '100%'; progressText.textContent = data.success ? '导入完成' : '导入失败'; resultAlert.className = `alert alert-${data.success ? 'success' : 'danger'}`;
-            resultContent.innerHTML = data.success ? `<h3 class="fs-6">导入成功</h3><p>共处理 ${data.stats.total_rows} 行，新增教师 ${data.stats.teachers_added} 人，新增课程 ${data.stats.courses_added} 门。</p>` : `<h3 class="fs-6">导入失败</h3><p>${data.message || '请检查文件后重试。'}</p>`;
-            if (data.success) feedback('课表导入成功', 'success');
+            const errors = data.stats?.errors || data.errors || [];
+            const succeeded = Boolean(data.success) && errors.length === 0;
+            resultContainer.hidden = false; progressBar.style.width = '100%'; progressText.textContent = succeeded ? '导入完成' : '导入失败'; resultAlert.className = `alert alert-${succeeded ? 'success' : 'danger'}`;
+            const message = succeeded ? `导入成功\n共处理 ${data.stats.total_rows} 行，新增教师 ${data.stats.teachers_added} 人，新增课程 ${data.stats.courses_added} 门，跳过重复课程 ${data.stats.courses_skipped_duplicate || 0} 行。` : `导入失败\n${data.success ? '发现行错误，请检查文件后重新导入。' : (data.message || '请检查文件后重试。')}`;
+            resultContent.style.whiteSpace = 'pre-wrap';
+            resultContent.textContent = [message, ...errors.filter((error) => !message.includes(error))].join('\n');
+            feedback(succeeded ? '课表导入成功' : '课表导入失败，请查看错误明细', succeeded ? 'success' : 'error');
         }).catch((error) => { resultContainer.hidden = false; progressBar.style.width = '100%'; progressText.textContent = '导入失败'; resultAlert.className = 'alert alert-danger'; resultContent.textContent = error.message; feedback(error.message, 'error'); }).finally(() => { importBtn.disabled = false; });
     });
     document.getElementById('confirmClearBtn').addEventListener('click', async (event) => {

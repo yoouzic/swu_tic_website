@@ -65,20 +65,41 @@ class UserPackageArchitectureTests(unittest.TestCase):
             for node in tree.body:
                 if isinstance(node, ast.FunctionDef):
                     functions[node.name] = path.name
-        self.assertEqual(len(functions), 28)
+        self.assertEqual(len(functions), 83)
         expected = {
+            '_is_draft_scalar', '_normalize_assistant_draft_payload',
+            '_extract_assistant_submission_payload',
             '_load_lecture_form_draft', '_delete_lecture_form_draft',
             '_parse_draft_payload', '_normalize_draft_payload',
             '_normalize_submission_value', '_build_submission_signature',
             '_find_recent_duplicate_submission', 'profile', 'lecture_form_draft',
-            'edit_profile', '_build_activity_records', 'my_forms',
+            'edit_profile', '_build_activity_records', 'my_forms', 'course_lookup',
             'delete_form', 'submit_form', 'edit_form', 'success', 'view_form',
             'listening_registration', 'course_feedback_management',
             'api_available_courses', 'api_course_registration_history',
             'api_create_reservation', 'api_cancel_reservation',
             'api_my_reservations', 'api_update_my_reservation',
             'api_delete_my_reservation', 'api_unused_reservations',
-            'api_time_suggestion',
+            'api_time_suggestion', '_envelope', '_error_response',
+            '_assistant_login_required', '_clean_text', '_parse_date',
+            '_coalesce_alias_values',
+            '_normalize_rejected_ids', '_query_rejected_ids', '_json_object',
+            '_required_batch_id', '_build_query', '_normalize_confirm_query',
+            '_normalize_selection_payload', '_public_confirmation',
+            '_expected_selection_error', 'listening_assistant_candidates',
+            'listening_assistant_fallback', 'listening_assistant_confirm',
+            '_configured_assistant_semester', '_contains_guide_sensitive_text',
+            '_draft', '_enabled', '_folder', '_form_edit_data', '_guide_optional_text',
+            '_guide_service', '_guide_text', '_is_expected_guide_value_error',
+            '_normalize_guide_history', '_normalize_guide_state', '_owned', '_public',
+            '_public_guide_result', '_query', '_render_submitted_form',
+            '_require_exact_fields', '_schedule_building_codes',
+            'listening_assistant_guide_answer', 'listening_assistant_guide_start',
+            'listening_assistant_page_defaults', 'site_capture_confirm',
+            'site_capture_context', 'site_capture_location', 'site_capture_map',
+            'site_capture_ocr_region', 'site_capture_photo', 'site_capture_records',
+            'site_capture_resume', 'site_capture_settings', 'site_capture_suggestions',
+            'site_capture_upload',
         }
         self.assertEqual(set(functions), expected)
         self.assertEqual(len(functions), len(expected))

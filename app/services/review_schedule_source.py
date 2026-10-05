@@ -285,13 +285,17 @@ def _try_legacy_fallback() -> ReviewScheduleSourceResolution:
 
 def resolve_review_schedule_source(
     explicit_schedule_path: Optional[str] = None,
+    *,
+    allow_unconfigured_legacy_fallback: bool = True,
 ) -> ReviewScheduleSourceResolution:
     """Resolve the final review schedule source decision.
 
     This is the single boundary shared by AutoReviewEngine and reference-data
     orchestration.  Explicit path wins; canonical READY requires complete
     scalar metadata; configured non-READY or incomplete states fail closed;
-    legacy fallback is eligible only when current semester is unset.
+    legacy fallback is eligible only when current semester is unset and the
+    compatibility flag permits it. Current-form review passes False; explicit
+    historical paths remain independent of this flag.
     """
     if explicit_schedule_path:
         df = _read_excel(explicit_schedule_path)
@@ -325,7 +329,8 @@ def resolve_review_schedule_source(
         )
 
     if selection.status == CURRENT_SEMESTER_UNSET:
-        return _try_legacy_fallback()
+        if allow_unconfigured_legacy_fallback:
+            return _try_legacy_fallback()
 
     return ReviewScheduleSourceResolution(
         kind=NONE,

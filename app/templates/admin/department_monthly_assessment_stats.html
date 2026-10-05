@@ -15,8 +15,9 @@
         </button>
     </div>
 
-    <div class="alert alert-warning">
+    <div class="alert alert-warning alert-dismissible" role="note">
         考评情况为系统根据当前考评规则和数据自动给出，不代表真实考评情况，请认真核实，建议核实无误后保存或导出数据。
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭统计说明"></button>
     </div>
 
     <div class="statistics-tool-grid statistics-tool-grid--single">
@@ -37,6 +38,7 @@
                 <button class="btn btn-outline-secondary" id="btnLoadSnapshot">加载历史</button>
             </div>
             <div class="mt-3" id="monthInfoAlert"></div>
+            <div class="alert alert-warning mt-3 mb-0" id="monthScopeWarning" role="status" hidden></div>
         </div>
     </section>
     </div>
@@ -180,6 +182,9 @@ function buildMonthlyQuery(startDate, endDate, departments) {
 
 function renderMonthInfo(meta) {
     const alertEl = document.getElementById('monthInfoAlert');
+    const scopeWarning = document.getElementById('monthScopeWarning');
+    scopeWarning.textContent = meta?.scope_warning || '';
+    scopeWarning.hidden = !meta?.scope_warning;
     if (!meta) {
         alertEl.innerHTML = '';
         return;

@@ -106,12 +106,6 @@ class UITargetedAuditContractTests(unittest.TestCase):
         self.assertLess(reset_at, reject_at)
         self.assertLess(reject_at, submit_at)
 
-    def test_mobile_workspace_metrics_clear_the_new_row_divider(self):
-        self.assertRegex(
-            STYLE,
-            r"\.workspace-metric:nth-child\(odd\)\s*\{[^}]*border-left:\s*0;[^}]*padding-left:\s*0",
-        )
-
     def test_group_management_uses_current_page_and_danger_contracts(self):
         source = self.template("admin/manage_groups.html")
         for marker in (

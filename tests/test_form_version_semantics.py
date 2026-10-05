@@ -20,6 +20,7 @@ from app.models import (
     db,
 )
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
+from tests.review_request_utils import post_opened_review
 
 BASE_TIME = datetime(2026, 1, 1, 12, 0, 0)
 
@@ -214,7 +215,7 @@ class FormVersionRouteTests(unittest.TestCase):
         original = self._form(100, None, self.info.number, status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/form/{original.id}',
             json={},
         )
@@ -233,7 +234,7 @@ class FormVersionRouteTests(unittest.TestCase):
         child = self._form(101, 100, self.info.number, status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{base.id}',
             json={},
         )
@@ -285,7 +286,7 @@ class FormVersionRouteTests(unittest.TestCase):
         original, registration = self._form_with_registration(
             100, self.info.number)
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{original.id}',
             json=self._submit_review_payload(original),
         )
@@ -299,7 +300,7 @@ class FormVersionRouteTests(unittest.TestCase):
         original, registration = self._form_with_registration(
             100, self.info.number)
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/form/{original.id}',
             json={},
         )
@@ -312,7 +313,7 @@ class FormVersionRouteTests(unittest.TestCase):
         original, registration = self._form_with_registration(
             100, self.info.number)
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/reject/{original.id}',
             json={'reason': 'x'},
         )
@@ -329,7 +330,7 @@ class FormVersionRouteTests(unittest.TestCase):
         payload['score_data'] = [
             {'reason': 'x', 'department_score': 'abc', 'personal_score': 0}
         ]
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/submit/{original.id}',
             json=payload,
         )
@@ -343,7 +344,7 @@ class FormVersionRouteTests(unittest.TestCase):
         original = self._form(100, None, self.info.number, status='待审核')
         db.session.commit()
         self._login(self.dept_manager)
-        response = self.client.post(
+        response = post_opened_review(self.client,
             f'/admin/api/review/form/{original.id}',
             json={
                 'form_data': {},

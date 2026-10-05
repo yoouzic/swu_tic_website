@@ -4,15 +4,19 @@
 
 {% block content %}
 <div class="auth-layout">
-    <section class="auth-intro">
-        <span class="auth-kicker">西南大学教学信息中心</span>
-        <h1>听课、审核与教学管理，在一个工作台完成。</h1>
-        <p>面向信息员、管理员和超级管理员的校内听课业务系统。</p>
+    <section class="auth-intro" aria-labelledby="auth-intro-title">
+        <div class="auth-brand">
+            <span class="app-brand__mark" aria-hidden="true"><i class="bi bi-journal-bookmark"></i></span>
+            <div><span class="auth-kicker">西南大学教学信息中心</span><span class="auth-edition">SWU · TEACHING INFORMATION CENTER</span></div>
+        </div>
+        <h1 id="auth-intro-title">认真听见，<br><em>共同成长。</em></h1>
+        <p>记录课堂里的发现，让每一份教学反馈，成为校园向前的一小步。</p>
+        <div class="auth-note"><i class="bi bi-pencil" aria-hidden="true"></i><span>听课 · 记录 · 反馈</span></div>
     </section>
     <section class="auth-panel" aria-labelledby="login-panel-title">
         <i class="bi bi-person-check auth-panel__icon" aria-hidden="true"></i>
-        <h2 id="login-panel-title">登录工作台</h2>
-        <p>请输入系统分配的账号和密码。</p>
+        <h2 id="login-panel-title">欢迎回到工作台</h2>
+        <p>从这里，开启今天的听课与教学管理。</p>
         <form method="POST">
             <div class="mb-3">
                 <label for="student_id" class="form-label">账号或学号</label>
@@ -31,7 +35,7 @@
             </div>
 
             <div class="d-grid">
-                <button type="submit" class="btn btn-primary">登录工作台</button>
+                <button type="submit" class="btn btn-primary">登录工作台 <i class="bi bi-arrow-right" aria-hidden="true"></i></button>
             </div>
         </form>
         <button type="button" class="btn btn-link auth-help-link" data-bs-toggle="modal" data-bs-target="#helpModal">
@@ -39,6 +43,7 @@
         </button>
     </section>
 </div>
+<p class="auth-footer">西南大学 · 教学信息中心 · 校内工作平台</p>
 
 <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalTitle" aria-hidden="true">
     <div class="modal-dialog">
