@@ -62,7 +62,7 @@
                                                 <div class="mb-3">
                                                     <label for="listener_number" class="form-label">听课人编号 <span class="text-danger">*</span></label>
                                                     <input type="text" class="form-control" id="listener_number" name="listener_number" 
-                                                           value="" required>
+                                                           value="" readonly required>
                                                 </div>
                                             </div>
                                         </div>
@@ -287,7 +287,7 @@
                                                 <div class="mb-3">
                                                     <label for="course_feedback" class="form-label">课程反馈(优点) <span class="text-danger">*</span></label>
                                                     <textarea class="form-control" id="course_feedback" name="course_feedback" rows="4" 
-                                                              placeholder="五十字以上,评价的内容实在且有针对性" required></textarea>
+                                                              placeholder="五十字以上,评价的内容实在且有针对性" minlength="50" required></textarea>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
@@ -515,6 +515,7 @@ let existingScoreData = [];
 let reviewDraftTimer = null;
 let reviewDraftInterval = null;
 let reviewDraftRestoring = false;
+let reviewDraftStale = false;
 let referenceDrawerReturnFocus = null;
 
 function getReviewReturnUrl() {
@@ -572,6 +573,7 @@ function loadFormData() {
                 userPermission = data.permission;
                 userPermissionLabel = data.permission_label;
                 existingScoreData = Array.isArray(data.score_data) ? data.score_data : [];
+                populateScoreRows(existingScoreData);
                 const courseTitle = String(data.form.course_title || '').trim();
                 document.getElementById('reviewObjectTitle').textContent = courseTitle
                     ? `审核《${courseTitle}》听课表`
@@ -702,7 +704,6 @@ function detectChanges() {
     // 字段映射 - 使用正确的表单字段名称
     const fieldMap = {
         'listener_name': '听课人姓名',
-        'listener_number': '听课人工号',
         'course_changes': '课程信息变化',
         'lecture_date': '听课日期',
         'teacher_name': '授课教师',
@@ -842,8 +843,26 @@ function collectReviewDraftData() {
     return {
         form_data: collectFormData(),
         review_comment: document.getElementById('reviewComment').value || '',
-        score_data: collectScoreData()
+        score_data: collectScoreData(true)
     };
+}
+
+function populateScoreRows(scoreData) {
+    const wasRestoring = reviewDraftRestoring;
+    reviewDraftRestoring = true;
+    try {
+        document.getElementById('scoringTableBody').innerHTML = '';
+        scoreData.forEach(item => {
+            addScoringRow(
+                item.reason || '',
+                item.department_score ?? '',
+                item.personal_score ?? '',
+                item.is_auto_generated === true || item.is_auto === true
+            );
+        });
+    } finally {
+        reviewDraftRestoring = wasRestoring;
+    }
 }
 
 function applyReviewDraftData(data) {
@@ -859,19 +878,7 @@ function applyReviewDraftData(data) {
         }
         if (Array.isArray(data.score_data)) {
             existingScoreData = data.score_data;
-            const scoringBody = document.getElementById('scoringTableBody');
-            const scoringSection = document.getElementById('scoringSection');
-            if (scoringBody && scoringSection && scoringSection.style.display !== 'none') {
-                scoringBody.innerHTML = '';
-                existingScoreData.forEach(item => {
-                    addScoringRow(
-                        item.reason || '',
-                        item.department_score ?? '',
-                        item.personal_score ?? '',
-                        item.is_auto_generated === true || item.is_auto === true
-                    );
-                });
-            }
+            populateScoreRows(existingScoreData);
         }
         detectChanges();
     } finally {
@@ -888,6 +895,11 @@ async function loadReviewFormDraft() {
             return;
         }
         if (result.exists) {
+            if (result.stale) {
+                reviewDraftStale = true;
+                setReviewDraftStatus('原始表单已更新，旧审核草稿已保留，未自动恢复。请核对最新表单后重新编辑。', 'warning');
+                return;
+            }
             applyReviewDraftData(result.data);
             setReviewDraftStatus(
                 result.updated_at ? `已恢复审核草稿，保存时间：${result.updated_at}` : '已恢复审核草稿',
@@ -901,7 +913,7 @@ async function loadReviewFormDraft() {
 }
 
 async function saveReviewFormDraft() {
-    if (reviewDraftRestoring || !formId) return;
+    if (reviewDraftRestoring || reviewDraftStale || !formId) return;
     try {
         const data = collectReviewDraftData();
         setReviewDraftStatus('草稿保存中...', 'secondary');
@@ -929,6 +941,7 @@ async function saveReviewFormDraft() {
 
 function scheduleReviewFormDraftSave() {
     if (reviewDraftRestoring || !formId) return;
+    reviewDraftStale = false;
     if (reviewDraftTimer) {
         window.clearTimeout(reviewDraftTimer);
     }
@@ -989,7 +1002,9 @@ function rejectReview(event) {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                reason: reason
+                reason: reason,
+                expected_form_id: originalFormData.expected_form_id,
+                expected_form_updated_at: originalFormData.expected_form_updated_at
             })
         })
         .then(response => response.json())
@@ -1013,34 +1028,28 @@ function rejectReview(event) {
     });
 }
 
-// 提交审核
-function submitReview() {
-    // 验证必填字段 - 使用正确的字段ID（下划线命名）
-    const requiredFields = [
-        'listener_name',
-        'listener_number', 
-        'lecture_date',
-        'start_period',
-        'end_period',
-        'lecture_location',
-        'teacher_name',
-        'teacher_college',
-        'course_title',
-        'student_grade_class',
-        'abnormal_situation',
-        'teaching_method',
-        'classroom_discipline',
-        'classroom_atmosphere',
-        'courseware_quality',
-        'overall_effect',
-        'quality_case',
-        'course_feedback'
-        // 注意：不包含 'suggestions'，因为它不是必填项
-    ];
-    
-    const requiredFieldLabels = {
+function markReviewFieldErrors(fieldErrors) {
+    let firstInvalid = null;
+    Object.entries(fieldErrors).forEach(([field, message]) => {
+        const element = document.getElementById(field);
+        if (!element || element.readOnly || element.type === 'hidden') return;
+        element.setCustomValidity(message);
+        element.classList.add('is-invalid');
+        element.setAttribute('aria-invalid', 'true');
+        if (!firstInvalid) firstInvalid = element;
+    });
+    if (firstInvalid) {
+        firstInvalid.scrollIntoView({block: 'center', behavior: 'smooth'});
+        firstInvalid.focus();
+        firstInvalid.reportValidity();
+    }
+}
+
+function validateReviewForm() {
+    const form = document.getElementById('reviewForm');
+    const labels = {
         'listener_name': '听课人姓名',
-        'listener_number': '听课人工号',
+        'course_changes': '课程信息变化',
         'lecture_date': '听课日期',
         'start_period': '开始节次',
         'end_period': '结束节次',
@@ -1057,18 +1066,46 @@ function submitReview() {
         'overall_effect': '整体教学效果',
         'quality_case': '优质案例推荐',
         'course_feedback': '课程反馈',
+        'suggestions': '不足及建议',
+        'student_signature1': '学生签名1',
+        'contact_phone1': '联系电话1',
+        'student_signature2': '学生签名2',
+        'contact_phone2': '联系电话2',
     };
-    for (const fieldId of requiredFields) {
-        const element = document.getElementById(fieldId);
-        if (!element || !element.value.trim()) {
-            const label = requiredFieldLabels[fieldId]
-                || (element?.closest('.row, .mb-3')?.querySelector('label')?.textContent || fieldId);
-            setReviewFormFeedback(`请填写${label}`);
-            if (element) element.focus();
-            return;
+    const fieldErrors = {};
+    form.querySelectorAll('input, textarea, select').forEach(element => {
+        element.setCustomValidity('');
+        element.classList.remove('is-invalid');
+        element.removeAttribute('aria-invalid');
+        if (element.readOnly || element.disabled || element.type === 'hidden') return;
+        const label = labels[element.id] || element.name || '该字段';
+        const value = String(element.value || '').trim();
+        if (element.required && !value) {
+            fieldErrors[element.id] = `请填写${label}`;
+        } else if (['contact_phone1', 'contact_phone2'].includes(element.id) && !/^1[3-9]\d{9}$/.test(value)) {
+            fieldErrors[element.id] = `${label}须为有效的11位手机号`;
+        } else if (element.id === 'course_feedback' && Array.from(value).length < 50) {
+            fieldErrors[element.id] = '课程反馈至少填写50字';
+        } else if (!element.checkValidity()) {
+            fieldErrors[element.id] = element.validationMessage || `${label}填写不符合要求`;
         }
+    });
+    // The button does not submit a native form, so run its constraints explicitly.
+    const nativeValid = form.checkValidity();
+    if (Object.keys(fieldErrors).length || !nativeValid) {
+        setReviewFormFeedback(`请修正：${Object.values(fieldErrors).join('；')}`, 'error');
+        markReviewFieldErrors(fieldErrors);
+        if (!Object.keys(fieldErrors).length) form.reportValidity();
+        return false;
     }
-    
+    setReviewFormFeedback('', 'success');
+    return true;
+}
+
+// 提交审核
+function submitReview() {
+    if (!validateReviewForm()) return;
+
     // 检测修改
     const changes = detectChanges();
     
@@ -1105,8 +1142,6 @@ function submitReview() {
     
     // 评分表单逻辑
     const scoringSection = document.getElementById('scoringSection');
-    const tbody = document.getElementById('scoringTableBody');
-    tbody.innerHTML = ''; // 清空旧数据
     
     // 只有超级管理员或具有审表_中心权限的用户才能评分
     // 注意：这里假设 userPermission 包含具体的权限名称，可能需要根据实际情况调整
@@ -1116,19 +1151,7 @@ function submitReview() {
     if (userPermission === '审表_中心' || userPermission === '超级管理员' || newStatus === '中心已审核') {
         scoringSection.style.display = 'block';
 
-        const existingReasons = new Set();
-        existingScoreData.forEach(item => {
-            const reason = (item.reason || '').trim();
-            addScoringRow(
-                reason,
-                item.department_score ?? '',
-                item.personal_score ?? '',
-                item.is_auto_generated === true
-            );
-            if (reason) {
-                existingReasons.add(reason);
-            }
-        });
+        const existingReasons = new Set(collectScoreData().map(item => item.reason));
         
         // 默认将修改项作为评分项
         changes.forEach(change => {
@@ -1173,7 +1196,7 @@ function addScoringRow(reason='', deptScore='', persScore='', isAuto=false) {
 }
 
 // 收集评分数据
-function collectScoreData() {
+function collectScoreData(includeIncomplete = false) {
     const rows = document.querySelectorAll('#scoringTableBody tr');
     const data = [];
     rows.forEach(row => {
@@ -1186,7 +1209,7 @@ function collectScoreData() {
         const autoInput = row.querySelector('.score-auto');
         const isAuto = autoInput ? autoInput.value === 'true' : false;
         
-        if (reason) {
+        if (reason || includeIncomplete) {
             data.push({
                 reason: reason,
                 department_score: deptScore || 0,
@@ -1225,7 +1248,9 @@ function confirmSubmit() {
     const submitData = {
         form_data: baseData,
         score_data: scoreData,
-        review_comment: document.getElementById('reviewComment').value || '无'
+        review_comment: document.getElementById('reviewComment').value || '无',
+        expected_form_id: originalFormData.expected_form_id,
+        expected_form_updated_at: originalFormData.expected_form_updated_at
     };
     
     // 添加修改信息到 review_comment (如果在前端处理)
@@ -1233,19 +1258,14 @@ function confirmSubmit() {
     // 但为了兼容旧逻辑，我们可以让后端处理修改记录的拼接
     
     // 提交审核
-    fetch(`/admin/api/review/submit/${formId}`, {
+    return fetch(`/admin/api/review/submit/${formId}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify(submitData)
     })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-    })
+    .then(response => response.json())
     .then(data => {
         // 恢复按钮状态
         submitBtn.disabled = false;
@@ -1259,7 +1279,12 @@ function confirmSubmit() {
             showResult(true, '审核提交成功', `表单状态已更新为：${data.new_status}`);
             window.setTimeout(returnToReviewQueue, 650);
         } else {
-            showResult(false, '审核提交失败', data.message || '未知错误');
+            if (data.field_errors && typeof data.field_errors === 'object') {
+                setReviewFormFeedback(data.message || '请修正表单字段后重新提交', 'error');
+                markReviewFieldErrors(data.field_errors);
+            } else {
+                showResult(false, '审核提交失败', data.message || '未知错误');
+            }
         }
     })
     .catch(error => {
@@ -1463,6 +1488,8 @@ function collectFormData() {
     const form = document.getElementById('reviewForm');
     const formData = new FormData(form);
     const data = Object.fromEntries(formData.entries());
+    data.expected_form_id = originalFormData.expected_form_id;
+    data.expected_form_updated_at = originalFormData.expected_form_updated_at;
     
     // 确保包含 ID
     data.id = document.getElementById('formId').value;

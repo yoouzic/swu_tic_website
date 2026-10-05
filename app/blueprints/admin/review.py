@@ -2,7 +2,7 @@
 # Phase 1 mechanical split from app/blueprints/admin.py
 # Module: review
 
-from flask import render_template, request, redirect, url_for, flash, session, jsonify
+from flask import render_template, request, redirect, url_for, flash, session, jsonify, current_app
 from app.models import User, Group, LectureForm, CourseRegistration, db, SystemSetting, ScoreRecord, ScoreItem
 from datetime import datetime, timedelta
 from app.utils.auto_review import AutoReviewEngine
@@ -30,6 +30,8 @@ from app.services.review_application import (
 )
 from app.services.review_scores import ScoreValidationError, normalize_score_items
 from app.services.review_reference_data import search_review_reference_data
+from app.services.review_concurrency import ReviewConflict, claim_review_form, validate_opened_review_revision
+from app.services.lecture_form_validation import review_field_errors
 
 
 def _json_object_request():
@@ -133,10 +135,19 @@ def review_form_draft(form_id):
 
         if request.method == 'GET':
             draft = load_review_form_draft(user_id, form_id)
+            payload = parse_review_form_draft(draft)
+            saved_fields = payload.get('form_data') if isinstance(payload.get('form_data'), dict) else {}
+            timestamp = form.updated_at.isoformat() if form.updated_at else ''
+            stale = bool(draft) and (
+                str(saved_fields.get('expected_form_id')) != str(form.id)
+                or saved_fields.get('expected_form_updated_at') != timestamp
+                or form.get_latest_version().id != form.id
+            )
             return jsonify({
                 'success': True,
                 'exists': draft is not None,
-                'data': parse_review_form_draft(draft),
+                'data': payload,
+                'stale': stale,
                 'updated_at': draft.updated_at.strftime('%Y-%m-%d %H:%M:%S') if draft else None,
             })
 
@@ -145,11 +156,22 @@ def review_form_draft(form_id):
             db.session.commit()
             return jsonify({'success': True, 'deleted': deleted})
 
-        body = request.get_json(silent=True) or {}
+        body = _json_object_request()
+        if body is None:
+            return jsonify({'success': False, 'message': '请求数据格式错误'}), 400
         raw_payload = body.get('data', body)
         payload = normalize_review_draft_payload(raw_payload)
         if payload is None:
             return jsonify({'success': False, 'message': 'Draft payload must be a JSON object'}), 400
+
+        fields = payload['form_data']
+        if 'expected_form_id' in fields or 'expected_form_updated_at' in fields:
+            validate_opened_review_revision(form, fields)
+        else:
+            # Old clients can still save a draft, which gets an explicit server
+            # revision. New pages always send the revision they actually opened.
+            fields['expected_form_id'] = str(form.id)
+            fields['expected_form_updated_at'] = form.updated_at.isoformat() if form.updated_at else ''
 
         draft = save_review_form_draft(user_id, form_id, payload)
         db.session.commit()
@@ -157,9 +179,13 @@ def review_form_draft(form_id):
             'success': True,
             'updated_at': draft.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
         })
-    except Exception as e:
+    except ReviewConflict as error:
         db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
+        return jsonify({'success': False, 'message': str(error), 'code': 'review_conflict'}), 409
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Review draft operation failed')
+        return jsonify({'success': False, 'message': '审核草稿操作失败，请稍后重试'}), 500
 
 
 def _load_review_form_groups_for_definition(form_ids):
@@ -287,8 +313,12 @@ def reject_form_review(form_id):
                 ),
             }), 403
 
-        data = request.get_json()
+        data = _json_object_request()
+        if data is None or not isinstance(data.get('reason', ''), str):
+            return jsonify({'success': False, 'message': '请填写文字形式的驳回理由'}), 400
         reason = data.get('reason', '')
+        validate_opened_review_revision(original_form, data)
+        claimed_at = claim_review_form(original_form, unique_id)
         
         # 检查当前状态，决定是更新还是新建
         if latest_form.status == '已驳回':
@@ -296,7 +326,7 @@ def reject_form_review(form_id):
             latest_form.review_comment = reason
             latest_form.reviewer_id = session['user_id']
             latest_form.review_time = datetime.now()
-            latest_form.updated_at = datetime.now()
+            latest_form.updated_at = max(datetime.now(), claimed_at)
             
             db.session.add(latest_form)
             delete_review_form_draft(session['user_id'], form_id)
@@ -346,7 +376,7 @@ def reject_form_review(form_id):
                 # 继承unique_id
                 unique_id=unique_id,
                 created_at=original_form.created_at,
-                updated_at=datetime.now()
+                updated_at=max(datetime.now(), claimed_at)
             )
             
             # 确保原表单有unique_id
@@ -364,9 +394,13 @@ def reject_form_review(form_id):
                 'new_status': '已驳回'
             })
         
-    except Exception as e:
+    except ReviewConflict as error:
         db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
+        return jsonify({'success': False, 'message': str(error), 'code': 'review_conflict'}), 409
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Review rejection failed')
+        return jsonify({'success': False, 'message': '驳回失败，请稍后重试'}), 500
 
 
 @admin_bp.route('/api/review/submit/<int:form_id>', methods=['POST'])
@@ -429,6 +463,8 @@ def submit_review(form_id):
                     'message': '请求数据格式错误',
                 }), 400
             review_comment = data.get('review_comment', '无')
+            if not isinstance(review_comment, str):
+                return jsonify({'success': False, 'message': '审核意见应填写文字'}), 400
             score_data_list = data.get('score_data', [])
         else:
             form_data = request.form.to_dict()
@@ -459,6 +495,13 @@ def submit_review(form_id):
             }), 400
 
         # 确定新状态
+        field_errors = review_field_errors(original_form, form_data)
+        if field_errors:
+            return jsonify({
+                'success': False, 'code': 'invalid_form',
+                'message': '请修正表单中标出的内容后再提交审核',
+                'field_errors': field_errors,
+            }), 400
         new_status = get_next_status_after_review(session['user_id'])
 
         course_changes_raw = (form_data.get('course_changes') or '').strip()
@@ -509,6 +552,13 @@ def submit_review(form_id):
             'updated_at': datetime.now()  # 更新时间为审核时间
         }
 
+        field_errors = review_field_errors(original_form, new_form_data)
+        if field_errors:
+            return jsonify({'success': False, 'code': 'invalid_form',
+                            'message': '请修正表单中标出的内容后再提交审核',
+                            'field_errors': field_errors}), 400
+
+        validate_opened_review_revision(original_form, data if request.is_json else form_data, form_data)
         modified_fields = collect_modified_fields(
             original_form,
             new_form_data,
@@ -562,9 +612,13 @@ def submit_review(form_id):
             'form_id': result.target_form_id
         })
         
-    except Exception as e:
+    except ReviewConflict as error:
         db.session.rollback()
-        return jsonify({'success': False, 'message': f'审核提交失败：{str(e)}'}), 500
+        return jsonify({'success': False, 'message': str(error), 'code': 'review_conflict'}), 409
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Review approval failed')
+        return jsonify({'success': False, 'message': '审核提交失败，请稍后重试'}), 500
 
 
 def _safe_review_return_url(value):
@@ -1095,6 +1149,8 @@ def get_form_for_review(form_id):
         form_data = {
             'id': form.id,
             'unique_id': form.unique_id or form.id,
+            'expected_form_id': str(form.id),
+            'expected_form_updated_at': form.updated_at.isoformat() if form.updated_at else '',
             'listener_name': form.listener_name,
             'listener_number': form.listener_number,
             'course_changes': form.course_changes,
@@ -1128,7 +1184,7 @@ def get_form_for_review(form_id):
             'review_time': form.review_time.strftime('%Y-%m-%d %H:%M:%S') if form.review_time else None,
             'review_comment': form.review_comment,
             'created_at': form.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-            'updated_at': form.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'updated_at': form.updated_at.strftime('%Y-%m-%d %H:%M:%S') if form.updated_at else None,
             'audit_tag': form.audit_tag or '',
             'audit_tag_info': _serialize_audit_tag(form.audit_tag)
         }
@@ -1299,12 +1355,20 @@ def submit_form_review(form_id):
                 'message': '请求数据格式错误',
             }), 400
         review_comment = data.get('review_comment', '')
+        if not isinstance(review_comment, str):
+            return jsonify({'success': False, 'message': '审核意见应填写文字'}), 400
         form_data = data.get('form_data', {})
         if not isinstance(form_data, dict):
             return jsonify({
                 'success': False,
                 'message': '请求数据格式错误',
             }), 400
+
+        field_errors = review_field_errors(original_form, form_data)
+        if field_errors:
+            return jsonify({'success': False, 'code': 'invalid_form',
+                            'message': '请修正表单中标出的内容后再提交审核',
+                            'field_errors': field_errors}), 400
 
         # 在任何 DB mutation 前验证评分输入
         try:
@@ -1356,6 +1420,12 @@ def submit_form_review(form_id):
         effective_candidates['class_period'] = class_period
         effective_candidates['course_changes'] = resolved_course_changes
 
+        field_errors = review_field_errors(original_form, effective_candidates)
+        if field_errors:
+            return jsonify({'success': False, 'code': 'invalid_form',
+                            'message': '请修正表单中标出的内容后再提交审核',
+                            'field_errors': field_errors}), 400
+
         modified_fields = collect_modified_fields(
             original_form,
             effective_candidates,
@@ -1368,6 +1438,8 @@ def submit_form_review(form_id):
         if latest_form and latest_form.id != original_form.id:
             return jsonify({'success': False, 'message': '该表单已有更新版本，请刷新页面后操作'}), 400
 
+        validate_opened_review_revision(original_form, data, form_data)
+        claimed_at = claim_review_form(original_form, unique_id)
         target_form = None
         # 如果当前版本已经是审核产生的版本（ID != unique_id），则直接在当前版本上修改
         # 或者如果状态没有改变，也在当前版本上修改
@@ -1432,7 +1504,7 @@ def submit_form_review(form_id):
         target_form.reviewer_id = session['user_id']
         target_form.review_time = datetime.now()
         target_form.review_comment = review_comment
-        target_form.updated_at = datetime.now()
+        target_form.updated_at = max(datetime.now(), claimed_at)
 
         if not original_form.unique_id:
             original_form.unique_id = original_form.id
@@ -1497,9 +1569,13 @@ def submit_form_review(form_id):
             'modified_fields': modified_fields
         })
         
-    except Exception as e:
+    except ReviewConflict as error:
         db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
+        return jsonify({'success': False, 'message': str(error), 'code': 'review_conflict'}), 409
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Legacy review approval failed')
+        return jsonify({'success': False, 'message': '审核提交失败，请稍后重试'}), 500
 
 
 @admin_bp.route('/api/review/form/<int:form_id>', methods=['DELETE'])
