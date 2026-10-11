@@ -57,7 +57,12 @@ class PasswordAuditLog(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     actor_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    target_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    # Nullable on purpose: physically deleting a user keeps the audit trail and
+    # only clears the link (SQLAlchemy nullifies this FK when the parent goes
+    # away). With NOT NULL here the delete endpoint raised
+    # "NOT NULL constraint failed: password_audit_logs.target_user_id" for every
+    # user that had ever had a password event - i.e. every imported user.
+    target_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     action = db.Column(db.String(50), nullable=False)
     request_method = db.Column(db.String(10), nullable=True)
     request_path = db.Column(db.String(255), nullable=True)
