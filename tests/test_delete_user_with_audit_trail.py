@@ -112,7 +112,13 @@ class DeleteUserWithAuditTrailTest(unittest.TestCase):
             action='import_create_user_password_init', result='success',
         ))
         db.session.add(LectureForm(
-            listener_number=target.number, logical_id='L1', status='待审核',
+            listener_name=target.name, listener_number=target.number,
+            lecture_date='2026-01-01', class_period='3-4节', lecture_location='A101',
+            teacher_name='T', teacher_college='C', course_title='Course',
+            student_grade_class='G', teaching_method='M', classroom_discipline='D',
+            classroom_atmosphere='A', courseware_quality='Q', overall_effect='E',
+            quality_case='Case', course_feedback='F', suggestions='S',
+            student_signature1='sig', contact_phone1='123', status='待审核',
         ))
         db.session.commit()
 
