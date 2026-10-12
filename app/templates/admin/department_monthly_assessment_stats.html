@@ -312,7 +312,7 @@ function loadMonthlyStats() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        window.appFeedback('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间', 'warning');
         return;
     }
     const departments = getSelectedDepartments();
@@ -321,7 +321,7 @@ function loadMonthlyStats() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '查询失败');
+                window.appFeedback(data.message || '查询失败', 'danger');
                 return;
             }
             currentMonthlyPayload = data;
@@ -329,7 +329,7 @@ function loadMonthlyStats() {
             currentMonthlySnapshotId = null;
             renderMonthlyResults(data);
         })
-        .catch(() => window.appFeedback('查询失败，请稍后重试'));
+        .catch(() => window.appFeedback('查询失败，请稍后重试', 'danger'));
 }
 
 async function exportMonthlyStats() {
@@ -338,13 +338,13 @@ async function exportMonthlyStats() {
         return;
     }
     if (currentMonthlyPayload && currentMonthlyPayload.meta && !currentMonthlyPayload.meta.has_full_months) {
-        window.appFeedback('当前筛选范围内无完整教学月，无法导出月度考评');
+        window.appFeedback('当前筛选范围内无完整教学月，无法导出月度考评', 'warning');
         return;
     }
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        window.appFeedback('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间', 'warning');
         return;
     }
     const departments = getSelectedDepartments();
@@ -362,11 +362,11 @@ async function exportMonthlyStats() {
 
 async function saveMonthlySnapshot() {
     if (!currentMonthlyPayload || !currentMonthlyFilters) {
-        window.appFeedback('请先查询月度考评结果');
+        window.appFeedback('请先查询月度考评结果', 'warning');
         return;
     }
     if (!currentMonthlyPayload.meta || !currentMonthlyPayload.meta.has_full_months) {
-        window.appFeedback('当前筛选范围内无完整教学月，无法保存历史');
+        window.appFeedback('当前筛选范围内无完整教学月，无法保存历史', 'warning');
         return;
     }
     const defaultTitle = `${currentMonthlyFilters.start_date}至${currentMonthlyFilters.end_date}部门月度考评统计`;
@@ -382,12 +382,12 @@ async function saveMonthlySnapshot() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '保存失败');
+                window.appFeedback(data.message || '保存失败', 'danger');
                 return;
             }
             window.appFeedback(data.message || '保存成功');
         })
-        .catch(() => window.appFeedback('保存失败，请稍后重试'));
+        .catch(() => window.appFeedback('保存失败，请稍后重试', 'danger'));
 }
 
 function openSnapshotModal() {
@@ -395,7 +395,7 @@ function openSnapshotModal() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '加载历史失败');
+                window.appFeedback(data.message || '加载历史失败', 'danger');
                 return;
             }
             const snapshots = data.snapshots || [];
@@ -439,7 +439,7 @@ function openSnapshotModal() {
             }
             bootstrap.Modal.getOrCreateInstance(document.getElementById('snapshotModal')).show();
         })
-        .catch(() => window.appFeedback('加载历史失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载历史失败，请稍后重试', 'danger'));
 }
 
 function loadMonthlySnapshot(snapshotId) {
@@ -447,7 +447,7 @@ function loadMonthlySnapshot(snapshotId) {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '加载历史失败');
+                window.appFeedback(data.message || '加载历史失败', 'danger');
                 return;
             }
             const snapshot = data.snapshot || {};
@@ -461,7 +461,7 @@ function loadMonthlySnapshot(snapshotId) {
             renderMonthlyResults(snapshot.payload || {});
             bootstrap.Modal.getOrCreateInstance(document.getElementById('snapshotModal')).hide();
         })
-        .catch(() => window.appFeedback('加载历史失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载历史失败，请稍后重试', 'danger'));
 }
 
 function initPage() {
@@ -486,7 +486,7 @@ function openMonthSettings() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '加载失败');
+                window.appFeedback(data.message || '加载失败', 'danger');
                 return;
             }
             monthDefData = (data.months || []).map(m => ({...m}));
@@ -494,7 +494,7 @@ function openMonthSettings() {
             renderMonthDefList();
             bootstrap.Modal.getOrCreateInstance(document.getElementById('monthSettingsModal')).show();
         })
-        .catch(() => window.appFeedback('加载教学月设置失败'));
+        .catch(() => window.appFeedback('加载教学月设置失败', 'danger'));
 }
 
 function renderMonthDefList() {
@@ -560,13 +560,13 @@ function saveMonthSettings() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '保存失败');
+                window.appFeedback(data.message || '保存失败', 'danger');
                 return;
             }
             window.appFeedback(data.message || '保存成功');
             bootstrap.Modal.getOrCreateInstance(document.getElementById('monthSettingsModal')).hide();
         })
-        .catch(() => window.appFeedback('保存失败'))
+        .catch(() => window.appFeedback('保存失败', 'danger'))
         .finally(() => {
             btn.disabled = false;
             btn.textContent = '保存';

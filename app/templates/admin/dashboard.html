@@ -308,11 +308,11 @@ async function backupDatabase() {
             if (data.success) {
                 window.appFeedback('数据库备份成功！', 'success');
             } else {
-                window.appFeedback('备份失败：' + data.message);
+                window.appFeedback('备份失败：' + data.message, 'danger');
             }
         })
         .catch(error => {
-            window.appFeedback('备份失败：' + error.message);
+            window.appFeedback('备份失败：' + error.message, 'danger');
         });
     }
 }

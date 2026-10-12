@@ -379,7 +379,7 @@ async function editReservation(reservationId, originalInfo) {
     if (nextInfo === false) return;
     const payload = { listening_info: nextInfo.trim() };
     if (!payload.listening_info) {
-        window.appFeedback('听课计划说明不能为空');
+        window.appFeedback('听课计划说明不能为空', 'warning');
         return;
     }
     fetch(`/user/api/my_reservations/${reservationId}`, {
@@ -395,11 +395,11 @@ async function editReservation(reservationId, originalInfo) {
             updateReservationRow(reservationId, payload.listening_info);
             window.appFeedback('修改成功', 'success');
         } else {
-            window.appFeedback('修改失败：' + data.message);
+            window.appFeedback('修改失败：' + data.message, 'danger');
         }
     })
     .catch(error => {
-        window.appFeedback('修改失败：' + error.message);
+        window.appFeedback('修改失败：' + error.message, 'danger');
     });
 }
 
@@ -415,11 +415,11 @@ async function deleteReservation(reservationId) {
             removeReservationRow(reservationId);
             window.appFeedback('删除成功', 'success');
         } else {
-            window.appFeedback('删除失败：' + data.message);
+            window.appFeedback('删除失败：' + data.message, 'danger');
         }
     })
     .catch(error => {
-        window.appFeedback('删除失败：' + error.message);
+        window.appFeedback('删除失败：' + error.message, 'danger');
     });
 }
 
@@ -439,11 +439,11 @@ document.getElementById('confirmDelete').addEventListener('click', function() {
                 deleteFormId = null;
                 bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
             } else {
-                window.appFeedback('删除失败：' + data.message);
+                window.appFeedback('删除失败：' + data.message, 'danger');
             }
         })
         .catch(error => {
-            window.appFeedback('删除失败：' + error.message);
+            window.appFeedback('删除失败：' + error.message, 'danger');
         });
     }
 });

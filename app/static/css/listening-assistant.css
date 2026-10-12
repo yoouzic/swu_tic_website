@@ -61,7 +61,7 @@
 .listening-assistant__candidate-list[hidden] { display: none !important; }
 .listening-assistant__intro { margin: 0 0 12px; color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .listening-assistant__status { margin-bottom: 14px; padding: 10px 12px; border-left: 3px solid var(--color-accent); border-radius: var(--control-radius); background: var(--color-accent-soft); overflow-wrap: anywhere; }
-.listening-assistant__status[data-tone="error"] { border-left-color: var(--color-status-danger); background: var(--status-danger-soft); }
+.listening-assistant__status[data-tone="error"] { color: var(--color-status-danger); border-left-color: var(--color-status-danger); background: var(--status-danger-soft); font-weight: 600; }
 .listening-assistant__draft-notice,
 .listening-assistant__known-facts { margin-bottom: 14px; padding: 12px; border: 1px solid var(--color-control-border); border-radius: var(--control-radius); background: var(--color-bg-subtle); }
 .listening-assistant__draft-notice[hidden],
@@ -231,6 +231,7 @@
 .form-completion-assistant__checklist { margin-top: 12px; padding: 14px; border: 1px solid var(--color-control-border); border-radius: var(--control-radius); background: var(--color-bg-subtle); }
 .form-completion-assistant__checklist p { margin: 0; font-weight: 600; }
 .form-completion-assistant__checklist .listening-assistant__actions { margin-top: 10px; }
-.form-assistant-pending { border-color: var(--color-status-warning) !important; box-shadow: 0 0 0 2px var(--status-warning-soft); scroll-margin-top: 100px; }
+.form-assistant-pending { scroll-margin-top: 100px; }
+.form-assistant-pending:not(.is-invalid) { border-color: var(--color-status-warning) !important; box-shadow: 0 0 0 2px var(--status-warning-soft); }
 .form-assistant-field-hint { display: inline-block; margin-left: 8px; font-size: .75rem; font-weight: 400; color: var(--color-status-warning); }
 .listening-assistant__candidate-confirm--done .listening-assistant__actions .btn { width: auto; flex: 0 1 auto; }

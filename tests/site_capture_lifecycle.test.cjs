@@ -5,7 +5,9 @@ const vm = require('node:vm');
 const source = fs.readFileSync('app/static/js/site-capture.js', 'utf8');
 
 class Node {
-  constructor() { this.listeners = {}; this.value = ''; this.textContent = ''; this.hidden = false; this.disabled = false; this.dataset = {}; this.children = []; this.scrollCalls=0; }
+  constructor() { this.listeners = {}; this.value = ''; this.textContent = ''; this.hidden = false; this.disabled = false; this.dataset = {}; this.attributes = new Map(); this.children = []; this.scrollCalls=0; }
+  setAttribute(name, value) { this.attributes.set(String(name).toLowerCase(), String(value)); }
+  getAttribute(name) { return this.attributes.get(String(name).toLowerCase()) ?? null; }
   addEventListener(type, callback) { (this.listeners[type] ||= []).push(callback); }
   async fire(type, detail) { for (const callback of this.listeners[type] || []) await callback({type, detail, target:this}); }
   click() { return this.fire('click'); }

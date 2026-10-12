@@ -317,7 +317,7 @@ function loadStats() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        window.appFeedback('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间', 'warning');
         return;
     }
     const userIds = getSelectedUserIds();
@@ -326,7 +326,7 @@ function loadStats() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '查询失败');
+                window.appFeedback(data.message || '查询失败', 'danger');
                 return;
             }
             renderStatsTable(data.users || []);
@@ -338,7 +338,7 @@ function loadStats() {
                 window.appFeedback('???????????????????? 0 ???');
             }
 })
-        .catch(() => window.appFeedback('查询失败，请稍后重试'));
+        .catch(() => window.appFeedback('查询失败，请稍后重试', 'danger'));
 }
 
 function toggleVersions(collapseId, chevronId) {
@@ -380,7 +380,7 @@ function viewDetail(userId) {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        window.appFeedback('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间', 'warning');
         return;
     }
     const params = new URLSearchParams({
@@ -392,7 +392,7 @@ function viewDetail(userId) {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '加载详情失败');
+                window.appFeedback(data.message || '加载详情失败', 'danger');
                 return;
             }
             document.getElementById('detailTitle').textContent = `${data.user.name}（${data.user.number}）交表详情`;
@@ -500,7 +500,7 @@ function viewDetail(userId) {
             const modal = new bootstrap.Modal(document.getElementById('detailModal'));
             modal.show();
         })
-        .catch(() => window.appFeedback('加载详情失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载详情失败，请稍后重试', 'danger'));
 }
 
 function renderStatsTable(users) {
@@ -557,7 +557,7 @@ function loadStats() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        window.appFeedback('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间', 'warning');
         return;
     }
     const userIds = getSelectedUserIds();
@@ -566,7 +566,7 @@ function loadStats() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '查询失败');
+                window.appFeedback(data.message || '查询失败', 'danger');
                 return;
             }
             currentSubmissionPayload = data;
@@ -584,7 +584,7 @@ function loadStats() {
                 window.appFeedback('当前筛选范围内无完整教学周，奖励表数量按 0 统计。');
             }
         })
-        .catch(() => window.appFeedback('查询失败，请稍后重试'));
+        .catch(() => window.appFeedback('查询失败，请稍后重试', 'danger'));
 }
 
 async function exportSubmissionStats() {
@@ -595,7 +595,7 @@ async function exportSubmissionStats() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        window.appFeedback('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间', 'warning');
         return;
     }
     const userIds = getSelectedUserIds();
@@ -664,7 +664,7 @@ function viewRewardDetail(userId) {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        window.appFeedback('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间', 'warning');
         return;
     }
     const params = new URLSearchParams({start_date: startDate, end_date: endDate});
@@ -672,7 +672,7 @@ function viewRewardDetail(userId) {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '加载奖励表详情失败');
+                window.appFeedback(data.message || '加载奖励表详情失败', 'danger');
                 return;
             }
             document.getElementById('rewardDetailTitle').textContent = `${data.user.name}（${data.user.number}）奖励表详情`;
@@ -723,16 +723,16 @@ function viewRewardDetail(userId) {
             const modal = new bootstrap.Modal(document.getElementById('rewardDetailModal'));
             modal.show();
         })
-        .catch(() => window.appFeedback('加载奖励表详情失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载奖励表详情失败，请稍后重试', 'danger'));
 }
 
 async function saveSubmissionSnapshot() {
     if (!currentSubmissionPayload || !currentSubmissionFilters) {
-        window.appFeedback('请先查询交表数量统计');
+        window.appFeedback('请先查询交表数量统计', 'warning');
         return;
     }
     if (!currentSubmissionPayload.reward_meta || !currentSubmissionPayload.reward_meta.has_full_weeks) {
-        window.appFeedback('当前筛选范围内无完整教学周，无法保存奖励表历史');
+        window.appFeedback('当前筛选范围内无完整教学周，无法保存奖励表历史', 'warning');
         return;
     }
     const defaultTitle = `${currentSubmissionFilters.start_date}至${currentSubmissionFilters.end_date}交表统计`;
@@ -748,12 +748,12 @@ async function saveSubmissionSnapshot() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '保存失败');
+                window.appFeedback(data.message || '保存失败', 'danger');
                 return;
             }
             window.appFeedback(data.message || '保存成功');
         })
-        .catch(() => window.appFeedback('保存失败，请稍后重试'));
+        .catch(() => window.appFeedback('保存失败，请稍后重试', 'danger'));
 }
 
 function openSubmissionSnapshotModal() {
@@ -761,7 +761,7 @@ function openSubmissionSnapshotModal() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '加载历史失败');
+                window.appFeedback(data.message || '加载历史失败', 'danger');
                 return;
             }
             const snapshots = data.snapshots || [];
@@ -805,7 +805,7 @@ function openSubmissionSnapshotModal() {
             }
             bootstrap.Modal.getOrCreateInstance(document.getElementById('snapshotModal')).show();
         })
-        .catch(() => window.appFeedback('加载历史失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载历史失败，请稍后重试', 'danger'));
 }
 
 function loadSubmissionSnapshot(snapshotId) {
@@ -813,7 +813,7 @@ function loadSubmissionSnapshot(snapshotId) {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '加载历史失败');
+                window.appFeedback(data.message || '加载历史失败', 'danger');
                 return;
             }
             const snapshot = data.snapshot || {};
@@ -840,7 +840,7 @@ function loadSubmissionSnapshot(snapshotId) {
             bootstrap.Modal.getOrCreateInstance(document.getElementById('snapshotModal')).hide();
             showWeekRangeNotice(rewardMeta, '历史记录教学周范围');
         })
-        .catch(() => window.appFeedback('加载历史失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载历史失败，请稍后重试', 'danger'));
 }
 
 function selectAllUsers(flag) {
@@ -853,13 +853,13 @@ function initPage() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '加载用户结构失败');
+                window.appFeedback(data.message || '加载用户结构失败', 'danger');
                 return;
             }
             structureRawData = data;
             renderStructure();
         })
-        .catch(() => window.appFeedback('加载用户结构失败'));
+        .catch(() => window.appFeedback('加载用户结构失败', 'danger'));
 
     document.getElementById('btnLoadStats').addEventListener('click', loadStats);
     document.getElementById('btnExportStats').addEventListener('click', exportSubmissionStats);

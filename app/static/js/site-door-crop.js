@@ -21,6 +21,11 @@ else {root.SiteDoorCrop=api;root.addEventListener('DOMContentLoaded',()=>api.mou
         const dialog=document.querySelector('[data-door-crop]');if(!dialog)return;
         const canvas=dialog.querySelector('canvas'),ctx=canvas.getContext('2d');
         const note=dialog.querySelector('[data-crop-status]'),run=dialog.querySelector('[data-crop-run]');
+        const setStatus=(text,tone='info')=>{
+            const node=note;if(!node)return;
+            node.textContent=text;node.dataset.tone=tone;
+            node.setAttribute('role',tone==='error'?'alert':'status');node.setAttribute('aria-live','polite');
+        };
         const open=document.querySelector('[data-site-crop]');
         let record=null,image=null,region=null,anchor=null,busy=false,imageRevision=0;
         function close(){imageRevision++;dialog.close();}
@@ -51,13 +56,13 @@ else {root.SiteDoorCrop=api;root.addEventListener('DOMContentLoaded',()=>api.mou
         open.addEventListener('click',()=>{
             if(!record||busy)return;
             controller.load(record);const version=++imageRevision;image=null;region=null;run.disabled=true;
-            note.textContent='正在加载原照片…';dialog.showModal();
+            setStatus('正在加载原照片…');dialog.showModal();
             const next=new Image();next.onload=()=>{
                 if(version!==imageRevision||!dialog.open)return;
                 image=next;canvas.width=next.width;canvas.height=next.height;
                 region={x:.15,y:.3,width:.7,height:.3};draw();run.disabled=false;
-                note.textContent='拖动框住一行门牌数字；也可用方向键移动，Shift＋方向键调整大小。';
-            };next.onerror=()=>{if(version===imageRevision)note.textContent='照片暂未加载，可关闭后重试或手填门牌。';};next.src=record.photo_url;
+                setStatus('拖动框住一行门牌数字；也可用方向键移动，Shift＋方向键调整大小。');
+            };next.onerror=()=>{if(version===imageRevision)setStatus('照片暂未加载，可关闭后重试或手填门牌。','error');};next.src=record.photo_url;
         });
         const point=e=>{const r=canvas.getBoundingClientRect();return {x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};};
         canvas.addEventListener('pointerdown',e=>{if(!image||busy)return;anchor=point(e);canvas.setPointerCapture(e.pointerId);});
@@ -72,8 +77,8 @@ else {root.SiteDoorCrop=api;root.addEventListener('DOMContentLoaded',()=>api.mou
         });
         dialog.querySelector('[data-crop-close]').addEventListener('click',close);
         run.addEventListener('click',async()=>{
-            if(busy||!region)return;busy=true;run.disabled=true;note.textContent='正在识别框选区域，原照片会保留…';
-            try{await controller.recognize(region);}catch(e){note.textContent=e.name==='AbortError'?'识别较慢，可重试或手动输入门牌。':e.message;}
+            if(busy||!region)return;busy=true;run.disabled=true;setStatus('正在识别框选区域，原照片会保留…');
+            try{await controller.recognize(region);}catch(e){setStatus(e.name==='AbortError'?'识别较慢，可重试或手动输入门牌。':e.message,e.name==='AbortError'?'warning':'error');}
             finally{busy=false;run.disabled=false;}
         });
     }

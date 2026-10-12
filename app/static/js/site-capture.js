@@ -43,7 +43,11 @@
             location=session.sampler.best()||{};
             return session;
         }
-        const status=(text)=>{el('status').textContent=text;};
+        const status=(text,tone='info')=>{
+            const node=el('status');if(!node)return;
+            node.textContent=text;node.dataset.tone=tone;
+            node.setAttribute('role',tone==='error'?'alert':'status');node.setAttribute('aria-live','polite');
+        };
         const laterSections=['basic-information','course-information','classroom-review','feedback-information','signature-information'];
         const submit=form.querySelector('button[type="submit"]');
         const assistant=document.querySelector('[data-listening-assistant]');
@@ -84,7 +88,7 @@
             const lock=form._lectureMutationLock||(form._lectureMutationLock={count:0,previousInert:form.inert});
             lock.count++;form.inert=true;
             button.disabled=true;button.textContent='处理中…';
-            try{await fn();}catch(error){status(error.name==='AbortError'?'处理较慢，照片可能已保存，请刷新查看。':(error.message||'操作未完成，请重试。'));}
+            try{await fn();}catch(error){status(error.name==='AbortError'?'处理较慢，照片可能已保存，请刷新查看。':(error.message||'操作未完成，请重试。'),error.name==='AbortError'?'warning':'error');}
             finally{
                 if(--lock.count===0){form.inert=lock.previousInert;delete form._lectureMutationLock;}
                 busy=false;button.disabled=button===el('find')&&document.querySelector('[data-site-context-guide]')?.dataset.confirmBusy==='true';button.textContent=text;
@@ -222,7 +226,7 @@
             showRecord(result.data);await ensureDraftLoaded();
             if(!scheduleReady){status('教室已确认，请手动填写课程信息。');setMode(true);if(assistant)assistant.hidden=true;return;}
             if(window.SiteContextGuide){status('教室已确认，请继续核对助手选项。');return;}
-            if(!result.candidates.length){status(result.message);return;}
+            if(!result.candidates.length){status(result.message,'warning');return;}
             status('请选择本次听课的课程。');
             for(const candidate of result.candidates){
                 const button=document.createElement('button');button.type='button';button.className='site-capture__course';
@@ -254,11 +258,11 @@
         form.addEventListener('submit',event=>{
             if(!record || !record.building){
                 event.preventDefault();event.stopImmediatePropagation();
-                status(record?'请先确认教学楼和门牌号。':'请先拍摄门牌并保存现场记录。');
+                status(record?'请先确认教学楼和门牌号。':'请先拍摄门牌并保存现场记录。','warning');
                 root.scrollIntoView({behavior:'smooth',block:'start'});
             }
         },true);
-        window.addEventListener('lecture-form-draft-loaded',event=>{const id=event.detail?.data?.site_capture_id;if(id)restore(id).catch(()=>status('照片记录暂未加载，请刷新重试。'));else clearRecord();});
+        window.addEventListener('lecture-form-draft-loaded',event=>{const id=event.detail?.data?.site_capture_id;if(id)restore(id).catch(error=>status('照片记录暂未加载，请刷新重试。',error.name==='AbortError'?'warning':'error'));else clearRecord();});
         window.addEventListener('lecture-site-ocr-updated',event=>{
             if(event.detail.data.id!==record?.id)return;
             showRecord(event.detail.data);status(event.detail.message);

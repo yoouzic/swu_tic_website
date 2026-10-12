@@ -248,7 +248,7 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     const file = fileInput.files[0];
     
     if (!file) {
-        window.appFeedback('请选择文件');
+        window.appFeedback('请选择文件', 'warning');
         return;
     }
     
@@ -256,7 +256,7 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     const allowedTypes = ['.xlsx', '.xls'];
     const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
     if (!allowedTypes.includes(fileExtension)) {
-        window.appFeedback('请选择Excel文件（.xlsx或.xls格式）');
+        window.appFeedback('请选择Excel文件（.xlsx或.xls格式）', 'warning');
         return;
     }
     
@@ -281,11 +281,11 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
             uploadedData = data;
             showPreview(data);
         } else {
-            window.appFeedback('上传失败：' + data.message);
+            window.appFeedback('上传失败：' + data.message, 'danger');
         }
     })
     .catch(error => {
-        window.appFeedback('上传失败：' + error.message);
+        window.appFeedback('上传失败：' + error.message, 'danger');
     })
     .finally(() => {
         uploadBtn.innerHTML = '<i class="bi bi-upload"></i> 上传并预览';
@@ -369,7 +369,7 @@ function showPreview(data) {
 // 确认导入
 async function confirmImport() {
     if (!uploadedData) {
-        window.appFeedback('没有可导入的数据');
+        window.appFeedback('没有可导入的数据', 'warning');
         return;
     }
     
@@ -399,11 +399,11 @@ async function confirmImport() {
         if (data.success) {
             showResult(data);
         } else {
-            window.appFeedback('导入失败：' + data.message);
+            window.appFeedback('导入失败：' + data.message, 'danger');
         }
     })
     .catch(error => {
-        window.appFeedback('导入失败：' + error.message);
+        window.appFeedback('导入失败：' + error.message, 'danger');
     })
     .finally(() => {
         confirmBtn.innerHTML = '<i class="bi bi-check-circle"></i> 确认导入';

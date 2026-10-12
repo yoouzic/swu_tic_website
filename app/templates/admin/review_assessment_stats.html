@@ -294,7 +294,7 @@ function loadStats() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        window.appFeedback('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间', 'warning');
         return;
     }
     const userIds = getSelectedUserIds();
@@ -303,19 +303,19 @@ function loadStats() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '查询失败');
+                window.appFeedback(data.message || '查询失败', 'danger');
                 return;
             }
             renderStatsTable(data.users || []);
         })
-        .catch(() => window.appFeedback('查询失败，请稍后重试'));
+        .catch(() => window.appFeedback('查询失败，请稍后重试', 'danger'));
 }
 
 async function exportAssessmentStats() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        window.appFeedback('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间', 'warning');
         return;
     }
     const userIds = getSelectedUserIds();
@@ -335,7 +335,7 @@ function viewDetail(userId) {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     if (!startDate || !endDate) {
-        window.appFeedback('请先选择开始和结束时间');
+        window.appFeedback('请先选择开始和结束时间', 'warning');
         return;
     }
     const params = new URLSearchParams({start_date: startDate, end_date: endDate});
@@ -343,7 +343,7 @@ function viewDetail(userId) {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '加载详情失败');
+                window.appFeedback(data.message || '加载详情失败', 'danger');
                 return;
             }
             document.getElementById('detailTitle').textContent = `${data.user.name}（${data.user.number}）考评详情`;
@@ -360,7 +360,7 @@ function viewDetail(userId) {
             const modal = new bootstrap.Modal(document.getElementById('detailModal'));
             modal.show();
         })
-        .catch(() => window.appFeedback('加载详情失败，请稍后重试'));
+        .catch(() => window.appFeedback('加载详情失败，请稍后重试', 'danger'));
 }
 
 function toggleAssessmentItems(rowId, chevronId) {
@@ -589,7 +589,7 @@ function showImportPreview(data) {
 function previewManualAssessments() {
     const fileInput = document.getElementById('importFile');
     if (!fileInput.files || fileInput.files.length === 0) {
-        window.appFeedback('请先选择导入文件');
+        window.appFeedback('请先选择导入文件', 'warning');
         return;
     }
 
@@ -606,12 +606,12 @@ function previewManualAssessments() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '预览失败');
+                window.appFeedback(data.message || '预览失败', 'danger');
                 return;
             }
             showImportPreview(data);
         })
-        .catch(() => window.appFeedback('预览失败，请稍后重试'))
+        .catch(() => window.appFeedback('预览失败，请稍后重试', 'danger'))
         .finally(() => {
             importBtn.disabled = false;
         });
@@ -619,7 +619,7 @@ function previewManualAssessments() {
 
 function confirmManualAssessmentImport() {
     if (!pendingImportFile) {
-        window.appFeedback('请先选择导入文件并完成预览');
+        window.appFeedback('请先选择导入文件并完成预览', 'warning');
         return;
     }
 
@@ -635,7 +635,7 @@ function confirmManualAssessmentImport() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '导入失败');
+                window.appFeedback(data.message || '导入失败', 'danger');
                 return;
             }
             const skippedDetails = data.skipped_details && data.skipped_details.length > 0
@@ -652,7 +652,7 @@ function confirmManualAssessmentImport() {
             }
             loadStats();
         })
-        .catch(() => window.appFeedback('导入失败，请稍后重试'))
+        .catch(() => window.appFeedback('导入失败，请稍后重试', 'danger'))
         .finally(() => {
             confirmBtn.disabled = false;
         });
@@ -668,13 +668,13 @@ function initPage() {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                window.appFeedback(data.message || '加载用户结构失败');
+                window.appFeedback(data.message || '加载用户结构失败', 'danger');
                 return;
             }
             structureRawData = data;
             renderStructure();
         })
-        .catch(() => window.appFeedback('加载用户结构失败'));
+        .catch(() => window.appFeedback('加载用户结构失败', 'danger'));
 
     document.getElementById('btnLoadStats').addEventListener('click', loadStats);
     document.getElementById('btnExportStats').addEventListener('click', exportAssessmentStats);

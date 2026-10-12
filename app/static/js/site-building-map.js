@@ -334,6 +334,11 @@ else {root.SiteBuildingMap=api;root.addEventListener('DOMContentLoaded',()=>api.
         const dialog=document.querySelector('[data-building-map]');if(!dialog)return;
         const svg=dialog.querySelector('svg'),list=dialog.querySelector('[data-map-list]'),search=dialog.querySelector('[data-map-search]');
         const note=dialog.querySelector('[data-map-status]'),picked=dialog.querySelector('[data-map-picked]'),use=dialog.querySelector('[data-map-use]');
+        const setStatus=(text,tone='info')=>{
+            const node=note;if(!node)return;
+            node.textContent=text;node.dataset.tone=tone;
+            node.setAttribute('role',tone==='error'?'alert':'status');node.setAttribute('aria-live','polite');
+        };
         const open=document.querySelector('[data-site-map]'),ns='http://www.w3.org/2000/svg';
         // Progressive enhancement also supports pages served from an older template cache.
         let locate=dialog.querySelector('[data-map-selected]');
@@ -527,7 +532,7 @@ else {root.SiteBuildingMap=api;root.addEventListener('DOMContentLoaded',()=>api.
         }
         async function load(){
             if(!record)return;const version=++revision,id=record.id;data=null;selected=null;selectedVariant='A';overview=false;previewZoom=1;variantSelect.hidden=true;select.reset();use.disabled=true;locate.disabled=true;
-            search.value='';list.replaceChildren();svg.replaceChildren();picked.textContent='点击建筑或列表，再确认教学楼。';note.textContent='正在加载校园地图…';dialog.showModal();
+            search.value='';list.replaceChildren();svg.replaceChildren();picked.textContent='点击建筑或列表，再确认教学楼。';setStatus('正在加载校园地图…');dialog.showModal();
             const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),12000);
             try{
                 const [response,background]=await Promise.all([fetch(`/user/api/site-capture/${id}/map`,{signal:abort.signal}).then(r=>r.json()),
@@ -535,11 +540,11 @@ else {root.SiteBuildingMap=api;root.addEventListener('DOMContentLoaded',()=>api.
                 if(version!==revision||id!==record?.id||!dialog.open)return;
                 if(!response.success)throw new Error(response.message||'地图暂不可用');data=response.data;context=background;
 
-                note.textContent='选择所在教学楼，再点击“使用此教学楼”。也可搜索楼号。';
-                if(!context)note.textContent+=' 背景暂未加载，楼栋仍可选择。';
+                setStatus('选择所在教学楼，再点击“使用此教学楼”。也可搜索楼号。');
+                if(!context)setStatus('选择所在教学楼，再点击“使用此教学楼”。也可搜索楼号。 背景暂未加载，楼栋仍可选择。','warning');
                 renderList();const codes=new Set(data.nearby.buildings.map(b=>b.code));
                 const features=data.buildings.features.filter(f=>codes.has(f.properties.code));fit(features.length?features:data.buildings.features);
-            }catch(e){if(version===revision)note.textContent='地图暂不可用，可关闭后手动输入教学楼。';}
+            }catch(e){if(version===revision)setStatus('地图暂不可用，可关闭后手动输入教学楼。',e.name==='AbortError'?'warning':'error');}
             finally{clearTimeout(timer);}
         }
         window.addEventListener('lecture-site-capture-loaded',e=>{

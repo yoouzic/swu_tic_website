@@ -24,7 +24,7 @@
 .site-evidence-dialog::backdrop { background: rgb(41 51 62 / .45); }
 .site-evidence-dialog__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .site-evidence-dialog h2 { font-size: 1.25rem; font-weight: 650; margin: 0; }
-.site-evidence-dialog [role=status] { color: var(--color-text-muted); font-size: .85rem; line-height: 1.6; }
+.site-evidence-dialog :is([role=status],[role=alert]) { color: var(--color-text-muted); font-size: .85rem; line-height: 1.6; }
 .site-evidence-dialog__header .btn { flex-shrink: 0; min-height: 44px; }
 .site-door-canvas { display: block; width: auto; height: auto; max-width: 100%; max-height: 58vh; margin: auto; touch-action: none; cursor: crosshair; border-radius: 8px; }
 .site-door-canvas:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
@@ -141,3 +141,8 @@
 
 .site-capture__lookup:has(> [data-site-map-row][hidden]):has(> [data-site-corrections][hidden]) { display: none; }
 .site-capture__record:has([data-site-map-row][hidden]) > .site-capture__footer { border-top: 0; padding-top: 0; }
+
+/* Keep capture feedback quiet until action is needed; use the shared semantic ink. */
+:is([data-site-status],[data-context-status],[data-crop-status],[data-map-status]) { color: var(--color-text-muted); }
+:is([data-site-status],[data-context-status],[data-crop-status],[data-map-status])[data-tone="error"] { color: var(--color-status-danger); font-weight: 600; }
+:is([data-site-status],[data-context-status],[data-crop-status],[data-map-status])[data-tone="warning"] { color: var(--color-status-warning); font-weight: 600; }

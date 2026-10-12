@@ -92,6 +92,11 @@
     function mount(){
         const root=document.querySelector('[data-site-context-guide]');if(!root)return;
         const status=root.querySelector('[data-context-status]');
+        const setStatus=(text,tone='info')=>{
+            const node=status;if(!node)return;
+            node.textContent=text;node.dataset.tone=tone;
+            node.setAttribute('role',tone==='error'?'alert':'status');node.setAttribute('aria-live','polite');
+        };
         const content=root.querySelector('[data-context-content]');
         const form=document.getElementById('lectureForm');
         let latest=null,showCourses=null,expanded=false;
@@ -111,7 +116,7 @@
             const locked=state.status==='confirming'||root.dataset.findBusy==='true';
             for(const id of ['siteBuilding','siteRoom'])document.getElementById(id).disabled=locked;
             const manualFind=document.querySelector('[data-site-find]');if(manualFind)manualFind.disabled=locked;
-            if(state.status==='confirmed'){root.hidden=true;return;}
+            if(state.status==='confirmed'){setStatus('');root.hidden=true;return;}
             if(state.canGoBack&&state.status!=='confirming')content.append(button('返回上一题',async()=>{
                 expanded=false;showCourses=null;await controller.back();
                 document.getElementById('siteBuilding').value=latest?.facts?.building||'';
@@ -126,29 +131,29 @@
                 }));
                 content.append(facts);
             }
-            if(state.status==='loading'){status.textContent='正在结合门牌、时间和位置查找…';return;}
-            if(state.status==='confirming'){status.textContent='正在核对并确认这门课…';return;}
+            if(state.status==='loading'){setStatus('正在结合门牌、时间和位置查找…');return;}
+            if(state.status==='confirming'){setStatus('正在核对并确认这门课…');return;}
             if(state.status==='manual'){
-                status.textContent='可修正教学楼和门牌号，或让助手帮你缩小范围。';
+                setStatus('可修正教学楼和门牌号，或让助手帮你缩小范围。');
                 const correction=document.querySelector('[data-site-corrections]');if(correction)correction.open=true;
                 content.append(button('重新参考现场线索',()=>{showCourses=null;expanded=false;controller.resetFacts();}));return;
             }
             if(state.status==='error'){
-                status.textContent=state.message||'暂未找到，请手动填写教室。';document.querySelector('[data-site-corrections]').open=true;
+                setStatus(state.message||'暂未找到，请手动填写教室。','error');document.querySelector('[data-site-corrections]').open=true;
                 content.append(button('重试',()=>controller.resetFacts()));return;
             }
             const data=state.data;
-            if(data.source_unavailable){status.textContent='课表暂不可用，可手动填写课程或稍后补充。';document.querySelector('[data-site-corrections]').open=true;return;}
-            if(!data.candidates.length){status.textContent='未找到课程，请核对教学楼和门牌。';document.querySelector('[data-site-corrections]').open=true;return;}
+            if(data.source_unavailable){setStatus('课表暂不可用，可手动填写课程或稍后补充。','warning');document.querySelector('[data-site-corrections]').open=true;return;}
+            if(!data.candidates.length){setStatus('未找到课程，请核对教学楼和门牌。','warning');document.querySelector('[data-site-corrections]').open=true;return;}
             const guidance=data.guidance,question=guidance?guidance.question:data.question;
             const expand=()=>{expanded=true;showCourses=true;render(state);};
             if(defaultView(data)==='expand'&&!expanded){
-                status.textContent=guidance.reason;
+                setStatus(guidance.reason);
                 content.append(button('扩大范围查找',expand),button('修改信息',()=>controller.reject()),
                     button('重新开始核对',()=>{showCourses=null;expanded=false;controller.resetFacts();}));return;
             }
             const coursesFirst=expanded||(showCourses??(defaultView(data)==='courses'));
-            status.textContent=expanded?'范围已扩大，包含远处或位置未核验的课程，请核对。':guidance?.reason||'请核对以下课程。';
+            setStatus(expanded?'范围已扩大，包含远处或位置未核验的课程，请核对。':guidance?.reason||'请核对以下课程。');
             if(question&&!coursesFirst){
                 const heading=document.createElement('h3');heading.className='h6';heading.textContent=question.prompt;content.append(heading);
                 const progress=document.createElement('p');progress.className='text-muted small';

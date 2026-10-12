@@ -582,7 +582,7 @@ function saveLeaveMakeupSelection() {
             hideLeaveMakeupModal();
             loadLeaveStatus();
         })
-        .catch(error => window.appFeedback(error.message || '保存失败'))
+        .catch(error => window.appFeedback(error.message || '保存失败', 'danger'))
         .finally(() => {
             btn.disabled = false;
             btn.textContent = '保存';
@@ -612,7 +612,7 @@ function loadLeaveStatus() {
 function createCurrentWeekLeave() {
     const select = document.getElementById('leaveUserSelect');
     if (!select || !select.value) {
-        window.appFeedback('请先选择成员');
+        window.appFeedback('请先选择成员', 'warning');
         return;
     }
     const reasonInput = document.getElementById('leaveReasonInput');
@@ -638,7 +638,7 @@ function createCurrentWeekLeave() {
             }
             loadLeaveStatus();
         })
-        .catch(error => window.appFeedback(error.message || '请假发起失败'))
+        .catch(error => window.appFeedback(error.message || '请假发起失败', 'danger'))
         .finally(() => {
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-check2 me-1"></i> 为当前教学周请假';
@@ -830,7 +830,7 @@ function loadStatisticsDetails(page = 1) {
         })
         .catch(error => {
             console.error('Error:', error);
-            window.appFeedback('加载详情失败');
+            window.appFeedback('加载详情失败', 'danger');
         });
 }
 

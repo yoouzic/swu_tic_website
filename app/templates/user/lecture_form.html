@@ -105,6 +105,8 @@
             updateDateWithWeekday();
             updateClassPeriod();
             
+            refreshPhoneValidation();
+
             // 如果是驳回重填，显示提示
             {% if form and form.status == '已驳回' %}
             const alertDiv = document.createElement('div');
@@ -531,7 +533,11 @@
                                 <div class="mb-3">
                                     <label for="contact_phone1" class="form-label">联系电话1 <span class="text-danger">*</span></label>
                                     <input type="tel" class="form-control" id="contact_phone1" name="contact_phone1" 
-                                           pattern="[0-9]{11}" placeholder="请输入11位手机号" required>
+                                           pattern="[0-9]{11}" placeholder="请输入11位手机号" inputmode="numeric"
+                                           aria-describedby="contact_phone1_error" required>
+                                    <div id="contact_phone1_error" class="invalid-feedback" aria-live="polite">
+                                        <i class="bi bi-exclamation-circle me-1" aria-hidden="true"></i>请输入11位数字的手机号码。
+                                    </div>
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -544,7 +550,11 @@
                                 <div class="mb-3">
                                     <label for="contact_phone2" class="form-label">联系电话2 <span class="text-danger">*</span></label>
                                     <input type="tel" class="form-control" id="contact_phone2" name="contact_phone2" 
-                                           pattern="[0-9]{11}" placeholder="请输入11位手机号" required>
+                                           pattern="[0-9]{11}" placeholder="请输入11位手机号" inputmode="numeric"
+                                           aria-describedby="contact_phone2_error" required>
+                                    <div id="contact_phone2_error" class="invalid-feedback" aria-live="polite">
+                                        <i class="bi bi-exclamation-circle me-1" aria-hidden="true"></i>请输入11位数字的手机号码。
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -718,7 +728,7 @@ function selectRegistration(id, rawDataInput) {
         
     } catch (e) {
         console.error('Error selecting registration:', e);
-        window.appFeedback('自动填充失败，请手动填写');
+        window.appFeedback('自动填充失败，请手动填写', 'danger');
     }
 }
 
@@ -778,7 +788,7 @@ function updateClassPeriod() {
     }
 
     if (parseInt(startPeriod) > parseInt(endPeriod)) {
-        window.appFeedback('开始节次不能大于结束节次！');
+        window.appFeedback('开始节次不能大于结束节次！', 'warning');
         document.getElementById('end_period').value = '';
         updateClassPeriod();
         return;
@@ -1137,7 +1147,7 @@ document.getElementById('lectureForm').addEventListener('submit', function(e) {
     
     if (!isValid) {
         e.preventDefault();
-        window.appFeedback('请填写所有必填项！');
+        window.appFeedback('请填写所有必填项！', 'warning');
     }
 
     const tmValues = [];
@@ -1177,20 +1187,35 @@ document.getElementById('lectureForm').addEventListener('submit', function(e) {
 
 // 电话号码验证
 function validatePhone(input) {
-    const phonePattern = /^[0-9]{11}$/;
-    if (input.value && !phonePattern.test(input.value)) {
-        input.classList.add('is-invalid');
-    } else {
-        input.classList.remove('is-invalid');
-    }
+    const isInvalid = !input.validity.valid;
+    input.classList.toggle('is-invalid', isInvalid);
+    input.setAttribute('aria-invalid', String(isInvalid));
+    return !isInvalid;
 }
 
-document.getElementById('contact_phone1').addEventListener('blur', function() {
-    validatePhone(this);
+function refreshPhoneValidation() {
+    ['contact_phone1', 'contact_phone2'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input.classList.contains('is-invalid')) validatePhone(input);
+    });
+}
+window.addEventListener('lecture-form-draft-loaded', refreshPhoneValidation);
+
+['contact_phone1', 'contact_phone2'].forEach(id => {
+    const input = document.getElementById(id);
+    input.addEventListener('blur', () => validatePhone(input));
+    input.addEventListener('invalid', () => validatePhone(input));
+    input.addEventListener('input', () => {
+        if (input.classList.contains('is-invalid')) validatePhone(input);
+    });
 });
 
-document.getElementById('contact_phone2').addEventListener('blur', function() {
-    validatePhone(this);
+document.getElementById('lectureForm').addEventListener('reset', () => {
+    ['contact_phone1', 'contact_phone2'].forEach(id => {
+        const input = document.getElementById(id);
+        input.classList.remove('is-invalid');
+        input.removeAttribute('aria-invalid');
+    });
 });
 
 document.getElementById('course_feedback').addEventListener('input', function() {
