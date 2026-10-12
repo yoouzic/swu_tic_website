@@ -578,7 +578,7 @@
                             <button type="submit" class="btn btn-primary btn-lg me-3">
                                 <i class="bi bi-save"></i> 提交表单
                             </button>
-                            <button type="reset" class="btn btn-secondary btn-lg">
+                            <button type="button" class="btn btn-secondary btn-lg" data-bs-toggle="modal" data-bs-target="#lectureFormResetDialog">
                                 <i class="bi bi-arrow-counterclockwise"></i> 重置表单
                             </button>
                         </div>
@@ -589,6 +589,24 @@
     </div>
 </div>
 </div>
+</div>
+
+<div class="modal fade" id="lectureFormResetDialog" tabindex="-1" aria-labelledby="lectureFormResetTitle" aria-describedby="lectureFormResetMessage" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title fs-5" id="lectureFormResetTitle">是否确认重置表单？</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0" id="lectureFormResetMessage">重置后，当前填写的内容将被清除，无法撤销。</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="lectureFormResetCancel" data-bs-dismiss="modal">否</button>
+                <button type="button" class="btn btn-danger" id="lectureFormResetConfirm">是</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- 登记选择模态框 -->
@@ -1208,6 +1226,14 @@ window.addEventListener('lecture-form-draft-loaded', refreshPhoneValidation);
     input.addEventListener('input', () => {
         if (input.classList.contains('is-invalid')) validatePhone(input);
     });
+});
+
+document.getElementById('lectureFormResetDialog').addEventListener('shown.bs.modal', () => {
+    document.getElementById('lectureFormResetCancel').focus();
+});
+document.getElementById('lectureFormResetConfirm').addEventListener('click', () => {
+    document.getElementById('lectureForm').reset();
+    bootstrap.Modal.getInstance(document.getElementById('lectureFormResetDialog')).hide();
 });
 
 document.getElementById('lectureForm').addEventListener('reset', () => {

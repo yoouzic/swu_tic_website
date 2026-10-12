@@ -830,6 +830,7 @@ function restoreReviewQueueUserSelection() {
             checkbox.checked = true;
         });
         selectedUserIds = checkboxes.map((checkbox) => checkbox.value);
+        syncScopeSelectionControls();
         return;
     }
     document.querySelectorAll('#userStructure .user-checkbox').forEach((checkbox) => {
@@ -837,6 +838,7 @@ function restoreReviewQueueUserSelection() {
     });
     selectedUserIds = Array.from(document.querySelectorAll('#userStructure .user-checkbox:checked'))
         .map((checkbox) => checkbox.value);
+    syncScopeSelectionControls();
 }
 
 // 加载用户结构
@@ -903,7 +905,7 @@ function renderUserStructure() {
             html += `
                 <div class="form-check scope-user" data-keywords="${userKeywords}">
                     <input class="form-check-input user-checkbox" type="checkbox" 
-                           id="user_${user.id}" value="${user.id}">
+                           id="user_${user.id}" value="${user.id}" onchange="syncScopeSelectionControls()">
                     <label class="form-check-label" for="user_${user.id}">
                         ${user.name} (${user.number})
                     </label>
@@ -946,7 +948,7 @@ function renderUserStructure() {
                 html += `
                     <div class="form-check scope-user" data-keywords="${userKeywords}">
                         <input class="form-check-input user-checkbox group-${index}" type="checkbox" 
-                               id="user_${user.id}" value="${user.id}">
+                               id="user_${user.id}" value="${user.id}" onchange="syncScopeSelectionControls()">
                         <label class="form-check-label" for="user_${user.id}">
                             ${user.name} (${user.number})
                         </label>
@@ -1021,7 +1023,7 @@ function renderUserStructure() {
                     html += `
                         <div class="form-check scope-user" data-keywords="${userKeywords}">
                             <input class="form-check-input user-checkbox group-${groupId}" type="checkbox" 
-                                   id="user_${user.id}" value="${user.id}">
+                                   id="user_${user.id}" value="${user.id}" onchange="syncScopeSelectionControls()">
                             <label class="form-check-label" for="user_${user.id}">
                                 ${escapeHtml(user.name)} (${escapeHtml(user.number)})
                             </label>
@@ -1091,35 +1093,43 @@ function applyScopeSearch() {
 }
 
 function selectAllDepartments() {
-    if (currentPermission === '审表_中心') {
-        document.querySelectorAll('.dept-checkbox').forEach(checkbox => {
-            checkbox.checked = true;
-            const deptId = checkbox.id.replace('dept_', '');
-            toggleDepartment(deptId);
-        });
-        return;
-    }
     document.querySelectorAll('#userStructure .user-checkbox').forEach(checkbox => {
         const userRow = checkbox.closest('.scope-user');
         if (!userRow || userRow.style.display !== 'none') {
             checkbox.checked = true;
         }
     });
+    syncScopeSelectionControls();
 }
 
 function clearScopeSelection() {
     document.querySelectorAll('.user-checkbox, .group-checkbox, .dept-checkbox').forEach(checkbox => {
         checkbox.checked = false;
     });
+    syncScopeSelectionControls();
+}
+
+function syncScopeSelectionControls() {
+    const root = document.getElementById('userStructure');
+    if (!root) return;
+    root.querySelectorAll('.group-checkbox, .dept-checkbox').forEach(checkbox => {
+        const card = checkbox.closest(checkbox.classList.contains('dept-checkbox') ? '.scope-dept' : '.scope-group');
+        const members = Array.from(card.querySelectorAll('.user-checkbox'));
+        const selected = members.filter(member => member.checked).length;
+        checkbox.checked = members.length > 0 && selected === members.length;
+        checkbox.indeterminate = selected > 0 && selected < members.length;
+    });
+    selectedUserIds = Array.from(root.querySelectorAll('.user-checkbox:checked')).map(checkbox => checkbox.value);
 }
 
 // 切换部门选择
 function toggleDepartment(deptIndex) {
     const deptCheckbox = document.getElementById(`dept_${deptIndex}`);
     const groupCheckboxes = document.querySelectorAll(`.dept-${deptIndex}`);
+    const checked = deptCheckbox.checked;
     
     groupCheckboxes.forEach(checkbox => {
-        checkbox.checked = deptCheckbox.checked;
+        checkbox.checked = checked;
         // 触发 toggleGroup 来更新用户选择
         const groupId = checkbox.id.replace('group_', '');
         toggleGroup(groupId);
@@ -1134,6 +1144,7 @@ function toggleGroup(groupId) {
     userCheckboxes.forEach(checkbox => {
         checkbox.checked = groupCheckbox.checked;
     });
+    syncScopeSelectionControls();
 }
 
 function getFormGroupKey(group) {
@@ -1685,6 +1696,17 @@ function toggleSelectAll() {
 
 function updateBatchButtons() {
     const formIds = getSelectedReviewableFormIds();
+    const selectAll = document.getElementById('selectAll');
+    if (selectAll) {
+        const selectableIds = new Set(Array.from(document.querySelectorAll('.group-select-checkbox, .form-checkbox'))
+            .filter(checkbox => !checkbox.disabled)
+            .map(checkbox => checkbox.dataset.targetFormId || checkbox.value)
+            .filter(Boolean));
+        const selectedCount = formIds.filter(id => selectableIds.has(id)).length;
+        selectAll.checked = selectableIds.size > 0 && selectedCount === selectableIds.size;
+        selectAll.indeterminate = selectedCount > 0 && selectedCount < selectableIds.size;
+        selectAll.disabled = selectableIds.size === 0;
+    }
     const selectedFormsHint = document.getElementById('selectedFormsHint');
     if (selectedFormsHint) {
         if (formIds.length > 0) {
