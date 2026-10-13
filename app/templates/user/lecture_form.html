@@ -1294,7 +1294,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% if candidates_ready %}<script src="{{ url_for('static', filename='js/listening-assistant.js') }}"></script>{% endif %}
-<script src="{{ url_for('static', filename='js/form-completion-assistant.js') }}"></script>
+<script src="{{ url_for('static', filename='js/form-completion-assistant.js', v='20261013') }}"></script>
 <script src="{{ url_for('static', filename='js/student-grade-class-input.js', v='20261013') }}"></script>
 {% if capture_enabled and not form %}<script src="{{ url_for('static', filename='js/site-location.js') }}"></script>{% if candidates_ready %}<script src="{{ url_for('static', filename='js/site-context-guide.js') }}"></script>{% endif %}<script src="{{ url_for('static', filename='js/site-capture.js') }}"></script><script src="{{ url_for('static', filename='js/site-door-crop.js') }}"></script><script src="{{ url_for('static', filename='js/site-building-map.js') }}"></script>{% endif %}
 {% endblock %}
