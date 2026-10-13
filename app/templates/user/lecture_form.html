@@ -656,27 +656,27 @@
 
 <!-- 登记选择模态框 -->
 {% if registration_ready and not form %}
-<div class="modal fade" id="unusedRegistrationsModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+<div class="modal fade" id="unusedRegistrationsModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="unusedRegistrationsModalLabel" aria-describedby="unusedRegistrationsModalDescription">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header bg-success text-white">
-                <h5 class="modal-title"><i class="bi bi-check-square"></i> 提交听课反馈</h5>
+                <h5 class="modal-title" id="unusedRegistrationsModalLabel"><i class="bi bi-check-square"></i> 提交听课反馈</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
-                <div class="alert alert-info">
+                <div class="alert alert-info" id="unusedRegistrationsModalDescription">
                     <i class="bi bi-info-circle-fill"></i> 您有以下已登记但未填表的课程。是否要为其中一门课程提交反馈？
                     <br>
                     <small>选择已登记课程可以自动填充表单信息，并方便管理。</small>
                 </div>
                 <div class="table-responsive">
-                    <table class="table table-hover border">
+                    <table class="table table-hover border form-list-table">
                         <thead class="table-light">
                             <tr>
-                                <th>课程名称</th>
-                                <th>教师</th>
-                                <th>听课计划</th>
-                                <th>操作</th>
+                                <th scope="col">课程名称</th>
+                                <th scope="col">教师</th>
+                                <th scope="col">听课计划</th>
+                                <th scope="col">操作</th>
                             </tr>
                         </thead>
                         <tbody id="unusedRegistrationsBody">
@@ -735,22 +735,31 @@ function renderUnusedRegistrations(data) {
         const tr = document.createElement('tr');
 
         const courseCell = document.createElement('td');
+        courseCell.dataset.label = '课程名称';
         const courseName = document.createElement('strong');
+        courseName.className = 'record-cell__value';
         courseName.textContent = item.course_name || '';
         courseCell.appendChild(courseName);
 
         const teacherCell = document.createElement('td');
-        teacherCell.textContent = item.teacher_name || '';
+        teacherCell.dataset.label = '教师';
+        const teacherName = document.createElement('span');
+        teacherName.className = 'record-cell__value';
+        teacherName.textContent = item.teacher_name || '';
+        teacherCell.appendChild(teacherName);
 
         const listeningCell = document.createElement('td');
+        listeningCell.dataset.label = '听课计划';
         const listeningInfo = document.createElement('small');
+        listeningInfo.className = 'record-cell__value';
         listeningInfo.textContent = item.listening_info || '无';
         listeningCell.appendChild(listeningInfo);
 
         const actionCell = document.createElement('td');
+        actionCell.dataset.label = '操作';
         const selectButton = document.createElement('button');
         selectButton.type = 'button';
-        selectButton.className = 'btn btn-sm btn-success';
+        selectButton.className = 'btn btn-sm btn-success record-cell__value';
         const icon = document.createElement('i');
         icon.className = 'bi bi-check2';
         selectButton.append(icon, document.createTextNode(' 选择此课'));
