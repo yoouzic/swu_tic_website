@@ -35,6 +35,7 @@ function fixture() {
       forEach(callback) {for(const field of Object.values(fields))if(field.name)callback(field.value,field.name);}
     },
     updateDateWithWeekday(){}, updateClassPeriod(){}, syncCoursewareQualityWithTeachingMethod(){},
+    refreshPhoneValidation(){},
     console:{log(){}},
   };
   vm.createContext(context);

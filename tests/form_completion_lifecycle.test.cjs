@@ -10,7 +10,7 @@ function node(id=''){
     listeners,addEventListener(type,callback){(listeners[type]||=[]).push(callback);},
     dispatchEvent(event){for(const callback of listeners[event.type]||[])callback(event);},
     fire(type,event={}){this.dispatchEvent({type,...event});},replaceChildren(){},appendChild(){},
-    querySelector(){return null;},focus(){},matches(){return false;}};
+    querySelector(){return null;},closest(){return null;},focus(){},matches(){return false;}};
 }
 function fixture(){
   const ids=['course_changes','abnormal_situation','suggestions','quality_case','classroom_discipline','classroom_atmosphere','courseware_quality','overall_effect','teaching_method','tm_ppt','tm_lecture','tm_interactive','course_feedback','student_signature1','student_signature2','contact_phone1','contact_phone2','class_period','start_period','assistant_payload'];
@@ -53,4 +53,51 @@ test('changing answers within the same photo record still restores its own prior
   f.answer('completionIssueAnswer','none');f.draft(7);
   f.answer('completionIssueAnswer','skip');
   assert.equal(f.fields.course_changes.value,'本条人工变化');
+});
+
+test('manual recommendation is accepted with general ratings',()=>{
+  const f=fixture();
+  for(const id of ['classroom_discipline','classroom_atmosphere','courseware_quality','overall_effect'])f.fields[id].value='一般';
+  f.fields.tm_ppt.checked=true;
+  f.fields.quality_case.value='推荐';
+  f.form.fire('change',{target:f.fields.quality_case});
+  assert.equal(f.fields.quality_case.value,'推荐');
+});
+
+test('editing any rating keeps a recommendation',()=>{
+  const f=fixture();
+  for(const id of ['tm_ppt','tm_lecture','tm_interactive'])f.fields[id].checked=true;
+  for(const id of ['classroom_discipline','classroom_atmosphere','courseware_quality','overall_effect'])f.fields[id].value='非常好';
+  f.fields.quality_case.value='推荐';
+  for(const id of ['classroom_discipline','classroom_atmosphere','courseware_quality','overall_effect']){
+    for(const value of ['好','一般']){
+      f.fields[id].value=value;
+      f.form.fire('change',{target:f.fields[id]});
+      assert.equal(f.fields.quality_case.value,'推荐');
+      assert.equal(f.fields[id].value,value);
+    }
+  }
+});
+
+test('changing teaching methods and feedback keeps a recommendation',()=>{
+  const f=fixture();
+  f.fields.quality_case.value='推荐';
+  f.fields.tm_lecture.checked=true;
+  f.fields.courseware_quality.value='无';
+  f.form.fire('change',{target:f.fields.tm_lecture});
+  f.fields.course_feedback.value='真实的课堂反馈';
+  f.form.fire('input',{target:f.fields.course_feedback});
+  assert.equal(f.fields.quality_case.value,'推荐');
+  assert.equal(f.fields.courseware_quality.value,'无');
+});
+
+test('restoring a recommended draft with general ratings completes the recommendation question',()=>{
+  const f=fixture();
+  for(const id of ['course_changes','abnormal_situation','suggestions'])f.fields[id].value='无';
+  for(const id of ['classroom_discipline','classroom_atmosphere','courseware_quality','overall_effect'])f.fields[id].value='一般';
+  f.fields.quality_case.value='推荐';
+  f.draft(9);
+  assert.equal(f.parts.recommendation.hidden,true);
+  assert.equal(f.parts.summary.hidden,false);
+  assert.equal(f.fields.overall_effect.value,'一般');
 });

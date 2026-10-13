@@ -25,13 +25,27 @@ test('skipping issue shortcut preserves manually entered no and does not invent 
   assert.equal(form.fields.abnormal_situation.value,'');
 });
 
-test('recommendation confirms three teaching methods and four excellent ratings', () => {
+test('recommendation preserves actual teaching methods and ratings', () => {
+  const form = formFixture({classroom_discipline:'一般', classroom_atmosphere:'好', courseware_quality:'无', overall_effect:'一般', teaching_method:'讲授法'});
+  form.fields.tm_lecture.checked = true;
+  assistant.applyRecommendation(form, 'yes', new Map());
+  assert.equal(form.fields.quality_case.value, '推荐');
+  assert.equal(form.fields.tm_ppt.checked, false);
+  assert.equal(form.fields.tm_lecture.checked, true);
+  assert.equal(form.fields.tm_interactive.checked, false);
+  assert.equal(form.fields.classroom_discipline.value, '一般');
+  assert.equal(form.fields.classroom_atmosphere.value, '好');
+  assert.equal(form.fields.courseware_quality.value, '无');
+  assert.equal(form.fields.overall_effect.value, '一般');
+  assert.equal(form.fields.teaching_method.value, '讲授法');
+});
+
+test('recommendation leaves unanswered ratings and teaching methods for the user to fill', () => {
   const form = formFixture();
   assistant.applyRecommendation(form, 'yes', new Map());
   assert.equal(form.fields.quality_case.value, '推荐');
-  for (const id of ['tm_ppt','tm_lecture','tm_interactive']) assert.equal(form.fields[id].checked, true);
-  for (const id of ['classroom_discipline','classroom_atmosphere','courseware_quality','overall_effect']) assert.equal(form.fields[id].value, '非常好');
-  assert.equal(form.fields.teaching_method.value, 'PPT演示法、讲授法、师生互动法');
+  for (const id of ['classroom_discipline','classroom_atmosphere','courseware_quality','overall_effect','teaching_method']) assert.equal(form.fields[id].value, '');
+  for (const id of ['tm_ppt','tm_lecture','tm_interactive']) assert.equal(form.fields[id].checked, false);
 });
 
 test('changing issue answer restores old text and preserves later manual edits', () => {
@@ -45,7 +59,7 @@ test('changing issue answer restores old text and preserves later manual edits',
   assert.equal(form.fields.abnormal_situation.value, '学生迟到');
 });
 
-test('not recommended restores earlier ratings while preserving manual edits', () => {
+test('changing recommendation preserves ratings and teaching methods', () => {
   const form = formFixture({classroom_discipline: '好'});
   const owned = new Map();
   assistant.applyRecommendation(form, 'yes', owned);
@@ -86,27 +100,11 @@ test('changing a restored no-issues answer clears literal no values but preserve
   assert.equal(form.fields.abnormal_situation.value, '学生迟到');
 });
 
-test('downgrading a rating removes recommendation without changing the rating', () => {
-  const form = formFixture();
-  assistant.applyRecommendation(form, 'yes', new Map());
-  form.fields.overall_effect.value = '好';
-  assert.equal(assistant.invalidateRecommendation(form), true);
-  assert.equal(form.fields.quality_case.value, '');
-  assert.equal(form.fields.overall_effect.value, '好');
-});
-
-test('removing a teaching method invalidates recommendation', () => {
-  const form = formFixture();
-  assistant.applyRecommendation(form, 'yes', new Map());
-  form.fields.tm_interactive.checked = false;
-  assert.equal(assistant.invalidateRecommendation(form), true);
-  assert.equal(form.fields.quality_case.value, '');
-});
-
-test('editing feedback keeps a valid recommendation', () => {
-  const form = formFixture();
-  assistant.applyRecommendation(form, 'yes', new Map());
-  form.fields.course_feedback.value = '具体内容';
-  assert.equal(assistant.invalidateRecommendation(form), false);
-  assert.equal(form.fields.quality_case.value, '推荐');
+test('skipping a shortcut restores the earlier recommendation only', () => {
+  const form = formFixture({quality_case:'不推荐', overall_effect:'一般'});
+  const owned = new Map();
+  assistant.applyRecommendation(form, 'yes', owned);
+  assistant.applyRecommendation(form, 'skip', owned);
+  assert.equal(form.fields.quality_case.value, '不推荐');
+  assert.equal(form.fields.overall_effect.value, '一般');
 });

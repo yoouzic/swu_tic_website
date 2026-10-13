@@ -1,9 +1,7 @@
 (function () {
     'use strict';
     const ISSUE_FIELDS = ['course_changes', 'abnormal_situation', 'suggestions'];
-    const RATINGS = ['classroom_discipline', 'classroom_atmosphere', 'courseware_quality', 'overall_effect'];
     const METHODS = ['tm_ppt', 'tm_lecture', 'tm_interactive'];
-    const METHOD_VALUES = 'PPT演示法、讲授法、师生互动法';
 
     function notify(field) {
         field.dispatchEvent(new Event('input', {bubbles: true}));
@@ -48,12 +46,9 @@
 
     function applyRecommendation(form, answer, owned) {
         if (answer === 'yes') {
-            METHODS.forEach(id => writePreset(form, id, true, owned));
-            writePreset(form, 'teaching_method', METHOD_VALUES, owned);
-            RATINGS.forEach(id => writePreset(form, id, '非常好', owned));
             writePreset(form, 'quality_case', '推荐', owned);
         } else {
-            restorePreset(form, [...METHODS, 'teaching_method', ...RATINGS, 'quality_case'], owned);
+            restorePreset(form, ['quality_case'], owned);
             if (answer === 'no') writePreset(form, 'quality_case', '不推荐', owned);
         }
     }
@@ -137,9 +132,7 @@
             if (restored) {
                 const issueValues = ISSUE_FIELDS.map(id => form.querySelector(`#${id}`)?.value.trim() || '');
                 answers.issues = issueValues.every(value => value === '无') ? 'none' : (issueValues.every(Boolean) ? 'some' : null);
-                const recommended = form.querySelector('#quality_case')?.value === '推荐'
-                    && METHODS.every(id => form.querySelector(`#${id}`)?.checked)
-                    && RATINGS.every(id => form.querySelector(`#${id}`)?.value === '非常好');
+                const recommended = form.querySelector('#quality_case')?.value === '推荐';
                 answers.recommendation = recommended ? 'yes' : (form.querySelector('#quality_case')?.value === '不推荐' ? 'no' : null);
             } else {
                 answers.issues = null;
@@ -171,8 +164,6 @@
                 answers.issues=null;
             }
             applying = false;
-            const hint = form.querySelector('[data-completion-recommendation-hint]');
-            if (hint && form.querySelector('#quality_case')?.value) hint.hidden = true;
             render();
             const nextQuestion = answers.issues === null ? issueQuestion : recommendationQuestion;
             if (!nextQuestion.hidden) nextQuestion.querySelector('button')?.focus({preventScroll: true});
@@ -181,16 +172,6 @@
             if (applying) return;
             const field = event?.target;
             if (field?.matches('.form-control, .form-select') && !needsAttention(field)) field.classList.remove('is-invalid');
-            applying = true;
-            const invalidated = invalidateRecommendation(form);
-            applying = false;
-            if (invalidated) {
-                answers.recommendation = 'skip';
-                const hint = form.querySelector('[data-completion-recommendation-hint]');
-                if (hint) hint.hidden = false;
-            }
-            const hint = form.querySelector('[data-completion-recommendation-hint]');
-            if (hint && form.querySelector('#quality_case')?.value) hint.hidden = true;
             renderChecklist();
         }
         form.addEventListener('input', onFormEdit);
@@ -229,22 +210,10 @@
                 if (typeof syncCoursewareQualityWithTeachingMethod === 'function') syncCoursewareQualityWithTeachingMethod();
                 if (typeof updateDateWithWeekday === 'function') updateDateWithWeekday();
                 if (typeof updateClassPeriod === 'function') updateClassPeriod();
-                const hint = form.querySelector('[data-completion-recommendation-hint]');
-                if (hint) hint.hidden = true;
             }, 0);
         });
         render();
     }
-    function invalidateRecommendation(form) {
-        const field = form.querySelector('#quality_case');
-        if (field?.value !== '推荐') return false;
-        const eligible = METHODS.every(id => form.querySelector(`#${id}`)?.checked)
-            && RATINGS.every(id => form.querySelector(`#${id}`)?.value === '非常好');
-        if (eligible) return false;
-        field.value = '';
-        notify(field);
-        return true;
-    }
-    if (typeof module !== 'undefined') module.exports = {applyIssues, applyRecommendation, needsAttention, invalidateRecommendation};
+    if (typeof module !== 'undefined') module.exports = {applyIssues, applyRecommendation, needsAttention};
     if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', init);
 }());

@@ -78,6 +78,22 @@ class SubmitFormTransactionTest(unittest.TestCase):
         cleanup_sqlite_database(db, drop_all=True)
         self.app_context.pop()
 
+    def test_recommendation_preserves_general_ratings_and_actual_teaching_methods(self):
+        for method, courseware in ((PPT_METHOD, '一般'), ('讲授法', '无')):
+            with self.subTest(method=method):
+                payload = self._valid_form_payload()
+                payload.update(teaching_method=method, classroom_discipline='一般',
+                               classroom_atmosphere='好', courseware_quality=courseware,
+                               overall_effect='一般', quality_case=RECOMMENDED)
+                response = self.client.post('/user/submit_form', data=payload)
+                self.assertEqual(response.status_code, 302)
+                db.session.rollback()
+                saved = LectureForm.query.order_by(LectureForm.id.desc()).first()
+                self.assertIsNotNone(saved)
+                for field in ('teaching_method', 'classroom_discipline', 'classroom_atmosphere',
+                              'courseware_quality', 'overall_effect', 'quality_case'):
+                    self.assertEqual(getattr(saved, field), payload[field])
+
     # ---- fixtures ----
 
     def _create_user(self, number, student_id):
