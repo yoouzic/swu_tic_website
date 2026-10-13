@@ -656,15 +656,15 @@
 
 <!-- 登记选择模态框 -->
 {% if registration_ready and not form %}
-<div class="modal fade" id="unusedRegistrationsModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="unusedRegistrationsModalLabel" aria-describedby="unusedRegistrationsModalDescription">
+<div class="modal fade registration-choice-modal" id="unusedRegistrationsModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="unusedRegistrationsModalLabel" aria-describedby="unusedRegistrationsModalDescription">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header bg-success text-white">
+            <div class="modal-header">
                 <h5 class="modal-title" id="unusedRegistrationsModalLabel"><i class="bi bi-check-square"></i> 提交听课反馈</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="关闭"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
-                <div class="alert alert-info" id="unusedRegistrationsModalDescription">
+                <div class="alert registration-choice-note" id="unusedRegistrationsModalDescription">
                     <i class="bi bi-info-circle-fill"></i> 您有以下已登记但未填表的课程。是否要为其中一门课程提交反馈？
                     <br>
                     <small>选择已登记课程可以自动填充表单信息，并方便管理。</small>
@@ -686,7 +686,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">不使用登记（手动填写）</button>
+                <button type="button" class="btn btn-outline-primary" data-bs-dismiss="modal">不使用登记（手动填写）</button>
             </div>
         </div>
     </div>
@@ -759,7 +759,7 @@ function renderUnusedRegistrations(data) {
         actionCell.dataset.label = '操作';
         const selectButton = document.createElement('button');
         selectButton.type = 'button';
-        selectButton.className = 'btn btn-sm btn-success record-cell__value';
+        selectButton.className = 'btn btn-sm btn-primary record-cell__value';
         const icon = document.createElement('i');
         icon.className = 'bi bi-check2';
         selectButton.append(icon, document.createTextNode(' 选择此课'));

@@ -178,6 +178,11 @@ a { color: var(--color-accent-strong); }
 .modal-content > .modal-footer { border-bottom-left-radius: inherit; border-bottom-right-radius: inherit; }
 .modal-header,.modal-footer { padding: 18px 22px; }
 .modal-body { padding: 22px; }
+.registration-choice-modal .modal-header { background: transparent; color: var(--color-accent-strong); }
+.registration-choice-modal .registration-choice-note { background: var(--paper-inset); border-color: var(--paper-line); border-left: 3px solid var(--color-accent); color: var(--color-text); }
+@media (max-width: 768px) {
+    .registration-choice-modal .form-list-table > tbody > tr:not(.version-history) { background: var(--paper-inset); border-color: var(--paper-line); }
+}
 .form-control,.form-select { border-color: var(--color-control-border); border-radius: var(--control-radius); color: var(--color-text); transition: border-color var(--transition-fast), box-shadow var(--transition-fast); }
 .form-control::placeholder { color: var(--color-text-muted); opacity: 1; }
 .form-control:focus,.form-select:focus { border-color: var(--color-accent); box-shadow: var(--focus-ring); }
