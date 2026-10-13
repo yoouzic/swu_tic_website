@@ -115,8 +115,10 @@
                                     <i class="bi bi-telephone"></i> 手机号码 {% if can_edit_phone %}<span class="text-danger">*</span>{% endif %}
                                 </label>
                                 <input type="tel" class="form-control" id="phone" name="phone" 
-                                       value="{{ user.phone }}" placeholder="请输入11位手机号" {% if can_edit_phone %}required{% else %}readonly{% endif %}>
+                                       value="{{ user.phone }}" placeholder="请输入11位手机号" inputmode="numeric" {% if can_edit_phone %}required aria-describedby="profilePhoneHint"{% else %}readonly{% endif %}>
                                 {% if can_edit_phone %}
+                                    <div class="form-text" id="profilePhoneHint">请输入有效的11位手机号码</div>
+                                    <div class="invalid-feedback" id="profilePhoneError" aria-live="polite" hidden>请输入有效的11位手机号码</div>
                                 {% else %}
                                     {{ locked_hint('phone') }}
                                 {% endif %}
@@ -128,7 +130,11 @@
                                     <i class="bi bi-chat-dots"></i> QQ号码
                                 </label>
                                 <input type="text" class="form-control" id="qq" name="qq" 
-                                       value="{{ user.qq }}" placeholder="请输入QQ号码" {% if not can_edit_qq %}readonly{% endif %}>
+                                       value="{{ user.qq }}" placeholder="请输入QQ号码" inputmode="numeric" {% if can_edit_qq %}aria-describedby="profileQqHint"{% else %}readonly{% endif %}>
+                                {% if can_edit_qq %}
+                                    <div class="form-text" id="profileQqHint">选填，5–11位数字。</div>
+                                    <div class="invalid-feedback" id="profileQqError" aria-live="polite" hidden>请输入有效的QQ号码（5–11位数字）</div>
+                                {% endif %}
                                 {{ locked_hint('qq') }}
                             </div>
                             
@@ -196,10 +202,34 @@ function isProfileFieldEditable(field) {
     return editableFields.has(field);
 }
 
+function validateProfileContact(field, {reportEmpty = true} = {}) {
+    if (!isProfileFieldEditable(field)) return true;
+    const input = document.getElementById(field);
+    const value = input.value.trim();
+    const isPhone = field === 'phone';
+    const hintId = isPhone ? 'profilePhoneHint' : 'profileQqHint';
+    const errorId = isPhone ? 'profilePhoneError' : 'profileQqError';
+    const hint = document.getElementById(hintId);
+    const error = document.getElementById(errorId);
+    let message = '';
+    if (isPhone && !value && reportEmpty) {
+        message = '请输入手机号码';
+    } else if (value && !(isPhone ? /^1[3-9]\d{9}$/ : /^[1-9]\d{4,10}$/).test(value)) {
+        message = isPhone ? '请输入有效的11位手机号码' : '请输入有效的QQ号码（5–11位数字）';
+    }
+    input.classList.toggle('is-invalid', Boolean(message));
+    input.classList.remove('is-valid');
+    input.setAttribute('aria-invalid', message ? 'true' : 'false');
+    input.setAttribute('aria-describedby', message ? errorId : hintId);
+    hint.hidden = Boolean(message);
+    error.hidden = !message;
+    error.textContent = message;
+    return !message;
+}
+
 // 表单验证
 document.getElementById('editProfileForm').addEventListener('submit', function(e) {
     const name = document.getElementById('name').value.trim();
-    const phone = document.getElementById('phone').value.trim();
     const gender = document.getElementById('gender').value;
     const grade = document.getElementById('grade').value;
     const college = document.getElementById('college').value.trim();
@@ -237,57 +267,51 @@ document.getElementById('editProfileForm').addEventListener('submit', function(e
     }
     
     // 手机号验证
-    if (isProfileFieldEditable('phone') && !phone) {
+    if (!validateProfileContact('phone')) {
         e.preventDefault();
-        window.appFeedback('请输入手机号码', 'warning');
-        return;
-    }
-    
-    if (isProfileFieldEditable('phone') && !/^1[3-9]\d{9}$/.test(phone)) {
-        e.preventDefault();
-        window.appFeedback('请输入有效的11位手机号码', 'warning');
+        document.getElementById('phone').focus();
+        window.appFeedback(document.getElementById('profilePhoneError').textContent, 'warning');
         return;
     }
     
     // QQ号验证（如果填写了）
-    const qq = document.getElementById('qq').value.trim();
-    if (isProfileFieldEditable('qq') && qq && !/^[1-9]\d{4,10}$/.test(qq)) {
+    if (!validateProfileContact('qq')) {
         e.preventDefault();
-        window.appFeedback('请输入有效的QQ号码（5-11位数字）', 'warning');
+        document.getElementById('qq').focus();
+        window.appFeedback(document.getElementById('profileQqError').textContent, 'warning');
         return;
     }
 });
 
-// 实时手机号验证
-document.getElementById('phone').addEventListener('input', function() {
-    const phone = this.value.trim();
-    const isValid = /^1[3-9]\d{9}$/.test(phone);
-    
-    if (phone && !isValid) {
-        this.classList.add('is-invalid');
-        this.classList.remove('is-valid');
-    } else if (phone && isValid) {
-        this.classList.add('is-valid');
-        this.classList.remove('is-invalid');
-    } else {
-        this.classList.remove('is-valid', 'is-invalid');
-    }
+// 首次输入时不催促；离开字段后提示错误，改正时及时清除。
+['phone', 'qq'].forEach(field => {
+    if (!isProfileFieldEditable(field)) return;
+    const input = document.getElementById(field);
+    input.addEventListener('blur', () => validateProfileContact(field, {reportEmpty: false}));
+    input.addEventListener('invalid', event => {
+        event.preventDefault();
+        validateProfileContact(field);
+        input.focus();
+    });
+    input.addEventListener('input', () => {
+        if (input.classList.contains('is-invalid')) {
+            validateProfileContact(field, {reportEmpty: false});
+        }
+    });
 });
 
-// 实时QQ号验证
-document.getElementById('qq').addEventListener('input', function() {
-    const qq = this.value.trim();
-    const isValid = /^[1-9]\d{4,10}$/.test(qq);
-    
-    if (qq && !isValid) {
-        this.classList.add('is-invalid');
-        this.classList.remove('is-valid');
-    } else if (qq && isValid) {
-        this.classList.add('is-valid');
-        this.classList.remove('is-invalid');
-    } else {
-        this.classList.remove('is-valid', 'is-invalid');
-    }
+document.getElementById('editProfileForm').addEventListener('reset', () => {
+    ['phone', 'qq'].forEach(field => {
+        if (!isProfileFieldEditable(field)) return;
+        const input = document.getElementById(field);
+        const prefix = field === 'phone' ? 'profilePhone' : 'profileQq';
+        input.classList.remove('is-invalid', 'is-valid');
+        input.setAttribute('aria-invalid', 'false');
+        input.setAttribute('aria-describedby', prefix + 'Hint');
+        document.getElementById(prefix + 'Hint').hidden = false;
+        document.getElementById(prefix + 'Error').hidden = true;
+        document.getElementById(prefix + 'Error').textContent = '';
+    });
 });
 
 // 姓名输入限制（只允许中文、英文和空格）
