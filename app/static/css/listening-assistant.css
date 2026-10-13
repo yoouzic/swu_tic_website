@@ -228,6 +228,10 @@
 
 .form-completion-assistant { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--color-border); }
 .form-completion-assistant__condition { margin: 8px 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.form-completion-assistant__choices { display: grid; gap: 4px; margin-top: 12px; }
+.form-completion-assistant__choices label { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-control-border); border-radius: var(--control-radius); cursor: pointer; }
+.form-completion-assistant__choices .form-check-input { flex: 0 0 auto; margin: 0; }
+.form-completion-assistant__choices label[hidden] { display: none; }
 .form-completion-assistant__checklist { margin-top: 12px; padding: 14px; border: 1px solid var(--color-control-border); border-radius: var(--control-radius); background: var(--color-bg-subtle); }
 .form-completion-assistant__checklist p { margin: 0; font-weight: 600; }
 .form-completion-assistant__checklist .listening-assistant__actions { margin-top: 10px; }

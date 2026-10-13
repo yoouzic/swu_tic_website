@@ -7,7 +7,7 @@
 {% block body_class %}lecture-form-page{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/listening-assistant.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/listening-assistant.css', v='20261013-complement') }}">
 {% if capture_enabled and not form %}<link rel="stylesheet" href="{{ url_for('static', filename='css/site-capture.css') }}">{% endif %}
 {% endblock %}
 
@@ -262,9 +262,49 @@
                                         <button type="button" class="btn btn-outline-secondary" data-completion-issue-answer="skip">我不知道，稍后填写</button>
                                     </div>
                                 </div>
+                                <div data-completion-methods hidden>
+                                    <h3 class="listening-assistant__question">本节课实际使用了哪些教学方法？</h3>
+                                    <p class="form-completion-assistant__condition">可多选，请至少选择一种。</p>
+                                    <div class="form-completion-assistant__choices">
+                                        <label for="completionMethodPpt"><input class="form-check-input" type="checkbox" id="completionMethodPpt" data-completion-method="tm_ppt">PPT演示法</label>
+                                        <label for="completionMethodLecture"><input class="form-check-input" type="checkbox" id="completionMethodLecture" data-completion-method="tm_lecture">讲授法</label>
+                                        <label for="completionMethodInteractive"><input class="form-check-input" type="checkbox" id="completionMethodInteractive" data-completion-method="tm_interactive">师生互动法</label>
+                                    </div>
+                                    <div class="listening-assistant__actions">
+                                        <button type="button" class="btn btn-primary" data-completion-method-confirm disabled>确认教学方法</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-completion-method-skip>稍后填写</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-completion-go-back="issues">返回上一题</button>
+                                    </div>
+                                </div>
+                                <div data-completion-ratings hidden>
+                                    <h3 class="listening-assistant__question">哪些项目没有达到“非常好”？</h3>
+                                    <p class="form-completion-assistant__condition">可多选。点击确认后，未选的适用项目将填写为“非常好”，选中的项目再逐项评价。</p>
+                                    <div class="form-completion-assistant__choices">
+                                        <label for="completionDiscipline"><input class="form-check-input" type="checkbox" id="completionDiscipline" data-completion-rating="classroom_discipline">管理课堂纪律</label>
+                                        <label for="completionAtmosphere"><input class="form-check-input" type="checkbox" id="completionAtmosphere" data-completion-rating="classroom_atmosphere">调动课堂气氛</label>
+                                        <label for="completionCourseware" data-completion-courseware-choice><input class="form-check-input" type="checkbox" id="completionCourseware" data-completion-rating="courseware_quality">课件制作质量</label>
+                                        <label for="completionOverall"><input class="form-check-input" type="checkbox" id="completionOverall" data-completion-rating="overall_effect">整体教学效果</label>
+                                    </div>
+                                    <p class="form-completion-assistant__condition" data-completion-no-courseware hidden>未使用课件，课件制作质量记为“无”。</p>
+                                    <div class="listening-assistant__actions">
+                                        <button type="button" class="btn btn-primary" data-completion-rating-confirm>均为非常好，继续</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-completion-rating-skip>稍后填写</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-completion-go-back="methods">返回教学方法</button>
+                                    </div>
+                                </div>
+                                <div data-completion-rating-detail hidden>
+                                    <p class="form-completion-assistant__condition" data-completion-rating-progress role="status" aria-live="polite"></p>
+                                    <h3 class="listening-assistant__question"><span data-completion-rating-title></span>评价如何？</h3>
+                                    <div class="listening-assistant__actions">
+                                        <button type="button" class="btn btn-outline-primary" data-completion-rating-answer="好">好</button>
+                                        <button type="button" class="btn btn-outline-primary" data-completion-rating-answer="一般">一般</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-completion-go-back="ratings">返回项目选择</button>
+                                        <button type="button" class="btn btn-outline-secondary" data-completion-rating-skip>稍后填写</button>
+                                    </div>
+                                </div>
                                 <div data-completion-recommendation hidden>
                                     <h3 class="listening-assistant__question">是否推荐这节课？</h3>
-                                    <p class="form-completion-assistant__condition">请根据实际听课情况选择是否推荐，教学方法和各项评价请如实填写。</p>
+                                    <p class="form-completion-assistant__condition">请根据实际听课情况独立选择是否推荐。</p>
                                     <div class="listening-assistant__actions">
                                         <button type="button" class="btn btn-outline-primary" data-completion-recommend-answer="yes">推荐</button>
                                         <button type="button" class="btn btn-outline-primary" data-completion-recommend-answer="no">不推荐</button>
@@ -505,7 +545,7 @@
                             </div>
                             <div class="col-md-6">
                                 <div class="mb-3">
-                                    <label for="course_feedback" class="form-label">课程反馈(优点) <span class="text-danger">*</span></label>
+                            <label for="course_feedback" class="form-label">课程反馈（优点） <span class="text-danger">*</span></label>
                                     <textarea class="form-control" id="course_feedback" name="course_feedback" rows="4" 
                                               placeholder="五十字以上,评价的内容实在且有针对性" required></textarea>
                                     <div class="d-flex justify-content-between">
@@ -1294,7 +1334,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% if candidates_ready %}<script src="{{ url_for('static', filename='js/listening-assistant.js') }}"></script>{% endif %}
-<script src="{{ url_for('static', filename='js/form-completion-assistant.js', v='20261013') }}"></script>
+<script src="{{ url_for('static', filename='js/form-completion-assistant.js', v='20261013-complement') }}"></script>
 <script src="{{ url_for('static', filename='js/student-grade-class-input.js', v='20261013') }}"></script>
 {% if capture_enabled and not form %}<script src="{{ url_for('static', filename='js/site-location.js') }}"></script>{% if candidates_ready %}<script src="{{ url_for('static', filename='js/site-context-guide.js') }}"></script>{% endif %}<script src="{{ url_for('static', filename='js/site-capture.js') }}"></script><script src="{{ url_for('static', filename='js/site-door-crop.js') }}"></script><script src="{{ url_for('static', filename='js/site-building-map.js') }}"></script>{% endif %}
 {% endblock %}

@@ -108,3 +108,53 @@ test('skipping a shortcut restores the earlier recommendation only', () => {
   assert.equal(form.fields.quality_case.value, '不推荐');
   assert.equal(form.fields.overall_effect.value, '一般');
 });
+
+test('teaching methods come from explicit multi selection', () => {
+  assert.equal(typeof assistant.applyTeachingMethods, 'function');
+  const form=formFixture({quality_case:'推荐'});
+  form.fields.tm_ppt.value='PPT演示法';form.fields.tm_lecture.value='讲授法';form.fields.tm_interactive.value='师生互动法';
+  const owned=new Map();
+  assert.equal(assistant.applyTeachingMethods(form,[],owned),false);
+  assert.equal(form.fields.teaching_method.value,'');
+  assert.equal(assistant.applyTeachingMethods(form,['tm_lecture','tm_interactive'],owned),true);
+  assert.equal(form.fields.tm_ppt.checked,false);
+  assert.equal(form.fields.tm_lecture.checked,true);
+  assert.equal(form.fields.tm_interactive.checked,true);
+  assert.equal(form.fields.teaching_method.value,'讲授法、师生互动法');
+  assert.equal(form.fields.courseware_quality.value,'无');
+  assert.equal(form.fields.quality_case.value,'推荐');
+});
+
+test('explicit complement confirmation fills only unselected applicable ratings', () => {
+  assert.equal(typeof assistant.applyRatingComplement, 'function');
+  const form=formFixture({classroom_discipline:'好',quality_case:'推荐',course_feedback:'人工反馈'});
+  form.fields.tm_ppt.checked=true;
+  assistant.applyRatingComplement(form,['classroom_discipline','overall_effect'],new Map());
+  assert.equal(form.fields.classroom_discipline.value,'好');
+  assert.equal(form.fields.classroom_atmosphere.value,'非常好');
+  assert.equal(form.fields.courseware_quality.value,'非常好');
+  assert.equal(form.fields.overall_effect.value,'');
+  assert.equal(form.fields.quality_case.value,'推荐');
+  assert.equal(form.fields.course_feedback.value,'人工反馈');
+});
+
+test('no courseware remains not applicable when every other rating is very good', () => {
+  assert.equal(typeof assistant.applyRatingComplement, 'function');
+  const form=formFixture({courseware_quality:'无',quality_case:'不推荐'});
+  form.fields.tm_lecture.checked=true;
+  assistant.applyRatingComplement(form,[],new Map());
+  for(const id of ['classroom_discipline','classroom_atmosphere','overall_effect'])assert.equal(form.fields[id].value,'非常好');
+  assert.equal(form.fields.courseware_quality.value,'无');
+  assert.equal(form.fields.quality_case.value,'不推荐');
+});
+
+test('changing complement selection restores earlier manual grades and retains later edits', () => {
+  assert.equal(typeof assistant.applyRatingComplement, 'function');
+  const form=formFixture({classroom_discipline:'一般',courseware_quality:'无'});
+  const owned=new Map();
+  assistant.applyRatingComplement(form,[],owned);
+  form.fields.classroom_atmosphere.value='好';
+  assistant.applyRatingComplement(form,['classroom_discipline','classroom_atmosphere'],owned);
+  assert.equal(form.fields.classroom_discipline.value,'一般');
+  assert.equal(form.fields.classroom_atmosphere.value,'好');
+});
