@@ -7,6 +7,7 @@ from typing import Any, Mapping
 import unicodedata
 
 from app.services.listening_assistant import ListeningAssistantService
+from app.services.student_grade_class_formatting import format_student_grade_class
 from app.services.listening_assistant_contracts import (
     Candidate,
     normalize_class_for_display,
@@ -69,7 +70,8 @@ def _candidate_value(candidate: Candidate, kind: str) -> str:
     if kind == 'period':
         return _period_label(candidate.period)
     if kind == 'student_grade_class':
-        return candidate.student_grade_class
+        return format_student_grade_class(candidate.student_grade_class,
+                                          source_batch_id=candidate.source_batch_id)
     raise ValueError('question kind is not allowed')
 
 

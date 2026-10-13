@@ -396,7 +396,9 @@
                                 <div class="mb-3">
                                     <label for="student_grade_class" class="form-label">专业年级 <span class="text-danger">*</span></label>
                                     <input type="text" class="form-control" id="student_grade_class" name="student_grade_class" 
-                                           placeholder="如:2018级植物生产类05、06班" required>
+                                           data-format-url="{{ url_for('user.format_student_grade_class_input') }}"
+                                           placeholder="如：2019级英语（师范）01、02班" required>
+                                    <div class="form-text">离开输入框后自动规范年级、中文括号和数字班号。</div>
                                 </div>
                             </div>
                             <div class="col-12">
@@ -1293,5 +1295,6 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 {% if candidates_ready %}<script src="{{ url_for('static', filename='js/listening-assistant.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='js/form-completion-assistant.js') }}"></script>
+<script src="{{ url_for('static', filename='js/student-grade-class-input.js', v='20261013') }}"></script>
 {% if capture_enabled and not form %}<script src="{{ url_for('static', filename='js/site-location.js') }}"></script>{% if candidates_ready %}<script src="{{ url_for('static', filename='js/site-context-guide.js') }}"></script>{% endif %}<script src="{{ url_for('static', filename='js/site-capture.js') }}"></script><script src="{{ url_for('static', filename='js/site-door-crop.js') }}"></script><script src="{{ url_for('static', filename='js/site-building-map.js') }}"></script>{% endif %}
 {% endblock %}

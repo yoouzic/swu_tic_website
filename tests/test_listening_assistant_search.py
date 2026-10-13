@@ -151,6 +151,15 @@ def test_search_matches_room_or_teacher_exactly_and_requires_both_anchors():
     assert loader.calls[0]['semester'] == SEMESTER
 
 
+def test_formatted_class_filter_preserves_candidate_id():
+    service, _ = service_with(primary=[entry(1, student_class='2024英语(师)1班;2024英语(师)2班')])
+    original = service.search(AssistantQuery(LOOKUP_DATE, room='8-309'))
+    formatted = service.search(AssistantQuery(LOOKUP_DATE, room='8-309',
+                              student_grade_class='2024级英语（师范）01、02班'))
+    assert len(formatted.candidates) == 1
+    assert formatted.candidates[0].candidate_id == original.candidates[0].candidate_id
+
+
 def test_multi_location_rows_match_any_room_token_and_keep_teacher_presentations_distinct():
     rows = [
         entry(

@@ -723,6 +723,7 @@ class Candidate:
 
     def to_public_dict(self) -> dict[str, Any]:
         """Serialize only course/schedule evidence safe for a public candidate card."""
+        from app.services.student_grade_class_formatting import format_student_grade_class
         return {
             'candidate_id': self.candidate_id,
             'lecture_date': self.lecture_date.isoformat(),
@@ -734,7 +735,8 @@ class Candidate:
             'course_title': self.course_title,
             'teacher_name': self.teacher_name,
             'teacher_college': self.teacher_college,
-            'student_grade_class': self.student_grade_class,
+            'student_grade_class': format_student_grade_class(
+                self.student_grade_class, source_batch_id=self.source_batch_id),
             'source_kind': self.source_kind,
             'source_label': self.source_label,
             'source_batch_id': self.source_batch_id,

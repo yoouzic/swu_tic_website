@@ -15,6 +15,7 @@ from app.services.academic_term import get_current_teaching_semester
 from app.services.teaching_calendar import parse_lecture_date
 from app.services.form_bindings import reconcile_registration_usage_flags
 from app.services.current_courses import current_course_query
+from app.services.student_grade_class_formatting import format_student_grade_class
 from app.services.schedule_availability import current_schedule_availability, site_capture_assistance_enabled
 from app.services.lecture_form_validation import submission_field_errors, review_field_errors
 from app.services.review_concurrency import ReviewConflict, claim_review_form
@@ -354,6 +355,8 @@ def _normalize_draft_payload(raw_payload):
                 item for item in value
                 if isinstance(item, (str, int, float, bool)) or item is None
             ]
+    if isinstance(normalized.get('student_grade_class'), str):
+        normalized['student_grade_class'] = format_student_grade_class(normalized['student_grade_class'])
     return normalized
 
 
@@ -481,6 +484,15 @@ def _render_submitted_form(user, existing_version=None):
     return render_template('user/lecture_form.html', user=user, form_data=submitted,
                            form=existing_version, edit_mode=existing_version is not None,
                            schedule_availability=current_schedule_availability())
+
+
+@user_bp.route('/api/student_grade_class/format', methods=['POST'])
+@login_required
+def format_student_grade_class_input():
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not isinstance(body.get('value'), str) or len(body['value']) > 8000:
+        return jsonify(success=False, message='专业年级应填写文字'), 400
+    return jsonify(success=True, value=format_student_grade_class(body['value']))
 
 
 @user_bp.route('/api/lecture_form_draft', methods=['GET', 'PUT', 'DELETE'])
@@ -878,7 +890,7 @@ def submit_form():
             'teacher_name': teacher_name,
             'teacher_college': teacher_college,
             'course_title': course_title,
-            'student_grade_class': student_grade_class,
+            'student_grade_class': format_student_grade_class(student_grade_class),
             'abnormal_situation': request.form.get('abnormal_situation', '无'),
             'teaching_method': teaching_method,
             'classroom_discipline': request.form.get('classroom_discipline', ''),

@@ -96,6 +96,15 @@ class SubmitFormTransactionTest(unittest.TestCase):
 
     # ---- fixtures ----
 
+    def test_submit_normalizes_class_even_without_browser_javascript(self):
+        payload = self._valid_form_payload()
+        payload['student_grade_class'] = '2024英语(师)1班;2024英语(师)2班'
+        response = self.client.post('/user/submit_form', data=payload)
+        self.assertEqual(response.status_code, 302)
+        saved = LectureForm.query.order_by(LectureForm.id.desc()).first()
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved.student_grade_class, '2024级英语（师范）01、02班')
+
     def _create_user(self, number, student_id):
         user = User(
             number=number,
