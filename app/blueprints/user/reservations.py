@@ -13,6 +13,7 @@ from app.models import (
 )
 from app.security import login_required, submission_required
 from app.services.current_courses import current_course_query
+from app.services.student_grade_class_formatting import format_student_grade_class
 from app.services.registration_course_identity import (
     resolve_current_course_input, resolve_registration_course,
     registrations_for_course, stamp_registration_course,
@@ -650,7 +651,7 @@ def api_unused_reservations():
                         'teacher_name': course.teacher.name if course.teacher else '未知',
                         'teacher_college': course.teacher.college if course.teacher else '未知',
                         'lecture_location': course.class_location,
-                        'student_grade_class': course.class_composition,
+                        'student_grade_class': format_student_grade_class(course.class_composition),
                         'course_code': course.course_code,
                         'selection_code': course.selection_code,
                         'course_id': course.id,

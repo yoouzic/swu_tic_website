@@ -65,6 +65,16 @@ def make_service(entries):
     return ListeningAssistantService(schedule_loader=loader), loader
 
 
+def test_class_question_shows_chinese_parentheses_and_accepts_formatted_answer():
+    from app.services.listening_assistant_guide import _candidate_value
+    service, _ = make_service([entry(1, student_class='2024英语(师)1班')])
+    result = service.search_partial({'date': LOOKUP_DATE.isoformat()})
+    assert _candidate_value(result.candidates[0], 'student_grade_class') == '2024级英语（师范）01班'
+    filtered = service.search_partial({'date': LOOKUP_DATE.isoformat(),
+                                      'student_grade_class': '2024级英语（师范）01班'})
+    assert filtered.candidates[0].candidate_id == result.candidates[0].candidate_id
+
+
 def test_skip_factual_question_preserves_facts_and_asks_a_different_dimension():
     service,_=make_service([entry(i,teacher=f'教师{i}',room=f'8-{300+i}',period=(i,i+1)) for i in range(1,7)])
     guide=ListeningAssistantGuideService(service)

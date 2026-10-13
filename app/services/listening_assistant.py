@@ -36,6 +36,7 @@ from app.services.listening_assistant_schedule import (
     load_schedule_entries_for_query,
 )
 from app.services.teaching_calendar import TeachingCalendarConfig, parse_lecture_date, teaching_week_number
+from app.services.student_grade_class_formatting import format_class_text, current_major_aliases
 
 
 _INVALID_WEEK_DATA = object()
@@ -912,6 +913,8 @@ class ListeningAssistantService:
             calendar = _load_calendar(self._calendar, semester)
 
         candidates: list[Candidate] = []
+        class_aliases = current_major_aliases() if query.student_grade_class else {}
+        query_class = format_class_text(query.student_grade_class, class_aliases)
         skipped_invalid_rows = 0
         for row in rows:
             if lookup_date is None:
@@ -940,7 +943,7 @@ class ListeningAssistantService:
             student_grade_class = _entry_class(row)
             if (
                 query.student_grade_class
-                and student_grade_class != normalize_class_for_display(query.student_grade_class)
+                and format_class_text(student_grade_class, class_aliases) != query_class
             ):
                 continue
 

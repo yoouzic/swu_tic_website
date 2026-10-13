@@ -447,6 +447,9 @@ def safe_field_snapshot(
             snapshot[target] = value
         else:
             snapshot[target] = value
+    from app.services.student_grade_class_formatting import format_student_grade_class
+    snapshot['student_grade_class'] = format_student_grade_class(
+        snapshot['student_grade_class'], source_batch_id=normalized_candidate.source_batch_id)
     return snapshot
 
 

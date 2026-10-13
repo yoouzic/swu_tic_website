@@ -2,8 +2,8 @@
 """Legacy-compatible schedule matcher extracted from AutoReviewEngine.
 
 This module is the single authority for the frozen legacy matcher algorithm.
-AutoReviewEngine and any future orchestration service delegate here; the
-algorithm body must not be modified.
+AutoReviewEngine and reference-data services delegate here. Legacy matching
+remains compatible; class filtering also accepts the canonical form spelling.
 """
 import logging
 import re
@@ -163,9 +163,12 @@ def find_course_in_schedule(
 
         # 6. 进一步筛选：如果有教学班组成信息，优先匹配
         if all_matches and class_composition:
+            from app.services.student_grade_class_formatting import class_text_matches, current_major_aliases
+            class_aliases = current_major_aliases()
             class_matches = []
             for match in all_matches:
-                if class_composition in match['class_composition']:
+                if (class_composition in match['class_composition'] or
+                        class_text_matches(class_composition, match['class_composition'], class_aliases)):
                     match['match_type'] += '_with_class'
                     class_matches.append(match)
             if class_matches:
