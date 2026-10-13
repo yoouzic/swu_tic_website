@@ -2,6 +2,13 @@
     'use strict';
     const ISSUE_FIELDS = ['course_changes', 'abnormal_situation', 'suggestions'];
     const METHODS = ['tm_ppt', 'tm_lecture', 'tm_interactive'];
+    const METHOD_LABELS = {tm_ppt: 'PPT演示法', tm_lecture: '讲授法', tm_interactive: '师生互动法'};
+    const RATINGS = ['classroom_discipline', 'classroom_atmosphere', 'courseware_quality', 'overall_effect'];
+    const RATING_LABELS = {classroom_discipline: '管理课堂纪律', classroom_atmosphere: '调动课堂气氛', courseware_quality: '课件制作质量', overall_effect: '整体教学效果'};
+
+    function applicableRatings(form) {
+        return RATINGS.filter(id => id !== 'courseware_quality' || form.querySelector('#tm_ppt')?.checked);
+    }
 
     function notify(field) {
         field.dispatchEvent(new Event('input', {bubbles: true}));
@@ -53,6 +60,28 @@
         }
     }
 
+    function applyTeachingMethods(form, selected, owned) {
+        const chosen = METHODS.filter(id => selected.includes(id));
+        if (!chosen.length) return false;
+        if (!chosen.includes('tm_ppt')) writePreset(form, 'courseware_quality', '无', owned);
+        METHODS.forEach(id => writePreset(form, id, chosen.includes(id), owned));
+        writePreset(form, 'teaching_method', chosen.map(id => METHOD_LABELS[id]).join('、'), owned);
+        return true;
+    }
+
+    function applyRatingComplement(form, selected, owned) {
+        if (!form.querySelector('#tm_ppt')?.checked) writePreset(form, 'courseware_quality', '无', owned);
+        const applicable = applicableRatings(form);
+        applicable.forEach(id => {
+            if (!selected.includes(id)) writePreset(form, id, '非常好', owned);
+            else {
+                restorePreset(form, [id], owned);
+                if (form.querySelector(`#${id}`)?.value === '非常好') writePreset(form, id, '', owned);
+            }
+        });
+        return applicable.filter(id => selected.includes(id));
+    }
+
     function needsAttention(field) {
         if (!field || field.disabled) return false;
         const value = String(field.value || '').trim();
@@ -67,6 +96,13 @@
         const panel = document.querySelector('[data-form-completion]');
         if (!form || !panel) return;
         const issueQuestion = panel.querySelector('[data-completion-issues]');
+        const methodQuestion = panel.querySelector('[data-completion-methods]');
+        const ratingQuestion = panel.querySelector('[data-completion-ratings]');
+        const ratingDetail = panel.querySelector('[data-completion-rating-detail]');
+        const ratingTitle = panel.querySelector('[data-completion-rating-title]');
+        const ratingProgress = panel.querySelector('[data-completion-rating-progress]');
+        const methodChoices = Array.from(panel.querySelectorAll('[data-completion-method]'));
+        const ratingChoices = Array.from(panel.querySelectorAll('[data-completion-rating]'));
         const recommendationQuestion = panel.querySelector('[data-completion-recommendation]');
         const summary = panel.querySelector('[data-completion-summary]');
         const checklist = panel.querySelector('[data-completion-checklist]');
@@ -76,7 +112,41 @@
         let active = false;
         let applying = false;
         let captureId = null;
-        const answers = {issues: null, recommendation: null};
+        const answers = {issues: null, methods: null, ratings: null, recommendation: null};
+        let ratingQueue = [];
+        let ratingIndex = 0;
+
+        function resetAnswers() {
+            Object.keys(answers).forEach(key => { answers[key] = null; });
+            ratingQueue = [];
+            ratingIndex = 0;
+        }
+
+        function syncMethodChoices() {
+            methodChoices.forEach(choice => { choice.checked = Boolean(form.querySelector(`#${choice.dataset.completionMethod}`)?.checked); });
+        }
+
+        function syncRatingChoices() {
+            const applicable = applicableRatings(form);
+            const hasValues = applicable.some(id => form.querySelector(`#${id}`)?.value);
+            ratingChoices.forEach(choice => {
+                const id = choice.dataset.completionRating;
+                choice.checked = applicable.includes(id) && hasValues && form.querySelector(`#${id}`)?.value !== '非常好';
+            });
+        }
+
+        function ratingsComplete() {
+            return applicableRatings(form).every(id => ['非常好', '好', '一般'].includes(form.querySelector(`#${id}`)?.value));
+        }
+
+        function stage() {
+            if (answers.issues === null) return 'issues';
+            if (answers.methods === null) return 'methods';
+            if (answers.ratings === null) return 'ratings';
+            if (answers.ratings === 'details') return 'rating-detail';
+            if (answers.recommendation === null) return 'recommendation';
+            return 'summary';
+        }
 
         function missingFields() {
             const fields = Array.from(form.querySelectorAll('[required]'))
@@ -87,7 +157,7 @@
         }
 
         function renderChecklist() {
-            const visible = active && answers.issues !== null && answers.recommendation !== null;
+            const visible = active && stage() === 'summary';
             checklist.hidden = !visible;
             const missing = visible ? missingFields() : [];
             const pending = new Set(missing.map(field => field.id));
@@ -121,9 +191,30 @@
 
         function render() {
             panel.hidden = !active;
-            issueQuestion.hidden = answers.issues !== null;
-            recommendationQuestion.hidden = answers.issues === null || answers.recommendation !== null;
-            summary.hidden = answers.issues === null || answers.recommendation === null;
+            const current = stage();
+            issueQuestion.hidden = current !== 'issues';
+            methodQuestion.hidden = current !== 'methods';
+            ratingQuestion.hidden = current !== 'ratings';
+            ratingDetail.hidden = current !== 'rating-detail';
+            recommendationQuestion.hidden = current !== 'recommendation';
+            summary.hidden = current !== 'summary';
+            panel.querySelector('[data-completion-method-confirm]').disabled = !methodChoices.some(choice => choice.checked);
+            const usesCourseware = Boolean(form.querySelector('#tm_ppt')?.checked);
+            panel.querySelector('[data-completion-courseware-choice]').hidden = !usesCourseware;
+            const noCourseware = panel.querySelector('[data-completion-no-courseware]');
+            if (noCourseware) noCourseware.hidden = usesCourseware;
+            ratingChoices.forEach(choice => {
+                if (choice.dataset.completionRating === 'courseware_quality') {
+                    choice.disabled = !usesCourseware;
+                    if (!usesCourseware) choice.checked = false;
+                }
+            });
+            const selectedCount = ratingChoices.filter(choice => choice.checked && !choice.disabled).length;
+            panel.querySelector('[data-completion-rating-confirm]').textContent = selectedCount ? '确认选择，逐项评价' : '均为非常好，继续';
+            if (current === 'rating-detail') {
+                ratingTitle.textContent = RATING_LABELS[ratingQueue[ratingIndex]];
+                ratingProgress.textContent = `第${ratingIndex + 1}项，共${ratingQueue.length}项`;
+            }
             renderChecklist();
         }
 
@@ -134,12 +225,17 @@
                 answers.issues = issueValues.every(value => value === '无') ? 'none' : (issueValues.every(Boolean) ? 'some' : null);
                 const recommended = form.querySelector('#quality_case')?.value === '推荐';
                 answers.recommendation = recommended ? 'yes' : (form.querySelector('#quality_case')?.value === '不推荐' ? 'no' : null);
+                answers.methods = METHODS.some(id => form.querySelector(`#${id}`)?.checked) ? 'done' : null;
+                answers.ratings = ratingsComplete() ? 'done' : null;
             } else {
-                answers.issues = null;
-                answers.recommendation = null;
+                resetAnswers();
             }
+            syncMethodChoices();
+            syncRatingChoices();
             render();
         }
+
+        panel.addEventListener('change', () => render());
 
         panel.addEventListener('click', event => {
             const button = event.target.closest('button');
@@ -154,33 +250,74 @@
             if (button.hasAttribute('data-completion-issue-answer')) {
                 answers.issues = button.dataset.completionIssueAnswer;
                 applyIssues(form, answers.issues, owned);
+            } else if (button.hasAttribute('data-completion-method-confirm')) {
+                const chosen = methodChoices.filter(choice => choice.checked).map(choice => choice.dataset.completionMethod);
+                if (applyTeachingMethods(form, chosen, owned)) {
+                    answers.methods = 'done';
+                    answers.ratings = null;
+                    syncRatingChoices();
+                }
+            } else if (button.hasAttribute('data-completion-method-skip')) {
+                answers.methods = 'skip';
+                answers.ratings = 'skip';
+            } else if (button.hasAttribute('data-completion-rating-confirm')) {
+                const chosen = ratingChoices.filter(choice => choice.checked && !choice.disabled).map(choice => choice.dataset.completionRating);
+                ratingQueue = applyRatingComplement(form, chosen, owned);
+                ratingIndex = 0;
+                answers.ratings = ratingQueue.length ? 'details' : 'done';
+            } else if (button.hasAttribute('data-completion-rating-answer')) {
+                const value = button.dataset.completionRatingAnswer;
+                if (answers.ratings === 'details' && ['好', '一般'].includes(value)) {
+                    writePreset(form, ratingQueue[ratingIndex], value, owned);
+                    ratingIndex += 1;
+                    if (ratingIndex >= ratingQueue.length) answers.ratings = 'done';
+                }
+            } else if (button.hasAttribute('data-completion-rating-skip')) {
+                restorePreset(form, applicableRatings(form), owned);
+                answers.ratings = 'skip';
+            } else if (button.hasAttribute('data-completion-go-back')) {
+                const destination = button.dataset.completionGoBack;
+                if (destination === 'issues') answers.issues = null;
+                if (destination === 'methods') { answers.methods = null; syncMethodChoices(); }
+                if (destination === 'ratings') { answers.ratings = null; syncRatingChoices(); }
             } else if (button.hasAttribute('data-completion-recommend-answer')) {
                 answers.recommendation = button.dataset.completionRecommendAnswer;
                 applyRecommendation(form, answers.recommendation, owned);
             } else if (button.hasAttribute('data-completion-edit')) {
-                answers.issues = null;
-                answers.recommendation = null;
+                resetAnswers();
+                syncMethodChoices();
+                syncRatingChoices();
             } else if(button.hasAttribute('data-completion-back')) {
-                answers.issues=null;
+                answers.ratings = null;
+                syncRatingChoices();
             }
             applying = false;
             render();
-            const nextQuestion = answers.issues === null ? issueQuestion : recommendationQuestion;
+            const nextQuestion = {issues: issueQuestion, methods: methodQuestion, ratings: ratingQuestion,
+                'rating-detail': ratingDetail, recommendation: recommendationQuestion, summary}[stage()];
             if (!nextQuestion.hidden) nextQuestion.querySelector('button')?.focus({preventScroll: true});
         });
         function onFormEdit(event) {
             if (applying) return;
             const field = event?.target;
+            if (field && panel.contains(field)) return;
             if (field?.matches('.form-control, .form-select') && !needsAttention(field)) field.classList.remove('is-invalid');
-            renderChecklist();
+            if (active && METHODS.includes(field?.id)) {
+                if (!METHODS.some(id => form.querySelector(`#${id}`)?.checked)) answers.methods = null;
+                if (answers.ratings !== null && !ratingsComplete()) { answers.ratings = null; syncRatingChoices(); }
+                syncMethodChoices();
+            }
+            if (active && field?.id === 'quality_case') {
+                answers.recommendation = field.value === '推荐' ? 'yes' : (field.value === '不推荐' ? 'no' : null);
+            }
+            render();
         }
         form.addEventListener('input', onFormEdit);
         form.addEventListener('change', onFormEdit);
         form.addEventListener('lecture-assistant-course-confirmed', () => activate(false));
         form.addEventListener('lecture-assistant-course-cleared', () => {
             active = false;
-            answers.issues = null;
-            answers.recommendation = null;
+            resetAnswers();
             applying = true;
             restorePreset(form, Array.from(owned.keys()), owned);
             applying = false;
@@ -194,15 +331,15 @@
             if (data?.assistant?.stage === 'confirmed' && form.querySelector('#assistant_payload')?.value) activate(true);
             else {
                 active=false;
-                answers.issues=null;
-                answers.recommendation=null;
+                resetAnswers();
+                syncMethodChoices();
+                syncRatingChoices();
                 render();
             }
         });
         form.addEventListener('reset', () => {
             active = false;
-            answers.issues = null;
-            answers.recommendation = null;
+            resetAnswers();
             captureId = null;
             owned.clear();
             render();
@@ -214,6 +351,6 @@
         });
         render();
     }
-    if (typeof module !== 'undefined') module.exports = {applyIssues, applyRecommendation, needsAttention};
+    if (typeof module !== 'undefined') module.exports = {applyIssues, applyRecommendation, applyTeachingMethods, applyRatingComplement, needsAttention};
     if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', init);
 }());

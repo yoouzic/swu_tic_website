@@ -232,7 +232,7 @@ def test_accessibility_responsive_and_local_assets_are_present():
         assert 'https://cdn.' not in text
         assert 'https://unpkg.' not in text
     assert '<script src="{{ url_for(\'static\', filename=\'js/listening-assistant.js\') }}"></script>' in TEMPLATE
-    assert '<link rel="stylesheet" href="{{ url_for(\'static\', filename=\'css/listening-assistant.css\') }}">' in TEMPLATE
+    assert '<link rel="stylesheet" href="{{ url_for(\'static\', filename=\'css/listening-assistant.css\', v=\'20261013-complement\') }}">' in TEMPLATE
 
 
 def test_guide_does_not_auto_start_before_user_enters_semester():
