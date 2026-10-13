@@ -13,7 +13,7 @@
     const SEMESTER_STORAGE_KEY = 'swu_tic_listening_assistant_semester_v1';
     const FACT_KINDS = Object.freeze(['date', 'teacher', 'room', 'period', 'student_grade_class']);
     const SOURCE_LABELS = Object.freeze({
-        primary: '当前权威课表',
+        primary: '当前课表',
         backup: '备用课表线索 · 需核对',
     });
     const FACT_LABELS = Object.freeze({
@@ -354,10 +354,10 @@
                 try {
                     result = await response.json();
                 } catch (error) {
-                    throw new Error('服务器返回了无法读取的结果');
+                    throw new Error('操作未完成，请重试或手动填写。');
                 }
                 if (!response.ok || !result || result.success !== true) {
-                    throw new Error((result && result.message) || '填表助手请求失败');
+                    throw new Error((result && result.message) || '操作未完成，请重试或手动填写。');
                 }
                 return result.data || {};
             } catch (error) {
@@ -520,8 +520,8 @@
                 teacher: {type: 'text', label: '授课教师', help: ''},
                 room: {type: 'text', label: '教室', help: '例如：8-309。'},
                 period: {type: 'text', label: '实际听课节次', help: '例如：第3-4节。'},
-                student_grade_class: {type: 'text', label: '听课班级', help: '请输入班级。'},
-                memory: {type: 'text', label: '自定义信息', help: '初始问题请选择类别；无法确定时可直接手动填写。'},
+                student_grade_class: {type: 'text', label: '听课班级', help: ''},
+                memory: {type: 'text', label: '自定义信息', help: '请选择你记得的信息；也可手动填写。'},
             };
             return configs[kind] || configs.memory;
         }
@@ -707,7 +707,7 @@
             guideState.selectedCandidateId = selectedId;
             elements.candidateSummary.replaceChildren();
             if (elements.evidenceTitle) {
-                elements.evidenceTitle.textContent = completed ? '已确认的候选与来源' : '确认前请核对课程、教师、教室、节次、班级和来源。';
+                elements.evidenceTitle.textContent = completed ? '已确认课程' : '确认课程信息';
             }
             appendText(elements.candidateSummary, 'h3', 'listening-assistant__candidate-title', cleanText(candidate.course_title) || '未命名课程');
             const meta = document.createElement('div');
@@ -726,9 +726,6 @@
             elements.source.replaceChildren();
             const source = candidate.source_kind === 'backup' ? SOURCE_LABELS.backup : (candidate.source_label || SOURCE_LABELS.primary);
             appendText(elements.source, 'p', 'listening-assistant__source-text', `来源：${source}`);
-            if (candidate.source_batch_id) {
-                appendText(elements.source, 'p', 'listening-assistant__source-batch', `来源批次：${candidate.source_batch_id}`);
-            }
 
             elements.conflict.replaceChildren();
             const conflicts = Array.isArray(candidate.conflicts) ? candidate.conflicts.filter(Boolean) : [];
@@ -816,7 +813,7 @@
                 missing.push('请确认旧课表信息与实际一致');
             }
             if (!elements.roomChoiceWrap.hidden && !root.querySelector('[data-assistant-room-choice]:checked')) {
-                missing.push('请选择教室处理方式');
+                missing.push('请确认实际教室。');
             }
             const conflicts = candidate && Array.isArray(candidate.conflicts) ? candidate.conflicts : [];
             if (
@@ -951,7 +948,7 @@
                 return;
             }
             if (!guideState.backupRescueAvailable || !guideState.backupSourceBatchId) {
-                setStatus('当前学期没有可用备用批次，请手动填写。', 'error');
+                setStatus('该学期没有其他课表，请手动填写。', 'error');
                 return;
             }
             guideState.originalRoomForFallback = cleanText(
@@ -1051,10 +1048,10 @@
             const date = cleanText(guideState.state.known_facts?.date);
             if (elements.manualMessage) {
                 elements.manualMessage.textContent = guideState.history?.at(-1)?.skipped
-                    ? '暂时记不清也可以继续填写其他内容。已保留确认过的信息，可返回上一题或稍后补充。'
+                    ? '已保留确认过的信息，可继续填写或返回上一题。'
                     : unmatched
                     ? `没有找到${date ? ` ${date} 对应的` : '符合这些信息的'}课程，请核对日期、教师或教室。`
-                    : (guideState.manualRequested ? '已切换为手动填写，请在下方补充课程信息。也可以重新开始引导。' : '现有信息还不能确定课程。可以修改答案、重新查找，或在下方手动填写。');
+                    : (guideState.manualRequested ? '请在下方补充课程信息。' : '暂无法确定课程，请补充信息或手动填写。');
             }
             if (elements.editAnswer) {
                 elements.editAnswer.hidden = !guideState.recovery;
@@ -1098,7 +1095,7 @@
 
         function applyGuideResult(data, historyEntry) {
             if (!isObject(data)) {
-                throw new Error('服务器没有返回可用的引导结果');
+                throw new Error('暂时无法查找课程，请重试或手动填写。');
             }
             if (historyEntry) {
                 guideState.recovery = {
@@ -1414,7 +1411,7 @@
 
         function applyFieldSnapshot(snapshot) {
             if (!isObject(snapshot)) {
-                throw new Error('服务器没有返回可用的字段快照');
+                throw new Error('课程信息暂未填入，请重试或手动填写。');
             }
             const changed = [];
             const dateInput = form.querySelector('#lecture_date');

@@ -71,7 +71,7 @@
                 let data;
                 try{data=await response.json();}
                 catch(cause){
-                    const error=new Error('服务响应暂时无法读取，请刷新后重试。');
+                    const error=new Error('暂未确认操作结果，请刷新查看。');
                     error.definiteFailure=response.status>=400&&response.status<500;
                     throw error;
                 }
@@ -167,7 +167,7 @@
             catch(error){throw new Error(error.name==='NotAllowedError'?'请允许相机权限后重新拍摄。':'相机未能打开，请检查后重试。');}
             if(version!==formRevision){next.getTracks().forEach(track=>track.stop());return;}
             stream=next;
-            el('video').srcObject=stream;el('camera').hidden=false;status(scheduleReady?'拍清楚门牌号即可，系统会自动识别并查找课程。':'拍清楚门牌号，识别结果仍需确认。');
+            el('video').srcObject=stream;el('camera').hidden=false;status(scheduleReady?'请拍清楚门牌号。':'拍清楚门牌号，识别结果仍需确认。');
             beginLocation();
         }
         el('open').addEventListener('click',()=>action(el('open'),async()=>{
@@ -202,7 +202,7 @@
             if(newRecord)body.append('new_record','1');
             else if(record)body.append('replace_capture_id',String(record.id));
             let saved=false;
-            status('正在上传照片并保存现场记录…');
+            status('正在保存照片…');
             try{const result=await request('/user/api/site-capture',{method:'POST',body});saved=true;if(version!==formRevision)return;session.captureId=result.data.id;session.savedAccuracy=result.data.location_accuracy||Infinity;const latest=session.sampler.best();if(latest)session.persist(latest);newRecord=false;showRecord(result.data);stop();await ensureDraftLoaded();if(version===formRevision)setMode(false);}
             catch(error){
                 if(version!==formRevision)return;
@@ -225,7 +225,7 @@
             if(version!==formRevision||record?.id!==id)throw new Error('记录已切换，请重新查找。');
             showRecord(result.data);await ensureDraftLoaded();
             if(!scheduleReady){status('教室已确认，请手动填写课程信息。');setMode(true);if(assistant)assistant.hidden=true;return;}
-            if(window.SiteContextGuide){status('教室已确认，请继续核对助手选项。');return;}
+            if(window.SiteContextGuide){status('教室已确认，请选择课程。');return;}
             if(!result.candidates.length){status(result.message,'warning');return;}
             status('请选择本次听课的课程。');
             for(const candidate of result.candidates){

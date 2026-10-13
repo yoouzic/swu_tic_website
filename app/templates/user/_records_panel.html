@@ -45,7 +45,7 @@
                             <td data-label="计划说明" class="record-description"><div class="record-cell__value"><span data-reservation-description="{{ item.id }}">{{ item.listening_info or '-' }}</span></div></td>
                             <td data-label="绑定状态">
                                 <div class="record-cell__value">
-                                {% if item.is_bound %}<span class="badge bg-secondary">已绑定反馈表 ({{ item.bind_count }})</span>
+                                {% if item.is_bound %}<span class="badge bg-secondary">已绑定反馈表（{{ item.bind_count }}）</span>
                                 {% else %}<span class="badge bg-success">未绑定</span>{% endif %}
                                 </div>
                             </td>
@@ -63,7 +63,7 @@
                 </table>
             </div>
             {% else %}
-            <div id="reservationsEmptyState" class="activity-empty">暂无听课预约。{% if app_can_submit_lecture_form and schedule_availability.registration_ready %}可以先切换到“听课登记”选择课程。{% endif %}</div>
+            <div id="reservationsEmptyState" class="activity-empty">暂无听课预约。{% if app_can_submit_lecture_form and schedule_availability.registration_ready %}可到“听课登记”选择课程。{% endif %}</div>
             {% endif %}
         </div>
     </div>
@@ -72,7 +72,6 @@
         <div class="activity-panel__header activity-panel__header--split">
             <div>
                 <h2>我的表单</h2>
-                <p>查看提交状态、版本历史和审核意见。</p>
             </div>
         </div>
         <div class="activity-panel__body p-0">
@@ -146,7 +145,7 @@
                 </table>
             </div>
         {% else %}
-            <div id="formsEmptyState" class="activity-empty">暂无听课表单。{% if app_can_submit_lecture_form %}填写并提交第一份听课表单后，记录会显示在这里。{% endif %}</div>
+            <div id="formsEmptyState" class="activity-empty">暂无听课表单。{% if app_can_submit_lecture_form %}提交后可在此查看。{% endif %}</div>
         {% endif %}
         </div>
     </div>

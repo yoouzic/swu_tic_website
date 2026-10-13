@@ -388,7 +388,7 @@ else {root.SiteBuildingMap=api;root.addEventListener('DOMContentLoaded',()=>api.
                 const button=document.createElement('button');button.type='button';button.className='site-map__item';
                 button.setAttribute('aria-pressed',String(b.code===selected));
                 const title=document.createElement('strong');title.textContent=buildingLabel(b.code);
-                const detail=document.createElement('span');detail.textContent=!b.mapped?(buildingModel(b.code)?'有外观模型 · 地图位置待核对':'课表地点 · 暂无地图位置'):b.distance!==undefined?`距定位点约${Math.round(b.distance)}米 · 待核对`:'已收录地图 · 待核对';
+                const detail=document.createElement('span');detail.textContent=!b.mapped?(buildingModel(b.code)?'外观参考 · 地图位置待核对':'课表地点 · 暂无地图位置'):b.distance!==undefined?`距定位点约${Math.round(b.distance)}米 · 待核对`:'已收录地图 · 待核对';
                 button.append(title,detail);button.addEventListener('click',()=>{
                     pick(b.code);
                 });list.append(button);
@@ -532,7 +532,7 @@ else {root.SiteBuildingMap=api;root.addEventListener('DOMContentLoaded',()=>api.
         }
         async function load(){
             if(!record)return;const version=++revision,id=record.id;data=null;selected=null;selectedVariant='A';overview=false;previewZoom=1;variantSelect.hidden=true;select.reset();use.disabled=true;locate.disabled=true;
-            search.value='';list.replaceChildren();svg.replaceChildren();picked.textContent='点击建筑或列表，再确认教学楼。';setStatus('正在加载校园地图…');dialog.showModal();
+            search.value='';list.replaceChildren();svg.replaceChildren();picked.textContent='尚未选择教学楼';setStatus('正在加载校园地图…');dialog.showModal();
             const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),12000);
             try{
                 const [response,background]=await Promise.all([fetch(`/user/api/site-capture/${id}/map`,{signal:abort.signal}).then(r=>r.json()),
@@ -540,8 +540,8 @@ else {root.SiteBuildingMap=api;root.addEventListener('DOMContentLoaded',()=>api.
                 if(version!==revision||id!==record?.id||!dialog.open)return;
                 if(!response.success)throw new Error(response.message||'地图暂不可用');data=response.data;context=background;
 
-                setStatus('选择所在教学楼，再点击“使用此教学楼”。也可搜索楼号。');
-                if(!context)setStatus('选择所在教学楼，再点击“使用此教学楼”。也可搜索楼号。 背景暂未加载，楼栋仍可选择。','warning');
+                setStatus('选择教学楼后，点击“使用此教学楼”。');
+                if(!context)setStatus('地图背景暂未加载，仍可选择教学楼。','warning');
                 renderList();const codes=new Set(data.nearby.buildings.map(b=>b.code));
                 const features=data.buildings.features.filter(f=>codes.has(f.properties.code));fit(features.length?features:data.buildings.features);
             }catch(e){if(version===revision)setStatus('地图暂不可用，可关闭后手动输入教学楼。',e.name==='AbortError'?'warning':'error');}

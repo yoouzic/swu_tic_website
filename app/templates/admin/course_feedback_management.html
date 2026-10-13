@@ -13,13 +13,6 @@
             <div class="page-header">
                 <div class="page-header__heading">
                     <h1><i class="bi {{ 'bi-journal-text' if is_course_management else 'bi-calendar-check' }}"></i> {{ current_page_title }}</h1>
-                    <p>
-                        {% if is_course_management %}
-                        维护课程、教师与禁听规则。
-                        {% else %}
-                        查询课程并完成听课登记。
-                        {% endif %}
-                    </p>
                 </div>
                 <div class="page-header__actions course-page-actions">
                     {% if is_course_management %}
@@ -417,7 +410,7 @@
             </div>
             <div class="modal-body">
                 <div class="alert alert-info">
-                    导入后系统会按“禁听该教师全部课程”的当前实现方式，对所有信息员批量生成禁听记录。
+                    导入后，所有信息员都将被禁止听该教师的全部课程。
                 </div>
                 <div class="row g-3 align-items-end">
                     <div class="col-md-7">

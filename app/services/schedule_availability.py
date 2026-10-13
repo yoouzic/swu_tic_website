@@ -33,7 +33,7 @@ def current_schedule_availability():
         'message': message, 'candidates_ready': candidates_ready,
         'registration_ready': registration_ready,
         'candidate_message': '' if candidates_ready else (
-            message or '本学期课表尚未完成课程索引，请联系管理员。'),
+            message or '本学期课表暂不可用，请联系管理员。'),
         'registration_message': '' if registration_ready else (
-            message or '本学期课表尚未完成登记课程导入，请联系管理员。'),
+            message or '本学期暂不能登记课程，请联系管理员。'),
     }

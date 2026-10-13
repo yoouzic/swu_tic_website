@@ -176,7 +176,7 @@ def test_only_live_guide_remains_with_inline_event_safety():
 
 def test_source_conflict_and_confirmation_contract_stays_additive():
     for marker in (
-        '当前权威课表',
+        '当前课表',
         '备用课表线索 · 需核对',
         'source_batch_id',
         'needs_confirmation',
@@ -231,7 +231,7 @@ def test_accessibility_responsive_and_local_assets_are_present():
         text = path.read_text(encoding='utf-8')
         assert 'https://cdn.' not in text
         assert 'https://unpkg.' not in text
-    assert '<script src="{{ url_for(\'static\', filename=\'js/listening-assistant.js\') }}"></script>' in TEMPLATE
+    assert '<script src="{{ url_for(\'static\', filename=\'js/listening-assistant.js\', v=\'20261014-copy\') }}"></script>' in TEMPLATE
     assert '<link rel="stylesheet" href="{{ url_for(\'static\', filename=\'css/listening-assistant.css\', v=\'20261013-complement\') }}">' in TEMPLATE
 
 
@@ -312,7 +312,7 @@ def test_new_draft_clears_stale_date_and_period_display_text():
     assert 'if (!startPeriod || !endPeriod)' in TEMPLATE
     assert 'periodDisplay.textContent = \'\'' in TEMPLATE
 def test_completed_candidate_view_replaces_pending_confirmation_copy():
-    assert '已确认的候选与来源' in TEMPLATE + SCRIPT
+    assert '已确认课程' in TEMPLATE + SCRIPT
     assert '课程信息已填入。' in SCRIPT
     assert 'data-completion-issues' in TEMPLATE
     assert 'data-completion-recommendation' in TEMPLATE

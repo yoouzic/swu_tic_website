@@ -58,7 +58,7 @@ def choose_guidance(ranked, *, facts, asked, question_count, scoped_location, qu
                       reason='教室和节次已匹配，请核对课程或班级。')
         return result
     if question_count>=parameters.max_questions:
-        result['reason']='已尝试两次核对，仍不确定。可扩大范围查看课程，或修改信息。'
+        result['reason']='仍无法确定课程，可扩大范围查看课程或修改信息。'
         return result
     question=question_picker(pool) if pool else None
     if not question and pool and not qualified:
@@ -90,7 +90,7 @@ def choose_guidance(ranked, *, facts, asked, question_count, scoped_location, qu
                 if question['kind']=='building' and scoped_location else
                 '门牌读数还不确定，请核对照片上的数字。'
                 if question['kind']=='room_number' else
-                '还有一处信息不确定，补充后我会重新匹配。')
+                '请补充下面的信息。')
         result.update(mode='clarify',candidate_ids=[c['candidate_id'] for c in pool],question=question,
                       reason=reason)
     elif qualified and same_scene:

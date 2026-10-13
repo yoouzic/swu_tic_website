@@ -90,4 +90,4 @@ def test_confirmed_building_resolves_location_warning_on_course_card():
         door_hypotheses=[{'value':'0609','score':.99}],clock='09:00')
     c=r['candidates'][0]
     assert '楼栋已由你确认' in c['match_reasons']
-    assert '该楼栋定位证据不足' not in c['match_uncertainties']
+    assert '无法凭定位确认该楼栋' not in c['match_uncertainties']

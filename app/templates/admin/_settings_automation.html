@@ -6,7 +6,6 @@
     <section class="activity-panel automation-service-status" id="automationServiceStatus" aria-labelledby="automationServiceTitle">
         <div class="activity-panel__header">
             <h2 id="automationServiceTitle"><i class="bi bi-heart" aria-hidden="true"></i> 自动化服务状态</h2>
-            <p>状态检查只返回可展示的健康摘要，不显示密钥或原始连接信息。</p>
         </div>
         <div class="activity-panel__body">
             <div class="row g-3">
@@ -37,7 +36,7 @@
         <div class="activity-panel__header activity-panel__header--split">
             <div>
                 <h2 id="automationDatasetTitle"><i class="bi bi-calendar3" aria-hidden="true"></i> 课表数据集</h2>
-                <p>上传后先生成 staged 预览；只有确认启用后才切换 active 数据集。</p>
+                <p>上传后先预览，确认后启用。</p>
             </div>
             <label class="automation-semester-field">
                 <span class="form-label">学期</span>
@@ -130,7 +129,7 @@
     <section class="activity-panel mt-3" id="automationBatchExecution" aria-labelledby="automationBatchExecutionTitle">
         <div class="activity-panel__header">
             <h2 id="automationBatchExecutionTitle"><i class="bi bi-play-circle" aria-hidden="true"></i> 自动审核批次</h2>
-            <p>先预览范围和缓存，再确认启动；自动审核只生成证据和建议，不改变人工审核字段。</p>
+            <p>先预览，再启动。审核结果仍需人工确认。</p>
         </div>
         <div class="activity-panel__body">
             <form id="automationReviewBatchForm" data-automation-batch-form>
@@ -186,14 +185,14 @@
     <section class="activity-panel mt-3" aria-labelledby="automationRulesTitle">
         <div class="activity-panel__header activity-panel__header--split">
             <div>
-                <h2 id="automationRulesTitle"><i class="bi bi-journal-check" aria-hidden="true"></i> 规则与 revision</h2>
-                <p>每次变更都会形成可追溯的规则 revision，批次读取固定版本。</p>
+                <h2 id="automationRulesTitle"><i class="bi bi-journal-check" aria-hidden="true"></i> 审核规则</h2>
+                <p>规则修改后保存为新版本，已启动的审核仍使用启动时的版本。</p>
             </div>
-            <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#automationRuleRevision">新建 revision</button>
+            <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#automationRuleRevision">新建规则版本</button>
         </div>
         <div class="activity-panel__body table-responsive">
             <table class="table table-hover align-middle">
-                <thead><tr><th>规则</th><th>severity</th><th>版本</th><th>启用</th><th>parameters</th><th>操作</th></tr></thead>
+                <thead><tr><th>规则</th><th>风险等级</th><th>版本</th><th>启用</th><th>参数</th><th>操作</th></tr></thead>
                 <tbody id="automationRuleList"><tr><td colspan="5" class="text-muted">尚未加载。</td></tr></tbody>
             </table>
         </div>
@@ -226,11 +225,11 @@
             <div class="modal-content">
                 <form id="automationRuleRevisionForm">
                     <div class="modal-header">
-                        <h2 class="modal-title fs-5" id="automationRuleRevisionTitle">新建规则 revision</h2>
+                        <h2 class="modal-title fs-5" id="automationRuleRevisionTitle">新建规则版本</h2>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
                     </div>
                     <div class="modal-body">
-                        <label class="form-label" for="automationRuleKey">规则 key</label>
+                        <label class="form-label" for="automationRuleKey">规则标识</label>
                         <input class="form-control mb-3" id="automationRuleKey" name="rule_key" required>
                         <label class="form-label" for="automationRuleHandler">处理器</label>
                         <input class="form-control mb-3" id="automationRuleHandler" name="handler" required>
@@ -238,21 +237,21 @@
                             <input class="form-check-input" id="automationRuleEnabled" name="enabled" type="checkbox" checked>
                             <label class="form-check-label" for="automationRuleEnabled">启用规则</label>
                         </div>
-                        <label class="form-label" for="automationRuleSeverity">severity</label>
+                        <label class="form-label" for="automationRuleSeverity">风险等级</label>
                         <select class="form-select mb-3" id="automationRuleSeverity" name="severity">
-                            <option value="info">info</option>
-                            <option value="review" selected>review</option>
-                            <option value="high">high</option>
-                            <option value="unknown">unknown</option>
+                            <option value="info">提示</option>
+                            <option value="review" selected>建议复核</option>
+                            <option value="high">高风险</option>
+                            <option value="unknown">无法判断</option>
                         </select>
-                        <label class="form-label" for="automationRuleParameters">parameters JSON</label>
+                        <label class="form-label" for="automationRuleParameters">规则参数（JSON）</label>
                         <textarea class="form-control mb-3" id="automationRuleParameters" name="parameters" rows="4" placeholder="{}">{}</textarea>
                         <label class="form-label" for="automationRuleChangeReason">变更原因</label>
                         <input class="form-control" id="automationRuleChangeReason" name="change_reason" required>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                        <button type="submit" class="btn btn-primary">保存 revision</button>
+                        <button type="submit" class="btn btn-primary">保存版本</button>
                     </div>
                 </form>
             </div>

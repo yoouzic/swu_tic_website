@@ -77,7 +77,7 @@ else {root.SiteDoorCrop=api;root.addEventListener('DOMContentLoaded',()=>api.mou
         });
         dialog.querySelector('[data-crop-close]').addEventListener('click',close);
         run.addEventListener('click',async()=>{
-            if(busy||!region)return;busy=true;run.disabled=true;setStatus('正在识别框选区域，原照片会保留…');
+            if(busy||!region)return;busy=true;run.disabled=true;setStatus('正在识别…（原照片保留）');
             try{await controller.recognize(region);}catch(e){setStatus(e.name==='AbortError'?'识别较慢，可重试或手动输入门牌。':e.message,e.name==='AbortError'?'warning':'error');}
             finally{busy=false;run.disabled=false;}
         });

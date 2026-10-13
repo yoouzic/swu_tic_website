@@ -606,7 +606,7 @@ def listening_assistant_candidates(user):
 @_assistant_login_required
 def listening_assistant_fallback(user):
     del user
-    return _error_response('填表助手仅使用后台配置的当前课表。', 400)
+    return _error_response('目前仅支持当前课表，请重新查找课程。', 400)
 
 
 @user_bp.route('/api/listening-assistant/confirm', methods=['POST'])
@@ -616,7 +616,7 @@ def listening_assistant_confirm(user):
         payload = _json_object()
         current_semester = _configured_assistant_semester()
         if payload.get('source_kind', 'primary') != 'primary':
-            raise ValueError('填表助手仅使用后台配置的当前课表。')
+            raise ValueError('目前仅支持当前课表，请重新查找课程。')
         query = payload.get('query')
         for value in (payload.get('semester'), query.get('semester') if isinstance(query, dict) else None):
             if value is not None and value != current_semester:

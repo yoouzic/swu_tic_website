@@ -51,10 +51,10 @@
         selectedRegistrationCourseId = course.id;
         $('#selectionCode').val(course.selection_code || '');
         $('#dispCourseName').text(course.course_name || '未知');
-        $('#dispTeacher').text(`${course.teacher_name || '未知'}${course.teacher_college ? ` (${course.teacher_college})` : ''}`);
+        $('#dispTeacher').text(`${course.teacher_name || '未知'}${course.teacher_college ? `（${course.teacher_college}）` : ''}`);
         $('#dispTime').text(course.class_time || '未知');
         $('#dispLocation').text(course.class_location || '未知');
-        $('#dispCode').text(`课程号: ${course.course_code || '-'} | 选课号: ${course.selection_code || '-'}`);
+        $('#dispCode').text(`课程号：${course.course_code || '-'} · 选课号：${course.selection_code || '-'}`);
         courseDetail.hidden = false;
         if (initialTip) {
             initialTip.hidden = true;
@@ -249,7 +249,7 @@
     }
 
     function courseResultLabel(course) {
-        return course.text || `${course.course_name || '未知课程'} | ${course.teacher_name || '未知教师'} | ${course.class_time || '时间未知'} (${course.course_code || '-'}-${course.selection_code || '-'})`;
+        return course.text || `${course.course_name || '未知课程'} · ${course.teacher_name || '未知教师'} · ${course.class_time || '时间未知'}（${course.course_code || '-'}-${course.selection_code || '-'}）`;
     }
 
     function closeCourseResults() {
@@ -447,7 +447,7 @@
                 emptyState = document.createElement('div');
                 emptyState.id = 'reservationsEmptyState';
                 emptyState.className = 'activity-empty';
-                emptyState.textContent = '暂无听课预约。可以先切换到“听课登记”选择课程。';
+                emptyState.textContent = '暂无听课预约，可到“听课登记”选择课程。';
                 tableWrapper.parentElement.appendChild(emptyState);
             }
             if (emptyState) {
@@ -481,7 +481,7 @@
                 emptyState = document.createElement('div');
                 emptyState.id = 'formsEmptyState';
                 emptyState.className = 'activity-empty';
-                emptyState.textContent = '暂无听课表单。填写并提交第一份听课表单后，记录会显示在这里。';
+                emptyState.textContent = '暂无听课表单，提交后可在此查看。';
                 panelBody.appendChild(emptyState);
             }
             if (emptyState) {

@@ -188,7 +188,7 @@ def api_available_courses():
         for course in courses:
             results.append({
                 'id': course.id,
-                'text': f"{course.course_name} | {course.teacher.name if course.teacher else '未知'} | {course.class_time or '时间未知'} ({course.course_code}-{course.selection_code})",
+                'text': f"{course.course_name} · {course.teacher.name if course.teacher else '未知'} · {course.class_time or '时间未知'}（{course.course_code}-{course.selection_code}）",
                 'course_code': course.course_code,
                 'selection_code': course.selection_code,
                 'course_name': course.course_name,
@@ -212,7 +212,7 @@ def api_available_courses():
     except Exception as e:
         return jsonify({
             'success': False,
-            'message': f'获取课程列表失败: {str(e)}'
+            'message': '课程加载失败，请稍后重试。'
         }), 500
 
 
@@ -284,7 +284,7 @@ def api_course_registration_history():
             'highlight_source': 'target' if target_week else 'current',
         })
     except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+        return jsonify({'success': False, 'message': '登记记录加载失败，请稍后重试。'}), 500
 
 
 @user_bp.route('/api/create_reservation', methods=['POST'])
@@ -314,7 +314,7 @@ def api_create_reservation():
         if not semester_configured:
             return jsonify({
                 'success': False,
-                'message': '请联系管理员在 系统设置 → 教学制度 配置学期起始周后再登记。'
+                'message': '学期尚未设置，请联系管理员后再登记。'
             }), 400
 
         # 验证听课时间是否在未来
@@ -386,7 +386,7 @@ def api_create_reservation():
         db.session.rollback()
         return jsonify({
             'success': False,
-            'message': f'登记失败: {str(e)}'
+            'message': '登记失败，请稍后重试。'
         }), 500
 
 
@@ -462,7 +462,7 @@ def api_cancel_reservation():
         db.session.rollback()
         return jsonify({
             'success': False,
-            'message': f'取消失败: {str(e)}'
+            'message': '取消登记失败，请稍后重试。'
         }), 500
 
 
@@ -537,7 +537,7 @@ def api_my_reservations():
     except Exception as e:
         return jsonify({
             'success': False,
-            'message': f'获取预定列表失败: {str(e)}'
+            'message': '听课预约加载失败，请稍后重试。'
         }), 500
 
 
@@ -581,7 +581,7 @@ def api_update_my_reservation(reservation_id):
         return jsonify({'success': True, 'message': '听课登记修改成功'})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': f'修改失败: {str(e)}'}), 500
+        return jsonify({'success': False, 'message': '修改失败，请稍后重试。'}), 500
 
 
 @user_bp.route('/api/my_reservations/<int:reservation_id>', methods=['DELETE'])
@@ -601,7 +601,7 @@ def api_delete_my_reservation(reservation_id):
         return jsonify({'success': True, 'message': '听课登记删除成功'})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': f'删除失败: {str(e)}'}), 500
+        return jsonify({'success': False, 'message': '删除失败，请稍后重试。'}), 500
 
 
 @user_bp.route('/api/unused_reservations')
@@ -662,7 +662,7 @@ def api_unused_reservations():
         
         return jsonify({'success': True, 'data': result})
     except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+        return jsonify({'success': False, 'message': '已登记课程加载失败，请稍后重试。'}), 500
 
 
 @user_bp.route('/api/time_suggestion')
@@ -678,5 +678,5 @@ def api_time_suggestion():
     except Exception as e:
         return jsonify({
             'success': False,
-            'message': f'获取建议失败: {str(e)}'
+            'message': '时间建议暂未加载，请稍后重试。'
         }), 500

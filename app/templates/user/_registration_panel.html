@@ -1,8 +1,7 @@
 <div class="registration-panel" data-registration-panel>
     <div class="registration-search">
         <label for="courseSearchInput" class="form-label">选择课程</label>
-        <input type="search" id="courseSearchInput" class="form-control" autocomplete="off" placeholder="请输入课程名称、教师或课程号进行搜索..." aria-controls="courseResults" aria-expanded="false">
-        <div class="form-text">支持按课程名称、教师或课程号搜索。选择课程后可在当前页面完成登记。</div>
+        <input type="search" id="courseSearchInput" class="form-control" autocomplete="off" placeholder="课程名称、教师或课程号" aria-controls="courseResults" aria-expanded="false">
         <div id="courseSearchFeedback" class="activity-feedback" role="status" aria-live="polite" hidden></div>
         <div id="courseResults" class="course-results" role="listbox" aria-label="课程搜索结果"></div>
     </div>
@@ -43,7 +42,7 @@
                             </div>
                             {% if semester_configured is defined and not semester_configured %}
                             <div class="alert alert-warning" role="alert">
-                                请联系管理员在 系统设置 → 教学制度 配置学期起始周后再登记。
+                                学期尚未设置，请联系管理员后再登记。
                             </div>
                             {% endif %}
                             <div class="d-grid">
@@ -74,7 +73,6 @@
     <div id="initialTip" class="activity-empty activity-empty--large">
         <i class="bi bi-search" aria-hidden="true"></i>
         <h2>先选择一门课程</h2>
-        <p>选择课程后，登记信息和该课程的历史记录会在此处显示。</p>
     </div>
 </div>
 

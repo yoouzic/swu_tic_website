@@ -1,6 +1,6 @@
 <div class="vstack gap-3">
     <section class="activity-panel">
-        <div class="activity-panel__header"><h2>数据导入</h2><p>导入全校课表或进入通讯录工具，操作结果会在当前页面反馈。</p></div>
+        <div class="activity-panel__header"><h2>数据导入</h2></div>
         <div class="activity-panel__body"><div class="row g-3">
             <div class="col-md-4"><button type="button" class="btn btn-outline-primary w-100 py-3" data-bs-toggle="modal" data-bs-target="#scheduleImportModal"><i class="bi bi-calendar-week fs-4 d-block mb-1" aria-hidden="true"></i>全校课表导入</button></div>
             <div class="col-md-4"><a href="{{ url_for('admin.manage_departments') }}#contacts-import" class="btn btn-outline-secondary w-100 py-3"><i class="bi bi-person-plus fs-4 d-block mb-1" aria-hidden="true"></i>通讯录导入</a></div>
@@ -8,7 +8,7 @@
         </div></div>
     </section>
     <section class="activity-panel">
-        <div class="activity-panel__header"><h2>数据导出</h2><p>进入对应业务页面继续筛选和导出，避免重复配置筛选条件。</p></div>
+        <div class="activity-panel__header"><h2>数据导出</h2></div>
         <div class="activity-panel__body"><div class="row g-3">
             <div class="col-md-4"><a href="{{ url_for('admin.view_forms') }}" class="btn btn-outline-secondary w-100 py-3"><i class="bi bi-file-earmark-text fs-4 d-block mb-1" aria-hidden="true"></i>听课记录导出</a></div>
             <div class="col-md-4"><span class="btn btn-outline-secondary w-100 py-3 disabled"><i class="bi bi-calendar-week fs-4 d-block mb-1" aria-hidden="true"></i>全校课表导出<span class="d-block small">待开发</span></span></div>
@@ -16,12 +16,12 @@
         </div></div>
     </section>
     <section class="activity-panel">
-        <div class="activity-panel__header"><h2>数据管理</h2><p>清空操作需要密码和二次确认，完成后会在此处保留结果。</p></div>
+        <div class="activity-panel__header"><h2>数据管理</h2><p>清空数据前需验证当前账号密码。</p></div>
         <div class="activity-panel__body"><button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#clearDataModal"><i class="bi bi-trash" aria-hidden="true"></i> 清空数据表</button></div>
     </section>
     <section class="activity-panel">
         <div class="activity-panel__header"><h2>系统信息</h2></div>
-        <div class="activity-panel__body"><div class="table-responsive"><table class="table align-middle mb-0"><tbody><tr><th scope="row">系统版本</th><td>v1.6</td></tr><tr><th scope="row">数据库状态</th><td><span class="badge bg-success">正常</span></td></tr><tr><th scope="row">最后更新</th><td id="lastUpdateTime">-</td></tr><tr><th scope="row">教师数量</th><td id="teacherCount">-</td></tr><tr><th scope="row">场地数量</th><td id="venueCount">-</td></tr><tr><th scope="row">课程数量</th><td id="courseCount">-</td></tr></tbody></table></div></div>
+        <div class="activity-panel__body"><div class="table-responsive"><table class="table align-middle mb-0"><tbody><tr><th scope="row">最后更新</th><td id="lastUpdateTime">-</td></tr><tr><th scope="row">教师数量</th><td id="teacherCount">-</td></tr><tr><th scope="row">场地数量</th><td id="venueCount">-</td></tr><tr><th scope="row">课程数量</th><td id="courseCount">-</td></tr></tbody></table></div></div>
     </section>
 </div>
 
@@ -40,7 +40,7 @@
 <div class="modal fade" id="clearDataModal" tabindex="-1" aria-labelledby="clearDataTitle" aria-hidden="true">
     <div class="modal-dialog"><div class="modal-content">
         <div class="modal-header"><h2 class="modal-title fs-5" id="clearDataTitle">数据清空</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button></div>
-        <div class="modal-body"><div class="alert alert-warning"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> 此操作将永久删除选定数据表中的所有数据，且无法恢复。</div><form id="clearDataForm"><div class="visually-hidden"><label for="clearDataUsername">当前账号</label><input type="text" id="clearDataUsername" name="username" value="{{ account_username }}" autocomplete="username" readonly></div><div class="mb-3"><label for="tableSelect" class="form-label">选择要清空的数据表</label><select class="form-select" id="tableSelect" name="table_name" required><option value="">请选择数据表</option><option value="courses">课程表 (courses)</option><option value="teachers">教师表 (teachers)</option><option value="venues">场地表 (venues)</option><option value="lecture_forms">听课记录表 (lecture_forms)</option><option value="listening_bans">禁听记录表 (listening_bans)</option><option value="users">用户表 (users)</option><option value="departments">部门表 (departments)</option><option value="groups">群组表 (groups)</option></select></div><div class="mb-3"><label for="passwordInput" class="form-label">当前账号密码</label><input type="password" class="form-control" id="passwordInput" name="password" autocomplete="current-password" required></div><div class="form-check"><input class="form-check-input" type="checkbox" id="confirmCheck" required><label class="form-check-label text-danger" for="confirmCheck">我确认要清空选定的数据表，并理解此操作不可逆转。</label></div></form><div id="clearResult" hidden><div class="alert" id="clearResultAlert"><div id="clearResultContent"></div></div></div></div>
+        <div class="modal-body"><div class="alert alert-warning"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> 此操作将永久删除选定数据表中的所有数据，且无法恢复。</div><form id="clearDataForm"><div class="visually-hidden"><label for="clearDataUsername">当前账号</label><input type="text" id="clearDataUsername" name="username" value="{{ account_username }}" autocomplete="username" readonly></div><div class="mb-3"><label for="tableSelect" class="form-label">选择要清空的数据表</label><select class="form-select" id="tableSelect" name="table_name" required><option value="">请选择数据表</option><option value="courses">课程</option><option value="teachers">教师</option><option value="venues">场地</option><option value="lecture_forms">听课记录</option><option value="listening_bans">禁听记录</option><option value="users">用户</option><option value="departments">部门</option><option value="groups">小组</option></select></div><div class="mb-3"><label for="passwordInput" class="form-label">当前账号密码</label><input type="password" class="form-control" id="passwordInput" name="password" autocomplete="current-password" required></div><div class="form-check"><input class="form-check-input" type="checkbox" id="confirmCheck" required><label class="form-check-label text-danger" for="confirmCheck">我确认要清空选定的数据表，并理解此操作不可逆转。</label></div></form><div id="clearResult" hidden><div class="alert" id="clearResultAlert"><div id="clearResultContent"></div></div></div></div>
         <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button type="button" class="btn btn-danger" id="confirmClearBtn"><i class="bi bi-trash" aria-hidden="true"></i> 确认清空</button></div>
     </div></div>
 </div>
