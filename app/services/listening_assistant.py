@@ -14,6 +14,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, replace
 from datetime import date, datetime
+from itertools import product
 from numbers import Real
 from typing import Any, Callable, Iterable, Mapping
 
@@ -25,6 +26,7 @@ from app.services.listening_assistant_contracts import (
     normalize_room,
     overlap_periods,
     parse_period,
+    parse_period_segments,
     stable_candidate_id,
 )
 from app.services.listening_assistant_schedule import (
@@ -145,30 +147,46 @@ def _entry_weekday(entry: object) -> int | None:
     return _weekday(_value(entry, 'weekday_raw'))
 
 
-def _entry_period(entry: object) -> tuple[int, int] | None:
-    venue_period = parse_period(_value(entry, 'venue_period_raw'))
-    if venue_period is None:
+def _entry_periods(entry: object) -> tuple[tuple[int, int], ...]:
+    venue_raw = _value(entry, 'venue_period_raw')
+    venue_periods = parse_period_segments(venue_raw)
+    venue_has_segments = re.search(r'[,，、;；]', _text(venue_raw)) is not None
+    # A cached envelope cannot represent the gaps in a raw list, even when
+    # that list is malformed. Use the valid primary periods as unconfirmed clues.
+    if not venue_periods and not venue_has_segments:
         venue_start = _value(entry, 'venue_period_start')
         venue_end = _value(entry, 'venue_period_end')
         if venue_start is not None and venue_end is not None:
-            venue_period = parse_period((venue_start, venue_end))
-    if venue_period is not None:
-        return venue_period
+            venue_periods = parse_period_segments((venue_start, venue_end))
+    if venue_periods:
+        return venue_periods
+
+    # Raw disjoint periods must not be hidden by an old cached envelope.
+    for name in ('period_raw', 'class_period_raw'):
+        raw = _value(entry, name)
+        if parse_period(raw) is None:
+            segments = parse_period_segments(raw)
+            if segments:
+                return segments
+            if re.search(r'[,，、;；]', _text(raw)):
+                return ()
 
     for name in ('period', 'period_raw', 'class_period_raw'):
         parsed = parse_period(_value(entry, name))
         if parsed is not None:
-            return parsed
+            return (parsed,)
 
     start = _value(entry, 'period_start')
     end = _value(entry, 'period_end')
     parsed = parse_period((start, end)) if start is not None and end is not None else None
     if parsed is not None:
-        return parsed
+        return (parsed,)
 
+    if venue_has_segments:
+        return ()
     start = _value(entry, 'venue_period_start')
     end = _value(entry, 'venue_period_end')
-    return parse_period((start, end)) if start is not None and end is not None else None
+    return parse_period_segments((start, end)) if start is not None and end is not None else ()
 
 
 _LOCATION_SEPARATOR_RE = re.compile(r'[;；,，、/／\r\n]+')
@@ -207,7 +225,7 @@ def _entry_teacher(entry: object) -> str:
 
 def _venue_period_needs_confirmation(entry: object) -> bool:
     raw_value = _value(entry, 'venue_period_raw', default=None)
-    return bool(_text(raw_value)) and parse_period(raw_value) is None
+    return bool(_text(raw_value)) and not parse_period_segments(raw_value)
 
 
 def _entry_class(entry: object) -> str:
@@ -298,6 +316,69 @@ def _identity_source_row(
     )
 
 
+_WEEK_PARITY_MARKER = re.compile(r'[（(]\s*([单双])\s*[）)]')
+# Whitespace is a list separator in the legacy expressions ('1 4'), so it must
+# stay in the split set rather than being treated as part of a range.
+_WEEK_SEGMENT_SPLIT = re.compile(r'[,，、;；\s]+')
+_WEEK_TOKEN = re.compile(r'(\d+)(?:\s*(?:-|~)\s*(\d+))?')
+
+
+def _parse_week_segments(text: str) -> frozenset[int] | None:
+    """Expand a teaching-week expression, honouring a parity marker PER SEGMENT.
+
+    The workbook writes expressions such as
+    ``1-3周(单),4-6周(双),7-12周,14-16周(双)`` where each range carries its own
+    odd/even rule.  Applying one marker to the whole expression (or refusing the
+    expression because a later marker survived validation) silently drops or
+    mis-dates real teaching weeks.
+    """
+    # Spaces around a range or its parity marker belong to that segment;
+    # spaces between separate week numbers remain list separators.
+    text = re.sub(r'\s*([-~－～至到])\s*', r'\1', text)
+    text = _WEEK_PARITY_MARKER.sub(lambda match: f'({match.group(1)})', text)
+    text = re.sub(r'\s+(?=[（(][单双][）)])', '', text)
+    weeks: set[int] = set()
+    for segment in _WEEK_SEGMENT_SPLIT.split(text):
+        segment = segment.strip()
+        if not segment:
+            continue
+        parity = None
+        while True:
+            marker = _WEEK_PARITY_MARKER.search(segment)
+            if marker is None:
+                break
+            if parity is not None:
+                # Several markers on one range contradict each other.
+                return None
+            parity = marker.group(1)
+            segment = segment[:marker.start()] + segment[marker.end():]
+        segment = re.sub(r'(?:教学)?周(?:次)?', '', segment, flags=re.IGNORECASE)
+        segment = segment.replace('第', '').replace('－', '-').replace('～', '~')
+        segment = segment.replace('至', '-').replace('到', '-')
+        segment = re.sub(r'\s*(?:-|~)\s*', '-', segment).strip()
+        if not segment:
+            # A parity marker with no range attached is not a week expression.
+            return None
+
+        match = _WEEK_TOKEN.fullmatch(segment)
+        if match is None:
+            return None
+        start_text, end_text = match.group(1), match.group(2)
+        start = int(start_text)
+        end = int(end_text) if end_text is not None else start
+        if start > end or start < 1 or end > 52:
+            return None
+        segment_weeks = set(range(start, end + 1))
+        if parity == '单':
+            segment_weeks = {week for week in segment_weeks if week % 2 == 1}
+        elif parity == '双':
+            segment_weeks = {week for week in segment_weeks if week % 2 == 0}
+        if not segment_weeks:
+            return None
+        weeks.update(segment_weeks)
+    return frozenset(weeks) if weeks else None
+
+
 def _parse_week_set(value: object) -> frozenset[int] | None:
     """Parse the schedule workbook's raw teaching-week expressions safely."""
     if value is None:
@@ -316,39 +397,9 @@ def _parse_week_set(value: object) -> frozenset[int] | None:
     text = _text(value)
     if not text:
         return None
-    parity_match = re.search(r'[（(]\s*([单双])\s*[）)]', text)
-    parity = parity_match.group(1) if parity_match else None
-    if parity_match:
-        text = text[:parity_match.start()] + text[parity_match.end():]
-    text = re.sub(r'(?:教学)?周(?:次)?', '', text, flags=re.IGNORECASE)
-    text = text.replace('第', '').replace('－', '-').replace('～', '~')
-    text = text.replace('至', '-').replace('到', '-')
-    text = re.sub(r'\s*(?:-|~)\s*', '-', text)
-    if not re.fullmatch(r'[0-9\s,，、;；\-~]+', text):
+    if not re.fullmatch(r'[0-9\s,，、;；\-~（）()单双第至到教学周次]+', text):
         return None
-
-    weeks: set[int] = set()
-    for part in re.split(r'[,，、;；\s]+', text.strip()):
-        if not part:
-            continue
-        range_match = re.fullmatch(r'(\d+)(?:-|~)(\d+)', part)
-        if range_match:
-            start, end = map(int, range_match.groups())
-            if start > end or start < 1 or end > 52:
-                return None
-            weeks.update(range(start, end + 1))
-        elif part.isdigit():
-            weeks.add(int(part))
-        else:
-            return None
-
-    if not weeks or any(week < 1 or week > 52 for week in weeks):
-        return None
-    if parity == '单':
-        weeks = {week for week in weeks if week % 2 == 1}
-    elif parity == '双':
-        weeks = {week for week in weeks if week % 2 == 0}
-    return frozenset(weeks) if weeks else None
+    return _parse_week_segments(text)
 
 
 def _entry_week_range(entry: object) -> frozenset[int] | None | object:
@@ -893,18 +944,22 @@ class ListeningAssistantService:
             ):
                 continue
 
-            period = _entry_period(row)
-            if period is None:
+            periods = _entry_periods(row)
+            if not periods:
                 skipped_invalid_rows += 1
                 continue
 
-            conflicts: list[str] = []
+            row_conflicts: list[str] = []
             if date_match.conflict:
-                conflicts.append(date_match.conflict)
+                row_conflicts.append(date_match.conflict)
             if _venue_period_needs_confirmation(row):
-                conflicts.append('venue_period_needs_confirmation')
-            if query.period is not None and not overlap_periods(period, query.period):
-                conflicts.append('period_mismatch')
+                row_conflicts.append('venue_period_needs_confirmation')
+            if room_tokens == ('',) and any(
+                parse_period(raw) is None and parse_period_segments(raw)
+                for raw in (_value(row, 'venue_period_raw'), _value(row, 'period_raw'),
+                            _value(row, 'class_period_raw'))
+            ):
+                row_conflicts.append('location_needs_confirmation')
 
             course_code = _text(_value(row, 'course_code', 'course_code_raw'))
             selection_code = _text(_value(row, 'selection_code', 'selection_code_raw'))
@@ -914,7 +969,10 @@ class ListeningAssistantService:
             source_row = _value(row, 'source_row')
             entry_id = _text(_value(row, 'entry_id'))
             row_candidate_failed = False
-            for room in room_tokens:
+            for period, room in product(periods, room_tokens):
+                conflicts = list(row_conflicts)
+                if query.period is not None and not overlap_periods(period, query.period):
+                    conflicts.append('period_mismatch')
                 identity_source_row = _identity_source_row(
                     source_batch_id=source_batch_id,
                     source_row=source_row,

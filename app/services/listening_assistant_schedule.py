@@ -16,6 +16,7 @@ from sqlalchemy.schema import CreateColumn
 from app.models import (
     ListeningAssistantScheduleEntry,
     ScheduleImportBatch,
+    ScheduleImportRow,
     db,
 )
 from app.services.listening_assistant_contracts import (
@@ -23,6 +24,7 @@ from app.services.listening_assistant_contracts import (
     normalize_class_for_display,
     normalize_room,
     parse_period,
+    parse_period_segments,
 )
 from app.services.schedule_snapshots import (
     DEFAULT_SOURCE_ROW_OFFSET,
@@ -447,6 +449,7 @@ def _as_contract(
     *,
     source_kind: str,
     source_label: str,
+    location_raw: object = _MISSING,
 ) -> ScheduleEntry:
     main_period = parse_period(entry.period_raw) if entry.period_raw is not None else None
     venue_period = (
@@ -457,6 +460,7 @@ def _as_contract(
     if venue_period is None and (
         entry.venue_period_start is not None
         and entry.venue_period_end is not None
+        and not re.search(r'[,，、;；]', _normalized_text(entry.venue_period_raw) or '')
     ):
         venue_period = (
             entry.venue_period_start,
@@ -472,9 +476,15 @@ def _as_contract(
             if entry.period_start is not None and entry.period_end is not None:
                 period = (entry.period_start, entry.period_end)
 
+    room = entry.location_normalized or entry.location_raw or ''
+    if location_raw is _MISSING:
+        location_raw = entry.location_raw
+    else:
+        room = location_raw or ''
+
     return ScheduleEntry(
         entry_id=f'listening-assistant:{entry.batch_id}:{entry.source_row}',
-        room=entry.location_normalized or entry.location_raw or '',
+        room=room,
         period=period,
         course_code=entry.course_code or '',
         selection_code=entry.selection_code or '',
@@ -489,13 +499,40 @@ def _as_contract(
         source_label=source_label,
         source_batch_id=str(entry.batch_id),
         source_row=entry.source_row,
-        location_raw=entry.location_raw,
+        location_raw=location_raw,
         period_raw=period_raw,
         class_raw=entry.student_grade_class_raw,
         start_week_raw=entry.start_week_raw,
         venue_start_week_raw=entry.venue_start_week_raw,
         venue_period_raw=entry.venue_period_raw,
     )
+
+
+def _as_contracts(rows, *, source_kind, source_label):
+    # A new multi-period candidate must use this meeting's own venue, not the
+    # offering-level location aggregate retained as a fallback in old indexes.
+    # Read just two snapshot columns in one query; ordinary single-period reads
+    # keep their existing loader and identity behavior.
+    multi_rows = [entry.source_row for entry in rows if any(
+        parse_period(raw) is None and parse_period_segments(raw)
+        for raw in (entry.venue_period_raw, entry.period_raw)
+    )]
+    # Missing canonical evidence also leaves the room unknown; never resurrect
+    # an offering-level fallback merely because the source row is absent.
+    locations = dict.fromkeys(multi_rows)
+    if multi_rows:
+        for source_row, raw in db.session.query(
+            ScheduleImportRow.source_row, ScheduleImportRow.location_raw,
+        ).filter(
+            ScheduleImportRow.batch_id == rows[0].batch_id,
+            ScheduleImportRow.source_row.in_(multi_rows),
+        ).all():
+            location = _normalized_text(raw)
+            locations[source_row] = (None if location is None or
+                location.casefold() in {'nan', 'none', 'nat', '<na>'} else raw)
+    return [_as_contract(entry, source_kind=source_kind, source_label=source_label,
+                         location_raw=locations.get(entry.source_row, _MISSING))
+            for entry in rows]
 
 
 def load_schedule_entries(
@@ -519,14 +556,7 @@ def load_schedule_entries(
         if snapshot.status != READY or snapshot.batch is None:
             raise ScheduleSourceUnavailable(status=snapshot.status)
         rows = _rows_for_batch(snapshot.batch.id)
-        return [
-            _as_contract(
-                entry,
-                source_kind='primary',
-                source_label=PRIMARY_SOURCE_LABEL,
-            )
-            for entry in rows
-        ]
+        return _as_contracts(rows, source_kind='primary', source_label=PRIMARY_SOURCE_LABEL)
 
     requested_semester = _semester_key(semester)
     if not requested_semester:
@@ -542,14 +572,7 @@ def load_schedule_entries(
         raise ValueError('backup source batch semester does not match requested semester')
 
     rows = _rows_for_batch(batch.id)
-    return [
-        _as_contract(
-            entry,
-            source_kind='backup',
-            source_label=BACKUP_SOURCE_LABEL,
-        )
-        for entry in rows
-    ]
+    return _as_contracts(rows, source_kind='backup', source_label=BACKUP_SOURCE_LABEL)
 
 
 def load_schedule_entries_for_query(*, semester: str | None, lecture_date: date | None) -> list[ScheduleEntry]:
@@ -564,10 +587,8 @@ def load_schedule_entries_for_query(*, semester: str | None, lecture_date: date 
         raise ScheduleSourceUnavailable(status=snapshot.status)
     if lecture_date is None:
         return []
-    return [
-        _as_contract(entry, source_kind='primary', source_label=PRIMARY_SOURCE_LABEL)
-        for entry in _rows_for_batch(snapshot.batch.id, weekday=lecture_date.isoweekday())
-    ]
+    rows = _rows_for_batch(snapshot.batch.id, weekday=lecture_date.isoweekday())
+    return _as_contracts(rows, source_kind='primary', source_label=PRIMARY_SOURCE_LABEL)
 
 
 __all__ = [

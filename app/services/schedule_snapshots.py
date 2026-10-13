@@ -22,7 +22,10 @@ from app.models import (
     ScheduleSemesterSelection,
     db,
 )
-from app.services.academic_term import get_current_teaching_semester
+from app.services.academic_term import (
+    clean_term_text,
+    get_current_teaching_semester,
+)
 
 ACTIVE = 'active'
 RETIRED = 'retired'
@@ -163,6 +166,51 @@ def _set_semester_selection(semester: str, batch_id: int) -> None:
     if previous_batch is not None:
         previous_batch.status = RETIRED
     selection.active_batch_id = batch_id
+
+
+def _bare_term_of(semester_identifier: str) -> str:
+    """Return the term part of a composed ``YYYY-YYYY-T`` identifier, else ``''``."""
+    if not semester_identifier or '-' not in semester_identifier:
+        return ''
+    _year, _separator, term = semester_identifier.rpartition('-')
+    return term
+
+
+def _authority_candidates_for_bare_term(bare_term: str) -> List[str]:
+    """Semester identifiers whose composed form ends in ``bare_term``.
+
+    This is the backward-compatibility bridge for installations whose
+    administrator configured the bare workbook term (``'2'``) before the
+    importer composed it.  Callers must treat anything other than exactly one
+    candidate as unresolvable rather than guessing.
+    """
+    if bare_term not in {'1', '2'}:
+        return []
+    candidates = {
+        _semester_key(selection.semester)
+        for selection in ScheduleSemesterSelection.query.all()
+    }
+    return sorted(
+        candidate for candidate in candidates
+        if candidate and _bare_term_of(candidate) == bare_term
+    )
+
+
+def _resolve_bare_term_authority(bare_term: str) -> Tuple[Optional[ScheduleImportBatch], bool]:
+    """Return ``(batch, ambiguous)`` for a bare-term configuration.
+
+    ``(None, False)`` means no equivalent authority exists; ``(None, True)``
+    means several did, which must stay fail-closed.
+    """
+    candidates = _authority_candidates_for_bare_term(bare_term)
+    if not candidates:
+        return None, False
+    if len(candidates) > 1:
+        return None, True
+    authority = _resolve_authority(candidates[0])
+    if not authority.valid or authority.batch is None:
+        return None, False
+    return authority.batch, False
 
 
 def _resolve_authority(semester: str) -> AuthorityResolution:
@@ -377,6 +425,23 @@ def resolve_current_schedule_snapshot(
     # Selection row absent: the legacy exactly-one active fallback is allowed.
     active_count = _legacy_active_count(semester)
     if active_count == 0:
+        # Backward compatibility: an installation whose administrator configured
+        # the bare workbook term ('2') before the importer composed semester
+        # identifiers still owns a composed selection.  Adopt it only when
+        # exactly one candidate exists, and report the batch's own semester.
+        batch, ambiguous = _resolve_bare_term_authority(semester)
+        if ambiguous:
+            return CurrentScheduleSelection(
+                status=AMBIGUOUS,
+                semester=semester,
+            )
+        if batch is not None:
+            return CurrentScheduleSelection(
+                status=READY,
+                semester=batch.semester,
+                batch=batch,
+                rows=_rows_for_batch(batch) if include_rows else [],
+            )
         return CurrentScheduleSelection(
             status=CURRENT_SEMESTER_CONFIGURED_BUT_NO_ACTIVE_SNAPSHOT,
             semester=semester,

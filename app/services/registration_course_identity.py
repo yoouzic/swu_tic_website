@@ -9,6 +9,7 @@ from collections import defaultdict
 import json
 from pathlib import Path
 import re
+import unicodedata
 
 from sqlalchemy import MetaData, Table, inspect
 from sqlalchemy.schema import CreateTable, ForeignKeyConstraint
@@ -55,8 +56,25 @@ def stamp_registration_course(registration, course):
         ensure_ascii=False, sort_keys=True)
 
 
+def _width_insensitive(value):
+    """Normalize compatibility-width characters for a fallback comparison.
+
+    The schedule search exposes a width-normalized selection code (full-width
+    ``（）`` and ``Ⅰ``/``Ⅲ`` folded to ASCII) while Course rows keep the workbook's
+    exact text.  Comparing the two forms lets a caller that selected a course in
+    the assistant resolve the same course for registration instead of being told
+    the course does not exist.
+    """
+    return unicodedata.normalize('NFKC', _text(value))
+
+
 def resolve_current_course_input(course_code, selection_code, course_id=None):
-    """Accept an exact selected ID, or the old two-code API only when unique."""
+    """Accept an exact selected ID, or the old two-code API only when unique.
+
+    ``course_code``/``selection_code`` are matched exactly first; a
+    width-insensitive match is tried only when the caller supplied both codes and
+    the exact match found nothing, and it must still be unambiguous.
+    """
     query = current_course_query().filter_by(course_code=course_code, selection_code=selection_code)
     if course_id is not None:
         if isinstance(course_id, bool) or not isinstance(course_id, (int, str)):
@@ -66,7 +84,28 @@ def resolve_current_course_input(course_code, selection_code, course_id=None):
         parsed = int(course_id)
         return query.filter(Course.id == parsed).first()
     matches = query.limit(2).all()
-    return matches[0] if len(matches) == 1 else None
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        return None
+
+    if not _text(course_code) or not _text(selection_code):
+        return None
+    wanted_selection = _width_insensitive(selection_code)
+    # Course codes are ASCII in practice, so only the selection code is folded.
+    compatible = [
+        course for course in current_course_query().filter_by(course_code=course_code).all()
+        if _width_insensitive(course.selection_code) == wanted_selection
+    ]
+    if not compatible:
+        return None
+    # One offering legitimately spans several rows (one per meeting), so accept
+    # them only when they all describe the same logical course.
+    identities = {(course.course_code, course.selection_code, course.semester)
+                  for course in compatible}
+    if len(identities) != 1:
+        return None
+    return min(compatible, key=lambda course: course.id)
 
 
 def resolve_registration_course(registration, *, current_only=False):

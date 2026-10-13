@@ -27,7 +27,7 @@ test('later-batch A sends its displayed factual value instead of first-batch A',
 function loadFunction(name, context) {
   const start = source.search(new RegExp(`        (?:async )?function ${name}\\(`));
   assert.notEqual(start, -1);
-  const rest = source.slice(start + 1).search(/\n        (?:async )?function /);
+  const rest = source.slice(start + 1).search(/\n        (?:(?:async )?function |root\.addEventListener\()/);
   const end = rest < 0 ? source.length : start + 1 + rest;
   vm.runInNewContext(source.slice(start, end), context);
   return context[name];
@@ -190,4 +190,119 @@ test('starting over ignores the old filled-course query facts', async () => {
   };
   await loadFunction('ensureStarted', ctx)();
   assert.equal(Object.keys(facts).length, 0);
+});
+
+function locationConfirmationContext(candidate, formRoom = '') {
+  const node = () => ({hidden: true, value: '', dataset: {}, replaceChildren() {}, appendChild() {}, classList: {toggle() {}}});
+  const elements = {};
+  ['candidateConfirm', 'candidateSummary', 'source', 'conflict', 'backupAckWrap', 'backupAck',
+    'roomChoiceWrap', 'locationOverrideWrap', 'locationOverride', 'dateOverrideWrap', 'dateOverride',
+    'periodOverrideWrap', 'periodOverride', 'confirm', 'reviewHint'].forEach(key => { elements[key] = node(); });
+  const roomField = {value: formRoom};
+  const ctx = {elements, roomField,
+    guideState: {state: {stage: 'confirm', candidate_ids: [candidate.candidate_id], known_facts: {}},
+      candidates: [candidate], selectedCandidateId: candidate.candidate_id, rejectedIds: [], history: [],
+      assistantFilledFields: new Set(), assistantFilledGroups: new Set()},
+    root: {querySelector: () => ctx.roomChoice || null},
+    form: {querySelector: () => roomField},
+    document: {createElement: node}, cleanText: v => String(v || '').trim(),
+    appendText() {}, appendCandidateMeta() {}, renderCandidateComparison() {}, displayPeriod: v => v,
+    SOURCE_LABELS: {primary: '全校课表', backup: '旧课表'}, CONFLICT_LABELS: {},
+    markAssistantStateStale() { throw new Error('confirmation input must not invalidate the candidate'); },
+  };
+  loadFunction('updateConfirmControls', ctx);
+  loadFunction('collectOverrides', ctx);
+  loadFunction('handleInput', ctx);
+  loadFunction('handleFormContextChange', ctx);
+  return ctx;
+}
+
+test('missing timetable room is confirmed through an independent actual-location input', () => {
+  const candidate = {candidate_id: 'missing-room', room: '', source_kind: 'primary', conflicts: ['location_needs_confirmation']};
+  const ctx = locationConfirmationContext(candidate);
+  loadFunction('renderCandidateConfirm', ctx)();
+  assert.equal(ctx.elements.locationOverrideWrap.hidden, false);
+  assert.equal(ctx.elements.roomChoiceWrap.hidden, true);
+  assert.equal(ctx.elements.confirm.disabled, true);
+  assert.match(ctx.elements.reviewHint.textContent, /实际听课地点/);
+
+  const input = ctx.elements.locationOverride;
+  input.value = '  北碚校区实习基地  ';
+  input.matches = selector => selector.includes('[data-assistant-location-override]');
+  ctx.handleInput({target: input});
+  ctx.handleFormContextChange({target: input});
+  assert.equal(ctx.elements.confirm.disabled, false);
+  assert.equal(ctx.guideState.state.stage, 'confirm');
+  assert.equal(ctx.guideState.selectedCandidateId, candidate.candidate_id);
+  assert.equal(ctx.roomField.value, '');
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.collectOverrides(candidate))), {lecture_location: '北碚校区实习基地'});
+
+  input.value = '   ';
+  ctx.handleInput({target: input});
+  assert.equal(ctx.elements.confirm.disabled, true);
+});
+
+test('actual-location input retains same-candidate edits and clears them for another candidate', () => {
+  const candidate = {candidate_id: 'missing-room-a', room: '', conflicts: ['location_needs_confirmation']};
+  const ctx = locationConfirmationContext(candidate);
+  const render = loadFunction('renderCandidateConfirm', ctx);
+  render();
+  ctx.elements.locationOverride.value = '第一实习点';
+  render();
+  assert.equal(ctx.elements.locationOverride.value, '第一实习点');
+
+  const nextCandidate = {...candidate, candidate_id: 'missing-room-b'};
+  ctx.guideState.candidates = [nextCandidate];
+  ctx.guideState.state.candidate_ids = [nextCandidate.candidate_id];
+  render();
+  assert.equal(ctx.elements.locationOverride.value, '');
+  assert.equal(ctx.elements.confirm.disabled, true);
+});
+
+test('starting a new search clears the unconfirmed actual-location input', () => {
+  const ctx = locationConfirmationContext({candidate_id: 'missing-room', room: '', conflicts: ['location_needs_confirmation']});
+  ctx.elements.locationOverride.value = '上一次实习点';
+  ctx.elements.locationOverride.dataset.candidateId = 'missing-room';
+  Object.assign(ctx, {invalidateRequests() {}, clearAssistantConfirmation() {}, initialQuestion: () => ({kind: 'memory'})});
+  loadFunction('resetGuideState', ctx)();
+  assert.equal(ctx.elements.locationOverride.value, '');
+  assert.equal(ctx.elements.locationOverride.dataset.candidateId, undefined);
+});
+
+test('a supplied timetable room keeps the existing choice between timetable and manual room', () => {
+  const candidate = {candidate_id: 'known-room', room: '32教101', conflicts: ['location_mismatch']};
+  const ctx = locationConfirmationContext(candidate, '31教102');
+  ctx.elements.locationOverride.value = '上次实习点';
+  loadFunction('renderCandidateConfirm', ctx)();
+  assert.equal(ctx.elements.locationOverrideWrap.hidden, true);
+  assert.equal(ctx.elements.roomChoiceWrap.hidden, false);
+  assert.equal(ctx.elements.confirm.disabled, true);
+
+  ctx.roomChoice = {value: 'candidate'};
+  ctx.updateConfirmControls();
+  assert.equal(ctx.elements.confirm.disabled, false);
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.collectOverrides(candidate))), {room: '32教101'});
+  ctx.roomChoice = {value: 'manual'};
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.collectOverrides(candidate))), {lecture_location: '31教102'});
+});
+
+test('independent actual-location confirmation uses the existing payload and draft override contract', () => {
+  const candidate = {candidate_id: 'missing-room', room: '', teacher_name: '教师甲', lecture_date: '2026-10-13',
+    source_kind: 'primary', conflicts: ['location_needs_confirmation']};
+  const ctx = locationConfirmationContext(candidate);
+  ctx.elements.locationOverride.value = '实习基地';
+  Object.assign(ctx, {isObject: v => v && typeof v === 'object', readSemester: () => '2026-2027-1',
+    TEMPLATE_VERSION: 'test', ASSISTANT_FILLED_FIELD_WHITELIST: [], ASSISTANT_FILLED_GROUP_WHITELIST: []});
+  loadFunction('queryForConfirmation', ctx);
+  const payload = loadFunction('buildConfirmationPayload', ctx)(candidate);
+  assert.equal(payload.overrides.lecture_location, '实习基地');
+  assert.equal(payload.query.room, undefined);
+  assert.equal(ctx.roomField.value, '');
+
+  ctx.elements.payload = {value: ''};
+  loadFunction('storeAssistantPayload', ctx)({}, payload);
+  const stored = JSON.parse(ctx.elements.payload.value);
+  assert.equal(stored.stage, 'confirmed');
+  assert.equal(stored.candidate_id, candidate.candidate_id);
+  assert.deepEqual(stored.overrides, {lecture_location: '实习基地'});
 });

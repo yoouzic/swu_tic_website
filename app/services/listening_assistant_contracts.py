@@ -347,6 +347,30 @@ def parse_period(value: object) -> Period | None:
     return None
 
 
+def parse_period_segments(value: object) -> tuple[Period, ...]:
+    """Read timetable segments while keeping the single-period API unchanged.
+
+    Existing forms such as ``3,4`` retain their inclusive-range meaning. Lists
+    that cannot be read as one range, such as ``1-5节,7-11节``, are parsed in
+    full; one invalid segment rejects the whole value. Never span their gaps.
+    """
+    single = parse_period(value)
+    if single is not None:
+        return (single,)
+    if not isinstance(value, str):
+        return ()
+    parts = [part.strip() for part in re.split(r'[,，、;；]', _text(value))]
+    if not 2 <= len(parts) <= 20 or any(not part for part in parts):
+        return ()
+    # A reversed legacy pair is invalid, not a new list of single periods.
+    if len(parts) == 2 and all(re.fullmatch(r'\d{1,2}', part) for part in parts):
+        return ()
+    segments = [parse_period(part) for part in parts]
+    if any(segment is None for segment in segments):
+        return ()
+    return tuple(sorted(set(segments)))
+
+
 def normalize_class_for_display(value: object) -> str:
     """Normalize class text for matching while retaining its visible content."""
     text = _text(value)
@@ -766,5 +790,6 @@ __all__ = [
     'normalize_room',
     'overlap_periods',
     'parse_period',
+    'parse_period_segments',
     'stable_candidate_id',
 ]

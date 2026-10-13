@@ -28,6 +28,7 @@
     const CONFLICT_LABELS = Object.freeze({
         period_mismatch: '查询节次与课表节次不一致，需核对。',
         venue_period_needs_confirmation: '场地节次需要人工核对。',
+        location_needs_confirmation: '本次课程的教室未提供，请按实际听课地点填写。',
         date_needs_confirmation: '日期由星期或周次推断，需人工核对。',
     });
     const ASSISTANT_FILLED_FIELD_WHITELIST = Object.freeze([
@@ -113,6 +114,8 @@
             backupAckWrap: root.querySelector('[data-assistant-backup-ack-wrap]'),
             backupAck: root.querySelector('[data-assistant-backup-ack]'),
             roomChoiceWrap: root.querySelector('[data-assistant-room-choice-wrap]'),
+            locationOverrideWrap: root.querySelector('[data-assistant-location-override-wrap]'),
+            locationOverride: root.querySelector('[data-assistant-location-override]'),
             dateOverrideWrap: root.querySelector('[data-assistant-date-override-wrap]'),
             dateOverride: root.querySelector('[data-assistant-date-override]'),
             periodOverrideWrap: root.querySelector('[data-assistant-period-override-wrap]'),
@@ -285,6 +288,10 @@
             guideState.formFactsDismissed = false;
             guideState.manualRequested = false;
             guideState.recovery = null;
+            if (elements.locationOverride) {
+                elements.locationOverride.value = '';
+                delete elements.locationOverride.dataset.candidateId;
+            }
         }
 
         function markAssistantStateStale() {
@@ -750,7 +757,17 @@
                     && Boolean(cleanText(candidate.room))
                     && knownRoom !== cleanText(candidate.room)
                 );
-            elements.roomChoiceWrap.hidden = !roomConflict && (!knownRoom || knownRoom === cleanText(candidate.room));
+            const locationConflict = conflicts.includes('location_needs_confirmation') && !cleanText(candidate.room);
+            elements.roomChoiceWrap.hidden = locationConflict || (!roomConflict && (!knownRoom || knownRoom === cleanText(candidate.room)));
+            if (elements.locationOverrideWrap) {
+                elements.locationOverrideWrap.hidden = !locationConflict || completed;
+            }
+            if (elements.locationOverride) {
+                if (!locationConflict || elements.locationOverride.dataset.candidateId !== selectedId) {
+                    elements.locationOverride.value = locationConflict ? formRoom : '';
+                }
+                elements.locationOverride.dataset.candidateId = locationConflict ? selectedId : '';
+            }
             const dateConflict = conflicts.includes('date_needs_confirmation');
             const periodConflict = conflicts.some(
                 (conflict) => ['period_mismatch', 'venue_period_needs_confirmation'].includes(conflict),
@@ -802,6 +819,13 @@
                 missing.push('请选择教室处理方式');
             }
             const conflicts = candidate && Array.isArray(candidate.conflicts) ? candidate.conflicts : [];
+            if (
+                conflicts.includes('location_needs_confirmation')
+                && !cleanText(candidate.room)
+                && !cleanText(elements.locationOverride && elements.locationOverride.value)
+            ) {
+                missing.push('请填写实际听课地点');
+            }
             if (
                 conflicts.includes('date_needs_confirmation')
                 && !cleanText(elements.dateOverride && elements.dateOverride.value)
@@ -1331,7 +1355,11 @@
         function collectOverrides(candidate) {
             const overrides = {};
             const roomChoice = root.querySelector('[data-assistant-room-choice]:checked');
-            if (roomChoice && roomChoice.value === 'candidate') {
+            const locationConflict = Array.isArray(candidate.conflicts)
+                && candidate.conflicts.includes('location_needs_confirmation') && !cleanText(candidate.room);
+            if (locationConflict) {
+                overrides.lecture_location = cleanText(elements.locationOverride && elements.locationOverride.value);
+            } else if (roomChoice && roomChoice.value === 'candidate') {
                 overrides.room = cleanText(candidate.room);
             } else if (roomChoice && roomChoice.value === 'manual') {
                 overrides.lecture_location = cleanText(form.querySelector('#lecture_location')?.value);
@@ -1706,7 +1734,7 @@
         function handleChange(event) {
             const target = event.target;
             if (!target) return;
-            if (target.matches('[data-assistant-backup-ack], [data-assistant-room-choice], [data-assistant-date-override], [data-assistant-period-override]')) {
+            if (target.matches('[data-assistant-backup-ack], [data-assistant-room-choice], [data-assistant-location-override], [data-assistant-date-override], [data-assistant-period-override]')) {
                 updateConfirmControls();
             }
             if (target.matches('[data-assistant-fallback-date], [data-assistant-fallback-teacher]')) {
@@ -1717,6 +1745,9 @@
         function handleInput(event) {
             const target = event.target;
             if (!target) return;
+            if (target.matches('[data-assistant-location-override]')) {
+                updateConfirmControls();
+            }
             if (target.matches('[data-assistant-semester]')) {
                 setSemesterError('');
                 rememberSemester(target.value);

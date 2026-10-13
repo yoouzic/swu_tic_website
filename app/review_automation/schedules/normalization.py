@@ -104,8 +104,20 @@ def _numeric_integer(value, field: str) -> int | None:
     return None
 
 
+_WEEK_PARITY_MARKER = re.compile(r'[（(]\s*([单双])\s*[）)]')
+# Whitespace is a list separator in the legacy expressions ('1 4'), so it must
+# stay in the split set rather than being treated as part of a range.
+_WEEK_SEGMENT_SPLIT = re.compile(r'[,，、;；\s]+')
+_WEEK_TOKEN = re.compile(r'(\d+)(?:\s*(?:-|~)\s*(\d+))?')
+
+
 def parse_weeks(value) -> frozenset[int]:
-    """Parse ranges, lists, and odd/even teaching-week expressions."""
+    """Parse ranges, lists, and odd/even teaching-week expressions.
+
+    Each comma/semicolon-separated segment carries its OWN odd/even marker, as in
+    ``1-3周(单),4-6周(双),7-12周``.  Applying one marker to the whole expression
+    silently produces the wrong teaching weeks for the auto-review comparison.
+    """
     number = _numeric_integer(value, 'weeks')
     if number is not None:
         if not 1 <= number <= 52:
@@ -113,39 +125,52 @@ def parse_weeks(value) -> frozenset[int]:
         return frozenset({number})
 
     text = _text(value, 'weeks')
-    parity_match = re.search(r'[\(（]\s*([单双])\s*[\)）]', text)
-    parity = parity_match.group(1) if parity_match else None
-    text = re.sub(r'[\(（]\s*[单双]\s*[\)）]', '', text)
-    text = re.sub(r'(?:教学)?周(?:次)?', '', text, flags=re.IGNORECASE)
-    text = text.replace('第', '')
-    text = text.replace('－', '-').replace('～', '~')
-    text = text.replace('至', '-').replace('到', '-')
-    if not re.fullmatch(r'[0-9\s,，、;；\-~]+', text):
-        _error('weeks', 'invalid_week', value=value)
-
+    # Preserve list separators while joining spaces inside a range or marker.
+    text = re.sub(r'\s*([-~－～至到])\s*', r'\1', text)
+    text = _WEEK_PARITY_MARKER.sub(lambda match: f'({match.group(1)})', text)
+    text = re.sub(r'\s+(?=[（(][单双][）)])', '', text)
     result: set[int] = set()
-    for part in re.split(r'[,，、;；\s]+', text.strip()):
-        if not part:
+    for segment in _WEEK_SEGMENT_SPLIT.split(text):
+        segment = segment.strip()
+        if not segment:
             continue
-        range_match = re.fullmatch(r'(\d+)\s*(?:-|~)\s*(\d+)', part)
-        if range_match:
-            start, end = map(int, range_match.groups())
-            if start > end:
-                _error('weeks', 'invalid_week_range', value=value)
-            result.update(range(start, end + 1))
-        elif part.isdigit():
-            result.add(int(part))
-        else:
+        parity: str | None = None
+        while True:
+            marker = _WEEK_PARITY_MARKER.search(segment)
+            if marker is None:
+                break
+            if parity is not None:
+                _error('weeks', 'invalid_week', value=value)
+            parity = marker.group(1)
+            segment = segment[:marker.start()] + segment[marker.end():]
+        segment = re.sub(r'(?:教学)?周(?:次)?', '', segment, flags=re.IGNORECASE)
+        segment = segment.replace('第', '')
+        segment = segment.replace('－', '-').replace('～', '~')
+        segment = segment.replace('至', '-').replace('到', '-')
+        segment = re.sub(r'\s*(?:-|~)\s*', '-', segment).strip()
+        if not segment:
             _error('weeks', 'invalid_week', value=value)
+
+        match = _WEEK_TOKEN.fullmatch(segment)
+        if match is None:
+            _error('weeks', 'invalid_week', value=value)
+        start = int(match.group(1))
+        end = int(match.group(2)) if match.group(2) is not None else start
+        if start > end:
+            _error('weeks', 'invalid_week_range', value=value)
+        if not 1 <= start <= 52 or not 1 <= end <= 52:
+            _error('weeks', 'invalid_week', value=value)
+        segment_weeks = set(range(start, end + 1))
+        if parity == '单':
+            segment_weeks = {week for week in segment_weeks if week % 2 == 1}
+        elif parity == '双':
+            segment_weeks = {week for week in segment_weeks if week % 2 == 0}
+        if not segment_weeks:
+            _error('weeks', 'invalid_week_parity', value=value)
+        result.update(segment_weeks)
 
     if not result or any(not 1 <= item <= 52 for item in result):
         _error('weeks', 'invalid_week', value=value)
-    if parity == '单':
-        result = {item for item in result if item % 2 == 1}
-    elif parity == '双':
-        result = {item for item in result if item % 2 == 0}
-    if not result:
-        _error('weeks', 'invalid_week_parity', value=value)
     return frozenset(result)
 
 
