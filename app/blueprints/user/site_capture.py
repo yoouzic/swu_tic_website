@@ -292,7 +292,7 @@ def site_capture_location(user,capture_id):
     _enabled();record=_owned(capture_id,user)
     age=(capture_service.now_at_site()-datetime.fromisoformat(record.received_at)).total_seconds()
     if record.form_id or record.is_archived or not 0<=age<=30:
-        return jsonify(success=False,message='本次现场定位采集已结束。'),409
+        return jsonify(success=False,message='本次定位已结束。'),409
     body=request.get_json(silent=True)
     location=capture_service.normalize_location_evidence(body.get('location') if isinstance(body,dict) else None)
     if not location:return jsonify(success=False,message='定位数据无效。'),400
@@ -320,9 +320,9 @@ def site_capture_suggestions(user,capture_id):
         asked=body.get('asked',[])
         question_count=body.get('question_count',0)
         if type(question_count) is not int or not 0<=question_count<=2:
-            raise ValueError('补问次数格式无效。')
+            raise ValueError('课程查找暂未完成，请重新查找。')
         if not isinstance(asked,list) or len(asked)>4 or any(k not in FACT_KINDS for k in asked):
-            raise ValueError('提问记录格式无效。')
+            raise ValueError('课程查找暂未完成，请重新查找。')
     except ValueError as error:return jsonify(success=False,message=str(error)),400
     if request.method=='GET' and record.building:
         facts.setdefault('building',record.building)

@@ -95,7 +95,7 @@
             try {
                 payload = await response.json();
             } catch (_error) {
-                throw new Error('查询服务响应异常，请稍后重试。');
+                throw new Error('课程查询失败，请稍后重试。');
             }
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '课程查询失败，请稍后重试。');

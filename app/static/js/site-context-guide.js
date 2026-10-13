@@ -136,7 +136,7 @@
             if(state.status==='manual'){
                 setStatus('可修正教学楼和门牌号，或让助手帮你缩小范围。');
                 const correction=document.querySelector('[data-site-corrections]');if(correction)correction.open=true;
-                content.append(button('重新参考现场线索',()=>{showCourses=null;expanded=false;controller.resetFacts();}));return;
+                content.append(button('重新查找',()=>{showCourses=null;expanded=false;controller.resetFacts();}));return;
             }
             if(state.status==='error'){
                 setStatus(state.message||'暂未找到，请手动填写教室。','error');document.querySelector('[data-site-corrections]').open=true;
@@ -157,7 +157,7 @@
             if(question&&!coursesFirst){
                 const heading=document.createElement('h3');heading.className='h6';heading.textContent=question.prompt;content.append(heading);
                 const progress=document.createElement('p');progress.className='text-muted small';
-                progress.textContent=`补充问题 ${Math.min(2,(guidance?.questions_used||0)+1)} / 2`;content.append(progress);
+                progress.textContent=`问题 ${Math.min(2,(guidance?.questions_used||0)+1)} / 2`;content.append(progress);
                 let offset=0;const options=container(),actions=container();content.append(options,actions);
                 const addBatch=()=>{
                     for(const option of question.options.slice(offset,offset+6))options.append(button(option.label,()=>{
@@ -169,7 +169,7 @@
                 };
                 const more=button('更多选项',addBatch);actions.append(more,
                     button('我不知道，跳过此题',()=>{showCourses=null;expanded=false;controller.skip(question.kind);}),
-                    button('先看候选课程',()=>{showCourses=true;render(state);}),
+                    button('先看课程',()=>{showCourses=true;render(state);}),
                     button('都不是，扩大范围',expand));addBatch();
             }else{
                 const courses=visibleCourses(data,expanded);
@@ -189,8 +189,8 @@
                     }
                     offset+=3;more.hidden=offset>=courses.length;
                 };
-                const more=button('更多同范围课程',addBatch);actions.append(more,
-                    button(expanded?'返回优先推荐':'扩大范围查找',()=>{if(expanded){expanded=false;showCourses=null;render(state);}else expand();}),
+                const more=button('更多课程',addBatch);actions.append(more,
+                    button(expanded?'返回匹配结果':'扩大范围查找',()=>{if(expanded){expanded=false;showCourses=null;render(state);}else expand();}),
                     button('都不是，修改信息',()=>controller.reject()));
                 if(question&&!expanded)actions.append(button('帮我缩小范围',()=>{showCourses=false;render(state);}));
                 content.append(actions);addBatch();

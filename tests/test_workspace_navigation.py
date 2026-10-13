@@ -79,7 +79,7 @@ class WorkspaceViewModelTest(unittest.TestCase):
         model = build_workspace(user, WorkspaceSnapshot(pending_forms=7, department_users=18, department_forms=38))
         self.assertEqual(model['title'], '你好，林老师')
         self.assertEqual(model['primary_action']['label'], '处理审核')
-        self.assertEqual(model['summary'], '先处理 7 份待审核表单，再查看部门提交情况。')
+        self.assertEqual(model['summary'], '')
         self.assertEqual(model['primary_action']['endpoint'], 'admin.review_forms')
         self.assertEqual(model['metrics'][0]['value'], 7)
         self.assertEqual(model['tasks'][0]['endpoint'], 'admin.review_forms')
@@ -90,7 +90,7 @@ class WorkspaceViewModelTest(unittest.TestCase):
         model = build_workspace(user, WorkspaceSnapshot(pending_forms=0, department_users=18, department_forms=38))
         self.assertEqual(model['title'], '你好，林老师')
         self.assertEqual(model['primary_action']['label'], '查看审核队列')
-        self.assertEqual(model['summary'], '当前没有待审核表单，可以查看部门提交情况。')
+        self.assertEqual(model['summary'], '')
         self.assertEqual(model['tasks'], [])
 
     def test_super_admin_pending_copy_and_action_follow_real_state(self):
@@ -101,7 +101,7 @@ class WorkspaceViewModelTest(unittest.TestCase):
             WorkspaceSnapshot(pending_forms=3, total_users=52, total_forms=118),
         )
         self.assertEqual(pending['title'], '你好，超管测试')
-        self.assertEqual(pending['summary'], '全局共有 3 份待审核表单，请优先完成审核。')
+        self.assertEqual(pending['summary'], '')
         self.assertEqual(pending['primary_action']['label'], '处理审核')
 
         empty = build_workspace(
@@ -109,7 +109,7 @@ class WorkspaceViewModelTest(unittest.TestCase):
             WorkspaceSnapshot(pending_forms=0, total_users=52, total_forms=118),
         )
         self.assertEqual(empty['title'], '你好，超管测试')
-        self.assertEqual(empty['summary'], '当前没有待审核表单，可以查看全局提交情况。')
+        self.assertEqual(empty['summary'], '')
         self.assertEqual(empty['primary_action']['label'], '查看审核队列')
 
     def test_super_admin_gets_global_system_task(self):

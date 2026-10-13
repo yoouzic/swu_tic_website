@@ -7,9 +7,9 @@
 
 {% block content %}
 {% if app_can_submit_lecture_form %}
-{{ page_header('听课与填报', '查看预约、已提交表单和审核意见。', '填写听课表', url_for('user.submit_form')) }}
+{{ page_header('听课与填报', '', '填写听课表', url_for('user.submit_form')) }}
 {% else %}
-{{ page_header('我的记录', '查看预约、已提交表单和审核意见。', '查询课表' if schedule_availability.candidates_ready else '', url_for('user.course_lookup') if schedule_availability.candidates_ready else '') }}
+{{ page_header('我的记录', '', '查询课表' if schedule_availability.candidates_ready else '', url_for('user.course_lookup') if schedule_availability.candidates_ready else '') }}
 {% endif %}
 <div class="activity-center" data-active-tab="{{ active_tab }}">
     <div class="activity-tabs" role="tablist" aria-label="{{ '听课与填报' if app_can_submit_lecture_form else '我的记录' }}">
@@ -28,5 +28,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/activity-center.js') }}"></script>
+<script src="{{ url_for('static', filename='js/activity-center.js', v='20261014-copy') }}"></script>
 {% endblock %}

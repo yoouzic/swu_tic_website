@@ -23,7 +23,7 @@
                         <section class="review-queue" aria-label="审核队列">
                     <div class="review-queue__intro" id="reviewQueueIntro">
                         <h2>建立审核队列</h2>
-                        <p>先设置时间与审核范围；加载后，队列会留在主工作区，筛选项自动收起。</p>
+                        <p>选择时间和人员范围后加载表单。</p>
                     </div>
 
                     <!-- 表单列表是审核工作区的首要内容。 -->
@@ -192,7 +192,7 @@
                             <div class="review-preview__header">
                                 <div>
                                     <h2 id="reviewPreviewTitle">表单预览</h2>
-                                    <p class="mb-0 text-muted small">从左侧列表选择一份表单，查看摘要和规则检查。</p>
+                                    <p class="mb-0 text-muted small">选择表单查看详情。</p>
                                 </div>
                             </div>
                             <div class="review-preview__body" id="reviewPreviewContent" aria-live="polite">
@@ -288,12 +288,12 @@
     <div class="offcanvas-body" id="automationEvidenceBody" aria-live="polite">
         <p class="text-muted">选择表单后查看分类与证据。</p>
         <div class="automation-evidence-sections">
-            <section class="evidence-section-schedule" data-evidence-source="schedule"><h3>schedule</h3><p data-evidence-value>—</p></section>
-            <section class="evidence-section-rule" data-evidence-source="rule"><h3>rule</h3><p data-evidence-value>—</p></section>
-            <section class="evidence-section-text" data-evidence-source="text"><h3>text</h3><p data-evidence-value>—</p></section>
-            <section class="evidence-section-history" data-evidence-source="history"><h3>history</h3><p data-evidence-value>—</p></section>
-            <section class="evidence-section-llm" data-evidence-source="llm"><h3>llm</h3><p data-evidence-value>—</p></section>
-            <section class="evidence-section-system" data-evidence-source="system"><h3>system</h3><p data-evidence-value>—</p></section>
+            <section class="evidence-section-schedule" data-evidence-source="schedule"><h3>课表核对</h3><p data-evidence-value>—</p></section>
+            <section class="evidence-section-rule" data-evidence-source="rule"><h3>规则检查</h3><p data-evidence-value>—</p></section>
+            <section class="evidence-section-text" data-evidence-source="text"><h3>文字检查</h3><p data-evidence-value>—</p></section>
+            <section class="evidence-section-history" data-evidence-source="history"><h3>历史记录</h3><p data-evidence-value>—</p></section>
+            <section class="evidence-section-llm" data-evidence-source="llm"><h3>智能分析</h3><p data-evidence-value>—</p></section>
+            <section class="evidence-section-system" data-evidence-source="system"><h3>处理状态</h3><p data-evidence-value>—</p></section>
         </div>
         <label class="form-label mt-3" for="automationSuggestedComment">建议评论（草稿）</label>
         <textarea id="automationSuggestedComment" class="form-control" data-suggested-comment-draft rows="4"></textarea>
@@ -2208,7 +2208,7 @@ function renderAutomationAssessment(formId, assessment) {
     });
     Object.keys(grouped).forEach(source => setAutomationEvidenceValue(source, grouped[source].join('；')));
     if (assessment.coverage) setAutomationEvidenceValue('schedule', `覆盖：${getAutomationCoverageLabel(assessment.coverage)}；${grouped.schedule.join('；')}`);
-    if (assessment.model_result && Object.keys(assessment.model_result).length > 0) setAutomationEvidenceValue('llm', 'DeepSeek 结构化结果已验证。');
+    if (assessment.model_result && Object.keys(assessment.model_result).length > 0) setAutomationEvidenceValue('llm', '智能分析已完成。');
     if (assessment.error_code) setAutomationEvidenceValue('system', `系统记录：${assessment.error_code}`);
     const comment = document.getElementById('automationSuggestedComment');
     if (comment) comment.value = String(assessment.suggested_comment || '');

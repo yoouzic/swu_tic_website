@@ -1,0 +1,2381 @@
+{
+  "baseline_commit": "e2c005372185b00a1ed992db6c3c6e024d689336",
+  "completed_date": "2026-10-14",
+  "counts": {
+    "records": 195,
+    "occurrences": 197,
+    "deleted_records": 40,
+    "source_files_changed": 54,
+    "templates_reviewed": 62,
+    "javascript_reviewed": 14,
+    "resource_references": 9
+  },
+  "records": [
+    {
+      "file": "app/templates/user/activity_center.html",
+      "line_before": 10,
+      "old": "'查看预约、已提交表单和审核意见。'",
+      "new": "''",
+      "reason": "标题、页签和操作入口已说明用途。",
+      "occurrences": 2,
+      "id": "C001",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/lecture_reservation.html",
+      "line_before": 7,
+      "old": "'选择课程并在当前页面完成听课预约。'",
+      "new": "''",
+      "reason": "删除对当前页面布局和按钮的复述。",
+      "occurrences": 1,
+      "id": "C002",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/profile.html",
+      "line_before": 7,
+      "old": "'查看并维护个人信息、听课统计和最近活动。'",
+      "new": "''",
+      "reason": "页面标题、分区和编辑按钮已说明用途。",
+      "occurrences": 1,
+      "id": "C003",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/edit_profile.html",
+      "line_before": 7,
+      "old": "'更新可编辑的信息，保存后会返回个人资料页。'",
+      "new": "''",
+      "reason": "删除保存后导航的实现说明。",
+      "occurrences": 1,
+      "id": "C004",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/edit_profile.html",
+      "line_before": 19,
+      "old": "请确保信息准确无误。带 <span class=\"text-danger\">*</span> 的字段为必填项。",
+      "new": "带 <span class=\"text-danger\">*</span> 的字段为必填项。",
+      "reason": "保留必填标识含义，删除泛化要求。",
+      "occurrences": 1,
+      "id": "C005",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/edit_profile.html",
+      "line_before": 120,
+      "old": "                                    <div class=\"form-text\">请输入有效的11位手机号码</div>\n",
+      "new": "",
+      "reason": "输入提示已有11位要求；格式错误反馈继续保留。",
+      "occurrences": 1,
+      "id": "C006",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/profile.html",
+      "line_before": 216,
+      "old": "距上次交表(天)",
+      "new": "距上次交表（天）",
+      "reason": "统一用户可见中文括号。",
+      "occurrences": 1,
+      "id": "C007",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/_registration_panel.html",
+      "line_before": 4,
+      "old": "请输入课程名称、教师或课程号进行搜索...",
+      "new": "课程名称、教师或课程号",
+      "reason": "保留搜索范围，删除输入动作复述。",
+      "occurrences": 1,
+      "id": "C008",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/_registration_panel.html",
+      "line_before": 5,
+      "old": "        <div class=\"form-text\">支持按课程名称、教师或课程号搜索。选择课程后可在当前页面完成登记。</div>\n",
+      "new": "",
+      "reason": "搜索框已列明范围，登记按钮已说明下一步。",
+      "occurrences": 1,
+      "id": "C009",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/_registration_panel.html",
+      "line_before": 46,
+      "old": "请联系管理员在 系统设置 → 教学制度 配置学期起始周后再登记。",
+      "new": "学期尚未设置，请联系管理员后再登记。",
+      "reason": "保留无法登记的原因和处理人，删除管理员设置路径。",
+      "occurrences": 1,
+      "id": "C010",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/_registration_panel.html",
+      "line_before": 77,
+      "old": "        <p>选择课程后，登记信息和该课程的历史记录会在此处显示。</p>\n",
+      "new": "",
+      "reason": "已有“先选择一门课程”标题，无需介绍页面显示机制。",
+      "occurrences": 1,
+      "id": "C011",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/_records_panel.html",
+      "line_before": 75,
+      "old": "                <p>查看提交状态、版本历史和审核意见。</p>\n",
+      "new": "",
+      "reason": "表格列和查看按钮已表达用途。",
+      "occurrences": 1,
+      "id": "C012",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/_records_panel.html",
+      "line_before": 66,
+      "old": "暂无听课预约。{% if app_can_submit_lecture_form and schedule_availability.registration_ready %}可以先切换到“听课登记”选择课程。{% endif %}",
+      "new": "暂无听课预约。{% if app_can_submit_lecture_form and schedule_availability.registration_ready %}可到“听课登记”选择课程。{% endif %}",
+      "reason": "保留空状态与可用入口，缩短操作指导。",
+      "occurrences": 1,
+      "id": "C013",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/_records_panel.html",
+      "line_before": 149,
+      "old": "暂无听课表单。{% if app_can_submit_lecture_form %}填写并提交第一份听课表单后，记录会显示在这里。{% endif %}",
+      "new": "暂无听课表单。{% if app_can_submit_lecture_form %}提交后可在此查看。{% endif %}",
+      "reason": "保留记录需提交后出现，删除重复因果说明。",
+      "occurrences": 1,
+      "id": "C014",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/_records_panel.html",
+      "line_before": 48,
+      "old": "已绑定反馈表 ({{ item.bind_count }})",
+      "new": "已绑定反馈表（{{ item.bind_count }}）",
+      "reason": "统一用户可见中文括号。",
+      "occurrences": 1,
+      "id": "C015",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/my_forms.html",
+      "line_before": 83,
+      "old": "已绑定反馈表 ({{ item.bind_count }})",
+      "new": "已绑定反馈表（{{ item.bind_count }}）",
+      "reason": "统一用户可见中文括号。",
+      "occurrences": 1,
+      "id": "C016",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "line_before": 267,
+      "old": "可多选，请至少选择一种。",
+      "new": "可多选，至少一项。",
+      "reason": "保留选择范围与必选条件。",
+      "occurrences": 1,
+      "id": "C017",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "line_before": 281,
+      "old": "可多选。点击确认后，未选的适用项目将填写为“非常好”，选中的项目再逐项评价。",
+      "new": "可多选；未选项目默认为“非常好”，所选项目逐项评价。",
+      "reason": "默认评价会影响提交结果，保留规则并去掉点击步骤复述。",
+      "occurrences": 1,
+      "id": "C018",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "line_before": 307,
+      "old": "                                    <p class=\"form-completion-assistant__condition\">请根据实际听课情况独立选择是否推荐。</p>\n",
+      "new": "",
+      "reason": "“是否推荐”题目及推荐/不推荐选项已经表达独立选择。",
+      "occurrences": 1,
+      "id": "C019",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "line_before": 351,
+      "old": "已根据您的听课登记自动填充部分课程信息，您可以根据实际情况进行修改。",
+      "new": "已带入登记课程信息，请核对。",
+      "reason": "保留填入状态和核对要求，删除自动实现描述。",
+      "occurrences": 1,
+      "id": "C020",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "line_before": 441,
+      "old": "离开输入框后自动规范年级、中文括号和数字班号。",
+      "new": "多个专业用中文分号分隔。",
+      "reason": "删除触发格式化的实现说明，保留多专业分隔的实际填写要求；格式示例与自动规范功能保留。",
+      "occurrences": 1,
+      "id": "C021",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "line_before": 448,
+      "old": "一般三个方面:老师、教室、时间,没有变化填\"无\"",
+      "new": "教师、教室或时间有变化请说明；没有填“无”。",
+      "reason": "保留填写范围和无变化要求，使用中文符号。",
+      "occurrences": 1,
+      "id": "C022",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "line_before": 550,
+      "old": "五十字以上,评价的内容实在且有针对性",
+      "new": "至少50字，请写具体的课堂优点。",
+      "reason": "保留字数要求，用具体内容要求替代抽象形容。",
+      "occurrences": 1,
+      "id": "C023",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "line_before": 462,
+      "old": "根据事实,没有则填\"无\"",
+      "new": "如实填写；没有填“无”。",
+      "reason": "保留异常或建议内容据实填写及填无的要求，统一中文符号。",
+      "occurrences": 2,
+      "id": "C024",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "line_before": 668,
+      "old": "您有以下已登记但未填表的课程。是否要为其中一门课程提交反馈？\n                    <br>\n                    <small>选择已登记课程可以自动填充表单信息，并方便管理。</small>",
+      "new": "选择一门已登记课程，带入课程信息。",
+      "reason": "表格和按钮已展示待反馈课程，删除重复询问和“方便管理”。",
+      "occurrences": 1,
+      "id": "C025",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/_site_capture.html",
+      "line_before": 49,
+      "old": "保留原照片，识别结果仍需核对。",
+      "new": "原照片保留，请核对识别结果。",
+      "reason": "保留原图与结果需核对的实际含义。",
+      "occurrences": 1,
+      "id": "C026",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/_site_capture.html",
+      "line_before": 52,
+      "old": "<span class=\"site-map__eyebrow\">校园位置参考</span>",
+      "new": "",
+      "reason": "地图标题已说明选楼用途，删除装饰眉题。",
+      "occurrences": 1,
+      "id": "C027",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/_site_capture.html",
+      "line_before": 57,
+      "old": "蓝点：采集位置　浅绿：附近楼栋　金色立体楼栋：当前选择（高度示意）",
+      "new": "蓝点：定位　浅绿：附近楼栋　金色：所选楼栋（高度示意）",
+      "reason": "保留图例和高度限制，删除渲染形态描述。",
+      "occurrences": 1,
+      "id": "C028",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/templates/user/_site_capture.html",
+      "line_before": 59,
+      "old": "点击建筑或列表，再确认教学楼。",
+      "new": "尚未选择教学楼",
+      "reason": "同屏已有选楼操作提示，选择栏仅展示当前状态。",
+      "occurrences": 1,
+      "id": "C029",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/services/schedule_availability.py",
+      "line_before": 36,
+      "old": "本学期课表尚未完成课程索引，请联系管理员。",
+      "new": "本学期课表暂不可用，请联系管理员。",
+      "reason": "课程索引是内部处理步骤，保留不可用状态和联系路径。",
+      "occurrences": 1,
+      "id": "C030",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/services/schedule_availability.py",
+      "line_before": 38,
+      "old": "本学期课表尚未完成登记课程导入，请联系管理员。",
+      "new": "本学期暂不能登记课程，请联系管理员。",
+      "reason": "登记索引导入是内部步骤，保留不可用状态和联系路径。",
+      "occurrences": 1,
+      "id": "C031",
+      "group": "信息员填表与记录"
+    },
+    {
+      "file": "app/static/js/site-capture.js",
+      "old": "服务响应暂时无法读取，请刷新后重试。",
+      "new": "暂未确认操作结果，请刷新查看。",
+      "reason": "响应无法读取时保存结果未知，不能表述为未完成；保留结果不确定与刷新查看路径，移除响应读取术语。",
+      "occurrences": 1,
+      "id": "C032",
+      "group": "拍照、选课与动态提示",
+      "line_before": 74
+    },
+    {
+      "file": "app/static/js/site-capture.js",
+      "old": "拍清楚门牌号即可，系统会自动识别并查找课程。",
+      "new": "请拍清楚门牌号。",
+      "reason": "相机阶段只保留清晰拍摄要求，后续查找与确认状态不变。",
+      "occurrences": 1,
+      "id": "C033",
+      "group": "拍照、选课与动态提示",
+      "line_before": 170
+    },
+    {
+      "file": "app/static/js/site-capture.js",
+      "old": "正在上传照片并保存现场记录…",
+      "new": "正在保存照片…",
+      "reason": "保留进行中状态，去掉连续内部步骤的重复说明。",
+      "occurrences": 1,
+      "id": "C034",
+      "group": "拍照、选课与动态提示",
+      "line_before": 205
+    },
+    {
+      "file": "app/static/js/site-capture.js",
+      "old": "教室已确认，请继续核对助手选项。",
+      "new": "教室已确认，请选择课程。",
+      "reason": "保留确认状态，用用户任务替换助手容器描述。",
+      "occurrences": 1,
+      "id": "C035",
+      "group": "拍照、选课与动态提示",
+      "line_before": 228
+    },
+    {
+      "file": "app/static/js/site-context-guide.js",
+      "old": "重新参考现场线索",
+      "new": "重新查找",
+      "reason": "按现有重新查找动作命名，不解释内部线索处理。",
+      "occurrences": 1,
+      "id": "C036",
+      "group": "拍照、选课与动态提示",
+      "line_before": 139
+    },
+    {
+      "file": "app/static/js/site-context-guide.js",
+      "old": "补充问题 ${Math.min(2,(guidance?.questions_used||0)+1)} / 2",
+      "new": "问题 ${Math.min(2,(guidance?.questions_used||0)+1)} / 2",
+      "reason": "去掉无额外含义的补充一词，保留题序和总数。",
+      "occurrences": 1,
+      "id": "C037",
+      "group": "拍照、选课与动态提示",
+      "line_before": 160
+    },
+    {
+      "file": "app/static/js/site-context-guide.js",
+      "old": "先看候选课程",
+      "new": "先看课程",
+      "reason": "按钮表达浏览课程即可，保留候选选择与人工确认流程。",
+      "occurrences": 1,
+      "id": "C038",
+      "group": "拍照、选课与动态提示",
+      "line_before": 172
+    },
+    {
+      "file": "app/static/js/site-context-guide.js",
+      "old": "更多同范围课程",
+      "new": "更多课程",
+      "reason": "同一结果区无需解释范围，扩大范围操作与提示不变。",
+      "occurrences": 1,
+      "id": "C039",
+      "group": "拍照、选课与动态提示",
+      "line_before": 192
+    },
+    {
+      "file": "app/static/js/site-context-guide.js",
+      "old": "返回优先推荐",
+      "new": "返回匹配结果",
+      "reason": "避免与后续是否推荐该课程的评价结论混淆。",
+      "occurrences": 1,
+      "id": "C040",
+      "group": "拍照、选课与动态提示",
+      "line_before": 193
+    },
+    {
+      "file": "app/static/js/site-building-map.js",
+      "old": "有外观模型 · 地图位置待核对",
+      "new": "外观参考 · 地图位置待核对",
+      "reason": "将模型术语改为用途说明，保留地图位置待核对。",
+      "occurrences": 1,
+      "id": "C041",
+      "group": "拍照、选课与动态提示",
+      "line_before": 391
+    },
+    {
+      "file": "app/static/js/site-building-map.js",
+      "old": "点击建筑或列表，再确认教学楼。",
+      "new": "尚未选择教学楼",
+      "reason": "选中摘要只显示当前选择状态，操作指引保留在状态区。",
+      "occurrences": 1,
+      "id": "C042",
+      "group": "拍照、选课与动态提示",
+      "line_before": 535
+    },
+    {
+      "file": "app/static/js/site-building-map.js",
+      "old": "选择所在教学楼，再点击“使用此教学楼”。也可搜索楼号。",
+      "new": "选择教学楼后，点击“使用此教学楼”。",
+      "reason": "缩短正常操作指引，不重复搜索控件的用途。",
+      "occurrences": 1,
+      "id": "C043",
+      "group": "拍照、选课与动态提示",
+      "line_before": 543
+    },
+    {
+      "file": "app/static/js/site-building-map.js",
+      "old": "选择所在教学楼，再点击“使用此教学楼”。也可搜索楼号。 背景暂未加载，楼栋仍可选择。",
+      "new": "地图背景暂未加载，仍可选择教学楼。",
+      "reason": "异常提示只保留背景未加载及仍可操作的状态，不重复正常指引。",
+      "occurrences": 1,
+      "id": "C044",
+      "group": "拍照、选课与动态提示",
+      "line_before": 544
+    },
+    {
+      "file": "app/static/js/site-door-crop.js",
+      "old": "正在识别框选区域，原照片会保留…",
+      "new": "正在识别…（原照片保留）",
+      "reason": "缩短进行中说明，保留原照片不被替换的信息。",
+      "occurrences": 1,
+      "id": "C045",
+      "group": "拍照、选课与动态提示",
+      "line_before": 80
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "当前权威课表",
+      "new": "当前课表",
+      "reason": "用户需要知道当前课表，源文件与旧课表核对信息仍保留。",
+      "occurrences": 1,
+      "id": "C046",
+      "group": "拍照、选课与动态提示",
+      "line_before": 16
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "服务器返回了无法读取的结果",
+      "new": "操作未完成，请重试或手动填写。",
+      "reason": "共用响应错误用操作结果和恢复路径表达。",
+      "occurrences": 1,
+      "id": "C047",
+      "group": "拍照、选课与动态提示",
+      "line_before": 357
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "填表助手请求失败",
+      "new": "操作未完成，请重试或手动填写。",
+      "reason": "保留失败状态，去掉请求术语。",
+      "occurrences": 1,
+      "id": "C048",
+      "group": "拍照、选课与动态提示",
+      "line_before": 360
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "请输入班级。",
+      "new": "",
+      "reason": "删除与听课班级标签重复的帮助文案，主表单班级要求不变。",
+      "occurrences": 1,
+      "id": "C049",
+      "group": "拍照、选课与动态提示",
+      "line_before": 523
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "初始问题请选择类别；无法确定时可直接手动填写。",
+      "new": "请选择你记得的信息；也可手动填写。",
+      "reason": "用用户记得的信息表达选择，保留手动出口。",
+      "occurrences": 1,
+      "id": "C050",
+      "group": "拍照、选课与动态提示",
+      "line_before": 524
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "已确认的候选与来源",
+      "new": "已确认课程",
+      "reason": "标题避免候选术语，实际课程字段与来源仍保留。",
+      "occurrences": 1,
+      "id": "C051",
+      "group": "拍照、选课与动态提示",
+      "line_before": 710
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "确认前请核对课程、教师、教室、节次、班级和来源。",
+      "new": "确认课程信息",
+      "reason": "标题不复述下方完整字段清单，旧课表与冲突提醒不变。",
+      "occurrences": 1,
+      "id": "C052",
+      "group": "拍照、选课与动态提示",
+      "line_before": 710
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "来源批次：${candidate.source_batch_id}",
+      "new": "",
+      "reason": "删除不可供信息员核对的可见批次 ID，来源文件、请求批次、旧课表与冲突提醒保留。",
+      "occurrences": 1,
+      "id": "C053",
+      "group": "拍照、选课与动态提示",
+      "line_before": 730
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "请选择教室处理方式",
+      "new": "请确认实际教室。",
+      "reason": "用实际教室核对表达要求，保留确认按钮条件。",
+      "occurrences": 1,
+      "id": "C054",
+      "group": "拍照、选课与动态提示",
+      "line_before": 819
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "当前学期没有可用备用批次，请手动填写。",
+      "new": "该学期没有其他课表，请手动填写。",
+      "reason": "保留没有可用数据与手动路径，去掉备用批次术语。",
+      "occurrences": 1,
+      "id": "C055",
+      "group": "拍照、选课与动态提示",
+      "line_before": 954
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "暂时记不清也可以继续填写其他内容。已保留确认过的信息，可返回上一题或稍后补充。",
+      "new": "已保留确认过的信息，可继续填写或返回上一题。",
+      "reason": "合并重复的继续填写说明，保留信息已保留和返回路径。",
+      "occurrences": 1,
+      "id": "C056",
+      "group": "拍照、选课与动态提示",
+      "line_before": 1054
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "已切换为手动填写，请在下方补充课程信息。也可以重新开始引导。",
+      "new": "请在下方补充课程信息。",
+      "reason": "手动区块及现有按钮已提供切换与重新查找，说明只指出填写任务。",
+      "occurrences": 1,
+      "id": "C057",
+      "group": "拍照、选课与动态提示",
+      "line_before": 1057
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "现有信息还不能确定课程。可以修改答案、重新查找，或在下方手动填写。",
+      "new": "暂无法确定课程，请补充信息或手动填写。",
+      "reason": "保留信息不足状态及主要恢复出口，具体动作留给按钮。",
+      "occurrences": 1,
+      "id": "C058",
+      "group": "拍照、选课与动态提示",
+      "line_before": 1057
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "服务器没有返回可用的引导结果",
+      "new": "暂时无法查找课程，请重试或手动填写。",
+      "reason": "保留查找失败与恢复路径，不描述服务器返回结构。",
+      "occurrences": 1,
+      "id": "C059",
+      "group": "拍照、选课与动态提示",
+      "line_before": 1101
+    },
+    {
+      "file": "app/static/js/listening-assistant.js",
+      "old": "服务器没有返回可用的字段快照",
+      "new": "课程信息暂未填入，请重试或手动填写。",
+      "reason": "保留填入失败与恢复路径，不暴露字段快照结构。",
+      "occurrences": 1,
+      "id": "C060",
+      "group": "拍照、选课与动态提示",
+      "line_before": 1417
+    },
+    {
+      "file": "app/static/js/course-lookup.js",
+      "old": "查询服务响应异常，请稍后重试。",
+      "new": "课程查询失败，请稍后重试。",
+      "reason": "保留课程查询错误，去掉服务响应术语。",
+      "occurrences": 1,
+      "id": "C061",
+      "group": "拍照、选课与动态提示",
+      "line_before": 98
+    },
+    {
+      "file": "app/static/js/activity-center.js",
+      "old": " (${course.teacher_college})",
+      "new": "（${course.teacher_college}）",
+      "reason": "统一中文括号，学院值保持不变。",
+      "occurrences": 1,
+      "id": "C062",
+      "group": "拍照、选课与动态提示",
+      "line_before": 54
+    },
+    {
+      "file": "app/static/js/activity-center.js",
+      "old": "课程号: ${course.course_code || '-'} | 选课号: ${course.selection_code || '-'}",
+      "new": "课程号：${course.course_code || '-'} · 选课号：${course.selection_code || '-'}",
+      "reason": "统一中文冒号与分隔符，课程号与选课号保持不变。",
+      "occurrences": 1,
+      "id": "C063",
+      "group": "拍照、选课与动态提示",
+      "line_before": 57
+    },
+    {
+      "file": "app/static/js/activity-center.js",
+      "old": "${course.course_name || '未知课程'} | ${course.teacher_name || '未知教师'} | ${course.class_time || '时间未知'} (${course.course_code || '-'}-${course.selection_code || '-'})",
+      "new": "${course.course_name || '未知课程'} · ${course.teacher_name || '未知教师'} · ${course.class_time || '时间未知'}（${course.course_code || '-'}-${course.selection_code || '-'}）",
+      "reason": "回退展示统一分隔符与中文括号，所有课程识别值及接口 course.text 优先级不变。",
+      "occurrences": 1,
+      "id": "C064",
+      "group": "拍照、选课与动态提示",
+      "line_before": 252
+    },
+    {
+      "file": "app/static/js/activity-center.js",
+      "old": "暂无听课预约。可以先切换到“听课登记”选择课程。",
+      "new": "暂无听课预约，可到“听课登记”选择课程。",
+      "reason": "缩短空状态，保留听课登记入口。",
+      "occurrences": 1,
+      "id": "C065",
+      "group": "拍照、选课与动态提示",
+      "line_before": 450
+    },
+    {
+      "file": "app/static/js/activity-center.js",
+      "old": "暂无听课表单。填写并提交第一份听课表单后，记录会显示在这里。",
+      "new": "暂无听课表单，提交后可在此查看。",
+      "reason": "缩短空状态，保留提交后出现记录的信息。",
+      "occurrences": 1,
+      "id": "C066",
+      "group": "拍照、选课与动态提示",
+      "line_before": 484
+    },
+    {
+      "file": "app/services/listening_assistant_guide.py",
+      "old": "请选择最符合的课程候选：",
+      "new": "请选择本次听课课程：",
+      "reason": "去掉候选术语，保留课程选择与确认。",
+      "occurrences": 1,
+      "source_old": "请选择最符合的课程候选：",
+      "source_new": "请选择本次听课课程：",
+      "id": "C067",
+      "group": "动态课程信息与错误提示",
+      "line_before": 379
+    },
+    {
+      "file": "app/services/site_context_guidance.py",
+      "old": "已尝试两次核对，仍不确定。可扩大范围查看课程，或修改信息。",
+      "new": "仍无法确定课程，可扩大范围查看课程或修改信息。",
+      "reason": "不描述内部补问预算，保留不确定性与扩大范围/修改出口。",
+      "occurrences": 1,
+      "source_old": "已尝试两次核对，仍不确定。可扩大范围查看课程，或修改信息。",
+      "source_new": "仍无法确定课程，可扩大范围查看课程或修改信息。",
+      "id": "C068",
+      "group": "动态课程信息与错误提示",
+      "line_before": 61
+    },
+    {
+      "file": "app/services/site_context_guidance.py",
+      "old": "还有一处信息不确定，补充后我会重新匹配。",
+      "new": "请补充下面的信息。",
+      "reason": "不复述紧邻问题的匹配流程，具体定位/门牌风险说明保留。",
+      "occurrences": 1,
+      "source_old": "还有一处信息不确定，补充后我会重新匹配。",
+      "source_new": "请补充下面的信息。",
+      "id": "C069",
+      "group": "动态课程信息与错误提示",
+      "line_before": 93
+    },
+    {
+      "file": "app/services/site_context_model.py",
+      "old": "补问次数格式无效。",
+      "new": "课程查找暂未完成，请重新查找。",
+      "reason": "保留模型校验和错误，只去掉用户不能调整的内部补问计数术语。",
+      "occurrences": 1,
+      "source_old": "补问次数格式无效。",
+      "source_new": "课程查找暂未完成，请重新查找。",
+      "id": "C070",
+      "group": "动态课程信息与错误提示",
+      "line_before": 218
+    },
+    {
+      "file": "app/services/site_context_model.py",
+      "old": "提问记录格式无效。",
+      "new": "课程查找暂未完成，请重新查找。",
+      "reason": "保留模型校验和错误，只去掉问答记录结构术语。",
+      "occurrences": 1,
+      "source_old": "提问记录格式无效。",
+      "source_new": "课程查找暂未完成，请重新查找。",
+      "id": "C071",
+      "group": "动态课程信息与错误提示",
+      "line_before": 221
+    },
+    {
+      "file": "app/services/site_context_model.py",
+      "old": "该楼栋定位证据不足",
+      "new": "无法凭定位确认该楼栋",
+      "reason": "将证据术语改为定位能力边界，仍明确定位不能确认此楼栋。",
+      "occurrences": 1,
+      "source_old": "该楼栋定位证据不足",
+      "source_new": "无法凭定位确认该楼栋",
+      "id": "C072",
+      "group": "动态课程信息与错误提示",
+      "line_before": 255
+    },
+    {
+      "file": "app/services/site_context_model.py",
+      "old": "节次超出已配置作息，需手动核对",
+      "new": "该节次无法自动核对，请手动核对",
+      "reason": "保留超出节次支持范围的手动核对限制，不误说成拍照时间异常。",
+      "occurrences": 1,
+      "source_old": "节次超出已配置作息，需手动核对",
+      "source_new": "该节次无法自动核对，请手动核对",
+      "id": "C073",
+      "group": "动态课程信息与错误提示",
+      "line_before": 272
+    },
+    {
+      "file": "app/blueprints/user/listening_assistant.py",
+      "old": "填表助手仅使用后台配置的当前课表。",
+      "new": "目前仅支持当前课表，请重新查找课程。",
+      "reason": "去掉后台配置视角，保留仅支持当前课表和重新查找路径。",
+      "occurrences": 1,
+      "source_old": "填表助手仅使用后台配置的当前课表。",
+      "source_new": "目前仅支持当前课表，请重新查找课程。",
+      "id": "C074",
+      "group": "动态课程信息与错误提示",
+      "line_before": 609
+    },
+    {
+      "file": "app/blueprints/user/listening_assistant.py",
+      "old": "填表助手仅使用后台配置的当前课表。",
+      "new": "目前仅支持当前课表，请重新查找课程。",
+      "reason": "去掉后台配置视角，保留仅支持当前课表和重新查找路径。",
+      "occurrences": 1,
+      "source_old": "填表助手仅使用后台配置的当前课表。",
+      "source_new": "目前仅支持当前课表，请重新查找课程。",
+      "id": "C075",
+      "group": "动态课程信息与错误提示",
+      "line_before": 619
+    },
+    {
+      "file": "app/blueprints/user/forms.py",
+      "old": "表单版本标识无效，请从我的记录重新打开。",
+      "new": "无法打开这份表单，请通过“查看记录”重新打开。",
+      "reason": "保留无效表单标识校验，恢复入口使用工作台实际按钮“查看记录”。",
+      "occurrences": 1,
+      "source_old": "表单版本标识无效，请从我的记录重新打开。",
+      "source_new": "无法打开这份表单，请通过“查看记录”重新打开。",
+      "id": "C076",
+      "group": "动态课程信息与错误提示",
+      "line_before": 674
+    },
+    {
+      "file": "app/blueprints/user/forms.py",
+      "old": "表单不存在，请从我的记录重新打开。",
+      "new": "表单不存在，请通过“查看记录”重新打开。",
+      "reason": "同一恢复入口统一为实际“查看记录”，保留表单不存在状态。",
+      "occurrences": 1,
+      "source_old": "表单不存在，请从我的记录重新打开。",
+      "source_new": "表单不存在，请通过“查看记录”重新打开。",
+      "id": "C077",
+      "group": "动态课程信息与错误提示",
+      "line_before": 678
+    },
+    {
+      "file": "app/blueprints/user/forms.py",
+      "old": "听课记录标识无效，请重新打开记录后提交。",
+      "new": "无法读取这次听课记录，请通过“查看记录”重新打开后提交。",
+      "reason": "保留记录标识校验与重新打开后提交的恢复步骤，使用实际入口。",
+      "occurrences": 1,
+      "source_old": "听课记录标识无效，请重新打开记录后提交。",
+      "source_new": "无法读取这次听课记录，请通过“查看记录”重新打开后提交。",
+      "id": "C078",
+      "group": "动态课程信息与错误提示",
+      "line_before": 712
+    },
+    {
+      "file": "app/blueprints/user/forms.py",
+      "old": "该表单已有更新版本，请从我的记录重新打开。",
+      "new": "该表单已有更新版本，请通过“查看记录”重新打开。",
+      "reason": "同一恢复入口统一为实际“查看记录”，保留已有更新版本状态。",
+      "occurrences": 1,
+      "source_old": "该表单已有更新版本，请从我的记录重新打开。",
+      "source_new": "该表单已有更新版本，请通过“查看记录”重新打开。",
+      "id": "C079",
+      "group": "动态课程信息与错误提示",
+      "line_before": 1137
+    },
+    {
+      "file": "app/blueprints/user/site_capture.py",
+      "old": "本次现场定位采集已结束。",
+      "new": "本次定位已结束。",
+      "reason": "去掉现场采集术语，保留结束状态及409响应。",
+      "occurrences": 1,
+      "source_old": "本次现场定位采集已结束。",
+      "source_new": "本次定位已结束。",
+      "id": "C080",
+      "group": "动态课程信息与错误提示",
+      "line_before": 295
+    },
+    {
+      "file": "app/blueprints/user/site_capture.py",
+      "old": "补问次数格式无效。",
+      "new": "课程查找暂未完成，请重新查找。",
+      "reason": "前置校验实际会先返回该文案；与模型错误同步，保留次数校验和400状态。",
+      "occurrences": 1,
+      "source_old": "补问次数格式无效。",
+      "source_new": "课程查找暂未完成，请重新查找。",
+      "id": "C081",
+      "group": "动态课程信息与错误提示",
+      "line_before": 323
+    },
+    {
+      "file": "app/blueprints/user/site_capture.py",
+      "old": "提问记录格式无效。",
+      "new": "课程查找暂未完成，请重新查找。",
+      "reason": "前置校验实际会先返回该文案；与模型错误同步，保留记录校验和400状态。",
+      "occurrences": 1,
+      "source_old": "提问记录格式无效。",
+      "source_new": "课程查找暂未完成，请重新查找。",
+      "id": "C082",
+      "group": "动态课程信息与错误提示",
+      "line_before": 325
+    },
+    {
+      "file": "app/blueprints/user/reservations.py",
+      "old": "{course.course_name} | {course.teacher.name if course.teacher else '未知'} | {course.class_time or '时间未知'} ({course.course_code}-{course.selection_code})",
+      "new": "{course.course_name} · {course.teacher.name if course.teacher else '未知'} · {course.class_time or '时间未知'}（{course.course_code}-{course.selection_code}）",
+      "reason": "接口 course.text 会覆盖前端回退展示；统一中文分隔符与括号，课程与选课号数据不变。",
+      "occurrences": 1,
+      "source_old": "f\"{course.course_name} | {course.teacher.name if course.teacher else '未知'} | {course.class_time or '时间未知'} ({course.course_code}-{course.selection_code})\"",
+      "source_new": "f\"{course.course_name} · {course.teacher.name if course.teacher else '未知'} · {course.class_time or '时间未知'}（{course.course_code}-{course.selection_code}）\"",
+      "id": "C083",
+      "group": "动态课程信息与错误提示",
+      "line_before": 191
+    },
+    {
+      "file": "app/blueprints/user/reservations.py",
+      "old": "获取课程列表失败: {str(e)}",
+      "new": "课程加载失败，请稍后重试。",
+      "reason": "仅替换课程搜索通用500异常展示，不改课表可用性、权限过滤或分页。",
+      "occurrences": 1,
+      "source_old": "f'获取课程列表失败: {str(e)}'",
+      "source_new": "'课程加载失败，请稍后重试。'",
+      "id": "C084",
+      "group": "动态课程信息与错误提示",
+      "line_before": 215
+    },
+    {
+      "file": "app/blueprints/user/reservations.py",
+      "old": "str(e)",
+      "new": "登记记录加载失败，请稍后重试。",
+      "reason": "仅替换登记历史通用500异常展示，课程身份独立400返回保留。",
+      "occurrences": 1,
+      "source_old": "str(e)",
+      "source_new": "'登记记录加载失败，请稍后重试。'",
+      "id": "C085",
+      "group": "动态课程信息与错误提示",
+      "line_before": 287
+    },
+    {
+      "file": "app/blueprints/user/reservations.py",
+      "old": "登记失败: {str(e)}",
+      "new": "登记失败，请稍后重试。",
+      "reason": "仅替换登记通用500异常展示，回滚及必填、学期、时间、课程、禁听、人数限制分别返回保留。",
+      "occurrences": 1,
+      "source_old": "f'登记失败: {str(e)}'",
+      "source_new": "'登记失败，请稍后重试。'",
+      "id": "C086",
+      "group": "动态课程信息与错误提示",
+      "line_before": 389
+    },
+    {
+      "file": "app/blueprints/user/reservations.py",
+      "old": "取消失败: {str(e)}",
+      "new": "取消登记失败，请稍后重试。",
+      "reason": "仅替换取消登记通用500异常展示，回滚、课程身份及表单绑定限制保留。",
+      "occurrences": 1,
+      "source_old": "f'取消失败: {str(e)}'",
+      "source_new": "'取消登记失败，请稍后重试。'",
+      "id": "C087",
+      "group": "动态课程信息与错误提示",
+      "line_before": 465
+    },
+    {
+      "file": "app/blueprints/user/reservations.py",
+      "old": "获取预定列表失败: {str(e)}",
+      "new": "听课预约加载失败，请稍后重试。",
+      "reason": "仅替换我的预约列表通用500异常展示，历史课程核实状态和可编辑/删除条件保留。",
+      "occurrences": 1,
+      "source_old": "f'获取预定列表失败: {str(e)}'",
+      "source_new": "'听课预约加载失败，请稍后重试。'",
+      "id": "C088",
+      "group": "动态课程信息与错误提示",
+      "line_before": 540
+    },
+    {
+      "file": "app/blueprints/user/reservations.py",
+      "old": "修改失败: {str(e)}",
+      "new": "修改失败，请稍后重试。",
+      "reason": "仅替换修改登记通用500异常展示，回滚及记录归属、绑定、当前课程、禁听、必填、时间、人数限制保留。",
+      "occurrences": 1,
+      "source_old": "f'修改失败: {str(e)}'",
+      "source_new": "'修改失败，请稍后重试。'",
+      "id": "C089",
+      "group": "动态课程信息与错误提示",
+      "line_before": 584
+    },
+    {
+      "file": "app/blueprints/user/reservations.py",
+      "old": "删除失败: {str(e)}",
+      "new": "删除失败，请稍后重试。",
+      "reason": "仅替换删除登记通用500异常展示，回滚、归属和绑定限制保留。",
+      "occurrences": 1,
+      "source_old": "f'删除失败: {str(e)}'",
+      "source_new": "'删除失败，请稍后重试。'",
+      "id": "C090",
+      "group": "动态课程信息与错误提示",
+      "line_before": 604
+    },
+    {
+      "file": "app/blueprints/user/reservations.py",
+      "old": "str(e)",
+      "new": "已登记课程加载失败，请稍后重试。",
+      "reason": "此处实为unused_reservations选择课程API，不是登记历史；仅替换通用500展示，绑定与当前课程过滤保留。",
+      "occurrences": 1,
+      "source_old": "str(e)",
+      "source_new": "'已登记课程加载失败，请稍后重试。'",
+      "id": "C091",
+      "group": "动态课程信息与错误提示",
+      "line_before": 665
+    },
+    {
+      "file": "app/blueprints/user/reservations.py",
+      "old": "获取建议失败: {str(e)}",
+      "new": "时间建议暂未加载，请稍后重试。",
+      "reason": "无用户输入的时间建议通用500出口，仅替换异常展示，不改建议生成。",
+      "occurrences": 1,
+      "source_old": "f'获取建议失败: {str(e)}'",
+      "source_new": "'时间建议暂未加载，请稍后重试。'",
+      "id": "C092",
+      "group": "动态课程信息与错误提示",
+      "line_before": 681
+    },
+    {
+      "file": "app/blueprints/user/reservations.py",
+      "old": "请联系管理员在 系统设置 → 教学制度 配置学期起始周后再登记。",
+      "new": "学期尚未设置，请联系管理员后再登记。",
+      "reason": "接口反馈与字段旁提示统一；信息员不需了解管理员设置路径，保留学期未设置原因及400校验。",
+      "occurrences": 1,
+      "id": "C093",
+      "group": "动态课程信息与错误提示",
+      "line_before": 317
+    },
+    {
+      "id": "C094",
+      "file": "app/templates/auth/login.html",
+      "old": "认真听见，共同成长。",
+      "new": "西大听课工作台",
+      "reason": "以系统名称取代理念标题，首次用户可以确认当前系统。保留无障碍标题关联。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 12
+    },
+    {
+      "id": "C095",
+      "file": "app/templates/auth/login.html",
+      "old": "记录课堂里的发现，让每一份教学反馈，成为校园向前的一小步。",
+      "new": "",
+      "reason": "理念宣传不提供登录或填写所需信息。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 13
+    },
+    {
+      "id": "C096",
+      "file": "app/templates/auth/login.html",
+      "old": "听课 · 记录 · 反馈",
+      "new": "",
+      "reason": "功能装饰重复系统用途，不是单位署名。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 14
+    },
+    {
+      "id": "C097",
+      "file": "app/templates/auth/login.html",
+      "old": "欢迎回到工作台",
+      "new": "登录工作台",
+      "reason": "直接说明当前操作，首次用户也适用。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 18
+    },
+    {
+      "id": "C098",
+      "file": "app/templates/auth/login.html",
+      "old": "从这里，开启今天的听课与教学管理。",
+      "new": "",
+      "reason": "泛化操作介绍重复登录标题和按钮。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 19
+    },
+    {
+      "id": "C099",
+      "file": "app/templates/auth/login.html",
+      "old": "账号可以是系统分配的本地账号或学号。",
+      "new": "",
+      "reason": "账号或学号标签已解释类型，登录帮助继续保留系统分配账号来源；去掉内部“本地账号”分类。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 24
+    },
+    {
+      "id": "C100",
+      "file": "app/templates/auth/change_password.html",
+      "old": "为了您的账户安全，请定期更换密码。新密码应包含字母、数字，长度至少6位。",
+      "new": "",
+      "reason": "去掉顶部重复要求和泛化更换建议；字段旁保留实际至少6位要求。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 17
+    },
+    {
+      "id": "C101",
+      "file": "app/templates/auth/change_password.html",
+      "old": "密码长度至少6位，建议包含字母和数字",
+      "new": "密码至少6位，建议包含字母和数字",
+      "reason": "在新密码字段旁保留唯一长度说明；字母数字为建议，与后端要求一致。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 48
+    },
+    {
+      "id": "C102",
+      "file": "app/templates/main/public_index.html",
+      "old": "听课、审核与教学管理，在一个工作台完成。",
+      "new": "西大听课工作台",
+      "reason": "系统标题直接识别系统，避免泛化宣传。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 9
+    },
+    {
+      "id": "C103",
+      "file": "app/templates/main/public_index.html",
+      "old": "面向信息员、管理员和超级管理员的校内听课业务系统。",
+      "new": "",
+      "reason": "角色分类不帮助首次用户完成登录。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 10
+    },
+    {
+      "id": "C104",
+      "file": "app/templates/main/public_index.html",
+      "old": "使用系统分配的账号登录，继续填写、审核或管理工作。",
+      "new": "使用系统分配的账号登录。",
+      "reason": "保留账号来源，删除角色操作概述；初始密码与联系管理员说明保持。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 15
+    },
+    {
+      "id": "C105",
+      "file": "app/templates/main/help.html",
+      "old": "需要帮助时，从清晰的下一步开始。",
+      "new": "使用帮助",
+      "reason": "用实际页面用途取代泛化标题。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 9
+    },
+    {
+      "id": "C106",
+      "file": "app/templates/main/help.html",
+      "old": "登录后，工作台会根据你的角色展示对应的任务、审核和管理入口。",
+      "new": "",
+      "reason": "角色展示机制没有提供账号排障或填表操作信息。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 10
+    },
+    {
+      "id": "C107",
+      "file": "app/templates/main/help.html",
+      "old": "遇到登录或使用问题时，可以先按下面的顺序检查：",
+      "new": "登录与账号问题：",
+      "reason": "列表不是有依赖的排障顺序，短标题描述实际帮助内容。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 15
+    },
+    {
+      "id": "C108",
+      "file": "app/templates/main/help.html",
+      "old": "登录后从工作台的待办或快捷入口继续操作。",
+      "new": "信息员可从“填写听课表”提交反馈，从工作台的“查看记录”查看已交表单。",
+      "reason": "首次使用帮助指向真实入口，已核实工作台两种课表状态均有查看记录快捷项，不假定侧栏同名。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 19
+    },
+    {
+      "id": "C109",
+      "file": "app/templates/main/about.html",
+      "old": "让听课、审核与教学管理，在同一张工作台上清晰衔接。",
+      "new": "西大听课工作台",
+      "reason": "系统名称取代宣传式介绍，单位标识保留。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 9
+    },
+    {
+      "id": "C110",
+      "file": "app/templates/main/about.html",
+      "old": "面向校内信息员、管理员和超级管理员的教学信息工作台。",
+      "new": "",
+      "reason": "删除与公共入口重复的角色概述。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 10
+    },
+    {
+      "id": "C111",
+      "file": "app/templates/main/about.html",
+      "old": "工作台把听课记录、审核流程和教学管理入口放在同一个清晰的工作空间中。",
+      "new": "用于提交听课反馈、查看审核结果。",
+      "reason": "关于页保留一条实际用途说明，去掉工作空间宣传。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 15
+    },
+    {
+      "id": "C112",
+      "file": "app/templates/main/about.html",
+      "old": "不同角色只会看到与职责相关的任务和操作，方便从待办继续推进工作。",
+      "new": "",
+      "reason": "权限展示机制不帮助用户判断如何填写。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 16
+    },
+    {
+      "id": "C113",
+      "file": "app/templates/main/workspace.html",
+      "old": "校园听课手记",
+      "new": "",
+      "reason": "删除装饰眉题，页面已有今日工作和用户标题。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 8
+    },
+    {
+      "id": "C114",
+      "file": "app/templates/main/workspace.html",
+      "old": "可以从快捷入口开始新的工作。",
+      "new": "",
+      "reason": "保留空状态，删除重复描述右侧已经可见的快捷入口。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 16
+    },
+    {
+      "id": "C115",
+      "file": "app/templates/main/_leave_reminder_modal.html",
+      "old": "提交时系统会自动将表单定义为第{{ leave_prompt.leave_week }}周请假补交表。",
+      "new": "补交表将计入第{{ leave_prompt.leave_week }}周。",
+      "reason": "删除自动定义实现介绍，保留补交表归属周这一业务含义。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 18
+    },
+    {
+      "id": "C116",
+      "file": "app/templates/success.html",
+      "old": "表单已进入审核流程，以下是本次提交的摘要。",
+      "new": "表单已提交，等待审核。",
+      "reason": "删除下方页面结构介绍，保留提交完成和后续审核状态。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 7
+    },
+    {
+      "id": "C117",
+      "file": "app/templates/list.html",
+      "old": "还没有提交过听课表单",
+      "new": "",
+      "reason": "与暂无表单记录标题同义重复，保留标题和填写入口。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 60
+    },
+    {
+      "id": "C118",
+      "file": "app/templates/main/index.html",
+      "old": "请从统一工作台继续处理任务。",
+      "new": "",
+      "reason": "兼容入口保留入口已更新和返回按钮，删除重复迁移说明；不改路由。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 7
+    },
+    {
+      "id": "C119",
+      "file": "app/templates/main/user_index.html",
+      "old": "信息员工作已集中到统一工作台。",
+      "new": "",
+      "reason": "兼容入口保留入口已更新和返回按钮，删除重复迁移说明；不改路由。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 7
+    },
+    {
+      "id": "C120",
+      "file": "app/templates/main/manager_index.html",
+      "old": "管理员工作已集中到统一工作台。",
+      "new": "",
+      "reason": "兼容入口保留入口已更新和返回按钮，删除重复迁移说明；不改路由。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 7
+    },
+    {
+      "id": "C121",
+      "file": "app/templates/main/admin_index.html",
+      "old": "管理员工作已集中到统一工作台。",
+      "new": "",
+      "reason": "兼容入口保留入口已更新和返回按钮，删除重复迁移说明；不改路由。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 7
+    },
+    {
+      "id": "C122",
+      "file": "app/ui/workspace.py",
+      "old": "查找当前课表中的课程信息。",
+      "new": "",
+      "reason": "删除重复查询/查看按钮的概述，保留按课表状态选择主按钮逻辑。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 85
+    },
+    {
+      "id": "C123",
+      "file": "app/ui/workspace.py",
+      "old": "查看已提交的记录。",
+      "new": "",
+      "reason": "删除重复查询/查看按钮的概述，保留按课表状态选择主按钮逻辑。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 85
+    },
+    {
+      "id": "C124",
+      "file": "app/ui/workspace.py",
+      "old": "继续今天的听课安排，或查看已经提交的记录。",
+      "new": "",
+      "reason": "标题下概述重复填写与查看入口，没有补充要求或状态。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 105
+    },
+    {
+      "id": "C125",
+      "file": "app/ui/workspace.py",
+      "old": "草稿已经自动保存，可以从上次位置继续。",
+      "new": "草稿已保存",
+      "reason": "保留草稿保存状态，去掉重复继续按钮的说明，不暗示滚动位置恢复。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 98
+    },
+    {
+      "id": "C126",
+      "file": "app/ui/workspace.py",
+      "old": "{pending_forms} 份表单等待处理，进入审核队列继续工作。",
+      "new": "{pending_forms} 份待审核",
+      "reason": "保留数量和审核状态，删除对审核队列按钮的复述。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 23
+    },
+    {
+      "id": "C127",
+      "file": "app/ui/workspace.py",
+      "old": "先处理 {snapshot.pending_forms} 份待审核表单，再查看部门提交情况。",
+      "new": "",
+      "reason": "管理员的数量、状态已在指标和待办展示，删除第三次概述和非必要操作顺序。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 125
+    },
+    {
+      "id": "C128",
+      "file": "app/ui/workspace.py",
+      "old": "当前没有待审核表单，可以查看部门提交情况。",
+      "new": "",
+      "reason": "管理员的数量、状态已在指标和待办展示，删除第三次概述和非必要操作顺序。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 127
+    },
+    {
+      "id": "C129",
+      "file": "app/ui/workspace.py",
+      "old": "全局共有 {snapshot.pending_forms} 份待审核表单，请优先完成审核。",
+      "new": "",
+      "reason": "超级管理员的待审状态已有指标和待办，删除重复概述；异常任务说明保持。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 158
+    },
+    {
+      "id": "C130",
+      "file": "app/ui/workspace.py",
+      "old": "当前没有待审核表单，可以查看全局提交情况。",
+      "new": "",
+      "reason": "超级管理员的待审状态已有指标和待办，删除重复概述；异常任务说明保持。",
+      "occurrences": 1,
+      "kind": "copy",
+      "group": "登录、工作台与共用页面",
+      "line_before": 160
+    },
+    {
+      "id": "C131",
+      "file": "app/templates/partials/_empty_state.html",
+      "old": "<p>{{ description }}</p>",
+      "new": "{% if description %}<p>{{ description }}</p>{% endif %}",
+      "reason": "仅避免删减后空段落的间距；保留其他调用方的有效描述能力。",
+      "occurrences": 1,
+      "kind": "template_guard",
+      "group": "登录、工作台与共用页面",
+      "line_before": 2
+    },
+    {
+      "id": "C132",
+      "file": "app/templates/view.html",
+      "old": "课程(总标题)",
+      "new": "课程（总标题）",
+      "reason": "沿用已确认的中文括号规范，兼容表单详情标签含义不变。",
+      "occurrences": 1,
+      "kind": "punctuation",
+      "group": "登录、工作台与共用页面",
+      "line_before": 80
+    },
+    {
+      "id": "C133",
+      "file": "app/templates/view.html",
+      "old": "课程反馈(优点)",
+      "new": "课程反馈（优点）",
+      "reason": "沿用已确认的中文括号规范，兼容表单详情标签含义不变。",
+      "occurrences": 1,
+      "kind": "punctuation",
+      "group": "登录、工作台与共用页面",
+      "line_before": 144
+    },
+    {
+      "id": "C134",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 9,
+      "lines_before": [
+        9
+      ],
+      "old": "            <p>状态检查只返回可展示的健康摘要，不显示密钥或原始连接信息。</p>\n",
+      "new": "",
+      "reason": "删除不指导操作的内部安全实现说明。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C135",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 40,
+      "lines_before": [
+        40
+      ],
+      "old": "上传后先生成 staged 预览；只有确认启用后才切换 active 数据集。",
+      "new": "上传后先预览，确认后启用。",
+      "reason": "保留启用步骤，删除内部状态术语。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C136",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 133,
+      "lines_before": [
+        133
+      ],
+      "old": "先预览范围和缓存，再确认启动；自动审核只生成证据和建议，不改变人工审核字段。",
+      "new": "先预览，再启动。审核结果仍需人工确认。",
+      "reason": "保留操作顺序与人工决定边界。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C137",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 190,
+      "lines_before": [
+        190
+      ],
+      "old": "每次变更都会形成可追溯的规则 revision，批次读取固定版本。",
+      "new": "规则修改后保存为新版本，已启动的审核仍使用启动时的版本。",
+      "reason": "保留版本修改对正在运行审核的影响，移除 revision 内部词。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C138",
+      "file": "app/templates/admin/_settings_imports.html",
+      "line_before": 3,
+      "lines_before": [
+        3
+      ],
+      "old": "<p>导入全校课表或进入通讯录工具，操作结果会在当前页面反馈。</p>",
+      "new": "",
+      "reason": "入口按钮已明确用途，删除重复说明与反馈位置解释。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C139",
+      "file": "app/templates/admin/_settings_imports.html",
+      "line_before": 11,
+      "lines_before": [
+        11
+      ],
+      "old": "<p>进入对应业务页面继续筛选和导出，避免重复配置筛选条件。</p>",
+      "new": "",
+      "reason": "删除链接式入口的布局理由。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C140",
+      "file": "app/templates/admin/_settings_imports.html",
+      "line_before": 19,
+      "lines_before": [
+        19
+      ],
+      "old": "清空操作需要密码和二次确认，完成后会在此处保留结果。",
+      "new": "清空数据前需验证当前账号密码。",
+      "reason": "保留密码要求，删除反馈位置说明；弹窗保留不可恢复与二次确认。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C141",
+      "file": "app/templates/admin/_settings_imports.html",
+      "line_before": 24,
+      "lines_before": [
+        24
+      ],
+      "old": "<tr><th scope=\"row\">系统版本</th><td>v1.6</td></tr>",
+      "new": "",
+      "reason": "删除未读取实际部署版本的硬编码版本行。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C142",
+      "file": "app/templates/admin/_settings_imports.html",
+      "line_before": 24,
+      "lines_before": [
+        24
+      ],
+      "old": "<tr><th scope=\"row\">数据库状态</th><td><span class=\"badge bg-success\">正常</span></td></tr>",
+      "new": "",
+      "reason": "删除未经健康检查证实的硬编码正常状态行。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C143",
+      "file": "app/templates/admin/import_forms_excel.html",
+      "line_before": 47,
+      "lines_before": [
+        47
+      ],
+      "old": "导入后数据直接写入教学反馈表数据表（lecture_forms）。",
+      "new": "导入后将新增听课反馈记录。",
+      "reason": "保留写入后果，删除数据库表名。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C144",
+      "file": "app/templates/admin/import_forms_excel.html",
+      "line_before": 50,
+      "lines_before": [
+        50
+      ],
+      "old": "                        <li>该功能仅对超级管理员开放。</li>\n",
+      "new": "",
+      "reason": "已进入受限页面无需重复权限介绍，后台权限校验保留。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C145",
+      "file": "app/templates/admin/import_forms_excel.html",
+      "line_before": 53,
+      "lines_before": [
+        53
+      ],
+      "old": "reviewer_id 自动写入当前导入人ID，registration_id 与表单组ID均由系统维护，不通过Excel填写。",
+      "new": "审核人默认记为当前导入账号，无需填写内部编号。",
+      "reason": "保留审核人归属，删除内部字段名。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C146",
+      "file": "app/templates/admin/review_forms.html",
+      "line_before": 26,
+      "lines_before": [
+        26
+      ],
+      "old": "先设置时间与审核范围；加载后，队列会留在主工作区，筛选项自动收起。",
+      "new": "选择时间和人员范围后加载表单。",
+      "reason": "保留必要步骤，删除队列位置与自动收起说明。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C147",
+      "file": "app/templates/admin/review_forms.html",
+      "line_before": 195,
+      "lines_before": [
+        195
+      ],
+      "old": "从左侧列表选择一份表单，查看摘要和规则检查。",
+      "new": "选择表单查看详情。",
+      "reason": "删除不适用于手机的方位和重复功能介绍。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C148",
+      "file": "app/templates/admin/statistics.html",
+      "line_before": 10,
+      "lines_before": [
+        10
+      ],
+      "old": "先查看核心指标与趋势，再按需进入专项统计或请假管理。",
+      "new": "",
+      "reason": "标题、指标和导航已说明用途，删除人为浏览顺序。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C149",
+      "file": "app/templates/admin/review_assessment_stats.html",
+      "line_before": 76,
+      "lines_before": [
+        76
+      ],
+      "old": "                <p>数值 0 表示有效结果；无记录时才显示空状态。</p>\n",
+      "new": "",
+      "reason": "删除渲染约定说明，保留实际数据和空状态。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C150",
+      "file": "app/templates/admin/course_feedback_management.html",
+      "line_before": 16,
+      "lines_before": [
+        16
+      ],
+      "old": "                    <p>\n                        {% if is_course_management %}\n                        维护课程、教师与禁听规则。\n                        {% else %}\n                        查询课程并完成听课登记。\n                        {% endif %}\n                    </p>\n",
+      "new": "",
+      "reason": "标题与操作已表达用途，删除两个分支的重复副文案。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C151",
+      "file": "app/templates/admin/course_feedback_management.html",
+      "line_before": 420,
+      "lines_before": [
+        420
+      ],
+      "old": "导入后系统会按“禁听该教师全部课程”的当前实现方式，对所有信息员批量生成禁听记录。",
+      "new": "导入后，所有信息员都将被禁止听该教师的全部课程。",
+      "reason": "删除实现措辞，保留全部用户和全部课程的影响范围。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C152",
+      "file": "app/templates/admin/department_monthly_assessment_stats.html",
+      "line_before": 19,
+      "lines_before": [
+        19
+      ],
+      "old": "考评情况为系统根据当前考评规则和数据自动给出，不代表真实考评情况，请认真核实，建议核实无误后保存或导出数据。",
+      "new": "考评结果由现有规则和记录计算，请核实后保存或导出。",
+      "reason": "精简长句，保留计算依据及核实提醒，不删除统计口径。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C153",
+      "file": "app/templates/admin/submission_count_stats.html",
+      "line_before": 55,
+      "lines_before": [
+        55
+      ],
+      "old": "奖励表情况为系统根据当前奖励表规则和数据自动给出，不代表真实考评情况，请认真核实，建议核实无误后保存或导出数据。",
+      "new": "奖励表数量由现有规则和记录计算，请核实后保存或导出。",
+      "reason": "精简长句，保留计算依据及核实提醒，不删除统计口径。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C154",
+      "file": "app/static/js/automation-center.js",
+      "line_before": 205,
+      "lines_before": [
+        205
+      ],
+      "old": "自动审核批次已启动，进度会在当前页面更新。",
+      "new": "自动审核已启动。",
+      "reason": "保留启动结果，删除进度显示位置。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C155",
+      "file": "app/static/js/automation-center.js",
+      "line_before": 414,
+      "lines_before": [
+        414
+      ],
+      "old": "数据集已启用，历史记录和覆盖统计已刷新。",
+      "new": "已启用。",
+      "reason": "保留成功反馈，删除组件刷新实现描述。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C156",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 189,
+      "lines_before": [
+        189
+      ],
+      "old": "规则与 revision",
+      "new": "审核规则",
+      "reason": "用中文版本名称替代内部 revision 术语，版本行为不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C157",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 192,
+      "lines_before": [
+        192
+      ],
+      "old": "新建 revision",
+      "new": "新建规则版本",
+      "reason": "用中文版本名称替代内部 revision 术语，版本行为不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C158",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 229,
+      "lines_before": [
+        229
+      ],
+      "old": "新建规则 revision",
+      "new": "新建规则版本",
+      "reason": "用中文版本名称替代内部 revision 术语，版本行为不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C159",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 255,
+      "lines_before": [
+        255
+      ],
+      "old": "保存 revision",
+      "new": "保存版本",
+      "reason": "用中文版本名称替代内部 revision 术语，版本行为不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C160",
+      "file": "app/static/js/automation-center.js",
+      "line_before": 447,
+      "lines_before": [
+        447
+      ],
+      "old": "规则 revision 已保存。",
+      "new": "规则版本已保存。",
+      "reason": "与规则编辑标签统一，保留成功结果。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C161",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 196,
+      "lines_before": [
+        196
+      ],
+      "old": "<th>severity</th>",
+      "new": "<th>风险等级</th>",
+      "reason": "仅将展示标签改为中文，JSON 格式要求及字段钩子保持不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C162",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 196,
+      "lines_before": [
+        196
+      ],
+      "old": "<th>parameters</th>",
+      "new": "<th>参数</th>",
+      "reason": "仅将展示标签改为中文，JSON 格式要求及字段钩子保持不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C163",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 233,
+      "lines_before": [
+        233
+      ],
+      "old": ">规则 key</label>",
+      "new": ">规则标识</label>",
+      "reason": "仅将展示标签改为中文，JSON 格式要求及字段钩子保持不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C164",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 241,
+      "lines_before": [
+        241
+      ],
+      "old": ">severity</label>",
+      "new": ">风险等级</label>",
+      "reason": "仅将展示标签改为中文，JSON 格式要求及字段钩子保持不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C165",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 248,
+      "lines_before": [
+        248
+      ],
+      "old": ">parameters JSON</label>",
+      "new": ">规则参数（JSON）</label>",
+      "reason": "仅将展示标签改为中文，JSON 格式要求及字段钩子保持不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C166",
+      "file": "app/static/js/automation-center.js",
+      "line_before": 430,
+      "lines_before": [
+        430
+      ],
+      "old": "规则 key、处理器和变更原因不能为空。",
+      "new": "规则标识、处理器和变更原因不能为空。",
+      "reason": "错误提示与中文字段标签统一，保留必填要求。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C167",
+      "file": "app/static/js/automation-center.js",
+      "line_before": 437,
+      "lines_before": [
+        437
+      ],
+      "old": "parameters 必须是有效 JSON。",
+      "new": "规则参数必须是有效 JSON。",
+      "reason": "仅中文化字段名称，保留 JSON 格式错误及修正要求。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C168",
+      "file": "app/static/js/automation-center.js",
+      "line_before": 441,
+      "lines_before": [
+        441
+      ],
+      "old": "parameters 必须是 JSON 对象。",
+      "new": "规则参数必须是 JSON 对象。",
+      "reason": "仅中文化字段名称，保留 JSON 对象类型要求。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C169",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 243,
+      "lines_before": [
+        243
+      ],
+      "old": "<option value=\"info\">info</option>",
+      "new": "<option value=\"info\">提示</option>",
+      "reason": "中文化选项显示文本，option value 与默认选择保持不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C170",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 244,
+      "lines_before": [
+        244
+      ],
+      "old": "<option value=\"review\" selected>review</option>",
+      "new": "<option value=\"review\" selected>建议复核</option>",
+      "reason": "中文化选项显示文本，option value 与默认选择保持不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C171",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 245,
+      "lines_before": [
+        245
+      ],
+      "old": "<option value=\"high\">high</option>",
+      "new": "<option value=\"high\">高风险</option>",
+      "reason": "中文化选项显示文本，option value 与默认选择保持不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C172",
+      "file": "app/templates/admin/_settings_automation.html",
+      "line_before": 246,
+      "lines_before": [
+        246
+      ],
+      "old": "<option value=\"unknown\">unknown</option>",
+      "new": "<option value=\"unknown\">无法判断</option>",
+      "reason": "中文化选项显示文本，option value 与默认选择保持不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C173",
+      "file": "app/templates/admin/auto_review_results.html",
+      "line_before": 35,
+      "lines_before": [
+        35
+      ],
+      "old": "<h3>schedule</h3>",
+      "new": "<h3>课表核对</h3>",
+      "reason": "证据栏目改为中文，保留 data-evidence-source 和证据内容。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C174",
+      "file": "app/templates/admin/auto_review_results.html",
+      "line_before": 36,
+      "lines_before": [
+        36
+      ],
+      "old": "<h3>rule</h3>",
+      "new": "<h3>规则检查</h3>",
+      "reason": "证据栏目改为中文，保留 data-evidence-source 和证据内容。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C175",
+      "file": "app/templates/admin/auto_review_results.html",
+      "line_before": 37,
+      "lines_before": [
+        37
+      ],
+      "old": "<h3>text</h3>",
+      "new": "<h3>文字检查</h3>",
+      "reason": "证据栏目改为中文，保留 data-evidence-source 和证据内容。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C176",
+      "file": "app/templates/admin/auto_review_results.html",
+      "line_before": 38,
+      "lines_before": [
+        38
+      ],
+      "old": "<h3>history</h3>",
+      "new": "<h3>历史记录</h3>",
+      "reason": "证据栏目改为中文，保留 data-evidence-source 和证据内容。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C177",
+      "file": "app/templates/admin/auto_review_results.html",
+      "line_before": 39,
+      "lines_before": [
+        39
+      ],
+      "old": "<h3>llm</h3>",
+      "new": "<h3>智能分析</h3>",
+      "reason": "证据栏目改为中文，保留 data-evidence-source 和证据内容。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C178",
+      "file": "app/templates/admin/auto_review_results.html",
+      "line_before": 40,
+      "lines_before": [
+        40
+      ],
+      "old": "<h3>system</h3>",
+      "new": "<h3>处理状态</h3>",
+      "reason": "证据栏目改为中文，保留 data-evidence-source 和证据内容。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C179",
+      "file": "app/templates/admin/review_forms.html",
+      "line_before": 291,
+      "lines_before": [
+        291
+      ],
+      "old": "<h3>schedule</h3>",
+      "new": "<h3>课表核对</h3>",
+      "reason": "证据栏目改为中文，保留 data-evidence-source 和证据内容。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C180",
+      "file": "app/templates/admin/review_forms.html",
+      "line_before": 292,
+      "lines_before": [
+        292
+      ],
+      "old": "<h3>rule</h3>",
+      "new": "<h3>规则检查</h3>",
+      "reason": "证据栏目改为中文，保留 data-evidence-source 和证据内容。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C181",
+      "file": "app/templates/admin/review_forms.html",
+      "line_before": 293,
+      "lines_before": [
+        293
+      ],
+      "old": "<h3>text</h3>",
+      "new": "<h3>文字检查</h3>",
+      "reason": "证据栏目改为中文，保留 data-evidence-source 和证据内容。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C182",
+      "file": "app/templates/admin/review_forms.html",
+      "line_before": 294,
+      "lines_before": [
+        294
+      ],
+      "old": "<h3>history</h3>",
+      "new": "<h3>历史记录</h3>",
+      "reason": "证据栏目改为中文，保留 data-evidence-source 和证据内容。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C183",
+      "file": "app/templates/admin/review_forms.html",
+      "line_before": 295,
+      "lines_before": [
+        295
+      ],
+      "old": "<h3>llm</h3>",
+      "new": "<h3>智能分析</h3>",
+      "reason": "证据栏目改为中文，保留 data-evidence-source 和证据内容。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C184",
+      "file": "app/templates/admin/review_forms.html",
+      "line_before": 296,
+      "lines_before": [
+        296
+      ],
+      "old": "<h3>system</h3>",
+      "new": "<h3>处理状态</h3>",
+      "reason": "证据栏目改为中文，保留 data-evidence-source 和证据内容。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C185",
+      "file": "app/templates/admin/_settings_imports.html",
+      "line_before": 43,
+      "lines_before": [
+        43
+      ],
+      "old": "<option value=\"courses\">课程表 (courses)</option>",
+      "new": "<option value=\"courses\">课程</option>",
+      "reason": "删除面向开发者的数据库表名，保留实际删除对象和 option value。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C186",
+      "file": "app/templates/admin/_settings_imports.html",
+      "line_before": 43,
+      "lines_before": [
+        43
+      ],
+      "old": "<option value=\"teachers\">教师表 (teachers)</option>",
+      "new": "<option value=\"teachers\">教师</option>",
+      "reason": "删除面向开发者的数据库表名，保留实际删除对象和 option value。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C187",
+      "file": "app/templates/admin/_settings_imports.html",
+      "line_before": 43,
+      "lines_before": [
+        43
+      ],
+      "old": "<option value=\"venues\">场地表 (venues)</option>",
+      "new": "<option value=\"venues\">场地</option>",
+      "reason": "删除面向开发者的数据库表名，保留实际删除对象和 option value。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C188",
+      "file": "app/templates/admin/_settings_imports.html",
+      "line_before": 43,
+      "lines_before": [
+        43
+      ],
+      "old": "<option value=\"lecture_forms\">听课记录表 (lecture_forms)</option>",
+      "new": "<option value=\"lecture_forms\">听课记录</option>",
+      "reason": "删除面向开发者的数据库表名，保留实际删除对象和 option value。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C189",
+      "file": "app/templates/admin/_settings_imports.html",
+      "line_before": 43,
+      "lines_before": [
+        43
+      ],
+      "old": "<option value=\"listening_bans\">禁听记录表 (listening_bans)</option>",
+      "new": "<option value=\"listening_bans\">禁听记录</option>",
+      "reason": "删除面向开发者的数据库表名，保留实际删除对象和 option value。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C190",
+      "file": "app/templates/admin/_settings_imports.html",
+      "line_before": 43,
+      "lines_before": [
+        43
+      ],
+      "old": "<option value=\"users\">用户表 (users)</option>",
+      "new": "<option value=\"users\">用户</option>",
+      "reason": "删除面向开发者的数据库表名，保留实际删除对象和 option value。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C191",
+      "file": "app/templates/admin/_settings_imports.html",
+      "line_before": 43,
+      "lines_before": [
+        43
+      ],
+      "old": "<option value=\"departments\">部门表 (departments)</option>",
+      "new": "<option value=\"departments\">部门</option>",
+      "reason": "删除面向开发者的数据库表名，保留实际删除对象和 option value。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C192",
+      "file": "app/templates/admin/_settings_imports.html",
+      "line_before": 43,
+      "lines_before": [
+        43
+      ],
+      "old": "<option value=\"groups\">群组表 (groups)</option>",
+      "new": "<option value=\"groups\">小组</option>",
+      "reason": "删除面向开发者的数据库表名，保留实际删除对象和 option value。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C193",
+      "file": "app/templates/admin/review_form.html",
+      "line_before": 350,
+      "lines_before": [
+        350
+      ],
+      "old": "请填写您的审核意见，如果不修改表格内容可直接提交，审核意见将默认显示为\"无\"",
+      "new": "填写审核意见（可留空）",
+      "reason": "精简输入提示，保留可留空行为，默认值逻辑不变。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C194",
+      "file": "app/templates/admin/review_form.html",
+      "line_before": 352,
+      "lines_before": [
+        352
+      ],
+      "old": "系统将自动记录您对表单的修改内容并附加到审核意见后",
+      "new": "修改记录会自动附在审核意见后。",
+      "reason": "保留自动附加修改记录的业务后果。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    },
+    {
+      "id": "C195",
+      "file": "app/templates/admin/review_forms.html",
+      "line_before": 2211,
+      "lines_before": [
+        2211
+      ],
+      "old": "DeepSeek 结构化结果已验证。",
+      "new": "智能分析已完成。",
+      "reason": "避免将非空结构化结果误称为内容已核实，保留分析完成状态。",
+      "occurrences": 1,
+      "group": "管理员页面"
+    }
+  ],
+  "resource_updates": [
+    {
+      "file": "app/templates/admin/system_management.html",
+      "old": "filename='js/automation-center.js')",
+      "new": "filename='js/automation-center.js', v='20261014-copy')",
+      "occurrences": 1,
+      "reason": "资源缓存版本更新，确保现有用户加载新的动态文案。"
+    },
+    {
+      "file": "app/templates/user/activity_center.html",
+      "old": "filename='js/activity-center.js')",
+      "new": "filename='js/activity-center.js', v='20261014-copy')",
+      "occurrences": 1,
+      "reason": "资源缓存版本更新，确保现有用户加载新的动态文案。"
+    },
+    {
+      "file": "app/templates/user/course_lookup.html",
+      "old": "filename='js/course-lookup.js')",
+      "new": "filename='js/course-lookup.js', v='20261014-copy')",
+      "occurrences": 1,
+      "reason": "资源缓存版本更新，确保现有用户加载新的动态文案。"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "old": "filename='js/listening-assistant.js')",
+      "new": "filename='js/listening-assistant.js', v='20261014-copy')",
+      "occurrences": 1,
+      "reason": "资源缓存版本更新，确保现有用户加载新的动态文案。"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "old": "filename='js/site-building-map.js')",
+      "new": "filename='js/site-building-map.js', v='20261014-copy')",
+      "occurrences": 1,
+      "reason": "资源缓存版本更新，确保现有用户加载新的动态文案。"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "old": "filename='js/site-capture.js')",
+      "new": "filename='js/site-capture.js', v='20261014-copy')",
+      "occurrences": 1,
+      "reason": "资源缓存版本更新，确保现有用户加载新的动态文案。"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "old": "filename='js/site-context-guide.js')",
+      "new": "filename='js/site-context-guide.js', v='20261014-copy')",
+      "occurrences": 1,
+      "reason": "资源缓存版本更新，确保现有用户加载新的动态文案。"
+    },
+    {
+      "file": "app/templates/user/lecture_form.html",
+      "old": "filename='js/site-door-crop.js')",
+      "new": "filename='js/site-door-crop.js', v='20261014-copy')",
+      "occurrences": 1,
+      "reason": "资源缓存版本更新，确保现有用户加载新的动态文案。"
+    },
+    {
+      "file": "app/templates/user/lecture_reservation.html",
+      "old": "filename='js/activity-center.js')",
+      "new": "filename='js/activity-center.js', v='20261014-copy')",
+      "occurrences": 1,
+      "reason": "资源缓存版本更新，确保现有用户加载新的动态文案。"
+    }
+  ],
+  "test_expectation_updates": [
+    "工作台不再显示冗余摘要，4处旧文案断言改为摘要为空，保留操作/指标/任务断言。",
+    "确认楼栋后不再显示定位不确定提示，更新1处改名前的否定断言。",
+    "助手当前课表/已确认课程两个标签及本地资源缓存版本，更新3处旧字面期望；来源与确认协议断言保留。"
+  ],
+  "verification": {
+    "all_template_parse_count": 62,
+    "template_hook_comparisons": 37,
+    "javascript_syntax_checks": 14,
+    "frontend_tests_passed": 194,
+    "python_tests_passed": 244,
+    "python_subtests_passed": 160,
+    "python_evidence": "完整相关范围首次239项通过；3项旧文案断言更新后，助手模板文件22项复验全部通过；最后接口文案同步后，2项学期未配置时禁止登记的现有用例通过。"
+  },
+  "source_diffs": {
+    "app/blueprints/user/forms.py": "diff --git a/app/blueprints/user/forms.py b/app/blueprints/user/forms.py\nindex dcb7a62..006c0c8 100644\n--- a/app/blueprints/user/forms.py\n+++ b/app/blueprints/user/forms.py\n@@ -671,11 +671,11 @@ def submit_form():\n             try:\n                 parsed_version_id = positive_sqlite_id(version_id)\n             except ValueError:\n-                flash('表单版本标识无效，请从我的记录重新打开。', 'error')\n+                flash('无法打开这份表单，请通过“查看记录”重新打开。', 'error')\n                 return _render_submitted_form(user), 400\n             base = db.session.get(LectureForm, parsed_version_id)\n             if base is None:\n-                flash('表单不存在，请从我的记录重新打开。', 'error')\n+                flash('表单不存在，请通过“查看记录”重新打开。', 'error')\n                 return _render_submitted_form(user), 404\n             logical_id = base.unique_id or base.id\n             chain = LectureForm.query.filter(db.or_(LectureForm.unique_id == logical_id,\n@@ -709,7 +709,7 @@ def submit_form():\n             try:\n                 capture_id = positive_sqlite_id(capture_id or posted_capture) if capture_id or posted_capture else None\n             except ValueError:\n-                flash('听课记录标识无效，请重新打开记录后提交。', 'error')\n+                flash('无法读取这次听课记录，请通过“查看记录”重新打开后提交。', 'error')\n                 return _render_submitted_form(recovery_user, recovery_form), 400\n             site_capture=LectureSiteCapture.query.filter_by(id=capture_id,user_id=user.id,is_archived=False).first() if capture_id else None\n             if not site_capture:\n@@ -1134,7 +1134,7 @@ def edit_form(form_id):\n         return redirect(url_for('user.my_forms'))\n     latest = form.get_latest_version()\n     if latest is None or latest.id != form.id:\n-        flash('该表单已有更新版本，请从我的记录重新打开。', 'error')\n+        flash('该表单已有更新版本，请通过“查看记录”重新打开。', 'error')\n         return redirect(url_for('user.my_forms'))\n     if form.status not in ('待审核', '已驳回'):\n         abort(403)\n",
+    "app/blueprints/user/listening_assistant.py": "diff --git a/app/blueprints/user/listening_assistant.py b/app/blueprints/user/listening_assistant.py\nindex bf796fd..27a6a0f 100644\n--- a/app/blueprints/user/listening_assistant.py\n+++ b/app/blueprints/user/listening_assistant.py\n@@ -606,7 +606,7 @@ def listening_assistant_candidates(user):\n @_assistant_login_required\n def listening_assistant_fallback(user):\n     del user\n-    return _error_response('填表助手仅使用后台配置的当前课表。', 400)\n+    return _error_response('目前仅支持当前课表，请重新查找课程。', 400)\n \n \n @user_bp.route('/api/listening-assistant/confirm', methods=['POST'])\n@@ -616,7 +616,7 @@ def listening_assistant_confirm(user):\n         payload = _json_object()\n         current_semester = _configured_assistant_semester()\n         if payload.get('source_kind', 'primary') != 'primary':\n-            raise ValueError('填表助手仅使用后台配置的当前课表。')\n+            raise ValueError('目前仅支持当前课表，请重新查找课程。')\n         query = payload.get('query')\n         for value in (payload.get('semester'), query.get('semester') if isinstance(query, dict) else None):\n             if value is not None and value != current_semester:\n",
+    "app/blueprints/user/reservations.py": "diff --git a/app/blueprints/user/reservations.py b/app/blueprints/user/reservations.py\nindex 11a9e62..6728b01 100644\n--- a/app/blueprints/user/reservations.py\n+++ b/app/blueprints/user/reservations.py\n@@ -188,7 +188,7 @@ def api_available_courses():\n         for course in courses:\n             results.append({\n                 'id': course.id,\n-                'text': f\"{course.course_name} | {course.teacher.name if course.teacher else '未知'} | {course.class_time or '时间未知'} ({course.course_code}-{course.selection_code})\",\n+                'text': f\"{course.course_name} · {course.teacher.name if course.teacher else '未知'} · {course.class_time or '时间未知'}（{course.course_code}-{course.selection_code}）\",\n                 'course_code': course.course_code,\n                 'selection_code': course.selection_code,\n                 'course_name': course.course_name,\n@@ -212,7 +212,7 @@ def api_available_courses():\n     except Exception as e:\n         return jsonify({\n             'success': False,\n-            'message': f'获取课程列表失败: {str(e)}'\n+            'message': '课程加载失败，请稍后重试。'\n         }), 500\n \n \n@@ -284,7 +284,7 @@ def api_course_registration_history():\n             'highlight_source': 'target' if target_week else 'current',\n         })\n     except Exception as e:\n-        return jsonify({'success': False, 'message': str(e)}), 500\n+        return jsonify({'success': False, 'message': '登记记录加载失败，请稍后重试。'}), 500\n \n \n @user_bp.route('/api/create_reservation', methods=['POST'])\n@@ -314,7 +314,7 @@ def api_create_reservation():\n         if not semester_configured:\n             return jsonify({\n                 'success': False,\n-                'message': '请联系管理员在 系统设置 → 教学制度 配置学期起始周后再登记。'\n+                'message': '学期尚未设置，请联系管理员后再登记。'\n             }), 400\n \n         # 验证听课时间是否在未来\n@@ -386,7 +386,7 @@ def api_create_reservation():\n         db.session.rollback()\n         return jsonify({\n             'success': False,\n-            'message': f'登记失败: {str(e)}'\n+            'message': '登记失败，请稍后重试。'\n         }), 500\n \n \n@@ -462,7 +462,7 @@ def api_cancel_reservation():\n         db.session.rollback()\n         return jsonify({\n             'success': False,\n-            'message': f'取消失败: {str(e)}'\n+            'message': '取消登记失败，请稍后重试。'\n         }), 500\n \n \n@@ -537,7 +537,7 @@ def api_my_reservations():\n     except Exception as e:\n         return jsonify({\n             'success': False,\n-            'message': f'获取预定列表失败: {str(e)}'\n+            'message': '听课预约加载失败，请稍后重试。'\n         }), 500\n \n \n@@ -581,7 +581,7 @@ def api_update_my_reservation(reservation_id):\n         return jsonify({'success': True, 'message': '听课登记修改成功'})\n     except Exception as e:\n         db.session.rollback()\n-        return jsonify({'success': False, 'message': f'修改失败: {str(e)}'}), 500\n+        return jsonify({'success': False, 'message': '修改失败，请稍后重试。'}), 500\n \n \n @user_bp.route('/api/my_reservations/<int:reservation_id>', methods=['DELETE'])\n@@ -601,7 +601,7 @@ def api_delete_my_reservation(reservation_id):\n         return jsonify({'success': True, 'message': '听课登记删除成功'})\n     except Exception as e:\n         db.session.rollback()\n-        return jsonify({'success': False, 'message': f'删除失败: {str(e)}'}), 500\n+        return jsonify({'success': False, 'message': '删除失败，请稍后重试。'}), 500\n \n \n @user_bp.route('/api/unused_reservations')\n@@ -662,7 +662,7 @@ def api_unused_reservations():\n         \n         return jsonify({'success': True, 'data': result})\n     except Exception as e:\n-        return jsonify({'success': False, 'message': str(e)}), 500\n+        return jsonify({'success': False, 'message': '已登记课程加载失败，请稍后重试。'}), 500\n \n \n @user_bp.route('/api/time_suggestion')\n@@ -678,5 +678,5 @@ def api_time_suggestion():\n     except Exception as e:\n         return jsonify({\n             'success': False,\n-            'message': f'获取建议失败: {str(e)}'\n+            'message': '时间建议暂未加载，请稍后重试。'\n         }), 500\n",
+    "app/blueprints/user/site_capture.py": "diff --git a/app/blueprints/user/site_capture.py b/app/blueprints/user/site_capture.py\nindex 167f5a0..014fad0 100644\n--- a/app/blueprints/user/site_capture.py\n+++ b/app/blueprints/user/site_capture.py\n@@ -292,7 +292,7 @@ def site_capture_location(user,capture_id):\n     _enabled();record=_owned(capture_id,user)\n     age=(capture_service.now_at_site()-datetime.fromisoformat(record.received_at)).total_seconds()\n     if record.form_id or record.is_archived or not 0<=age<=30:\n-        return jsonify(success=False,message='本次现场定位采集已结束。'),409\n+        return jsonify(success=False,message='本次定位已结束。'),409\n     body=request.get_json(silent=True)\n     location=capture_service.normalize_location_evidence(body.get('location') if isinstance(body,dict) else None)\n     if not location:return jsonify(success=False,message='定位数据无效。'),400\n@@ -320,9 +320,9 @@ def site_capture_suggestions(user,capture_id):\n         asked=body.get('asked',[])\n         question_count=body.get('question_count',0)\n         if type(question_count) is not int or not 0<=question_count<=2:\n-            raise ValueError('补问次数格式无效。')\n+            raise ValueError('课程查找暂未完成，请重新查找。')\n         if not isinstance(asked,list) or len(asked)>4 or any(k not in FACT_KINDS for k in asked):\n-            raise ValueError('提问记录格式无效。')\n+            raise ValueError('课程查找暂未完成，请重新查找。')\n     except ValueError as error:return jsonify(success=False,message=str(error)),400\n     if request.method=='GET' and record.building:\n         facts.setdefault('building',record.building)\n",
+    "app/services/listening_assistant_guide.py": "diff --git a/app/services/listening_assistant_guide.py b/app/services/listening_assistant_guide.py\nindex 6d048af..0282629 100644\n--- a/app/services/listening_assistant_guide.py\n+++ b/app/services/listening_assistant_guide.py\n@@ -376,7 +376,7 @@ class ListeningAssistantGuideService:\n         )\n         return GuidedQuestion(\n             kind=kind,\n-            prompt='请选择最符合的课程候选：',\n+            prompt='请选择本次听课课程：',\n             options=options,\n         )\n \n",
+    "app/services/schedule_availability.py": "diff --git a/app/services/schedule_availability.py b/app/services/schedule_availability.py\nindex 54ec7fa..47d1355 100644\n--- a/app/services/schedule_availability.py\n+++ b/app/services/schedule_availability.py\n@@ -33,7 +33,7 @@ def current_schedule_availability():\n         'message': message, 'candidates_ready': candidates_ready,\n         'registration_ready': registration_ready,\n         'candidate_message': '' if candidates_ready else (\n-            message or '本学期课表尚未完成课程索引，请联系管理员。'),\n+            message or '本学期课表暂不可用，请联系管理员。'),\n         'registration_message': '' if registration_ready else (\n-            message or '本学期课表尚未完成登记课程导入，请联系管理员。'),\n+            message or '本学期暂不能登记课程，请联系管理员。'),\n     }\n",
+    "app/services/site_context_guidance.py": "diff --git a/app/services/site_context_guidance.py b/app/services/site_context_guidance.py\nindex ed1b71f..1cfdcae 100644\n--- a/app/services/site_context_guidance.py\n+++ b/app/services/site_context_guidance.py\n@@ -58,7 +58,7 @@ def choose_guidance(ranked, *, facts, asked, question_count, scoped_location, qu\n                       reason='教室和节次已匹配，请核对课程或班级。')\n         return result\n     if question_count>=parameters.max_questions:\n-        result['reason']='已尝试两次核对，仍不确定。可扩大范围查看课程，或修改信息。'\n+        result['reason']='仍无法确定课程，可扩大范围查看课程或修改信息。'\n         return result\n     question=question_picker(pool) if pool else None\n     if not question and pool and not qualified:\n@@ -90,7 +90,7 @@ def choose_guidance(ranked, *, facts, asked, question_count, scoped_location, qu\n                 if question['kind']=='building' and scoped_location else\n                 '门牌读数还不确定，请核对照片上的数字。'\n                 if question['kind']=='room_number' else\n-                '还有一处信息不确定，补充后我会重新匹配。')\n+                '请补充下面的信息。')\n         result.update(mode='clarify',candidate_ids=[c['candidate_id'] for c in pool],question=question,\n                       reason=reason)\n     elif qualified and same_scene:\n",
+    "app/services/site_context_model.py": "diff --git a/app/services/site_context_model.py b/app/services/site_context_model.py\nindex 607f618..4881445 100644\n--- a/app/services/site_context_model.py\n+++ b/app/services/site_context_model.py\n@@ -215,10 +215,10 @@ def rank_site_candidates(candidates, *, location=None, door_hypotheses=(), clock\n                          parameters=PARAMETERS, question_count=0):\n     from app.services.site_context_guidance import choose_guidance\n     if type(question_count) is not int or not 0<=question_count<=2:\n-        raise ValueError('补问次数格式无效。')\n+        raise ValueError('课程查找暂未完成，请重新查找。')\n     facts=validate_facts(confirmed_facts or {})\n     if not isinstance(asked,(tuple,list)) or len(asked)>4 or any(k not in FACT_KINDS for k in asked):\n-        raise ValueError('提问记录格式无效。')\n+        raise ValueError('课程查找暂未完成，请重新查找。')\n     data=load_buildings() if buildings is None else buildings\n     summary=location_summary(location,parameters)\n     hypotheses=normalize_hypotheses(door_hypotheses)\n@@ -252,7 +252,7 @@ def rank_site_candidates(candidates, *, location=None, door_hypotheses=(), clock\n         position=geo.get(building,1)\n         location_weight=parameters.position_weight*summary['reliability'] if use_geo else 0\n         if 'building' in facts:reasons.append('楼栋已由你确认')\n-        elif not use_geo:flags.append('该楼栋定位证据不足')\n+        elif not use_geo:flags.append('无法凭定位确认该楼栋')\n         elif position>.45:reasons.append('定位较接近')\n         else:flags.append('定位可能偏移')\n         door=_door_likelihood(room,hypotheses) if hypotheses and 'room_number' not in facts else 1\n@@ -269,7 +269,7 @@ def rank_site_candidates(candidates, *, location=None, door_hypotheses=(), clock\n                  'time_supported':'period' in facts or (delta is not None and delta<=10 and time_reliability>=.5),\n                  'nearby':distance is not None and distance<=radius}\n         manual_time=period[1]>len(PERIODS)\n-        if manual_time:flags.append('节次超出已配置作息，需手动核对')\n+        if manual_time:flags.append('该节次无法自动核对，请手动核对')\n         if delta is not None:\n             if delta==0:reasons.append('拍照时段吻合')\n             elif delta<=10:reasons.append('接近该课程时段')\n",
+    "app/static/js/activity-center.js": "diff --git a/app/static/js/activity-center.js b/app/static/js/activity-center.js\nindex 6d7cab2..fa0b24e 100644\n--- a/app/static/js/activity-center.js\n+++ b/app/static/js/activity-center.js\n@@ -51,10 +51,10 @@\n         selectedRegistrationCourseId = course.id;\n         $('#selectionCode').val(course.selection_code || '');\n         $('#dispCourseName').text(course.course_name || '未知');\n-        $('#dispTeacher').text(`${course.teacher_name || '未知'}${course.teacher_college ? ` (${course.teacher_college})` : ''}`);\n+        $('#dispTeacher').text(`${course.teacher_name || '未知'}${course.teacher_college ? `（${course.teacher_college}）` : ''}`);\n         $('#dispTime').text(course.class_time || '未知');\n         $('#dispLocation').text(course.class_location || '未知');\n-        $('#dispCode').text(`课程号: ${course.course_code || '-'} | 选课号: ${course.selection_code || '-'}`);\n+        $('#dispCode').text(`课程号：${course.course_code || '-'} · 选课号：${course.selection_code || '-'}`);\n         courseDetail.hidden = false;\n         if (initialTip) {\n             initialTip.hidden = true;\n@@ -249,7 +249,7 @@\n     }\n \n     function courseResultLabel(course) {\n-        return course.text || `${course.course_name || '未知课程'} | ${course.teacher_name || '未知教师'} | ${course.class_time || '时间未知'} (${course.course_code || '-'}-${course.selection_code || '-'})`;\n+        return course.text || `${course.course_name || '未知课程'} · ${course.teacher_name || '未知教师'} · ${course.class_time || '时间未知'}（${course.course_code || '-'}-${course.selection_code || '-'}）`;\n     }\n \n     function closeCourseResults() {\n@@ -447,7 +447,7 @@\n                 emptyState = document.createElement('div');\n                 emptyState.id = 'reservationsEmptyState';\n                 emptyState.className = 'activity-empty';\n-                emptyState.textContent = '暂无听课预约。可以先切换到“听课登记”选择课程。';\n+                emptyState.textContent = '暂无听课预约，可到“听课登记”选择课程。';\n                 tableWrapper.parentElement.appendChild(emptyState);\n             }\n             if (emptyState) {\n@@ -481,7 +481,7 @@\n                 emptyState = document.createElement('div');\n                 emptyState.id = 'formsEmptyState';\n                 emptyState.className = 'activity-empty';\n-                emptyState.textContent = '暂无听课表单。填写并提交第一份听课表单后，记录会显示在这里。';\n+                emptyState.textContent = '暂无听课表单，提交后可在此查看。';\n                 panelBody.appendChild(emptyState);\n             }\n             if (emptyState) {\n",
+    "app/static/js/automation-center.js": "diff --git a/app/static/js/automation-center.js b/app/static/js/automation-center.js\nindex 6ffa4e2..791df5a 100644\n--- a/app/static/js/automation-center.js\n+++ b/app/static/js/automation-center.js\n@@ -202,7 +202,7 @@\n             });\n             pendingBatchPayload = null;\n             if (batchStartButton) batchStartButton.hidden = true;\n-            setFeedback('自动审核批次已启动，进度会在当前页面更新。', 'info');\n+            setFeedback('自动审核已启动。', 'info');\n             await pollAutomationBatch(result.batch_id);\n         } catch (error) {\n             setFeedback(error.message, 'danger');\n@@ -411,7 +411,7 @@\n             getPreviewModal()?.hide();\n             const datasets = await jsonRequest('/admin/api/automation/datasets');\n             renderDatasets(datasets);\n-            setFeedback('数据集已启用，历史记录和覆盖统计已刷新。', 'success');\n+            setFeedback('已启用。', 'success');\n         } catch (error) {\n             setFeedback(error.message, 'danger');\n         }\n@@ -427,24 +427,24 @@\n         const parametersText = panel.querySelector('#automationRuleParameters')?.value.trim() || '{}';\n         const changeReason = panel.querySelector('#automationRuleChangeReason')?.value.trim();\n         if (!ruleKey || !handler || !changeReason) {\n-            setFeedback('规则 key、处理器和变更原因不能为空。', 'warning');\n+            setFeedback('规则标识、处理器和变更原因不能为空。', 'warning');\n             return;\n         }\n         let parameters;\n         try {\n             parameters = JSON.parse(parametersText);\n         } catch (error) {\n-            setFeedback('parameters 必须是有效 JSON。', 'warning');\n+            setFeedback('规则参数必须是有效 JSON。', 'warning');\n             return;\n         }\n         if (!parameters || Array.isArray(parameters) || typeof parameters !== 'object') {\n-            setFeedback('parameters 必须是 JSON 对象。', 'warning');\n+            setFeedback('规则参数必须是 JSON 对象。', 'warning');\n             return;\n         }\n         try {\n             await jsonRequest(`/admin/api/automation/rules/${encodeURIComponent(ruleKey)}/revisions`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({handler, enabled, severity, parameters, change_reason: changeReason})});\n             form.reset();\n-            setFeedback('规则 revision 已保存。', 'success');\n+            setFeedback('规则版本已保存。', 'success');\n             const rules = await jsonRequest('/admin/api/automation/rules');\n             renderRules(rules);\n         } catch (error) {\n",
+    "app/static/js/course-lookup.js": "diff --git a/app/static/js/course-lookup.js b/app/static/js/course-lookup.js\nindex 2cff4c1..d8a9380 100644\n--- a/app/static/js/course-lookup.js\n+++ b/app/static/js/course-lookup.js\n@@ -95,7 +95,7 @@\n             try {\n                 payload = await response.json();\n             } catch (_error) {\n-                throw new Error('查询服务响应异常，请稍后重试。');\n+                throw new Error('课程查询失败，请稍后重试。');\n             }\n             if (!response.ok || !payload.success) {\n                 throw new Error(payload.message || '课程查询失败，请稍后重试。');\n",
+    "app/static/js/listening-assistant.js": "diff --git a/app/static/js/listening-assistant.js b/app/static/js/listening-assistant.js\nindex f4a999c..61f2971 100644\n--- a/app/static/js/listening-assistant.js\n+++ b/app/static/js/listening-assistant.js\n@@ -13,7 +13,7 @@\n     const SEMESTER_STORAGE_KEY = 'swu_tic_listening_assistant_semester_v1';\n     const FACT_KINDS = Object.freeze(['date', 'teacher', 'room', 'period', 'student_grade_class']);\n     const SOURCE_LABELS = Object.freeze({\n-        primary: '当前权威课表',\n+        primary: '当前课表',\n         backup: '备用课表线索 · 需核对',\n     });\n     const FACT_LABELS = Object.freeze({\n@@ -354,10 +354,10 @@\n                 try {\n                     result = await response.json();\n                 } catch (error) {\n-                    throw new Error('服务器返回了无法读取的结果');\n+                    throw new Error('操作未完成，请重试或手动填写。');\n                 }\n                 if (!response.ok || !result || result.success !== true) {\n-                    throw new Error((result && result.message) || '填表助手请求失败');\n+                    throw new Error((result && result.message) || '操作未完成，请重试或手动填写。');\n                 }\n                 return result.data || {};\n             } catch (error) {\n@@ -520,8 +520,8 @@\n                 teacher: {type: 'text', label: '授课教师', help: ''},\n                 room: {type: 'text', label: '教室', help: '例如：8-309。'},\n                 period: {type: 'text', label: '实际听课节次', help: '例如：第3-4节。'},\n-                student_grade_class: {type: 'text', label: '听课班级', help: '请输入班级。'},\n-                memory: {type: 'text', label: '自定义信息', help: '初始问题请选择类别；无法确定时可直接手动填写。'},\n+                student_grade_class: {type: 'text', label: '听课班级', help: ''},\n+                memory: {type: 'text', label: '自定义信息', help: '请选择你记得的信息；也可手动填写。'},\n             };\n             return configs[kind] || configs.memory;\n         }\n@@ -707,7 +707,7 @@\n             guideState.selectedCandidateId = selectedId;\n             elements.candidateSummary.replaceChildren();\n             if (elements.evidenceTitle) {\n-                elements.evidenceTitle.textContent = completed ? '已确认的候选与来源' : '确认前请核对课程、教师、教室、节次、班级和来源。';\n+                elements.evidenceTitle.textContent = completed ? '已确认课程' : '确认课程信息';\n             }\n             appendText(elements.candidateSummary, 'h3', 'listening-assistant__candidate-title', cleanText(candidate.course_title) || '未命名课程');\n             const meta = document.createElement('div');\n@@ -726,9 +726,6 @@\n             elements.source.replaceChildren();\n             const source = candidate.source_kind === 'backup' ? SOURCE_LABELS.backup : (candidate.source_label || SOURCE_LABELS.primary);\n             appendText(elements.source, 'p', 'listening-assistant__source-text', `来源：${source}`);\n-            if (candidate.source_batch_id) {\n-                appendText(elements.source, 'p', 'listening-assistant__source-batch', `来源批次：${candidate.source_batch_id}`);\n-            }\n \n             elements.conflict.replaceChildren();\n             const conflicts = Array.isArray(candidate.conflicts) ? candidate.conflicts.filter(Boolean) : [];\n@@ -816,7 +813,7 @@\n                 missing.push('请确认旧课表信息与实际一致');\n             }\n             if (!elements.roomChoiceWrap.hidden && !root.querySelector('[data-assistant-room-choice]:checked')) {\n-                missing.push('请选择教室处理方式');\n+                missing.push('请确认实际教室。');\n             }\n             const conflicts = candidate && Array.isArray(candidate.conflicts) ? candidate.conflicts : [];\n             if (\n@@ -951,7 +948,7 @@\n                 return;\n             }\n             if (!guideState.backupRescueAvailable || !guideState.backupSourceBatchId) {\n-                setStatus('当前学期没有可用备用批次，请手动填写。', 'error');\n+                setStatus('该学期没有其他课表，请手动填写。', 'error');\n                 return;\n             }\n             guideState.originalRoomForFallback = cleanText(\n@@ -1051,10 +1048,10 @@\n             const date = cleanText(guideState.state.known_facts?.date);\n             if (elements.manualMessage) {\n                 elements.manualMessage.textContent = guideState.history?.at(-1)?.skipped\n-                    ? '暂时记不清也可以继续填写其他内容。已保留确认过的信息，可返回上一题或稍后补充。'\n+                    ? '已保留确认过的信息，可继续填写或返回上一题。'\n                     : unmatched\n                     ? `没有找到${date ? ` ${date} 对应的` : '符合这些信息的'}课程，请核对日期、教师或教室。`\n-                    : (guideState.manualRequested ? '已切换为手动填写，请在下方补充课程信息。也可以重新开始引导。' : '现有信息还不能确定课程。可以修改答案、重新查找，或在下方手动填写。');\n+                    : (guideState.manualRequested ? '请在下方补充课程信息。' : '暂无法确定课程，请补充信息或手动填写。');\n             }\n             if (elements.editAnswer) {\n                 elements.editAnswer.hidden = !guideState.recovery;\n@@ -1098,7 +1095,7 @@\n \n         function applyGuideResult(data, historyEntry) {\n             if (!isObject(data)) {\n-                throw new Error('服务器没有返回可用的引导结果');\n+                throw new Error('暂时无法查找课程，请重试或手动填写。');\n             }\n             if (historyEntry) {\n                 guideState.recovery = {\n@@ -1414,7 +1411,7 @@\n \n         function applyFieldSnapshot(snapshot) {\n             if (!isObject(snapshot)) {\n-                throw new Error('服务器没有返回可用的字段快照');\n+                throw new Error('课程信息暂未填入，请重试或手动填写。');\n             }\n             const changed = [];\n             const dateInput = form.querySelector('#lecture_date');\n",
+    "app/static/js/site-building-map.js": "diff --git a/app/static/js/site-building-map.js b/app/static/js/site-building-map.js\nindex 842e557..525bf4a 100644\n--- a/app/static/js/site-building-map.js\n+++ b/app/static/js/site-building-map.js\n@@ -388,7 +388,7 @@ else {root.SiteBuildingMap=api;root.addEventListener('DOMContentLoaded',()=>api.\n                 const button=document.createElement('button');button.type='button';button.className='site-map__item';\n                 button.setAttribute('aria-pressed',String(b.code===selected));\n                 const title=document.createElement('strong');title.textContent=buildingLabel(b.code);\n-                const detail=document.createElement('span');detail.textContent=!b.mapped?(buildingModel(b.code)?'有外观模型 · 地图位置待核对':'课表地点 · 暂无地图位置'):b.distance!==undefined?`距定位点约${Math.round(b.distance)}米 · 待核对`:'已收录地图 · 待核对';\n+                const detail=document.createElement('span');detail.textContent=!b.mapped?(buildingModel(b.code)?'外观参考 · 地图位置待核对':'课表地点 · 暂无地图位置'):b.distance!==undefined?`距定位点约${Math.round(b.distance)}米 · 待核对`:'已收录地图 · 待核对';\n                 button.append(title,detail);button.addEventListener('click',()=>{\n                     pick(b.code);\n                 });list.append(button);\n@@ -532,7 +532,7 @@ else {root.SiteBuildingMap=api;root.addEventListener('DOMContentLoaded',()=>api.\n         }\n         async function load(){\n             if(!record)return;const version=++revision,id=record.id;data=null;selected=null;selectedVariant='A';overview=false;previewZoom=1;variantSelect.hidden=true;select.reset();use.disabled=true;locate.disabled=true;\n-            search.value='';list.replaceChildren();svg.replaceChildren();picked.textContent='点击建筑或列表，再确认教学楼。';setStatus('正在加载校园地图…');dialog.showModal();\n+            search.value='';list.replaceChildren();svg.replaceChildren();picked.textContent='尚未选择教学楼';setStatus('正在加载校园地图…');dialog.showModal();\n             const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),12000);\n             try{\n                 const [response,background]=await Promise.all([fetch(`/user/api/site-capture/${id}/map`,{signal:abort.signal}).then(r=>r.json()),\n@@ -540,8 +540,8 @@ else {root.SiteBuildingMap=api;root.addEventListener('DOMContentLoaded',()=>api.\n                 if(version!==revision||id!==record?.id||!dialog.open)return;\n                 if(!response.success)throw new Error(response.message||'地图暂不可用');data=response.data;context=background;\n \n-                setStatus('选择所在教学楼，再点击“使用此教学楼”。也可搜索楼号。');\n-                if(!context)setStatus('选择所在教学楼，再点击“使用此教学楼”。也可搜索楼号。 背景暂未加载，楼栋仍可选择。','warning');\n+                setStatus('选择教学楼后，点击“使用此教学楼”。');\n+                if(!context)setStatus('地图背景暂未加载，仍可选择教学楼。','warning');\n                 renderList();const codes=new Set(data.nearby.buildings.map(b=>b.code));\n                 const features=data.buildings.features.filter(f=>codes.has(f.properties.code));fit(features.length?features:data.buildings.features);\n             }catch(e){if(version===revision)setStatus('地图暂不可用，可关闭后手动输入教学楼。',e.name==='AbortError'?'warning':'error');}\n",
+    "app/static/js/site-capture.js": "diff --git a/app/static/js/site-capture.js b/app/static/js/site-capture.js\nindex b94e6bd..2faba74 100644\n--- a/app/static/js/site-capture.js\n+++ b/app/static/js/site-capture.js\n@@ -71,7 +71,7 @@\n                 let data;\n                 try{data=await response.json();}\n                 catch(cause){\n-                    const error=new Error('服务响应暂时无法读取，请刷新后重试。');\n+                    const error=new Error('暂未确认操作结果，请刷新查看。');\n                     error.definiteFailure=response.status>=400&&response.status<500;\n                     throw error;\n                 }\n@@ -167,7 +167,7 @@\n             catch(error){throw new Error(error.name==='NotAllowedError'?'请允许相机权限后重新拍摄。':'相机未能打开，请检查后重试。');}\n             if(version!==formRevision){next.getTracks().forEach(track=>track.stop());return;}\n             stream=next;\n-            el('video').srcObject=stream;el('camera').hidden=false;status(scheduleReady?'拍清楚门牌号即可，系统会自动识别并查找课程。':'拍清楚门牌号，识别结果仍需确认。');\n+            el('video').srcObject=stream;el('camera').hidden=false;status(scheduleReady?'请拍清楚门牌号。':'拍清楚门牌号，识别结果仍需确认。');\n             beginLocation();\n         }\n         el('open').addEventListener('click',()=>action(el('open'),async()=>{\n@@ -202,7 +202,7 @@\n             if(newRecord)body.append('new_record','1');\n             else if(record)body.append('replace_capture_id',String(record.id));\n             let saved=false;\n-            status('正在上传照片并保存现场记录…');\n+            status('正在保存照片…');\n             try{const result=await request('/user/api/site-capture',{method:'POST',body});saved=true;if(version!==formRevision)return;session.captureId=result.data.id;session.savedAccuracy=result.data.location_accuracy||Infinity;const latest=session.sampler.best();if(latest)session.persist(latest);newRecord=false;showRecord(result.data);stop();await ensureDraftLoaded();if(version===formRevision)setMode(false);}\n             catch(error){\n                 if(version!==formRevision)return;\n@@ -225,7 +225,7 @@\n             if(version!==formRevision||record?.id!==id)throw new Error('记录已切换，请重新查找。');\n             showRecord(result.data);await ensureDraftLoaded();\n             if(!scheduleReady){status('教室已确认，请手动填写课程信息。');setMode(true);if(assistant)assistant.hidden=true;return;}\n-            if(window.SiteContextGuide){status('教室已确认，请继续核对助手选项。');return;}\n+            if(window.SiteContextGuide){status('教室已确认，请选择课程。');return;}\n             if(!result.candidates.length){status(result.message,'warning');return;}\n             status('请选择本次听课的课程。');\n             for(const candidate of result.candidates){\n",
+    "app/static/js/site-context-guide.js": "diff --git a/app/static/js/site-context-guide.js b/app/static/js/site-context-guide.js\nindex 5cdf1f5..1aa7229 100644\n--- a/app/static/js/site-context-guide.js\n+++ b/app/static/js/site-context-guide.js\n@@ -136,7 +136,7 @@\n             if(state.status==='manual'){\n                 setStatus('可修正教学楼和门牌号，或让助手帮你缩小范围。');\n                 const correction=document.querySelector('[data-site-corrections]');if(correction)correction.open=true;\n-                content.append(button('重新参考现场线索',()=>{showCourses=null;expanded=false;controller.resetFacts();}));return;\n+                content.append(button('重新查找',()=>{showCourses=null;expanded=false;controller.resetFacts();}));return;\n             }\n             if(state.status==='error'){\n                 setStatus(state.message||'暂未找到，请手动填写教室。','error');document.querySelector('[data-site-corrections]').open=true;\n@@ -157,7 +157,7 @@\n             if(question&&!coursesFirst){\n                 const heading=document.createElement('h3');heading.className='h6';heading.textContent=question.prompt;content.append(heading);\n                 const progress=document.createElement('p');progress.className='text-muted small';\n-                progress.textContent=`补充问题 ${Math.min(2,(guidance?.questions_used||0)+1)} / 2`;content.append(progress);\n+                progress.textContent=`问题 ${Math.min(2,(guidance?.questions_used||0)+1)} / 2`;content.append(progress);\n                 let offset=0;const options=container(),actions=container();content.append(options,actions);\n                 const addBatch=()=>{\n                     for(const option of question.options.slice(offset,offset+6))options.append(button(option.label,()=>{\n@@ -169,7 +169,7 @@\n                 };\n                 const more=button('更多选项',addBatch);actions.append(more,\n                     button('我不知道，跳过此题',()=>{showCourses=null;expanded=false;controller.skip(question.kind);}),\n-                    button('先看候选课程',()=>{showCourses=true;render(state);}),\n+                    button('先看课程',()=>{showCourses=true;render(state);}),\n                     button('都不是，扩大范围',expand));addBatch();\n             }else{\n                 const courses=visibleCourses(data,expanded);\n@@ -189,8 +189,8 @@\n                     }\n                     offset+=3;more.hidden=offset>=courses.length;\n                 };\n-                const more=button('更多同范围课程',addBatch);actions.append(more,\n-                    button(expanded?'返回优先推荐':'扩大范围查找',()=>{if(expanded){expanded=false;showCourses=null;render(state);}else expand();}),\n+                const more=button('更多课程',addBatch);actions.append(more,\n+                    button(expanded?'返回匹配结果':'扩大范围查找',()=>{if(expanded){expanded=false;showCourses=null;render(state);}else expand();}),\n                     button('都不是，修改信息',()=>controller.reject()));\n                 if(question&&!expanded)actions.append(button('帮我缩小范围',()=>{showCourses=false;render(state);}));\n                 content.append(actions);addBatch();\n",
+    "app/static/js/site-door-crop.js": "diff --git a/app/static/js/site-door-crop.js b/app/static/js/site-door-crop.js\nindex 7c57e8a..61c76fd 100644\n--- a/app/static/js/site-door-crop.js\n+++ b/app/static/js/site-door-crop.js\n@@ -77,7 +77,7 @@ else {root.SiteDoorCrop=api;root.addEventListener('DOMContentLoaded',()=>api.mou\n         });\n         dialog.querySelector('[data-crop-close]').addEventListener('click',close);\n         run.addEventListener('click',async()=>{\n-            if(busy||!region)return;busy=true;run.disabled=true;setStatus('正在识别框选区域，原照片会保留…');\n+            if(busy||!region)return;busy=true;run.disabled=true;setStatus('正在识别…（原照片保留）');\n             try{await controller.recognize(region);}catch(e){setStatus(e.name==='AbortError'?'识别较慢，可重试或手动输入门牌。':e.message,e.name==='AbortError'?'warning':'error');}\n             finally{busy=false;run.disabled=false;}\n         });\n",
+    "app/templates/admin/_settings_automation.html": "diff --git a/app/templates/admin/_settings_automation.html b/app/templates/admin/_settings_automation.html\nindex 074a64b..7ea4d5d 100644\n--- a/app/templates/admin/_settings_automation.html\n+++ b/app/templates/admin/_settings_automation.html\n@@ -6,7 +6,6 @@\n     <section class=\"activity-panel automation-service-status\" id=\"automationServiceStatus\" aria-labelledby=\"automationServiceTitle\">\n         <div class=\"activity-panel__header\">\n             <h2 id=\"automationServiceTitle\"><i class=\"bi bi-heart\" aria-hidden=\"true\"></i> 自动化服务状态</h2>\n-            <p>状态检查只返回可展示的健康摘要，不显示密钥或原始连接信息。</p>\n         </div>\n         <div class=\"activity-panel__body\">\n             <div class=\"row g-3\">\n@@ -37,7 +36,7 @@\n         <div class=\"activity-panel__header activity-panel__header--split\">\n             <div>\n                 <h2 id=\"automationDatasetTitle\"><i class=\"bi bi-calendar3\" aria-hidden=\"true\"></i> 课表数据集</h2>\n-                <p>上传后先生成 staged 预览；只有确认启用后才切换 active 数据集。</p>\n+                <p>上传后先预览，确认后启用。</p>\n             </div>\n             <label class=\"automation-semester-field\">\n                 <span class=\"form-label\">学期</span>\n@@ -130,7 +129,7 @@\n     <section class=\"activity-panel mt-3\" id=\"automationBatchExecution\" aria-labelledby=\"automationBatchExecutionTitle\">\n         <div class=\"activity-panel__header\">\n             <h2 id=\"automationBatchExecutionTitle\"><i class=\"bi bi-play-circle\" aria-hidden=\"true\"></i> 自动审核批次</h2>\n-            <p>先预览范围和缓存，再确认启动；自动审核只生成证据和建议，不改变人工审核字段。</p>\n+            <p>先预览，再启动。审核结果仍需人工确认。</p>\n         </div>\n         <div class=\"activity-panel__body\">\n             <form id=\"automationReviewBatchForm\" data-automation-batch-form>\n@@ -186,14 +185,14 @@\n     <section class=\"activity-panel mt-3\" aria-labelledby=\"automationRulesTitle\">\n         <div class=\"activity-panel__header activity-panel__header--split\">\n             <div>\n-                <h2 id=\"automationRulesTitle\"><i class=\"bi bi-journal-check\" aria-hidden=\"true\"></i> 规则与 revision</h2>\n-                <p>每次变更都会形成可追溯的规则 revision，批次读取固定版本。</p>\n+                <h2 id=\"automationRulesTitle\"><i class=\"bi bi-journal-check\" aria-hidden=\"true\"></i> 审核规则</h2>\n+                <p>规则修改后保存为新版本，已启动的审核仍使用启动时的版本。</p>\n             </div>\n-            <button type=\"button\" class=\"btn btn-outline-primary\" data-bs-toggle=\"modal\" data-bs-target=\"#automationRuleRevision\">新建 revision</button>\n+            <button type=\"button\" class=\"btn btn-outline-primary\" data-bs-toggle=\"modal\" data-bs-target=\"#automationRuleRevision\">新建规则版本</button>\n         </div>\n         <div class=\"activity-panel__body table-responsive\">\n             <table class=\"table table-hover align-middle\">\n-                <thead><tr><th>规则</th><th>severity</th><th>版本</th><th>启用</th><th>parameters</th><th>操作</th></tr></thead>\n+                <thead><tr><th>规则</th><th>风险等级</th><th>版本</th><th>启用</th><th>参数</th><th>操作</th></tr></thead>\n                 <tbody id=\"automationRuleList\"><tr><td colspan=\"5\" class=\"text-muted\">尚未加载。</td></tr></tbody>\n             </table>\n         </div>\n@@ -226,11 +225,11 @@\n             <div class=\"modal-content\">\n                 <form id=\"automationRuleRevisionForm\">\n                     <div class=\"modal-header\">\n-                        <h2 class=\"modal-title fs-5\" id=\"automationRuleRevisionTitle\">新建规则 revision</h2>\n+                        <h2 class=\"modal-title fs-5\" id=\"automationRuleRevisionTitle\">新建规则版本</h2>\n                         <button type=\"button\" class=\"btn-close\" data-bs-dismiss=\"modal\" aria-label=\"关闭\"></button>\n                     </div>\n                     <div class=\"modal-body\">\n-                        <label class=\"form-label\" for=\"automationRuleKey\">规则 key</label>\n+                        <label class=\"form-label\" for=\"automationRuleKey\">规则标识</label>\n                         <input class=\"form-control mb-3\" id=\"automationRuleKey\" name=\"rule_key\" required>\n                         <label class=\"form-label\" for=\"automationRuleHandler\">处理器</label>\n                         <input class=\"form-control mb-3\" id=\"automationRuleHandler\" name=\"handler\" required>\n@@ -238,21 +237,21 @@\n                             <input class=\"form-check-input\" id=\"automationRuleEnabled\" name=\"enabled\" type=\"checkbox\" checked>\n                             <label class=\"form-check-label\" for=\"automationRuleEnabled\">启用规则</label>\n                         </div>\n-                        <label class=\"form-label\" for=\"automationRuleSeverity\">severity</label>\n+                        <label class=\"form-label\" for=\"automationRuleSeverity\">风险等级</label>\n                         <select class=\"form-select mb-3\" id=\"automationRuleSeverity\" name=\"severity\">\n-                            <option value=\"info\">info</option>\n-                            <option value=\"review\" selected>review</option>\n-                            <option value=\"high\">high</option>\n-                            <option value=\"unknown\">unknown</option>\n+                            <option value=\"info\">提示</option>\n+                            <option value=\"review\" selected>建议复核</option>\n+                            <option value=\"high\">高风险</option>\n+                            <option value=\"unknown\">无法判断</option>\n                         </select>\n-                        <label class=\"form-label\" for=\"automationRuleParameters\">parameters JSON</label>\n+                        <label class=\"form-label\" for=\"automationRuleParameters\">规则参数（JSON）</label>\n                         <textarea class=\"form-control mb-3\" id=\"automationRuleParameters\" name=\"parameters\" rows=\"4\" placeholder=\"{}\">{}</textarea>\n                         <label class=\"form-label\" for=\"automationRuleChangeReason\">变更原因</label>\n                         <input class=\"form-control\" id=\"automationRuleChangeReason\" name=\"change_reason\" required>\n                     </div>\n                     <div class=\"modal-footer\">\n                         <button type=\"button\" class=\"btn btn-secondary\" data-bs-dismiss=\"modal\">取消</button>\n-                        <button type=\"submit\" class=\"btn btn-primary\">保存 revision</button>\n+                        <button type=\"submit\" class=\"btn btn-primary\">保存版本</button>\n                     </div>\n                 </form>\n             </div>\n",
+    "app/templates/admin/_settings_imports.html": "diff --git a/app/templates/admin/_settings_imports.html b/app/templates/admin/_settings_imports.html\nindex 320f692..96a9125 100644\n--- a/app/templates/admin/_settings_imports.html\n+++ b/app/templates/admin/_settings_imports.html\n@@ -1,6 +1,6 @@\n <div class=\"vstack gap-3\">\n     <section class=\"activity-panel\">\n-        <div class=\"activity-panel__header\"><h2>数据导入</h2><p>导入全校课表或进入通讯录工具，操作结果会在当前页面反馈。</p></div>\n+        <div class=\"activity-panel__header\"><h2>数据导入</h2></div>\n         <div class=\"activity-panel__body\"><div class=\"row g-3\">\n             <div class=\"col-md-4\"><button type=\"button\" class=\"btn btn-outline-primary w-100 py-3\" data-bs-toggle=\"modal\" data-bs-target=\"#scheduleImportModal\"><i class=\"bi bi-calendar-week fs-4 d-block mb-1\" aria-hidden=\"true\"></i>全校课表导入</button></div>\n             <div class=\"col-md-4\"><a href=\"{{ url_for('admin.manage_departments') }}#contacts-import\" class=\"btn btn-outline-secondary w-100 py-3\"><i class=\"bi bi-person-plus fs-4 d-block mb-1\" aria-hidden=\"true\"></i>通讯录导入</a></div>\n@@ -8,7 +8,7 @@\n         </div></div>\n     </section>\n     <section class=\"activity-panel\">\n-        <div class=\"activity-panel__header\"><h2>数据导出</h2><p>进入对应业务页面继续筛选和导出，避免重复配置筛选条件。</p></div>\n+        <div class=\"activity-panel__header\"><h2>数据导出</h2></div>\n         <div class=\"activity-panel__body\"><div class=\"row g-3\">\n             <div class=\"col-md-4\"><a href=\"{{ url_for('admin.view_forms') }}\" class=\"btn btn-outline-secondary w-100 py-3\"><i class=\"bi bi-file-earmark-text fs-4 d-block mb-1\" aria-hidden=\"true\"></i>听课记录导出</a></div>\n             <div class=\"col-md-4\"><span class=\"btn btn-outline-secondary w-100 py-3 disabled\"><i class=\"bi bi-calendar-week fs-4 d-block mb-1\" aria-hidden=\"true\"></i>全校课表导出<span class=\"d-block small\">待开发</span></span></div>\n@@ -16,12 +16,12 @@\n         </div></div>\n     </section>\n     <section class=\"activity-panel\">\n-        <div class=\"activity-panel__header\"><h2>数据管理</h2><p>清空操作需要密码和二次确认，完成后会在此处保留结果。</p></div>\n+        <div class=\"activity-panel__header\"><h2>数据管理</h2><p>清空数据前需验证当前账号密码。</p></div>\n         <div class=\"activity-panel__body\"><button type=\"button\" class=\"btn btn-outline-danger\" data-bs-toggle=\"modal\" data-bs-target=\"#clearDataModal\"><i class=\"bi bi-trash\" aria-hidden=\"true\"></i> 清空数据表</button></div>\n     </section>\n     <section class=\"activity-panel\">\n         <div class=\"activity-panel__header\"><h2>系统信息</h2></div>\n-        <div class=\"activity-panel__body\"><div class=\"table-responsive\"><table class=\"table align-middle mb-0\"><tbody><tr><th scope=\"row\">系统版本</th><td>v1.6</td></tr><tr><th scope=\"row\">数据库状态</th><td><span class=\"badge bg-success\">正常</span></td></tr><tr><th scope=\"row\">最后更新</th><td id=\"lastUpdateTime\">-</td></tr><tr><th scope=\"row\">教师数量</th><td id=\"teacherCount\">-</td></tr><tr><th scope=\"row\">场地数量</th><td id=\"venueCount\">-</td></tr><tr><th scope=\"row\">课程数量</th><td id=\"courseCount\">-</td></tr></tbody></table></div></div>\n+        <div class=\"activity-panel__body\"><div class=\"table-responsive\"><table class=\"table align-middle mb-0\"><tbody><tr><th scope=\"row\">最后更新</th><td id=\"lastUpdateTime\">-</td></tr><tr><th scope=\"row\">教师数量</th><td id=\"teacherCount\">-</td></tr><tr><th scope=\"row\">场地数量</th><td id=\"venueCount\">-</td></tr><tr><th scope=\"row\">课程数量</th><td id=\"courseCount\">-</td></tr></tbody></table></div></div>\n     </section>\n </div>\n \n@@ -40,7 +40,7 @@\n <div class=\"modal fade\" id=\"clearDataModal\" tabindex=\"-1\" aria-labelledby=\"clearDataTitle\" aria-hidden=\"true\">\n     <div class=\"modal-dialog\"><div class=\"modal-content\">\n         <div class=\"modal-header\"><h2 class=\"modal-title fs-5\" id=\"clearDataTitle\">数据清空</h2><button type=\"button\" class=\"btn-close\" data-bs-dismiss=\"modal\" aria-label=\"关闭\"></button></div>\n-        <div class=\"modal-body\"><div class=\"alert alert-warning\"><i class=\"bi bi-exclamation-triangle\" aria-hidden=\"true\"></i> 此操作将永久删除选定数据表中的所有数据，且无法恢复。</div><form id=\"clearDataForm\"><div class=\"visually-hidden\"><label for=\"clearDataUsername\">当前账号</label><input type=\"text\" id=\"clearDataUsername\" name=\"username\" value=\"{{ account_username }}\" autocomplete=\"username\" readonly></div><div class=\"mb-3\"><label for=\"tableSelect\" class=\"form-label\">选择要清空的数据表</label><select class=\"form-select\" id=\"tableSelect\" name=\"table_name\" required><option value=\"\">请选择数据表</option><option value=\"courses\">课程表 (courses)</option><option value=\"teachers\">教师表 (teachers)</option><option value=\"venues\">场地表 (venues)</option><option value=\"lecture_forms\">听课记录表 (lecture_forms)</option><option value=\"listening_bans\">禁听记录表 (listening_bans)</option><option value=\"users\">用户表 (users)</option><option value=\"departments\">部门表 (departments)</option><option value=\"groups\">群组表 (groups)</option></select></div><div class=\"mb-3\"><label for=\"passwordInput\" class=\"form-label\">当前账号密码</label><input type=\"password\" class=\"form-control\" id=\"passwordInput\" name=\"password\" autocomplete=\"current-password\" required></div><div class=\"form-check\"><input class=\"form-check-input\" type=\"checkbox\" id=\"confirmCheck\" required><label class=\"form-check-label text-danger\" for=\"confirmCheck\">我确认要清空选定的数据表，并理解此操作不可逆转。</label></div></form><div id=\"clearResult\" hidden><div class=\"alert\" id=\"clearResultAlert\"><div id=\"clearResultContent\"></div></div></div></div>\n+        <div class=\"modal-body\"><div class=\"alert alert-warning\"><i class=\"bi bi-exclamation-triangle\" aria-hidden=\"true\"></i> 此操作将永久删除选定数据表中的所有数据，且无法恢复。</div><form id=\"clearDataForm\"><div class=\"visually-hidden\"><label for=\"clearDataUsername\">当前账号</label><input type=\"text\" id=\"clearDataUsername\" name=\"username\" value=\"{{ account_username }}\" autocomplete=\"username\" readonly></div><div class=\"mb-3\"><label for=\"tableSelect\" class=\"form-label\">选择要清空的数据表</label><select class=\"form-select\" id=\"tableSelect\" name=\"table_name\" required><option value=\"\">请选择数据表</option><option value=\"courses\">课程</option><option value=\"teachers\">教师</option><option value=\"venues\">场地</option><option value=\"lecture_forms\">听课记录</option><option value=\"listening_bans\">禁听记录</option><option value=\"users\">用户</option><option value=\"departments\">部门</option><option value=\"groups\">小组</option></select></div><div class=\"mb-3\"><label for=\"passwordInput\" class=\"form-label\">当前账号密码</label><input type=\"password\" class=\"form-control\" id=\"passwordInput\" name=\"password\" autocomplete=\"current-password\" required></div><div class=\"form-check\"><input class=\"form-check-input\" type=\"checkbox\" id=\"confirmCheck\" required><label class=\"form-check-label text-danger\" for=\"confirmCheck\">我确认要清空选定的数据表，并理解此操作不可逆转。</label></div></form><div id=\"clearResult\" hidden><div class=\"alert\" id=\"clearResultAlert\"><div id=\"clearResultContent\"></div></div></div></div>\n         <div class=\"modal-footer\"><button type=\"button\" class=\"btn btn-secondary\" data-bs-dismiss=\"modal\">取消</button><button type=\"button\" class=\"btn btn-danger\" id=\"confirmClearBtn\"><i class=\"bi bi-trash\" aria-hidden=\"true\"></i> 确认清空</button></div>\n     </div></div>\n </div>\n",
+    "app/templates/admin/auto_review_results.html": "diff --git a/app/templates/admin/auto_review_results.html b/app/templates/admin/auto_review_results.html\nindex 09d2942..ef89f64 100644\n--- a/app/templates/admin/auto_review_results.html\n+++ b/app/templates/admin/auto_review_results.html\n@@ -32,12 +32,12 @@\n         <button type=\"button\" class=\"btn-close\" data-bs-dismiss=\"offcanvas\" aria-label=\"关闭\"></button>\n     </div>\n     <div class=\"offcanvas-body\" id=\"automationResultsEvidenceBody\" aria-live=\"polite\">\n-        <section class=\"evidence-section-schedule\" data-evidence-source=\"schedule\"><h3>schedule</h3><p data-evidence-value>—</p></section>\n-        <section class=\"evidence-section-rule\" data-evidence-source=\"rule\"><h3>rule</h3><p data-evidence-value>—</p></section>\n-        <section class=\"evidence-section-text\" data-evidence-source=\"text\"><h3>text</h3><p data-evidence-value>—</p></section>\n-        <section class=\"evidence-section-history\" data-evidence-source=\"history\"><h3>history</h3><p data-evidence-value>—</p></section>\n-        <section class=\"evidence-section-llm\" data-evidence-source=\"llm\"><h3>llm</h3><p data-evidence-value>—</p></section>\n-        <section class=\"evidence-section-system\" data-evidence-source=\"system\"><h3>system</h3><p data-evidence-value>—</p></section>\n+        <section class=\"evidence-section-schedule\" data-evidence-source=\"schedule\"><h3>课表核对</h3><p data-evidence-value>—</p></section>\n+        <section class=\"evidence-section-rule\" data-evidence-source=\"rule\"><h3>规则检查</h3><p data-evidence-value>—</p></section>\n+        <section class=\"evidence-section-text\" data-evidence-source=\"text\"><h3>文字检查</h3><p data-evidence-value>—</p></section>\n+        <section class=\"evidence-section-history\" data-evidence-source=\"history\"><h3>历史记录</h3><p data-evidence-value>—</p></section>\n+        <section class=\"evidence-section-llm\" data-evidence-source=\"llm\"><h3>智能分析</h3><p data-evidence-value>—</p></section>\n+        <section class=\"evidence-section-system\" data-evidence-source=\"system\"><h3>处理状态</h3><p data-evidence-value>—</p></section>\n         <label class=\"form-label mt-3\" for=\"automationResultsSuggestedComment\">建议评论（草稿）</label>\n         <textarea id=\"automationResultsSuggestedComment\" class=\"form-control\" data-suggested-comment-draft rows=\"4\"></textarea>\n         <a class=\"btn btn-outline-primary mt-2\" data-human-review-action href=\"#\">打开人工审核</a>\n",
+    "app/templates/admin/course_feedback_management.html": "diff --git a/app/templates/admin/course_feedback_management.html b/app/templates/admin/course_feedback_management.html\nindex d37d276..2e3d76a 100644\n--- a/app/templates/admin/course_feedback_management.html\n+++ b/app/templates/admin/course_feedback_management.html\n@@ -13,13 +13,6 @@\n             <div class=\"page-header\">\n                 <div class=\"page-header__heading\">\n                     <h1><i class=\"bi {{ 'bi-journal-text' if is_course_management else 'bi-calendar-check' }}\"></i> {{ current_page_title }}</h1>\n-                    <p>\n-                        {% if is_course_management %}\n-                        维护课程、教师与禁听规则。\n-                        {% else %}\n-                        查询课程并完成听课登记。\n-                        {% endif %}\n-                    </p>\n                 </div>\n                 <div class=\"page-header__actions course-page-actions\">\n                     {% if is_course_management %}\n@@ -417,7 +410,7 @@\n             </div>\n             <div class=\"modal-body\">\n                 <div class=\"alert alert-info\">\n-                    导入后系统会按“禁听该教师全部课程”的当前实现方式，对所有信息员批量生成禁听记录。\n+                    导入后，所有信息员都将被禁止听该教师的全部课程。\n                 </div>\n                 <div class=\"row g-3 align-items-end\">\n                     <div class=\"col-md-7\">\n",
+    "app/templates/admin/department_monthly_assessment_stats.html": "diff --git a/app/templates/admin/department_monthly_assessment_stats.html b/app/templates/admin/department_monthly_assessment_stats.html\nindex 090c14e..8b90682 100644\n--- a/app/templates/admin/department_monthly_assessment_stats.html\n+++ b/app/templates/admin/department_monthly_assessment_stats.html\n@@ -16,7 +16,7 @@\n     </div>\n \n     <div class=\"alert alert-warning alert-dismissible\" role=\"note\">\n-        考评情况为系统根据当前考评规则和数据自动给出，不代表真实考评情况，请认真核实，建议核实无误后保存或导出数据。\n+        考评结果由现有规则和记录计算，请核实后保存或导出。\n         <button type=\"button\" class=\"btn-close\" data-bs-dismiss=\"alert\" aria-label=\"关闭统计说明\"></button>\n     </div>\n \n",
+    "app/templates/admin/import_forms_excel.html": "diff --git a/app/templates/admin/import_forms_excel.html b/app/templates/admin/import_forms_excel.html\nindex 5c5472f..f018409 100644\n--- a/app/templates/admin/import_forms_excel.html\n+++ b/app/templates/admin/import_forms_excel.html\n@@ -44,13 +44,12 @@\n                 <div class=\"card-header\">说明</div>\n                 <div class=\"card-body\">\n                     <ul class=\"mb-0\">\n-                        <li>导入后数据直接写入教学反馈表数据表（lecture_forms）。</li>\n+                        <li>导入后将新增听课反馈记录。</li>\n                         <li>建议先下载模板并按模板列填写。</li>\n                         <li>系统兼容旧版Excel反馈表格式。</li>\n-                        <li>该功能仅对超级管理员开放。</li>\n                         <li>导入默认状态为“部门已审核”。</li>\n                         <li>可在模板填写“创建时间”“更新时间”（支持YYYY-MM-DD或YYYY-MM-DD HH:MM:SS）；不填写时系统自动写入导入时间。</li>\n-                        <li>reviewer_id 自动写入当前导入人ID，registration_id 与表单组ID均由系统维护，不通过Excel填写。</li>\n+                        <li>审核人默认记为当前导入账号，无需填写内部编号。</li>\n                     </ul>\n                 </div>\n             </div>\n",
+    "app/templates/admin/review_assessment_stats.html": "diff --git a/app/templates/admin/review_assessment_stats.html b/app/templates/admin/review_assessment_stats.html\nindex 071ae00..370ab6c 100644\n--- a/app/templates/admin/review_assessment_stats.html\n+++ b/app/templates/admin/review_assessment_stats.html\n@@ -73,7 +73,6 @@\n         <section class=\"activity-panel\">\n             <div class=\"activity-panel__header\">\n                 <h2>统计结果</h2>\n-                <p>数值 0 表示有效结果；无记录时才显示空状态。</p>\n             </div>\n             <div class=\"table-responsive\">\n                 <table class=\"table table-bordered table-striped\">\n",
+    "app/templates/admin/review_form.html": "diff --git a/app/templates/admin/review_form.html b/app/templates/admin/review_form.html\nindex b14a8df..6e832d5 100644\n--- a/app/templates/admin/review_form.html\n+++ b/app/templates/admin/review_form.html\n@@ -347,9 +347,9 @@\n                                         <div class=\"mb-0\">\n                                             <label for=\"reviewComment\">审核意见：</label>\n                                             <textarea class=\"form-control\" id=\"reviewComment\" name=\"review_comment\" rows=\"4\" \n-                                                      placeholder='请填写您的审核意见，如果不修改表格内容可直接提交，审核意见将默认显示为\"无\"'></textarea>\n+                                                      placeholder='填写审核意见（可留空）'></textarea>\n                                             <small class=\"form-text text-muted\">\n-                                                系统将自动记录您对表单的修改内容并附加到审核意见后\n+                                                修改记录会自动附在审核意见后。\n                                             </small>\n                                         </div>\n                                         \n",
+    "app/templates/admin/review_forms.html": "diff --git a/app/templates/admin/review_forms.html b/app/templates/admin/review_forms.html\nindex b80d3e1..8e26ac4 100644\n--- a/app/templates/admin/review_forms.html\n+++ b/app/templates/admin/review_forms.html\n@@ -23,7 +23,7 @@\n                         <section class=\"review-queue\" aria-label=\"审核队列\">\n                     <div class=\"review-queue__intro\" id=\"reviewQueueIntro\">\n                         <h2>建立审核队列</h2>\n-                        <p>先设置时间与审核范围；加载后，队列会留在主工作区，筛选项自动收起。</p>\n+                        <p>选择时间和人员范围后加载表单。</p>\n                     </div>\n \n                     <!-- 表单列表是审核工作区的首要内容。 -->\n@@ -192,7 +192,7 @@\n                             <div class=\"review-preview__header\">\n                                 <div>\n                                     <h2 id=\"reviewPreviewTitle\">表单预览</h2>\n-                                    <p class=\"mb-0 text-muted small\">从左侧列表选择一份表单，查看摘要和规则检查。</p>\n+                                    <p class=\"mb-0 text-muted small\">选择表单查看详情。</p>\n                                 </div>\n                             </div>\n                             <div class=\"review-preview__body\" id=\"reviewPreviewContent\" aria-live=\"polite\">\n@@ -288,12 +288,12 @@\n     <div class=\"offcanvas-body\" id=\"automationEvidenceBody\" aria-live=\"polite\">\n         <p class=\"text-muted\">选择表单后查看分类与证据。</p>\n         <div class=\"automation-evidence-sections\">\n-            <section class=\"evidence-section-schedule\" data-evidence-source=\"schedule\"><h3>schedule</h3><p data-evidence-value>—</p></section>\n-            <section class=\"evidence-section-rule\" data-evidence-source=\"rule\"><h3>rule</h3><p data-evidence-value>—</p></section>\n-            <section class=\"evidence-section-text\" data-evidence-source=\"text\"><h3>text</h3><p data-evidence-value>—</p></section>\n-            <section class=\"evidence-section-history\" data-evidence-source=\"history\"><h3>history</h3><p data-evidence-value>—</p></section>\n-            <section class=\"evidence-section-llm\" data-evidence-source=\"llm\"><h3>llm</h3><p data-evidence-value>—</p></section>\n-            <section class=\"evidence-section-system\" data-evidence-source=\"system\"><h3>system</h3><p data-evidence-value>—</p></section>\n+            <section class=\"evidence-section-schedule\" data-evidence-source=\"schedule\"><h3>课表核对</h3><p data-evidence-value>—</p></section>\n+            <section class=\"evidence-section-rule\" data-evidence-source=\"rule\"><h3>规则检查</h3><p data-evidence-value>—</p></section>\n+            <section class=\"evidence-section-text\" data-evidence-source=\"text\"><h3>文字检查</h3><p data-evidence-value>—</p></section>\n+            <section class=\"evidence-section-history\" data-evidence-source=\"history\"><h3>历史记录</h3><p data-evidence-value>—</p></section>\n+            <section class=\"evidence-section-llm\" data-evidence-source=\"llm\"><h3>智能分析</h3><p data-evidence-value>—</p></section>\n+            <section class=\"evidence-section-system\" data-evidence-source=\"system\"><h3>处理状态</h3><p data-evidence-value>—</p></section>\n         </div>\n         <label class=\"form-label mt-3\" for=\"automationSuggestedComment\">建议评论（草稿）</label>\n         <textarea id=\"automationSuggestedComment\" class=\"form-control\" data-suggested-comment-draft rows=\"4\"></textarea>\n@@ -2208,7 +2208,7 @@ function renderAutomationAssessment(formId, assessment) {\n     });\n     Object.keys(grouped).forEach(source => setAutomationEvidenceValue(source, grouped[source].join('；')));\n     if (assessment.coverage) setAutomationEvidenceValue('schedule', `覆盖：${getAutomationCoverageLabel(assessment.coverage)}；${grouped.schedule.join('；')}`);\n-    if (assessment.model_result && Object.keys(assessment.model_result).length > 0) setAutomationEvidenceValue('llm', 'DeepSeek 结构化结果已验证。');\n+    if (assessment.model_result && Object.keys(assessment.model_result).length > 0) setAutomationEvidenceValue('llm', '智能分析已完成。');\n     if (assessment.error_code) setAutomationEvidenceValue('system', `系统记录：${assessment.error_code}`);\n     const comment = document.getElementById('automationSuggestedComment');\n     if (comment) comment.value = String(assessment.suggested_comment || '');\n",
+    "app/templates/admin/statistics.html": "diff --git a/app/templates/admin/statistics.html b/app/templates/admin/statistics.html\nindex 43095c0..3747f91 100644\n--- a/app/templates/admin/statistics.html\n+++ b/app/templates/admin/statistics.html\n@@ -7,7 +7,7 @@\n \n {% block content %}\n <div class=\"container-fluid\">\n-    {{ page_header('统计分析', '先查看核心指标与趋势，再按需进入专项统计或请假管理。') }}\n+    {{ page_header('统计分析', '') }}\n     {{ statistics_nav('overview', can_access_extended_stats) }}\n \n     <!-- 统计概览必须先于低频管理模块。 -->\n",
+    "app/templates/admin/submission_count_stats.html": "diff --git a/app/templates/admin/submission_count_stats.html b/app/templates/admin/submission_count_stats.html\nindex 0b295ea..28f6d0d 100644\n--- a/app/templates/admin/submission_count_stats.html\n+++ b/app/templates/admin/submission_count_stats.html\n@@ -52,7 +52,7 @@\n     </div>\n \n     <div class=\"alert alert-warning alert-dismissible\" role=\"note\">\n-        奖励表情况为系统根据当前奖励表规则和数据自动给出，不代表真实考评情况，请认真核实，建议核实无误后保存或导出数据。\n+        奖励表数量由现有规则和记录计算，请核实后保存或导出。\n         <button type=\"button\" class=\"btn-close\" data-bs-dismiss=\"alert\" aria-label=\"关闭统计说明\"></button>\n     </div>\n \n",
+    "app/templates/admin/system_management.html": "diff --git a/app/templates/admin/system_management.html b/app/templates/admin/system_management.html\nindex 99da194..de0d065 100644\n--- a/app/templates/admin/system_management.html\n+++ b/app/templates/admin/system_management.html\n@@ -20,5 +20,5 @@\n \n {% block scripts %}\n <script src=\"{{ url_for('static', filename='js/settings-center.js') }}\"></script>\n-<script src=\"{{ url_for('static', filename='js/automation-center.js') }}\"></script>\n+<script src=\"{{ url_for('static', filename='js/automation-center.js', v='20261014-copy') }}\"></script>\n {% endblock %}\n",
+    "app/templates/auth/change_password.html": "diff --git a/app/templates/auth/change_password.html b/app/templates/auth/change_password.html\nindex d1e3b55..a537be5 100644\n--- a/app/templates/auth/change_password.html\n+++ b/app/templates/auth/change_password.html\n@@ -12,10 +12,6 @@\n                 </h4>\n             </div>\n             <div class=\"card-body\">\n-                <div class=\"alert alert-info\" role=\"alert\">\n-                    <i class=\"bi bi-info-circle\"></i>\n-                    为了您的账户安全，请定期更换密码。新密码应包含字母、数字，长度至少6位。\n-                </div>\n                 \n                 <form method=\"POST\" id=\"changePasswordForm\">\n                     <div class=\"mb-3\">\n@@ -45,7 +41,7 @@\n                             </button>\n                         </div>\n                         <div class=\"form-text\">\n-                            密码长度至少6位，建议包含字母和数字\n+                            密码至少6位，建议包含字母和数字\n                         </div>\n                     </div>\n                     \n",
+    "app/templates/auth/login.html": "diff --git a/app/templates/auth/login.html b/app/templates/auth/login.html\nindex 8be60f6..7ce5dcf 100644\n--- a/app/templates/auth/login.html\n+++ b/app/templates/auth/login.html\n@@ -9,19 +9,15 @@\n             <span class=\"app-brand__mark\" aria-hidden=\"true\"><i class=\"bi bi-journal-bookmark\"></i></span>\n             <div><span class=\"auth-kicker\">西南大学教学信息中心</span><span class=\"auth-edition\">SWU · TEACHING INFORMATION CENTER</span></div>\n         </div>\n-        <h1 id=\"auth-intro-title\">认真听见，<br><em>共同成长。</em></h1>\n-        <p>记录课堂里的发现，让每一份教学反馈，成为校园向前的一小步。</p>\n-        <div class=\"auth-note\"><i class=\"bi bi-pencil\" aria-hidden=\"true\"></i><span>听课 · 记录 · 反馈</span></div>\n+        <h1 id=\"auth-intro-title\">西大听课工作台</h1>\n     </section>\n     <section class=\"auth-panel\" aria-labelledby=\"login-panel-title\">\n         <i class=\"bi bi-person-check auth-panel__icon\" aria-hidden=\"true\"></i>\n-        <h2 id=\"login-panel-title\">欢迎回到工作台</h2>\n-        <p>从这里，开启今天的听课与教学管理。</p>\n+        <h2 id=\"login-panel-title\">登录工作台</h2>\n         <form method=\"POST\">\n             <div class=\"mb-3\">\n                 <label for=\"student_id\" class=\"form-label\">账号或学号</label>\n                 <input type=\"text\" class=\"form-control\" id=\"student_id\" name=\"student_id\" placeholder=\"请输入账号或学号\" required>\n-                <div class=\"form-text\">账号可以是系统分配的本地账号或学号。</div>\n             </div>\n \n             <div class=\"mb-3\">\n",
+    "app/templates/list.html": "diff --git a/app/templates/list.html b/app/templates/list.html\nindex a8443fb..bea9b18 100644\n--- a/app/templates/list.html\n+++ b/app/templates/list.html\n@@ -57,7 +57,6 @@\n                 <i class=\"bi bi-clipboard-data fs-1 text-muted\"></i>\n             </div>\n             <h4 class=\"text-muted\">暂无表单记录</h4>\n-            <p class=\"text-muted\">还没有提交过听课表单</p>\n             <a href=\"{{ url_for('main.index') }}\" class=\"btn btn-primary\">填写第一个表单</a>\n         </div>\n         {% endif %}\n",
+    "app/templates/main/_leave_reminder_modal.html": "diff --git a/app/templates/main/_leave_reminder_modal.html b/app/templates/main/_leave_reminder_modal.html\nindex ee68b3d..e406541 100644\n--- a/app/templates/main/_leave_reminder_modal.html\n+++ b/app/templates/main/_leave_reminder_modal.html\n@@ -15,7 +15,7 @@\n                     份听课表待补交。\n                 </p>\n                 <p class=\"mb-0 text-muted small\">\n-                    提交时系统会自动将表单定义为第{{ leave_prompt.leave_week }}周请假补交表。\n+                    补交表将计入第{{ leave_prompt.leave_week }}周。\n                 </p>\n             </div>\n             <div class=\"modal-footer\">\n",
+    "app/templates/main/about.html": "diff --git a/app/templates/main/about.html b/app/templates/main/about.html\nindex 7eaea39..cf6f7d9 100644\n--- a/app/templates/main/about.html\n+++ b/app/templates/main/about.html\n@@ -6,14 +6,12 @@\n <div class=\"auth-layout\">\n     <section class=\"auth-intro\">\n         <span class=\"auth-kicker\">西南大学教学信息中心</span>\n-        <h1>让听课、审核与教学管理，在同一张工作台上清晰衔接。</h1>\n-        <p>面向校内信息员、管理员和超级管理员的教学信息工作台。</p>\n+        <h1>西大听课工作台</h1>\n     </section>\n     <section class=\"auth-panel\" aria-labelledby=\"about-panel-title\">\n         <i class=\"bi bi-info-circle auth-panel__icon\" aria-hidden=\"true\"></i>\n         <h2 id=\"about-panel-title\">关于工作台</h2>\n-        <p>工作台把听课记录、审核流程和教学管理入口放在同一个清晰的工作空间中。</p>\n-        <p>不同角色只会看到与职责相关的任务和操作，方便从待办继续推进工作。</p>\n+        <p>用于提交听课反馈、查看审核结果。</p>\n         <a class=\"btn btn-primary\" href=\"{{ url_for('auth.login') }}\">返回登录</a>\n     </section>\n </div>\n",
+    "app/templates/main/admin_index.html": "diff --git a/app/templates/main/admin_index.html b/app/templates/main/admin_index.html\nindex e9fda9b..f96c912 100644\n--- a/app/templates/main/admin_index.html\n+++ b/app/templates/main/admin_index.html\n@@ -4,5 +4,5 @@\n {% block title %}入口已更新 - 西大听课工作台{% endblock %}\n \n {% block content %}\n-{{ page_header('入口已更新', '管理员工作已集中到统一工作台。', '返回今日工作', url_for('main.index')) }}\n+{{ page_header('入口已更新', '', '返回今日工作', url_for('main.index')) }}\n {% endblock %}\n",
+    "app/templates/main/help.html": "diff --git a/app/templates/main/help.html b/app/templates/main/help.html\nindex dd52185..a3481fa 100644\n--- a/app/templates/main/help.html\n+++ b/app/templates/main/help.html\n@@ -6,17 +6,16 @@\n <div class=\"auth-layout\">\n     <section class=\"auth-intro\">\n         <span class=\"auth-kicker\">西南大学教学信息中心</span>\n-        <h1>需要帮助时，从清晰的下一步开始。</h1>\n-        <p>登录后，工作台会根据你的角色展示对应的任务、审核和管理入口。</p>\n+        <h1>使用帮助</h1>\n     </section>\n     <section class=\"auth-panel\" aria-labelledby=\"help-panel-title\">\n         <i class=\"bi bi-question-circle auth-panel__icon\" aria-hidden=\"true\"></i>\n         <h2 id=\"help-panel-title\">使用帮助</h2>\n-        <p>遇到登录或使用问题时，可以先按下面的顺序检查：</p>\n+        <p>登录与账号问题：</p>\n         <ul>\n             <li>使用系统分配的账号或学号登录。</li>\n             <li>首次登录使用系统分配的初始密码。</li>\n-            <li>登录后从工作台的待办或快捷入口继续操作。</li>\n+            <li>信息员可从“填写听课表”提交反馈，从工作台的“查看记录”查看已交表单。</li>\n             <li>账号或权限有疑问时，请联系系统管理员。</li>\n         </ul>\n         <a class=\"btn btn-primary\" href=\"{{ url_for('auth.login') }}\">返回登录</a>\n",
+    "app/templates/main/index.html": "diff --git a/app/templates/main/index.html b/app/templates/main/index.html\nindex edb10fa..f96c912 100644\n--- a/app/templates/main/index.html\n+++ b/app/templates/main/index.html\n@@ -4,5 +4,5 @@\n {% block title %}入口已更新 - 西大听课工作台{% endblock %}\n \n {% block content %}\n-{{ page_header('入口已更新', '请从统一工作台继续处理任务。', '返回今日工作', url_for('main.index')) }}\n+{{ page_header('入口已更新', '', '返回今日工作', url_for('main.index')) }}\n {% endblock %}\n",
+    "app/templates/main/manager_index.html": "diff --git a/app/templates/main/manager_index.html b/app/templates/main/manager_index.html\nindex e9fda9b..f96c912 100644\n--- a/app/templates/main/manager_index.html\n+++ b/app/templates/main/manager_index.html\n@@ -4,5 +4,5 @@\n {% block title %}入口已更新 - 西大听课工作台{% endblock %}\n \n {% block content %}\n-{{ page_header('入口已更新', '管理员工作已集中到统一工作台。', '返回今日工作', url_for('main.index')) }}\n+{{ page_header('入口已更新', '', '返回今日工作', url_for('main.index')) }}\n {% endblock %}\n",
+    "app/templates/main/public_index.html": "diff --git a/app/templates/main/public_index.html b/app/templates/main/public_index.html\nindex 05ecb3b..76c0eaf 100644\n--- a/app/templates/main/public_index.html\n+++ b/app/templates/main/public_index.html\n@@ -6,13 +6,12 @@\n <div class=\"auth-layout\">\n     <section class=\"auth-intro\">\n         <span class=\"auth-kicker\">西南大学教学信息中心</span>\n-        <h1>听课、审核与教学管理，在一个工作台完成。</h1>\n-        <p>面向信息员、管理员和超级管理员的校内听课业务系统。</p>\n+        <h1>西大听课工作台</h1>\n     </section>\n     <section class=\"auth-panel\" aria-labelledby=\"public-panel-title\">\n         <i class=\"bi bi-journal-check auth-panel__icon\" aria-hidden=\"true\"></i>\n         <h2 id=\"public-panel-title\">进入工作台</h2>\n-        <p>使用系统分配的账号登录，继续填写、审核或管理工作。</p>\n+        <p>使用系统分配的账号登录。</p>\n         <a class=\"btn btn-primary\" href=\"{{ url_for('auth.login') }}\">登录工作台</a>\n         <p class=\"auth-panel__help\">首次登录请使用系统分配的初始密码。如有问题请联系管理员。</p>\n     </section>\n",
+    "app/templates/main/user_index.html": "diff --git a/app/templates/main/user_index.html b/app/templates/main/user_index.html\nindex 56eba7a..f96c912 100644\n--- a/app/templates/main/user_index.html\n+++ b/app/templates/main/user_index.html\n@@ -4,5 +4,5 @@\n {% block title %}入口已更新 - 西大听课工作台{% endblock %}\n \n {% block content %}\n-{{ page_header('入口已更新', '信息员工作已集中到统一工作台。', '返回今日工作', url_for('main.index')) }}\n+{{ page_header('入口已更新', '', '返回今日工作', url_for('main.index')) }}\n {% endblock %}\n",
+    "app/templates/main/workspace.html": "diff --git a/app/templates/main/workspace.html b/app/templates/main/workspace.html\nindex f52c9c0..89f2391 100644\n--- a/app/templates/main/workspace.html\n+++ b/app/templates/main/workspace.html\n@@ -5,7 +5,6 @@\n {% block title %}今日工作 - 西大听课工作台{% endblock %}\n {% block content %}\n <div class=\"workspace\" data-workspace-role=\"{{ workspace.role_slug }}\">\n-    <div class=\"workspace-eyebrow\"><i class=\"bi bi-sun\" aria-hidden=\"true\"></i><span>校园听课手记</span></div>\n     {{ page_header(workspace.title, workspace.summary, workspace.primary_action.label, url_for(workspace.primary_action.endpoint)) }}\n     <section class=\"workspace-metrics\" aria-label=\"工作指标\">\n         {% for item in workspace.metrics %}{{ metric(item.label, item.value, variant='plain', extra_class='workspace-metric') }}{% endfor %}\n@@ -13,7 +12,7 @@\n     <div class=\"workspace-grid\">\n         <section class=\"workspace-panel\"><div class=\"workspace-panel__header\"><i class=\"bi bi-check2-square\" aria-hidden=\"true\"></i><h2>优先处理</h2></div>\n             {% if workspace.tasks %}{% for task in workspace.tasks %}<article class=\"workspace-task\"><div><h3>{{ task.label }}</h3><p>{{ task.description }}</p></div><a class=\"btn btn-outline-primary\" href=\"{{ url_for(task.endpoint) }}\">继续处理</a></article>{% endfor %}\n-            {% else %}{{ empty_state('当前没有待办', '可以从快捷入口开始新的工作。', compact=true) }}{% endif %}\n+            {% else %}{{ empty_state('当前没有待办', '', compact=true) }}{% endif %}\n         </section>\n         <section class=\"workspace-panel\"><div class=\"workspace-panel__header\"><i class=\"bi bi-arrow-up-right-circle\" aria-hidden=\"true\"></i><h2>快捷发起</h2></div><div class=\"workspace-launch-list\">{% for action in workspace.quick_actions %}<a href=\"{{ url_for(action.endpoint) }}\"><span>{{ action.label }}</span><i class=\"bi bi-chevron-right\" aria-hidden=\"true\"></i></a>{% endfor %}</div></section>\n     </div>\n",
+    "app/templates/partials/_empty_state.html": "diff --git a/app/templates/partials/_empty_state.html b/app/templates/partials/_empty_state.html\nindex 2f1b2ca..4b631a7 100644\n--- a/app/templates/partials/_empty_state.html\n+++ b/app/templates/partials/_empty_state.html\n@@ -1,3 +1,3 @@\n {% macro empty_state(title, description, action_label='', action_href='', compact=false) %}\n-<div class=\"empty-state{% if compact %} empty-state--compact{% endif %}\"><i class=\"bi bi-inbox\" aria-hidden=\"true\"></i><h2>{{ title }}</h2><p>{{ description }}</p>{% if action_label %}<a class=\"btn btn-primary\" href=\"{{ action_href }}\">{{ action_label }}</a>{% endif %}</div>\n+<div class=\"empty-state{% if compact %} empty-state--compact{% endif %}\"><i class=\"bi bi-inbox\" aria-hidden=\"true\"></i><h2>{{ title }}</h2>{% if description %}<p>{{ description }}</p>{% endif %}{% if action_label %}<a class=\"btn btn-primary\" href=\"{{ action_href }}\">{{ action_label }}</a>{% endif %}</div>\n {% endmacro %}\n",
+    "app/templates/success.html": "diff --git a/app/templates/success.html b/app/templates/success.html\nindex 94887ce..e029059 100644\n--- a/app/templates/success.html\n+++ b/app/templates/success.html\n@@ -4,7 +4,7 @@\n {% block title %}提交成功 - 听课表单系统{% endblock %}\n \n {% block content %}\n-{{ page_header('表单提交成功', '表单已进入审核流程，以下是本次提交的摘要。') }}\n+{{ page_header('表单提交成功', '表单已提交，等待审核。') }}\n <div class=\"profile-section success-summary mb-4\" role=\"status\">\n     <div class=\"profile-section__body\">\n         <p class=\"mb-2\">表单编号：<strong>{{ form.id }}</strong></p>\n",
+    "app/templates/user/_records_panel.html": "diff --git a/app/templates/user/_records_panel.html b/app/templates/user/_records_panel.html\nindex dc4f2b4..42f0017 100644\n--- a/app/templates/user/_records_panel.html\n+++ b/app/templates/user/_records_panel.html\n@@ -45,7 +45,7 @@\n                             <td data-label=\"计划说明\" class=\"record-description\"><div class=\"record-cell__value\"><span data-reservation-description=\"{{ item.id }}\">{{ item.listening_info or '-' }}</span></div></td>\n                             <td data-label=\"绑定状态\">\n                                 <div class=\"record-cell__value\">\n-                                {% if item.is_bound %}<span class=\"badge bg-secondary\">已绑定反馈表 ({{ item.bind_count }})</span>\n+                                {% if item.is_bound %}<span class=\"badge bg-secondary\">已绑定反馈表（{{ item.bind_count }}）</span>\n                                 {% else %}<span class=\"badge bg-success\">未绑定</span>{% endif %}\n                                 </div>\n                             </td>\n@@ -63,7 +63,7 @@\n                 </table>\n             </div>\n             {% else %}\n-            <div id=\"reservationsEmptyState\" class=\"activity-empty\">暂无听课预约。{% if app_can_submit_lecture_form and schedule_availability.registration_ready %}可以先切换到“听课登记”选择课程。{% endif %}</div>\n+            <div id=\"reservationsEmptyState\" class=\"activity-empty\">暂无听课预约。{% if app_can_submit_lecture_form and schedule_availability.registration_ready %}可到“听课登记”选择课程。{% endif %}</div>\n             {% endif %}\n         </div>\n     </div>\n@@ -72,7 +72,6 @@\n         <div class=\"activity-panel__header activity-panel__header--split\">\n             <div>\n                 <h2>我的表单</h2>\n-                <p>查看提交状态、版本历史和审核意见。</p>\n             </div>\n         </div>\n         <div class=\"activity-panel__body p-0\">\n@@ -146,7 +145,7 @@\n                 </table>\n             </div>\n         {% else %}\n-            <div id=\"formsEmptyState\" class=\"activity-empty\">暂无听课表单。{% if app_can_submit_lecture_form %}填写并提交第一份听课表单后，记录会显示在这里。{% endif %}</div>\n+            <div id=\"formsEmptyState\" class=\"activity-empty\">暂无听课表单。{% if app_can_submit_lecture_form %}提交后可在此查看。{% endif %}</div>\n         {% endif %}\n         </div>\n     </div>\n",
+    "app/templates/user/_registration_panel.html": "diff --git a/app/templates/user/_registration_panel.html b/app/templates/user/_registration_panel.html\nindex 644e386..ca9db07 100644\n--- a/app/templates/user/_registration_panel.html\n+++ b/app/templates/user/_registration_panel.html\n@@ -1,8 +1,7 @@\n <div class=\"registration-panel\" data-registration-panel>\n     <div class=\"registration-search\">\n         <label for=\"courseSearchInput\" class=\"form-label\">选择课程</label>\n-        <input type=\"search\" id=\"courseSearchInput\" class=\"form-control\" autocomplete=\"off\" placeholder=\"请输入课程名称、教师或课程号进行搜索...\" aria-controls=\"courseResults\" aria-expanded=\"false\">\n-        <div class=\"form-text\">支持按课程名称、教师或课程号搜索。选择课程后可在当前页面完成登记。</div>\n+        <input type=\"search\" id=\"courseSearchInput\" class=\"form-control\" autocomplete=\"off\" placeholder=\"课程名称、教师或课程号\" aria-controls=\"courseResults\" aria-expanded=\"false\">\n         <div id=\"courseSearchFeedback\" class=\"activity-feedback\" role=\"status\" aria-live=\"polite\" hidden></div>\n         <div id=\"courseResults\" class=\"course-results\" role=\"listbox\" aria-label=\"课程搜索结果\"></div>\n     </div>\n@@ -43,7 +42,7 @@\n                             </div>\n                             {% if semester_configured is defined and not semester_configured %}\n                             <div class=\"alert alert-warning\" role=\"alert\">\n-                                请联系管理员在 系统设置 → 教学制度 配置学期起始周后再登记。\n+                                学期尚未设置，请联系管理员后再登记。\n                             </div>\n                             {% endif %}\n                             <div class=\"d-grid\">\n@@ -74,7 +73,6 @@\n     <div id=\"initialTip\" class=\"activity-empty activity-empty--large\">\n         <i class=\"bi bi-search\" aria-hidden=\"true\"></i>\n         <h2>先选择一门课程</h2>\n-        <p>选择课程后，登记信息和该课程的历史记录会在此处显示。</p>\n     </div>\n </div>\n \n",
+    "app/templates/user/_site_capture.html": "diff --git a/app/templates/user/_site_capture.html b/app/templates/user/_site_capture.html\nindex 8910574..0b8d6f9 100644\n--- a/app/templates/user/_site_capture.html\n+++ b/app/templates/user/_site_capture.html\n@@ -46,15 +46,15 @@\n     <div class=\"site-evidence-dialog__header\"><h2 id=\"doorCropTitle\">框选门牌数字</h2><button type=\"button\" class=\"btn btn-outline-secondary\" data-crop-close>关闭</button></div>\n     <p data-crop-status data-tone=\"info\" role=\"status\" aria-live=\"polite\"></p>\n     <canvas class=\"site-door-canvas\" tabindex=\"0\" aria-label=\"门牌照片框选区域，拖动选择；方向键移动，Shift加方向键调整大小\"></canvas>\n-    <div class=\"site-capture__actions\"><button type=\"button\" class=\"btn btn-primary\" data-crop-run>识别框选区域</button><span>保留原照片，识别结果仍需核对。</span></div>\n+    <div class=\"site-capture__actions\"><button type=\"button\" class=\"btn btn-primary\" data-crop-run>识别框选区域</button><span>原照片保留，请核对识别结果。</span></div>\n </dialog>\n <dialog class=\"site-evidence-dialog site-map-dialog\" data-building-map data-context-url=\"{{ url_for('static', filename='data/swu-campus-context.geojson') }}\" aria-labelledby=\"buildingMapTitle\">\n-    <div class=\"site-evidence-dialog__header\"><div><span class=\"site-map__eyebrow\">校园位置参考</span><h2 id=\"buildingMapTitle\">确认你所在的教学楼</h2></div><button type=\"button\" class=\"btn btn-outline-secondary\" data-map-close>关闭</button></div>\n+    <div class=\"site-evidence-dialog__header\"><div><h2 id=\"buildingMapTitle\">确认你所在的教学楼</h2></div><button type=\"button\" class=\"btn btn-outline-secondary\" data-map-close>关闭</button></div>\n     <p data-map-status data-tone=\"info\" role=\"status\" aria-live=\"polite\"></p>\n     <div class=\"site-map__layout\"><div class=\"site-map__surface\">\n         <div class=\"site-map__toolbar\"><button type=\"button\" data-map-zoom-in aria-label=\"放大地图\">＋</button><button type=\"button\" data-map-zoom-out aria-label=\"缩小地图\">−</button><button type=\"button\" data-map-selected disabled>定位所选</button><button type=\"button\" data-map-overview>全部楼栋</button></div>\n         <svg role=\"group\" aria-label=\"校园楼栋图，拖动平移，可用旁边列表选楼\"></svg>\n-        <p class=\"site-map__legend\">蓝点：采集位置　浅绿：附近楼栋　金色立体楼栋：当前选择（高度示意）</p>\n+        <p class=\"site-map__legend\">蓝点：定位　浅绿：附近楼栋　金色：所选楼栋（高度示意）</p>\n     </div><aside><label for=\"siteMapSearch\">搜索楼号或名称</label><input id=\"siteMapSearch\" class=\"form-control\" data-map-search placeholder=\"例如：8、25、46\"><div data-map-list class=\"site-map__list\"></div></aside></div>\n-    <div class=\"site-map__selection\"><span data-map-picked role=\"status\" aria-live=\"polite\">点击建筑或列表，再确认教学楼。</span><button type=\"button\" class=\"btn btn-primary\" data-map-use disabled>使用此教学楼</button></div>\n+    <div class=\"site-map__selection\"><span data-map-picked role=\"status\" aria-live=\"polite\">尚未选择教学楼</span><button type=\"button\" class=\"btn btn-primary\" data-map-use disabled>使用此教学楼</button></div>\n </dialog>\n",
+    "app/templates/user/activity_center.html": "diff --git a/app/templates/user/activity_center.html b/app/templates/user/activity_center.html\nindex 04d0ef6..ce1d34c 100644\n--- a/app/templates/user/activity_center.html\n+++ b/app/templates/user/activity_center.html\n@@ -7,9 +7,9 @@\n \n {% block content %}\n {% if app_can_submit_lecture_form %}\n-{{ page_header('听课与填报', '查看预约、已提交表单和审核意见。', '填写听课表', url_for('user.submit_form')) }}\n+{{ page_header('听课与填报', '', '填写听课表', url_for('user.submit_form')) }}\n {% else %}\n-{{ page_header('我的记录', '查看预约、已提交表单和审核意见。', '查询课表' if schedule_availability.candidates_ready else '', url_for('user.course_lookup') if schedule_availability.candidates_ready else '') }}\n+{{ page_header('我的记录', '', '查询课表' if schedule_availability.candidates_ready else '', url_for('user.course_lookup') if schedule_availability.candidates_ready else '') }}\n {% endif %}\n <div class=\"activity-center\" data-active-tab=\"{{ active_tab }}\">\n     <div class=\"activity-tabs\" role=\"tablist\" aria-label=\"{{ '听课与填报' if app_can_submit_lecture_form else '我的记录' }}\">\n@@ -28,5 +28,5 @@\n {% endblock %}\n \n {% block scripts %}\n-<script src=\"{{ url_for('static', filename='js/activity-center.js') }}\"></script>\n+<script src=\"{{ url_for('static', filename='js/activity-center.js', v='20261014-copy') }}\"></script>\n {% endblock %}\n",
+    "app/templates/user/course_lookup.html": "diff --git a/app/templates/user/course_lookup.html b/app/templates/user/course_lookup.html\nindex 0b07286..fd8ee49 100644\n--- a/app/templates/user/course_lookup.html\n+++ b/app/templates/user/course_lookup.html\n@@ -37,5 +37,5 @@\n {% endblock %}\n \n {% block scripts %}\n-{% if schedule_availability.candidates_ready %}<script src=\"{{ url_for('static', filename='js/course-lookup.js') }}\"></script>{% endif %}\n+{% if schedule_availability.candidates_ready %}<script src=\"{{ url_for('static', filename='js/course-lookup.js', v='20261014-copy') }}\"></script>{% endif %}\n {% endblock %}\n",
+    "app/templates/user/edit_profile.html": "diff --git a/app/templates/user/edit_profile.html b/app/templates/user/edit_profile.html\nindex 5cfe0ca..76965d2 100644\n--- a/app/templates/user/edit_profile.html\n+++ b/app/templates/user/edit_profile.html\n@@ -4,7 +4,7 @@\n {% block title %}编辑资料 - 西南大学教学信息中心{% endblock %}\n \n {% block content %}\n-{{ page_header('编辑资料', '更新可编辑的信息，保存后会返回个人资料页。') }}\n+{{ page_header('编辑资料', '') }}\n <div class=\"row justify-content-center\">\n     <div class=\"col-md-8\">\n         <div class=\"profile-section\">\n@@ -16,7 +16,7 @@\n             <div class=\"profile-section__body\">\n                 <div class=\"alert alert-info\" role=\"alert\">\n                     <i class=\"bi bi-info-circle\"></i>\n-                    请确保信息准确无误。带 <span class=\"text-danger\">*</span> 的字段为必填项。\n+                    带 <span class=\"text-danger\">*</span> 的字段为必填项。\n                 </div>\n                 {% macro locked_hint(field) -%}\n                     {% if field not in editable_fields %}\n@@ -117,7 +117,6 @@\n                                 <input type=\"tel\" class=\"form-control\" id=\"phone\" name=\"phone\" \n                                        value=\"{{ user.phone }}\" placeholder=\"请输入11位手机号\" {% if can_edit_phone %}required{% else %}readonly{% endif %}>\n                                 {% if can_edit_phone %}\n-                                    <div class=\"form-text\">请输入有效的11位手机号码</div>\n                                 {% else %}\n                                     {{ locked_hint('phone') }}\n                                 {% endif %}\n",
+    "app/templates/user/lecture_form.html": "diff --git a/app/templates/user/lecture_form.html b/app/templates/user/lecture_form.html\nindex 7376720..4d6158b 100644\n--- a/app/templates/user/lecture_form.html\n+++ b/app/templates/user/lecture_form.html\n@@ -264,7 +264,7 @@\n                                 </div>\n                                 <div data-completion-methods hidden>\n                                     <h3 class=\"listening-assistant__question\">本节课实际使用了哪些教学方法？</h3>\n-                                    <p class=\"form-completion-assistant__condition\">可多选，请至少选择一种。</p>\n+                                    <p class=\"form-completion-assistant__condition\">可多选，至少一项。</p>\n                                     <div class=\"form-completion-assistant__choices\">\n                                         <label for=\"completionMethodPpt\"><input class=\"form-check-input\" type=\"checkbox\" id=\"completionMethodPpt\" data-completion-method=\"tm_ppt\">PPT演示法</label>\n                                         <label for=\"completionMethodLecture\"><input class=\"form-check-input\" type=\"checkbox\" id=\"completionMethodLecture\" data-completion-method=\"tm_lecture\">讲授法</label>\n@@ -278,7 +278,7 @@\n                                 </div>\n                                 <div data-completion-ratings hidden>\n                                     <h3 class=\"listening-assistant__question\">哪些项目没有达到“非常好”？</h3>\n-                                    <p class=\"form-completion-assistant__condition\">可多选。点击确认后，未选的适用项目将填写为“非常好”，选中的项目再逐项评价。</p>\n+                                    <p class=\"form-completion-assistant__condition\">可多选；未选项目默认为“非常好”，所选项目逐项评价。</p>\n                                     <div class=\"form-completion-assistant__choices\">\n                                         <label for=\"completionDiscipline\"><input class=\"form-check-input\" type=\"checkbox\" id=\"completionDiscipline\" data-completion-rating=\"classroom_discipline\">管理课堂纪律</label>\n                                         <label for=\"completionAtmosphere\"><input class=\"form-check-input\" type=\"checkbox\" id=\"completionAtmosphere\" data-completion-rating=\"classroom_atmosphere\">调动课堂气氛</label>\n@@ -304,7 +304,6 @@\n                                 </div>\n                                 <div data-completion-recommendation hidden>\n                                     <h3 class=\"listening-assistant__question\">是否推荐这节课？</h3>\n-                                    <p class=\"form-completion-assistant__condition\">请根据实际听课情况独立选择是否推荐。</p>\n                                     <div class=\"listening-assistant__actions\">\n                                         <button type=\"button\" class=\"btn btn-outline-primary\" data-completion-recommend-answer=\"yes\">推荐</button>\n                                         <button type=\"button\" class=\"btn btn-outline-primary\" data-completion-recommend-answer=\"no\">不推荐</button>\n@@ -348,7 +347,7 @@\n                             <div class=\"col-12\">\n                                 <h3 class=\"form-section-title\">课程信息</h3>\n                                 <div id=\"autoFillAlert\" class=\"alert alert-info alert-dismissible fade show\" style=\"display: none;\">\n-                                    <i class=\"bi bi-info-circle\"></i> 已根据您的听课登记自动填充部分课程信息，您可以根据实际情况进行修改。\n+                                    <i class=\"bi bi-info-circle\"></i> 已带入登记课程信息，请核对。\n                                     <button type=\"button\" class=\"btn-close\" data-bs-dismiss=\"alert\" aria-label=\"关闭\"></button>\n                                 </div>\n                             </div>\n@@ -438,14 +437,14 @@\n                                     <input type=\"text\" class=\"form-control\" id=\"student_grade_class\" name=\"student_grade_class\" \n                                            data-format-url=\"{{ url_for('user.format_student_grade_class_input') }}\"\n                                            placeholder=\"如：2019级英语（师范）01、02班\" required>\n-                                    <div class=\"form-text\">离开输入框后自动规范年级、中文括号和数字班号。</div>\n+                                    <div class=\"form-text\">多个专业用中文分号分隔。</div>\n                                 </div>\n                             </div>\n                             <div class=\"col-12\">\n                                 <div class=\"mb-3\">\n                                     <label for=\"course_changes\" class=\"form-label\">课程信息变化 <span class=\"text-danger\">*</span></label>\n                                     <textarea class=\"form-control\" id=\"course_changes\" name=\"course_changes\" rows=\"2\" \n-                                              placeholder='一般三个方面:老师、教室、时间,没有变化填\"无\"' required></textarea>\n+                                              placeholder='教师、教室或时间有变化请说明；没有填“无”。' required></textarea>\n                                 </div>\n                             </div>\n                         </div>\n@@ -459,7 +458,7 @@\n                                 <div class=\"mb-3\">\n                                     <label for=\"abnormal_situation\" class=\"form-label\">异常情况反映 <span class=\"text-danger\">*</span></label>\n                                     <textarea class=\"form-control\" id=\"abnormal_situation\" name=\"abnormal_situation\" rows=\"2\" \n-                                              placeholder='根据事实,没有则填\"无\"' required></textarea>\n+                                              placeholder='如实填写；没有填“无”。' required></textarea>\n                                 </div>\n                             </div>\n                             <div class=\"col-md-6\">\n@@ -547,7 +546,7 @@\n                                 <div class=\"mb-3\">\n                             <label for=\"course_feedback\" class=\"form-label\">课程反馈（优点） <span class=\"text-danger\">*</span></label>\n                                     <textarea class=\"form-control\" id=\"course_feedback\" name=\"course_feedback\" rows=\"4\" \n-                                              placeholder=\"五十字以上,评价的内容实在且有针对性\" required></textarea>\n+                                              placeholder=\"至少50字，请写具体的课堂优点。\" required></textarea>\n                                     <div class=\"d-flex justify-content-between\">\n                                         <small id=\"feedback_counter\" class=\"text-muted\">已输入 0 字</small>\n                                         <small id=\"feedback_limit_hint\" class=\"text-danger\" style=\"display:none\">反馈内容需至少50字</small>\n@@ -558,7 +557,7 @@\n                                 <div class=\"mb-3\">\n                                     <label for=\"suggestions\" class=\"form-label\">不足及建议 <span class=\"text-danger\">*</span></label>\n                                     <textarea class=\"form-control\" id=\"suggestions\" name=\"suggestions\" rows=\"4\" \n-                                              placeholder='根据事实,没有则填\"无\"' required></textarea>\n+                                              placeholder='如实填写；没有填“无”。' required></textarea>\n                                 </div>\n                             </div>\n                         </div>\n@@ -665,9 +664,7 @@\n             </div>\n             <div class=\"modal-body\">\n                 <div class=\"alert registration-choice-note\" id=\"unusedRegistrationsModalDescription\">\n-                    <i class=\"bi bi-info-circle-fill\"></i> 您有以下已登记但未填表的课程。是否要为其中一门课程提交反馈？\n-                    <br>\n-                    <small>选择已登记课程可以自动填充表单信息，并方便管理。</small>\n+                    <i class=\"bi bi-info-circle-fill\"></i> 选择一门已登记课程，带入课程信息。\n                 </div>\n                 <div class=\"table-responsive\">\n                     <table class=\"table table-hover border form-list-table\">\n@@ -1342,8 +1339,8 @@ document.addEventListener('DOMContentLoaded', function() {\n     });\n });\n </script>\n-{% if candidates_ready %}<script src=\"{{ url_for('static', filename='js/listening-assistant.js') }}\"></script>{% endif %}\n+{% if candidates_ready %}<script src=\"{{ url_for('static', filename='js/listening-assistant.js', v='20261014-copy') }}\"></script>{% endif %}\n <script src=\"{{ url_for('static', filename='js/form-completion-assistant.js', v='20261013-complement') }}\"></script>\n <script src=\"{{ url_for('static', filename='js/student-grade-class-input.js', v='20261013') }}\"></script>\n-{% if capture_enabled and not form %}<script src=\"{{ url_for('static', filename='js/site-location.js') }}\"></script>{% if candidates_ready %}<script src=\"{{ url_for('static', filename='js/site-context-guide.js') }}\"></script>{% endif %}<script src=\"{{ url_for('static', filename='js/site-capture.js') }}\"></script><script src=\"{{ url_for('static', filename='js/site-door-crop.js') }}\"></script><script src=\"{{ url_for('static', filename='js/site-building-map.js') }}\"></script>{% endif %}\n+{% if capture_enabled and not form %}<script src=\"{{ url_for('static', filename='js/site-location.js') }}\"></script>{% if candidates_ready %}<script src=\"{{ url_for('static', filename='js/site-context-guide.js', v='20261014-copy') }}\"></script>{% endif %}<script src=\"{{ url_for('static', filename='js/site-capture.js', v='20261014-copy') }}\"></script><script src=\"{{ url_for('static', filename='js/site-door-crop.js', v='20261014-copy') }}\"></script><script src=\"{{ url_for('static', filename='js/site-building-map.js', v='20261014-copy') }}\"></script>{% endif %}\n {% endblock %}\n",
+    "app/templates/user/lecture_reservation.html": "diff --git a/app/templates/user/lecture_reservation.html b/app/templates/user/lecture_reservation.html\nindex 9a232ea..65d07f9 100644\n--- a/app/templates/user/lecture_reservation.html\n+++ b/app/templates/user/lecture_reservation.html\n@@ -4,12 +4,12 @@\n {% block title %}听课登记 - 西大听课工作台{% endblock %}\n \n {% block content %}\n-{{ page_header('听课登记', '选择课程并在当前页面完成听课预约。', '填写听课表', url_for('user.submit_form')) }}\n+{{ page_header('听课登记', '', '填写听课表', url_for('user.submit_form')) }}\n <div class=\"activity-compatibility\">\n     {% include 'user/_registration_panel.html' %}\n </div>\n {% endblock %}\n \n {% block scripts %}\n-<script src=\"{{ url_for('static', filename='js/activity-center.js') }}\"></script>\n+<script src=\"{{ url_for('static', filename='js/activity-center.js', v='20261014-copy') }}\"></script>\n {% endblock %}\n",
+    "app/templates/user/my_forms.html": "diff --git a/app/templates/user/my_forms.html b/app/templates/user/my_forms.html\nindex 2862edf..092881a 100644\n--- a/app/templates/user/my_forms.html\n+++ b/app/templates/user/my_forms.html\n@@ -80,7 +80,7 @@\n                                     </td>\n                                     <td>\n                                         {% if item.is_bound %}\n-                                        <span class=\"badge bg-secondary\">已绑定反馈表 ({{ item.bind_count }})</span>\n+                                        <span class=\"badge bg-secondary\">已绑定反馈表（{{ item.bind_count }}）</span>\n                                         {% else %}\n                                         <span class=\"badge bg-success\">未绑定</span>\n                                         {% endif %}\n",
+    "app/templates/user/profile.html": "diff --git a/app/templates/user/profile.html b/app/templates/user/profile.html\nindex bbd5607..f60bdec 100644\n--- a/app/templates/user/profile.html\n+++ b/app/templates/user/profile.html\n@@ -4,7 +4,7 @@\n {% block title %}个人资料 - 西南大学教学信息中心{% endblock %}\n \n {% block content %}\n-{{ page_header('个人资料', '查看并维护个人信息、听课统计和最近活动。', '编辑资料', url_for('user.edit_profile')) }}\n+{{ page_header('个人资料', '', '编辑资料', url_for('user.edit_profile')) }}\n <div class=\"profile-layout\">\n     <!-- 个人信息卡片 -->\n     <div class=\"profile-sidebar\">\n@@ -213,7 +213,7 @@\n                     </div>\n                     <div class=\"col-md-3\">\n                         <h4 class=\"text-secondary\">{{ stats.days_since_last }}</h4>\n-                        <small class=\"text-muted\">距上次交表(天)</small>\n+                        <small class=\"text-muted\">距上次交表（天）</small>\n                     </div>\n                 </div>\n \n",
+    "app/templates/view.html": "diff --git a/app/templates/view.html b/app/templates/view.html\nindex b477394..bbdab0b 100644\n--- a/app/templates/view.html\n+++ b/app/templates/view.html\n@@ -77,7 +77,7 @@\n                         <p class=\"form-control-plaintext\">{{ form.teacher_college }}</p>\n                     </div>\n                     <div class=\"col-12 mb-3\">\n-                        <label class=\"form-label fw-bold\">课程(总标题)</label>\n+                        <label class=\"form-label fw-bold\">课程（总标题）</label>\n                         <p class=\"form-control-plaintext\">{{ form.course_title }}</p>\n                     </div>\n                     <div class=\"col-12 mb-3\">\n@@ -141,7 +141,7 @@\n                         <h5 class=\"text-primary border-bottom pb-2\">评价反馈</h5>\n                     </div>\n                     <div class=\"col-12 mb-3\">\n-                        <label class=\"form-label fw-bold\">课程反馈(优点)</label>\n+                        <label class=\"form-label fw-bold\">课程反馈（优点）</label>\n                         <div class=\"border rounded p-3 bg-light\">\n                             {{ form.course_feedback | replace('\\n', '<br>') | safe }}\n                         </div>\n",
+    "app/ui/workspace.py": "diff --git a/app/ui/workspace.py b/app/ui/workspace.py\nindex 6cdfa6e..c951244 100644\n--- a/app/ui/workspace.py\n+++ b/app/ui/workspace.py\n@@ -20,7 +20,7 @@ def _build_review_tasks(pending_forms):\n         return []\n     return [{\n         'label': '处理待审核表单',\n-        'description': f'{pending_forms} 份表单等待处理，进入审核队列继续工作。',\n+        'description': f'{pending_forms} 份待审核',\n         'endpoint': 'admin.review_forms',\n     }]\n \n@@ -82,7 +82,7 @@ def build_workspace(user, snapshot):\n             'role': user.role,\n             'role_slug': 'course-lookup',\n             'title': f'你好，{user.name}',\n-            'summary': '查找当前课表中的课程信息。' if snapshot.schedule_ready else '查看已提交的记录。',\n+            'summary': '',\n             'primary_action': ({'label': '查询课表', 'endpoint': 'user.course_lookup'}\n                                if snapshot.schedule_ready else {'label': '查看记录', 'endpoint': 'user.my_forms'}),\n             'metrics': [],\n@@ -95,14 +95,14 @@ def build_workspace(user, snapshot):\n         if snapshot.draft_saved:\n             tasks.append({\n                 'label': '继续未完成的听课表',\n-                'description': '草稿已经自动保存，可以从上次位置继续。',\n+                'description': '草稿已保存',\n                 'endpoint': 'user.submit_form',\n             })\n         return {\n             'role': user.role,\n             'role_slug': 'information-officer',\n             'title': f'你好，{user.name}',\n-            'summary': '继续今天的听课安排，或查看已经提交的记录。',\n+            'summary': '',\n             'primary_action': {'label': '填写听课表', 'endpoint': 'user.submit_form'},\n             'metrics': [\n                 {'label': '我的表单', 'value': snapshot.total_forms},\n@@ -121,11 +121,7 @@ def build_workspace(user, snapshot):\n             'role': user.role,\n             'role_slug': 'manager',\n             'title': f'你好，{user.name}',\n-            'summary': (\n-                f'先处理 {snapshot.pending_forms} 份待审核表单，再查看部门提交情况。'\n-                if has_pending_forms\n-                else '当前没有待审核表单，可以查看部门提交情况。'\n-            ),\n+            'summary': '',\n             'primary_action': {\n                 'label': '处理审核' if has_pending_forms else '查看审核队列',\n                 'endpoint': 'admin.review_forms',\n@@ -154,11 +150,7 @@ def build_workspace(user, snapshot):\n         'role': user.role,\n         'role_slug': 'super-admin',\n         'title': f'你好，{user.name}',\n-        'summary': (\n-            f'全局共有 {snapshot.pending_forms} 份待审核表单，请优先完成审核。'\n-            if has_pending_forms\n-            else '当前没有待审核表单，可以查看全局提交情况。'\n-        ),\n+        'summary': '',\n         'primary_action': {\n             'label': '处理审核' if has_pending_forms else '查看审核队列',\n             'endpoint': 'admin.review_forms',\n",
+    "tests/test_listening_assistant_template.py": "diff --git a/tests/test_listening_assistant_template.py b/tests/test_listening_assistant_template.py\nindex 1dce89f..c48c6a6 100644\n--- a/tests/test_listening_assistant_template.py\n+++ b/tests/test_listening_assistant_template.py\n@@ -176,7 +176,7 @@ def test_only_live_guide_remains_with_inline_event_safety():\n \n def test_source_conflict_and_confirmation_contract_stays_additive():\n     for marker in (\n-        '当前权威课表',\n+        '当前课表',\n         '备用课表线索 · 需核对',\n         'source_batch_id',\n         'needs_confirmation',\n@@ -231,7 +231,7 @@ def test_accessibility_responsive_and_local_assets_are_present():\n         text = path.read_text(encoding='utf-8')\n         assert 'https://cdn.' not in text\n         assert 'https://unpkg.' not in text\n-    assert '<script src=\"{{ url_for(\\'static\\', filename=\\'js/listening-assistant.js\\') }}\"></script>' in TEMPLATE\n+    assert '<script src=\"{{ url_for(\\'static\\', filename=\\'js/listening-assistant.js\\', v=\\'20261014-copy\\') }}\"></script>' in TEMPLATE\n     assert '<link rel=\"stylesheet\" href=\"{{ url_for(\\'static\\', filename=\\'css/listening-assistant.css\\', v=\\'20261013-complement\\') }}\">' in TEMPLATE\n \n \n@@ -312,7 +312,7 @@ def test_new_draft_clears_stale_date_and_period_display_text():\n     assert 'if (!startPeriod || !endPeriod)' in TEMPLATE\n     assert 'periodDisplay.textContent = \\'\\'' in TEMPLATE\n def test_completed_candidate_view_replaces_pending_confirmation_copy():\n-    assert '已确认的候选与来源' in TEMPLATE + SCRIPT\n+    assert '已确认课程' in TEMPLATE + SCRIPT\n     assert '课程信息已填入。' in SCRIPT\n     assert 'data-completion-issues' in TEMPLATE\n     assert 'data-completion-recommendation' in TEMPLATE\n",
+    "tests/test_site_context_guidance.py": "diff --git a/tests/test_site_context_guidance.py b/tests/test_site_context_guidance.py\nindex fc5799a..9846d17 100644\n--- a/tests/test_site_context_guidance.py\n+++ b/tests/test_site_context_guidance.py\n@@ -90,4 +90,4 @@ def test_confirmed_building_resolves_location_warning_on_course_card():\n         door_hypotheses=[{'value':'0609','score':.99}],clock='09:00')\n     c=r['candidates'][0]\n     assert '楼栋已由你确认' in c['match_reasons']\n-    assert '该楼栋定位证据不足' not in c['match_uncertainties']\n+    assert '无法凭定位确认该楼栋' not in c['match_uncertainties']\n",
+    "tests/test_workspace_navigation.py": "diff --git a/tests/test_workspace_navigation.py b/tests/test_workspace_navigation.py\nindex 252b631..f534e2a 100644\n--- a/tests/test_workspace_navigation.py\n+++ b/tests/test_workspace_navigation.py\n@@ -79,7 +79,7 @@ class WorkspaceViewModelTest(unittest.TestCase):\n         model = build_workspace(user, WorkspaceSnapshot(pending_forms=7, department_users=18, department_forms=38))\n         self.assertEqual(model['title'], '你好，林老师')\n         self.assertEqual(model['primary_action']['label'], '处理审核')\n-        self.assertEqual(model['summary'], '先处理 7 份待审核表单，再查看部门提交情况。')\n+        self.assertEqual(model['summary'], '')\n         self.assertEqual(model['primary_action']['endpoint'], 'admin.review_forms')\n         self.assertEqual(model['metrics'][0]['value'], 7)\n         self.assertEqual(model['tasks'][0]['endpoint'], 'admin.review_forms')\n@@ -90,7 +90,7 @@ class WorkspaceViewModelTest(unittest.TestCase):\n         model = build_workspace(user, WorkspaceSnapshot(pending_forms=0, department_users=18, department_forms=38))\n         self.assertEqual(model['title'], '你好，林老师')\n         self.assertEqual(model['primary_action']['label'], '查看审核队列')\n-        self.assertEqual(model['summary'], '当前没有待审核表单，可以查看部门提交情况。')\n+        self.assertEqual(model['summary'], '')\n         self.assertEqual(model['tasks'], [])\n \n     def test_super_admin_pending_copy_and_action_follow_real_state(self):\n@@ -101,7 +101,7 @@ class WorkspaceViewModelTest(unittest.TestCase):\n             WorkspaceSnapshot(pending_forms=3, total_users=52, total_forms=118),\n         )\n         self.assertEqual(pending['title'], '你好，超管测试')\n-        self.assertEqual(pending['summary'], '全局共有 3 份待审核表单，请优先完成审核。')\n+        self.assertEqual(pending['summary'], '')\n         self.assertEqual(pending['primary_action']['label'], '处理审核')\n \n         empty = build_workspace(\n@@ -109,7 +109,7 @@ class WorkspaceViewModelTest(unittest.TestCase):\n             WorkspaceSnapshot(pending_forms=0, total_users=52, total_forms=118),\n         )\n         self.assertEqual(empty['title'], '你好，超管测试')\n-        self.assertEqual(empty['summary'], '当前没有待审核表单，可以查看全局提交情况。')\n+        self.assertEqual(empty['summary'], '')\n         self.assertEqual(empty['primary_action']['label'], '查看审核队列')\n \n     def test_super_admin_gets_global_system_task(self):\n"
+  }
+}

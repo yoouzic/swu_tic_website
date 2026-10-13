@@ -4,7 +4,7 @@
 {% block title %}编辑资料 - 西南大学教学信息中心{% endblock %}
 
 {% block content %}
-{{ page_header('编辑资料', '更新可编辑的信息，保存后会返回个人资料页。') }}
+{{ page_header('编辑资料', '') }}
 <div class="row justify-content-center">
     <div class="col-md-8">
         <div class="profile-section">
@@ -16,7 +16,7 @@
             <div class="profile-section__body">
                 <div class="alert alert-info" role="alert">
                     <i class="bi bi-info-circle"></i>
-                    请确保信息准确无误。带 <span class="text-danger">*</span> 的字段为必填项。
+                    带 <span class="text-danger">*</span> 的字段为必填项。
                 </div>
                 {% macro locked_hint(field) -%}
                     {% if field not in editable_fields %}
@@ -117,7 +117,6 @@
                                 <input type="tel" class="form-control" id="phone" name="phone" 
                                        value="{{ user.phone }}" placeholder="请输入11位手机号" {% if can_edit_phone %}required{% else %}readonly{% endif %}>
                                 {% if can_edit_phone %}
-                                    <div class="form-text">请输入有效的11位手机号码</div>
                                 {% else %}
                                     {{ locked_hint('phone') }}
                                 {% endif %}

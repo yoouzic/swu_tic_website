@@ -4,7 +4,7 @@
 {% block title %}个人资料 - 西南大学教学信息中心{% endblock %}
 
 {% block content %}
-{{ page_header('个人资料', '查看并维护个人信息、听课统计和最近活动。', '编辑资料', url_for('user.edit_profile')) }}
+{{ page_header('个人资料', '', '编辑资料', url_for('user.edit_profile')) }}
 <div class="profile-layout">
     <!-- 个人信息卡片 -->
     <div class="profile-sidebar">
@@ -213,7 +213,7 @@
                     </div>
                     <div class="col-md-3">
                         <h4 class="text-secondary">{{ stats.days_since_last }}</h4>
-                        <small class="text-muted">距上次交表(天)</small>
+                        <small class="text-muted">距上次交表（天）</small>
                     </div>
                 </div>
 

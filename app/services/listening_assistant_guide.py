@@ -376,7 +376,7 @@ class ListeningAssistantGuideService:
         )
         return GuidedQuestion(
             kind=kind,
-            prompt='请选择最符合的课程候选：',
+            prompt='请选择本次听课课程：',
             options=options,
         )
 

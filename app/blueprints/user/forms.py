@@ -671,11 +671,11 @@ def submit_form():
             try:
                 parsed_version_id = positive_sqlite_id(version_id)
             except ValueError:
-                flash('表单版本标识无效，请从我的记录重新打开。', 'error')
+                flash('无法打开这份表单，请通过“查看记录”重新打开。', 'error')
                 return _render_submitted_form(user), 400
             base = db.session.get(LectureForm, parsed_version_id)
             if base is None:
-                flash('表单不存在，请从我的记录重新打开。', 'error')
+                flash('表单不存在，请通过“查看记录”重新打开。', 'error')
                 return _render_submitted_form(user), 404
             logical_id = base.unique_id or base.id
             chain = LectureForm.query.filter(db.or_(LectureForm.unique_id == logical_id,
@@ -709,7 +709,7 @@ def submit_form():
             try:
                 capture_id = positive_sqlite_id(capture_id or posted_capture) if capture_id or posted_capture else None
             except ValueError:
-                flash('听课记录标识无效，请重新打开记录后提交。', 'error')
+                flash('无法读取这次听课记录，请通过“查看记录”重新打开后提交。', 'error')
                 return _render_submitted_form(recovery_user, recovery_form), 400
             site_capture=LectureSiteCapture.query.filter_by(id=capture_id,user_id=user.id,is_archived=False).first() if capture_id else None
             if not site_capture:
@@ -1134,7 +1134,7 @@ def edit_form(form_id):
         return redirect(url_for('user.my_forms'))
     latest = form.get_latest_version()
     if latest is None or latest.id != form.id:
-        flash('该表单已有更新版本，请从我的记录重新打开。', 'error')
+        flash('该表单已有更新版本，请通过“查看记录”重新打开。', 'error')
         return redirect(url_for('user.my_forms'))
     if form.status not in ('待审核', '已驳回'):
         abort(403)

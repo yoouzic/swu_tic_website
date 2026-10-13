@@ -264,7 +264,7 @@
                                 </div>
                                 <div data-completion-methods hidden>
                                     <h3 class="listening-assistant__question">本节课实际使用了哪些教学方法？</h3>
-                                    <p class="form-completion-assistant__condition">可多选，请至少选择一种。</p>
+                                    <p class="form-completion-assistant__condition">可多选，至少一项。</p>
                                     <div class="form-completion-assistant__choices">
                                         <label for="completionMethodPpt"><input class="form-check-input" type="checkbox" id="completionMethodPpt" data-completion-method="tm_ppt">PPT演示法</label>
                                         <label for="completionMethodLecture"><input class="form-check-input" type="checkbox" id="completionMethodLecture" data-completion-method="tm_lecture">讲授法</label>
@@ -278,7 +278,7 @@
                                 </div>
                                 <div data-completion-ratings hidden>
                                     <h3 class="listening-assistant__question">哪些项目没有达到“非常好”？</h3>
-                                    <p class="form-completion-assistant__condition">可多选。点击确认后，未选的适用项目将填写为“非常好”，选中的项目再逐项评价。</p>
+                                    <p class="form-completion-assistant__condition">可多选；未选项目默认为“非常好”，所选项目逐项评价。</p>
                                     <div class="form-completion-assistant__choices">
                                         <label for="completionDiscipline"><input class="form-check-input" type="checkbox" id="completionDiscipline" data-completion-rating="classroom_discipline">管理课堂纪律</label>
                                         <label for="completionAtmosphere"><input class="form-check-input" type="checkbox" id="completionAtmosphere" data-completion-rating="classroom_atmosphere">调动课堂气氛</label>
@@ -304,7 +304,6 @@
                                 </div>
                                 <div data-completion-recommendation hidden>
                                     <h3 class="listening-assistant__question">是否推荐这节课？</h3>
-                                    <p class="form-completion-assistant__condition">请根据实际听课情况独立选择是否推荐。</p>
                                     <div class="listening-assistant__actions">
                                         <button type="button" class="btn btn-outline-primary" data-completion-recommend-answer="yes">推荐</button>
                                         <button type="button" class="btn btn-outline-primary" data-completion-recommend-answer="no">不推荐</button>
@@ -348,7 +347,7 @@
                             <div class="col-12">
                                 <h3 class="form-section-title">课程信息</h3>
                                 <div id="autoFillAlert" class="alert alert-info alert-dismissible fade show" style="display: none;">
-                                    <i class="bi bi-info-circle"></i> 已根据您的听课登记自动填充部分课程信息，您可以根据实际情况进行修改。
+                                    <i class="bi bi-info-circle"></i> 已带入登记课程信息，请核对。
                                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>
                                 </div>
                             </div>
@@ -438,14 +437,14 @@
                                     <input type="text" class="form-control" id="student_grade_class" name="student_grade_class" 
                                            data-format-url="{{ url_for('user.format_student_grade_class_input') }}"
                                            placeholder="如：2019级英语（师范）01、02班" required>
-                                    <div class="form-text">离开输入框后自动规范年级、中文括号和数字班号。</div>
+                                    <div class="form-text">多个专业用中文分号分隔。</div>
                                 </div>
                             </div>
                             <div class="col-12">
                                 <div class="mb-3">
                                     <label for="course_changes" class="form-label">课程信息变化 <span class="text-danger">*</span></label>
                                     <textarea class="form-control" id="course_changes" name="course_changes" rows="2" 
-                                              placeholder='一般三个方面:老师、教室、时间,没有变化填"无"' required></textarea>
+                                              placeholder='教师、教室或时间有变化请说明；没有填“无”。' required></textarea>
                                 </div>
                             </div>
                         </div>
@@ -459,7 +458,7 @@
                                 <div class="mb-3">
                                     <label for="abnormal_situation" class="form-label">异常情况反映 <span class="text-danger">*</span></label>
                                     <textarea class="form-control" id="abnormal_situation" name="abnormal_situation" rows="2" 
-                                              placeholder='根据事实,没有则填"无"' required></textarea>
+                                              placeholder='如实填写；没有填“无”。' required></textarea>
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -547,7 +546,7 @@
                                 <div class="mb-3">
                             <label for="course_feedback" class="form-label">课程反馈（优点） <span class="text-danger">*</span></label>
                                     <textarea class="form-control" id="course_feedback" name="course_feedback" rows="4" 
-                                              placeholder="五十字以上,评价的内容实在且有针对性" required></textarea>
+                                              placeholder="至少50字，请写具体的课堂优点。" required></textarea>
                                     <div class="d-flex justify-content-between">
                                         <small id="feedback_counter" class="text-muted">已输入 0 字</small>
                                         <small id="feedback_limit_hint" class="text-danger" style="display:none">反馈内容需至少50字</small>
@@ -558,7 +557,7 @@
                                 <div class="mb-3">
                                     <label for="suggestions" class="form-label">不足及建议 <span class="text-danger">*</span></label>
                                     <textarea class="form-control" id="suggestions" name="suggestions" rows="4" 
-                                              placeholder='根据事实,没有则填"无"' required></textarea>
+                                              placeholder='如实填写；没有填“无”。' required></textarea>
                                 </div>
                             </div>
                         </div>
@@ -665,9 +664,7 @@
             </div>
             <div class="modal-body">
                 <div class="alert registration-choice-note" id="unusedRegistrationsModalDescription">
-                    <i class="bi bi-info-circle-fill"></i> 您有以下已登记但未填表的课程。是否要为其中一门课程提交反馈？
-                    <br>
-                    <small>选择已登记课程可以自动填充表单信息，并方便管理。</small>
+                    <i class="bi bi-info-circle-fill"></i> 选择一门已登记课程，带入课程信息。
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover border form-list-table">
@@ -1342,8 +1339,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-{% if candidates_ready %}<script src="{{ url_for('static', filename='js/listening-assistant.js') }}"></script>{% endif %}
+{% if candidates_ready %}<script src="{{ url_for('static', filename='js/listening-assistant.js', v='20261014-copy') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='js/form-completion-assistant.js', v='20261013-complement') }}"></script>
 <script src="{{ url_for('static', filename='js/student-grade-class-input.js', v='20261013') }}"></script>
-{% if capture_enabled and not form %}<script src="{{ url_for('static', filename='js/site-location.js') }}"></script>{% if candidates_ready %}<script src="{{ url_for('static', filename='js/site-context-guide.js') }}"></script>{% endif %}<script src="{{ url_for('static', filename='js/site-capture.js') }}"></script><script src="{{ url_for('static', filename='js/site-door-crop.js') }}"></script><script src="{{ url_for('static', filename='js/site-building-map.js') }}"></script>{% endif %}
+{% if capture_enabled and not form %}<script src="{{ url_for('static', filename='js/site-location.js') }}"></script>{% if candidates_ready %}<script src="{{ url_for('static', filename='js/site-context-guide.js', v='20261014-copy') }}"></script>{% endif %}<script src="{{ url_for('static', filename='js/site-capture.js', v='20261014-copy') }}"></script><script src="{{ url_for('static', filename='js/site-door-crop.js', v='20261014-copy') }}"></script><script src="{{ url_for('static', filename='js/site-building-map.js', v='20261014-copy') }}"></script>{% endif %}
 {% endblock %}

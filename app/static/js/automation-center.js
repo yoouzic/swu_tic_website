@@ -202,7 +202,7 @@
             });
             pendingBatchPayload = null;
             if (batchStartButton) batchStartButton.hidden = true;
-            setFeedback('自动审核批次已启动，进度会在当前页面更新。', 'info');
+            setFeedback('自动审核已启动。', 'info');
             await pollAutomationBatch(result.batch_id);
         } catch (error) {
             setFeedback(error.message, 'danger');
@@ -411,7 +411,7 @@
             getPreviewModal()?.hide();
             const datasets = await jsonRequest('/admin/api/automation/datasets');
             renderDatasets(datasets);
-            setFeedback('数据集已启用，历史记录和覆盖统计已刷新。', 'success');
+            setFeedback('已启用。', 'success');
         } catch (error) {
             setFeedback(error.message, 'danger');
         }
@@ -427,24 +427,24 @@
         const parametersText = panel.querySelector('#automationRuleParameters')?.value.trim() || '{}';
         const changeReason = panel.querySelector('#automationRuleChangeReason')?.value.trim();
         if (!ruleKey || !handler || !changeReason) {
-            setFeedback('规则 key、处理器和变更原因不能为空。', 'warning');
+            setFeedback('规则标识、处理器和变更原因不能为空。', 'warning');
             return;
         }
         let parameters;
         try {
             parameters = JSON.parse(parametersText);
         } catch (error) {
-            setFeedback('parameters 必须是有效 JSON。', 'warning');
+            setFeedback('规则参数必须是有效 JSON。', 'warning');
             return;
         }
         if (!parameters || Array.isArray(parameters) || typeof parameters !== 'object') {
-            setFeedback('parameters 必须是 JSON 对象。', 'warning');
+            setFeedback('规则参数必须是 JSON 对象。', 'warning');
             return;
         }
         try {
             await jsonRequest(`/admin/api/automation/rules/${encodeURIComponent(ruleKey)}/revisions`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({handler, enabled, severity, parameters, change_reason: changeReason})});
             form.reset();
-            setFeedback('规则 revision 已保存。', 'success');
+            setFeedback('规则版本已保存。', 'success');
             const rules = await jsonRequest('/admin/api/automation/rules');
             renderRules(rules);
         } catch (error) {

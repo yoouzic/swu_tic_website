@@ -4,12 +4,12 @@
 {% block title %}听课登记 - 西大听课工作台{% endblock %}
 
 {% block content %}
-{{ page_header('听课登记', '选择课程并在当前页面完成听课预约。', '填写听课表', url_for('user.submit_form')) }}
+{{ page_header('听课登记', '', '填写听课表', url_for('user.submit_form')) }}
 <div class="activity-compatibility">
     {% include 'user/_registration_panel.html' %}
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/activity-center.js') }}"></script>
+<script src="{{ url_for('static', filename='js/activity-center.js', v='20261014-copy') }}"></script>
 {% endblock %}

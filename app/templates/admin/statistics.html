@@ -7,7 +7,7 @@
 
 {% block content %}
 <div class="container-fluid">
-    {{ page_header('统计分析', '先查看核心指标与趋势，再按需进入专项统计或请假管理。') }}
+    {{ page_header('统计分析', '') }}
     {{ statistics_nav('overview', can_access_extended_stats) }}
 
     <!-- 统计概览必须先于低频管理模块。 -->

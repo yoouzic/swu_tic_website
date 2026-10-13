@@ -20,7 +20,7 @@ def _build_review_tasks(pending_forms):
         return []
     return [{
         'label': '处理待审核表单',
-        'description': f'{pending_forms} 份表单等待处理，进入审核队列继续工作。',
+        'description': f'{pending_forms} 份待审核',
         'endpoint': 'admin.review_forms',
     }]
 
@@ -82,7 +82,7 @@ def build_workspace(user, snapshot):
             'role': user.role,
             'role_slug': 'course-lookup',
             'title': f'你好，{user.name}',
-            'summary': '查找当前课表中的课程信息。' if snapshot.schedule_ready else '查看已提交的记录。',
+            'summary': '',
             'primary_action': ({'label': '查询课表', 'endpoint': 'user.course_lookup'}
                                if snapshot.schedule_ready else {'label': '查看记录', 'endpoint': 'user.my_forms'}),
             'metrics': [],
@@ -95,14 +95,14 @@ def build_workspace(user, snapshot):
         if snapshot.draft_saved:
             tasks.append({
                 'label': '继续未完成的听课表',
-                'description': '草稿已经自动保存，可以从上次位置继续。',
+                'description': '草稿已保存',
                 'endpoint': 'user.submit_form',
             })
         return {
             'role': user.role,
             'role_slug': 'information-officer',
             'title': f'你好，{user.name}',
-            'summary': '继续今天的听课安排，或查看已经提交的记录。',
+            'summary': '',
             'primary_action': {'label': '填写听课表', 'endpoint': 'user.submit_form'},
             'metrics': [
                 {'label': '我的表单', 'value': snapshot.total_forms},
@@ -121,11 +121,7 @@ def build_workspace(user, snapshot):
             'role': user.role,
             'role_slug': 'manager',
             'title': f'你好，{user.name}',
-            'summary': (
-                f'先处理 {snapshot.pending_forms} 份待审核表单，再查看部门提交情况。'
-                if has_pending_forms
-                else '当前没有待审核表单，可以查看部门提交情况。'
-            ),
+            'summary': '',
             'primary_action': {
                 'label': '处理审核' if has_pending_forms else '查看审核队列',
                 'endpoint': 'admin.review_forms',
@@ -154,11 +150,7 @@ def build_workspace(user, snapshot):
         'role': user.role,
         'role_slug': 'super-admin',
         'title': f'你好，{user.name}',
-        'summary': (
-            f'全局共有 {snapshot.pending_forms} 份待审核表单，请优先完成审核。'
-            if has_pending_forms
-            else '当前没有待审核表单，可以查看全局提交情况。'
-        ),
+        'summary': '',
         'primary_action': {
             'label': '处理审核' if has_pending_forms else '查看审核队列',
             'endpoint': 'admin.review_forms',

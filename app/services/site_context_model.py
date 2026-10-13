@@ -215,10 +215,10 @@ def rank_site_candidates(candidates, *, location=None, door_hypotheses=(), clock
                          parameters=PARAMETERS, question_count=0):
     from app.services.site_context_guidance import choose_guidance
     if type(question_count) is not int or not 0<=question_count<=2:
-        raise ValueError('补问次数格式无效。')
+        raise ValueError('课程查找暂未完成，请重新查找。')
     facts=validate_facts(confirmed_facts or {})
     if not isinstance(asked,(tuple,list)) or len(asked)>4 or any(k not in FACT_KINDS for k in asked):
-        raise ValueError('提问记录格式无效。')
+        raise ValueError('课程查找暂未完成，请重新查找。')
     data=load_buildings() if buildings is None else buildings
     summary=location_summary(location,parameters)
     hypotheses=normalize_hypotheses(door_hypotheses)
@@ -252,7 +252,7 @@ def rank_site_candidates(candidates, *, location=None, door_hypotheses=(), clock
         position=geo.get(building,1)
         location_weight=parameters.position_weight*summary['reliability'] if use_geo else 0
         if 'building' in facts:reasons.append('楼栋已由你确认')
-        elif not use_geo:flags.append('该楼栋定位证据不足')
+        elif not use_geo:flags.append('无法凭定位确认该楼栋')
         elif position>.45:reasons.append('定位较接近')
         else:flags.append('定位可能偏移')
         door=_door_likelihood(room,hypotheses) if hypotheses and 'room_number' not in facts else 1
@@ -269,7 +269,7 @@ def rank_site_candidates(candidates, *, location=None, door_hypotheses=(), clock
                  'time_supported':'period' in facts or (delta is not None and delta<=10 and time_reliability>=.5),
                  'nearby':distance is not None and distance<=radius}
         manual_time=period[1]>len(PERIODS)
-        if manual_time:flags.append('节次超出已配置作息，需手动核对')
+        if manual_time:flags.append('该节次无法自动核对，请手动核对')
         if delta is not None:
             if delta==0:reasons.append('拍照时段吻合')
             elif delta<=10:reasons.append('接近该课程时段')
