@@ -58,6 +58,7 @@ def _public(record):
                and assistant.get('source_kind')=='primary'
                and assistant.get('semester')==availability['semester']
                and str(assistant.get('source_batch_id'))==str(availability['batch_id']))
+    course_title=stored.get('course_title') if confirmed else None
     return {'id':record.id,'photo_url':url_for('user.site_capture_photo',capture_id=record.id),
             'received_at':record.received_at,'record_date':record.received_at[:10],
             'room_number':record.room_number,'building':record.building,
@@ -66,6 +67,7 @@ def _public(record):
             'has_location':bool(json.loads(record.location_json)),
             'location_accuracy':json.loads(record.location_json).get('accuracy'),
             'course_confirmed':bool(confirmed),
+            'course_title':course_title.strip() if isinstance(course_title,str) else '',
             'submitted':bool(record.form_id)}
 
 

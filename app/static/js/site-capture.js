@@ -127,6 +127,9 @@
             const buildingInput=document.getElementById('siteBuilding');
             if(switching||!roomInput.value)roomInput.value=data.room_number||'';
             if(switching||!buildingInput.value)buildingInput.value=data.building||'';
+            const title=el('course-title');
+            const courseTitle=data.course_confirmed&&typeof data.course_title==='string'?data.course_title.trim():'';
+            if(title){title.textContent=courseTitle;title.hidden=!courseTitle;}
             status(data.course_confirmed?'课程已确认，可以填写评价。':(scheduleReady?'照片已保存，待确认课程。':'照片已保存，请确认教学楼和门牌，再手动填写课程。'));
             window.dispatchEvent?.(new CustomEvent('lecture-site-capture-loaded',{detail:data}));
         }
@@ -136,6 +139,7 @@
             const captureInput=document.getElementById('site_capture_id');if(captureInput)captureInput.value='';
             el('record').hidden=true;el('new').hidden=true;el('open').disabled=false;
             el('open').textContent='拍门牌';el('open').hidden=false;el('review').hidden=true;el('time').textContent='';
+            const title=el('course-title');if(title){title.textContent='';title.hidden=true;}
             status(scheduleReady?'拍摄门牌，查找本次课程。':'拍摄门牌，确认本次教室。');el('courses')?.replaceChildren();setMode(false);
         }
         async function restore(id){
