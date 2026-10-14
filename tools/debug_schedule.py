@@ -17,10 +17,10 @@ except ImportError:  # pragma: no cover - only while the shared helper is absent
     persist_courses_for_batch = None
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SCHEDULE = ROOT / '2025-2026-2全校课表260413.xlsx'
-# Calendar supplied with this workspace's historical test timetable, keyed by
+DEFAULT_SCHEDULE = ROOT / '26-27-1全校课表(1).xlsx'
+# Calendars supplied with this workspace's current and historical timetables, keyed by
 # semester identifier and (as a fallback) by the workbook's raw 学期 cell.
-KNOWN_CALENDARS = {'2025-2026-2': '2026-03-02'}
+KNOWN_CALENDARS = {'2026-2027-1': '2026-08-31', '2025-2026-2': '2026-03-02'}
 
 
 def resolve_first_week_monday(semester, *, required, workbook_term=''):

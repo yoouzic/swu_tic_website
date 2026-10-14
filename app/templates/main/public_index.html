@@ -4,9 +4,14 @@
 
 {% block content %}
 <div class="auth-layout">
-    <section class="auth-intro">
-        <span class="auth-kicker">西南大学教学信息中心</span>
-        <h1>西大听课工作台</h1>
+    <section class="auth-intro" aria-labelledby="public-intro-title">
+        <div class="auth-brand">
+            <span class="app-brand__mark" aria-hidden="true"><i class="bi bi-journal-bookmark"></i></span>
+            <div><span class="auth-kicker">西南大学教学信息中心</span><span class="auth-edition">SWU · TEACHING INFORMATION CENTER</span></div>
+        </div>
+        <h1 id="public-intro-title">认真听见，<br><em>共同成长。</em></h1>
+        <p>记录课堂里的发现，让每一份教学反馈，成为校园向前的一小步。</p>
+        <div class="auth-note"><i class="bi bi-pencil" aria-hidden="true"></i><span>听课 · 记录 · 反馈</span></div>
     </section>
     <section class="auth-panel" aria-labelledby="public-panel-title">
         <i class="bi bi-journal-check auth-panel__icon" aria-hidden="true"></i>

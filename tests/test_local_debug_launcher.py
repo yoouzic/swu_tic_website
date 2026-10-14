@@ -10,11 +10,110 @@ import time
 import unittest
 from urllib.request import urlopen
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class DebugScheduleDefaultsTest(unittest.TestCase):
+    """Exercise debug schedule selection without a real workbook or database."""
+
+    def setUp(self):
+        from tools import debug_schedule
+        self.schedule = debug_schedule
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop('LOCAL_DEBUG_SCHEDULE_FILE', None)
+        os.environ.pop('LOCAL_DEBUG_FIRST_WEEK_MONDAY', None)
+
+    def prepare_with_fake_storage(self, *, reused_semester=None):
+        import pandas as pd
+        batch = SimpleNamespace(id=17, semester=reused_semester or '2026-2027-1')
+        batches = Mock()
+        batches.filter_by.return_value.all.return_value = [batch] if reused_semester else []
+        entries = Mock()
+        entries.filter_by.return_value.count.return_value = 1
+        settings = Mock()
+        session = SimpleNamespace(commit=Mock(), rollback=Mock())
+        read_excel = Mock(return_value=pd.DataFrame([
+            {'学年': '2026-2027', '学期': '1', '姓名': '测试教师',
+             '课程名称': '测试课程', '星期几': '1', '上课节次': '第3-4节',
+             '场地名称': '8-309', '教学班组成': '2026测试01班', '起始周': '1-20'}
+        ]))
+        persisted = Mock(return_value=[batch])
+        with patch.multiple(
+            self.schedule,
+            ScheduleImportBatch=SimpleNamespace(query=batches),
+            ListeningAssistantScheduleEntry=SimpleNamespace(query=entries),
+            SystemSetting=SimpleNamespace(set=settings),
+            db=SimpleNamespace(session=session),
+            resolve_current_schedule_snapshot=Mock(return_value=SimpleNamespace(is_ready=True, batch=batch)),
+            persist_import_snapshot=persisted,
+            persist_listening_assistant_entries=Mock(return_value=[object()]),
+            persist_courses_for_batch=Mock(return_value={'courses_added': 1, 'errors': []}),
+        ), patch.object(Path, 'is_file', return_value=True), \
+                patch.object(Path, 'read_bytes', return_value=b'isolated schedule fixture'), \
+                patch.object(self.schedule.pd, 'read_excel', read_excel):
+            result = self.schedule.prepare_debug_schedule()
+        return SimpleNamespace(result=result, settings=settings, session=session,
+                               read_excel=read_excel, persisted=persisted)
+
+    def test_no_environment_defaults_to_current_workspace_workbook(self):
+        expected = ROOT / '26-27-1全校课表(1).xlsx'
+        self.assertEqual(self.schedule.DEFAULT_SCHEDULE, expected)
+        result = self.prepare_with_fake_storage()
+        result.read_excel.assert_called_once_with(expected.resolve())
+        result.settings.assert_any_call('teaching_current_semester', '2026-2027-1')
+        result.settings.assert_any_call('teaching_first_week_monday', '2026-08-31')
+        result.session.commit.assert_called_once_with()
+
+    def test_current_semester_has_its_confirmed_calendar_without_an_environment_override(self):
+        self.assertEqual(
+            self.schedule.resolve_first_week_monday('2026-2027-1', required=True),
+            '2026-08-31',
+        )
+
+    def test_explicit_file_and_calendar_overrides_remain_authoritative(self):
+        explicit = ROOT / 'isolated-explicit-fixture.xlsx'
+        os.environ.update({'LOCAL_DEBUG_SCHEDULE_FILE': str(explicit),
+                           'LOCAL_DEBUG_FIRST_WEEK_MONDAY': '2026-09-07'})
+        result = self.prepare_with_fake_storage()
+        result.read_excel.assert_called_once_with(explicit.resolve())
+        result.settings.assert_any_call('teaching_first_week_monday', '2026-09-07')
+
+    def test_historical_calendar_remains_available(self):
+        self.assertEqual(
+            self.schedule.resolve_first_week_monday('2025-2026-2', required=True),
+            '2026-03-02',
+        )
+
+    def test_explicit_invalid_calendar_is_not_silently_replaced_by_a_known_date(self):
+        for value, error_type in [('not-a-date', ValueError), ('2026-09-08', RuntimeError)]:
+            with self.subTest(value=value):
+                os.environ['LOCAL_DEBUG_FIRST_WEEK_MONDAY'] = value
+                with self.assertRaises(error_type):
+                    self.schedule.resolve_first_week_monday('2026-2027-1', required=True)
+
+    def test_same_sha_reuse_applies_the_current_known_calendar_without_reimporting(self):
+        result = self.prepare_with_fake_storage(reused_semester='2026-2027-1')
+        self.assertIn('直接复用', result.result)
+        result.settings.assert_any_call('teaching_current_semester', '2026-2027-1')
+        result.settings.assert_any_call('teaching_first_week_monday', '2026-08-31')
+        result.read_excel.assert_not_called()
+        result.persisted.assert_not_called()
+        result.session.commit.assert_called_once_with()
+
+    def test_same_sha_reuse_still_applies_an_explicit_corrected_anchor(self):
+        os.environ['LOCAL_DEBUG_FIRST_WEEK_MONDAY'] = '2026-09-07'
+        result = self.prepare_with_fake_storage(reused_semester='2025-2026-2')
+        result.settings.assert_any_call('teaching_first_week_monday', '2026-09-07')
+        result.read_excel.assert_not_called()
+        result.persisted.assert_not_called()
 
 
 class LocalDebugDataTest(unittest.TestCase):
