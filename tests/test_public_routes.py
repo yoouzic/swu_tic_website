@@ -42,6 +42,17 @@ class PublicRouteTest(unittest.TestCase):
     def test_about_page_renders_public_shell_with_one_login_action(self):
         self.assert_public_page('/about')
 
+    def test_anonymous_home_and_login_keep_the_welcoming_intro(self):
+        self.assert_public_page('/')
+        for path in ('/', '/auth/login'):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                html = response.get_data(as_text=True)
+                self.assertIn('认真听见，<br><em>共同成长。</em>', html)
+                self.assertIn('记录课堂里的发现，让每一份教学反馈，成为校园向前的一小步。', html)
+                self.assertIn('SWU · TEACHING INFORMATION CENTER', html)
+
     def test_help_page_renders_public_shell_with_one_login_action(self):
         self.assert_public_page('/help')
 

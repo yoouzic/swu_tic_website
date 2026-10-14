@@ -62,7 +62,13 @@ py -3.10 -m venv .venv
 
 ### 有课表：普通本地调试
 
-默认地址：**http://127.0.0.1:5087**。使用 `本地调试.cmd`，需要自行准备一份单学期全校课表。
+默认地址：**http://127.0.0.1:5087**。使用 `本地调试.cmd`，默认读取仓库根目录的 `26-27-1全校课表(1).xlsx`，配置为2026-2027学年第1学期，第一教学周周一为2026-08-31。启动或重启时检查文件内容，相同则复用，更新后重新导入。
+
+```powershell
+.\本地调试.cmd start
+```
+
+如需使用其他单学期课表，可显式指定文件及对应校历起点：
 
 ```powershell
 $env:LOCAL_DEBUG_SCHEDULE_FILE = 'D:\test-data\timetable.xlsx'
@@ -70,7 +76,7 @@ $env:LOCAL_DEBUG_FIRST_WEEK_MONDAY = '2026-03-02'
 .\本地调试.cmd start
 ```
 
-将示例路径和第一教学周周一改为该课表对应的实际值。工作区旧的春季测试课表不是仓库附件，新克隆不能依赖它；未知学期不配置教学日历会明确报错。重复启动复用已导入的同一文件。
+将示例路径和第一教学周周一改为该课表对应的实际值。全校课表是本地数据文件，新克隆需把文件放入默认位置或显式指定路径；未知学期需要配置教学日历起点。
 
 普通调试使用 `data/instance/debug/` 和 `data/storage/debug/`；无课表测试使用 `data/instance/no-schedule-debug/` 和 `data/storage/no-schedule-debug/`，两者的数据库、进程记录与登录 cookie 分开。启动器支持 `LOCAL_DEBUG_PYTHON`、`LOCAL_DEBUG_PORT`、`LOCAL_DEBUG_RUNTIME_ROOT`、`LOCAL_DEBUG_STORAGE_ROOT` 指定解释器、端口和隔离目录。
 
