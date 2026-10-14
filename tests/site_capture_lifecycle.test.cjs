@@ -17,7 +17,8 @@ class Node {
   dispatchEvent(event) { for (const callback of this.listeners[event.type] || []) callback(event); }
 }
 async function captureFixture(route, {scheduleReady=true}={}) {
-  const nodes = Object.fromEntries(['status','camera','open','retake','manual','cancel','new','shoot','find','classroom','later','review','record','photo','time','pending','history','corrections','tools','courses','video','map-row'].map(id => [id, new Node()]));
+  const nodes = Object.fromEntries(['status','camera','open','retake','manual','cancel','new','shoot','find','classroom','later','review','record','photo','time','pending','history','corrections','tools','courses','video','map-row','course-title'].map(id => [id, new Node()]));
+  nodes['course-title'].hidden=true;
   if(!scheduleReady){delete nodes.find;delete nodes.courses;}
   const inputs = Object.fromEntries(['siteRoom','siteBuilding','site_capture_id','siteBuildings','basic-information','course-information','classroom-review','feedback-information','signature-information'].map(id => [id, new Node()]));
   const form = new Node(), assistant = new Node(), reviewGuide = new Node(), completion = new Node(), nav = new Node(), window = new Node();form.inert=false;
@@ -259,6 +260,36 @@ test('loading a draft without a photo binding clears the previously displayed re
   assert.equal(fixture.inputs.site_capture_id.value,'');
 });
 
+test('restoring a confirmed photo shows its course name and form reset clears and hides it',async()=>{
+  const fixture=await captureFixture(async url=>{
+    if(url==='/user/api/site-capture/7')return response({success:true,data:{...photo(7),course_confirmed:true,course_title:'21世纪技能的教学及评价'}});
+    throw new Error(url);
+  });
+  await fixture.window.fire('lecture-form-draft-loaded',{data:{site_capture_id:7}});await settle();
+  assert.equal(fixture.nodes['course-title'].textContent,'21世纪技能的教学及评价');
+  assert.equal(fixture.nodes['course-title'].hidden,false);
+  await fixture.form.fire('reset');
+  assert.equal(fixture.nodes['course-title'].textContent,'');
+  assert.equal(fixture.nodes['course-title'].hidden,true);
+});
+
+test('loading an unconfirmed record or a draft without a photo clears the prior confirmed course name',async()=>{
+  const fixture=await captureFixture(async url=>{
+    if(url==='/user/api/site-capture/7')return response({success:true,data:{...photo(7),course_confirmed:true,course_title:'第一门课'}});
+    if(url==='/user/api/site-capture/8')return response({success:true,data:{...photo(8),course_title:'尚未确认的名称'}});
+    throw new Error(url);
+  });
+  await fixture.window.fire('lecture-form-draft-loaded',{data:{site_capture_id:7}});await settle();
+  assert.equal(fixture.nodes['course-title'].textContent,'第一门课');
+  await fixture.window.fire('lecture-form-draft-loaded',{data:{site_capture_id:8}});await settle();
+  assert.equal(fixture.nodes['course-title'].textContent,'');
+  assert.equal(fixture.nodes['course-title'].hidden,true);
+  await fixture.window.fire('lecture-form-draft-loaded',{data:{site_capture_id:7}});await settle();
+  await fixture.window.fire('lecture-form-draft-loaded',{data:{course_feedback:'新草稿'}});await settle();
+  assert.equal(fixture.nodes['course-title'].textContent,'');
+  assert.equal(fixture.nodes['course-title'].hidden,true);
+});
+
 test('finding courses saves current manually entered evaluation before PATCH and reloading',async()=>{
   let visible='刚刚手写的评价',persisted='上次的评价';const order=[];
   const fixture=await captureFixture(async(url,options)=>{
@@ -313,7 +344,7 @@ test('fallback course card saves evaluation typed after lookup before confirming
   let visible='查询前评价',persisted='旧评价',confirms=0;
   const candidate={candidate_id:'one',course_title:'课程',teacher_name:'教师',period:[1,2],student_grade_class:'一班'};
   const fixture=await captureFixture(async(url,options)=>{
-    if(url==='/user/api/site-capture/7/confirm'){confirms++;return response({success:true,data:{...photo(7),course_confirmed:true}});}
+    if(url==='/user/api/site-capture/7/confirm'){confirms++;return response({success:true,data:{...photo(7),course_confirmed:true,course_title:'确认响应的课程名'}});}
     if(url==='/user/api/site-capture/7')return response({success:true,data:photo(7),candidates:[candidate]});
     throw new Error(url);
   });
@@ -323,6 +354,8 @@ test('fallback course card saves evaluation typed after lookup before confirming
   await fixture.nodes.find.click();visible='查询后刚写的评价';
   await fixture.nodes.courses.children[0].click();
   assert.equal(confirms,1);assert.equal(visible,'查询后刚写的评价');
+  assert.equal(fixture.nodes['course-title'].textContent,'确认响应的课程名');
+  assert.equal(fixture.nodes['course-title'].hidden,false);
 });
 
 test('failed save before a fallback course card prevents confirmation and preserves current evaluation',async()=>{

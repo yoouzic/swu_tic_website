@@ -1,5 +1,7 @@
 import io
+import json
 from datetime import datetime, timezone, timedelta
+from types import SimpleNamespace
 from unittest import mock
 import pytest
 from tests.test_lecture_form_draft import LectureFormDraftTest as _DraftTests
@@ -130,13 +132,59 @@ def test_confirm_uses_actual_candidate_and_context_change_invalidates_it(setup_c
         cid=context['candidates'][0]['candidate_id']
         confirmed=case.client.post(f"/user/api/site-capture/{capture['id']}/confirm",json={'candidate_id':cid})
         assert confirmed.status_code==200,confirmed.get_json()
+        assert confirmed.get_json()['data']['course_confirmed'] is True
+        assert confirmed.get_json()['data']['course_title']=='测试课程'
+        restored=case.client.get(f"/user/api/site-capture/{capture['id']}")
+        assert restored.status_code==200
+        assert restored.get_json()['data']['course_title']=='测试课程'
         draft=case.client.get('/user/api/lecture_form_draft').get_json()['data']
         assert draft['course_title']=='测试课程'
         assert draft['start_period']=='3' and draft['end_period']=='4'
         assert draft['assistant']['candidate_id']==cid
         case.client.patch(f"/user/api/site-capture/{capture['id']}",json={'building':'10','room_number':'602'})
         assert db.session.get(LectureSiteCapture,capture['id']).confirmed_candidate_id is None
+        invalidated=case.client.get(f"/user/api/site-capture/{capture['id']}").get_json()['data']
+        assert invalidated['course_confirmed'] is False
+        assert invalidated['course_title']==''
         assert not case.client.get('/user/api/lecture_form_draft').get_json()['data'].get('assistant')
+
+
+@pytest.mark.parametrize('title,expected',[
+    ('  21世纪技能的教学及评价 \n','21世纪技能的教学及评价'),
+    (' \t\n',''),
+    (None,''),
+    (23,''),
+])
+def test_public_confirmed_course_title_uses_only_trimmed_saved_string(title,expected):
+    from app.app import app
+    from app.blueprints.user.site_capture import _public
+    candidate_id='primary:17:lesson'
+    stored={'course_title':title,'assistant':{'candidate_id':candidate_id,'stage':'confirmed',
+        'source_kind':'primary','semester':'2026-2027-1','source_batch_id':17}}
+    record=SimpleNamespace(id=7,received_at='2026-10-14T09:00:00',room_number='601',building='10',
+        period_number=1,ocr_status='recognized',ocr_alternatives_json='[]',location_json='{}',
+        form_id=None,confirmed_candidate_id=candidate_id,draft_json=json.dumps(stored))
+    availability={'candidates_ready':True,'batch_id':17,'semester':'2026-2027-1'}
+    with app.test_request_context(),mock.patch('app.blueprints.user.site_capture.current_schedule_availability',return_value=availability):
+        public=_public(record)
+    assert public['course_confirmed'] is True
+    assert public['course_title']==expected
+
+
+@pytest.mark.parametrize('saved_batch,confirmed_id',[(16,'primary:16:lesson'),(17,None)])
+def test_public_does_not_expose_saved_course_title_for_expired_or_unconfirmed_course(saved_batch,confirmed_id):
+    from app.app import app
+    from app.blueprints.user.site_capture import _public
+    stored={'course_title':'旧课程名','assistant':{'candidate_id':f'primary:{saved_batch}:lesson',
+        'stage':'confirmed','source_kind':'primary','semester':'2026-2027-1','source_batch_id':saved_batch}}
+    record=SimpleNamespace(id=7,received_at='2026-10-14T09:00:00',room_number='601',building='10',
+        period_number=1,ocr_status='recognized',ocr_alternatives_json='[]',location_json='{}',
+        form_id=None,confirmed_candidate_id=confirmed_id,draft_json=json.dumps(stored))
+    availability={'candidates_ready':True,'batch_id':17,'semester':'2026-2027-1'}
+    with app.test_request_context(),mock.patch('app.blueprints.user.site_capture.current_schedule_availability',return_value=availability):
+        public=_public(record)
+    assert public['course_confirmed'] is False
+    assert public['course_title']==''
 
 
 def test_multiple_site_records_resume_their_own_review(setup_capture):

@@ -1,6 +1,7 @@
 <section class="site-capture card mb-3" data-site-capture data-schedule-ready="{{ 'true' if schedule_availability.candidates_ready else 'false' }}">
     <div class="card-body">
 <div class="site-capture__heading"><h2 class="h5 mb-0">现场听课记录</h2><span data-site-time></span></div>
+        <p class="site-capture__confirmed-course" data-site-course-title hidden></p>
         <p data-site-status data-tone="info" role="status" aria-live="polite">{{ '拍摄门牌，查找本次课程。' if schedule_availability.candidates_ready else '拍摄门牌，确认本次教室。' }}</p>
         <div class="site-capture__actions">
             <button type="button" class="btn btn-primary" data-site-open>拍门牌</button>

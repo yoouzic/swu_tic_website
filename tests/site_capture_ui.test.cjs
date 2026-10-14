@@ -4,7 +4,9 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const source=fs.readFileSync('app/static/js/site-capture.js','utf8');
 function showRecordContext(record){
-  const nodes=Object.fromEntries(['record','open','photo','time','new','review','map-row','corrections','tools'].map(key=>[key,{}]));
+  const nodes=Object.fromEntries(['record','open','photo','time','new','review','map-row','corrections','tools','course-title'].map(key=>[key,{}]));
+  nodes['course-title'].textContent='';nodes['course-title'].hidden=true;
+  Object.defineProperty(nodes['course-title'],'innerHTML',{set(){throw new Error('Course names must be rendered as plain text');}});
   const inputs={siteRoom:{value:'601'},siteBuilding:{value:'10'}};
   const ctx={record,recordRevision:0,scheduleReady:true,window:{},el:key=>nodes[key],status(){},document:{getElementById:key=>inputs[key]}};
   vm.runInNewContext(source.slice(source.indexOf('        function showRecord('),source.indexOf('        async function restore(')),ctx);
@@ -50,4 +52,29 @@ test('unconfirmed record hides evaluation and exposes classroom tools; confirmed
   assert.equal(nodes.review.hidden,false);
   assert.equal(nodes['map-row'].hidden,true);
   assert.equal(nodes.corrections.hidden,true);
+});
+
+test('confirmed lesson displays its saved course name as plain text even when it contains HTML',()=>{
+  const {ctx,nodes}=showRecordContext(null);
+  const title='<img src=x onerror="alert(1)">课程';
+  ctx.showRecord({id:7,photo_url:'/photo',received_at:'2026-10-14T09:00:00',course_confirmed:true,course_title:title});
+  assert.equal(nodes['course-title'].textContent,title);
+  assert.equal(nodes['course-title'].hidden,false);
+});
+
+test('a stale or absent course title is cleared when confirmation is absent or the record changes',()=>{
+  const {ctx,nodes}=showRecordContext(null);
+  const record={id:7,photo_url:'/photo',received_at:'2026-10-14T09:00:00'};
+  ctx.showRecord({...record,course_confirmed:true,course_title:'第一门课'});
+  assert.equal(nodes['course-title'].textContent,'第一门课');
+  ctx.showRecord({...record,course_confirmed:false,course_title:'第一门课'});
+  assert.equal(nodes['course-title'].textContent,'');
+  assert.equal(nodes['course-title'].hidden,true);
+  ctx.showRecord({...record,course_confirmed:true,course_title:'第一门课'});
+  ctx.showRecord({...record,id:8,course_confirmed:true,course_title:''});
+  assert.equal(nodes['course-title'].textContent,'');
+  assert.equal(nodes['course-title'].hidden,true);
+  ctx.showRecord({...record,id:8,course_confirmed:true,course_title:'第二门课'});
+  assert.equal(nodes['course-title'].textContent,'第二门课');
+  assert.equal(nodes['course-title'].hidden,false);
 });
