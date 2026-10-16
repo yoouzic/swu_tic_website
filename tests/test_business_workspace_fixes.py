@@ -7,7 +7,7 @@ from tests.test_review_mutation_compatibility import _ReviewMutationCompatibilit
 class BusinessWorkspaceFixTest(_ReviewMutationCompatibilityBase):
     def test_department_excludes_historic_and_center_stage_work(self):
         first = self._make_form(self.officer)
-        final = self._make_form(self.officer, status='部门已审核')
+        final = self._make_form(self.officer, status='中心已审核')
         final.unique_id = first.id
         db.session.commit()
         self.assertEqual(load_workspace_snapshot(self.dept_admin).pending_forms, 0)

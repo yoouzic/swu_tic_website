@@ -68,9 +68,22 @@ def _resolve_deduction_display(total_deduction):
     return '0.00' if abs(numeric_deduction) < 0.005 else f'-{abs(numeric_deduction):.2f}'
 
 
+def _latest_profile_form_ids():
+    """Choose the current physical version before inspecting its scores.
+
+    A scoreless recheck or rejection supersedes historic scores as well; the
+    latest *scored* row must never revive an older decision. NULL unique_id
+    bases share their own ID with later versions, matching the review domain.
+    """
+    return db.select(func.max(LectureForm.id)).group_by(
+        func.coalesce(LectureForm.unique_id, LectureForm.id)
+    )
+
+
 def _total_deduction_for_forms(user_form_ids):
     return db.session.query(func.sum(ScoreRecord.total_personal_score)).filter(
-        ScoreRecord.form_id.in_(user_form_ids)
+        ScoreRecord.form_id.in_(user_form_ids),
+        ScoreRecord.form_id.in_(_latest_profile_form_ids()),
     ).scalar() or 0.0
 
 
@@ -94,6 +107,7 @@ def _aggregate_listener_scores():
     ).filter(
         User.role.in_(PROFILE_STATS_ELIGIBLE_ROLES),
         active_user_filter(),
+        LectureForm.id.in_(_latest_profile_form_ids()),
     ).group_by(
         LectureForm.listener_number,
     ).all()
@@ -123,6 +137,8 @@ def _build_assessment_items(listener_number, user_form_ids):
         .join(LectureForm, ScoreRecord.form_id == LectureForm.id) \
         .filter(
             LectureForm.listener_number == listener_number,
+            LectureForm.id.in_(user_form_ids),
+            LectureForm.id.in_(_latest_profile_form_ids()),
             db.or_(ScoreItem.personal_score > 0, ScoreItem.department_score > 0)
         ).all()
 

@@ -672,16 +672,16 @@ class ReviewMutationVersionCompatibilityTest(_ReviewMutationCompatibilityBase):
         self.assertEqual(reasons, ['stage2'])
         self.assertNotIn('stage1', reasons)
 
-    def test_same_status_update_branch_unreachable_via_normal_flow(self):
-        """Both routes' `latest.status == new_status` in-place branch can never
-        fire through the normal HTTP flow: can_review_status admits exactly one
-        input status per level and get_next_status_after_review always returns
-        a different one. B's other disjunct (latest.id != unique_id) IS
-        reachable and proven by the two-stage tests. (IMPLEMENTATION_ONLY)"""
+    def test_only_department_review_allows_rechecking_the_same_status(self):
+        """Department heads may recheck first-stage approvals before final review."""
         for user in (self.group_admin, self.dept_admin, self.center_admin):
             accepted = [s for s in ALL_STATUSES if can_review_status(user.id, s)]
-            self.assertEqual(len(accepted), 1)
-            self.assertNotIn(get_next_status_after_review(user.id), accepted)
+            if user.id == self.dept_admin.id:
+                self.assertEqual(accepted, ['待审核', '部门已审核'])
+                self.assertEqual(get_next_status_after_review(user.id), '部门已审核')
+            else:
+                self.assertEqual(len(accepted), 1)
+                self.assertNotIn(get_next_status_after_review(user.id), accepted)
 
 
 class ReviewMutationScoreCompatibilityTest(_ReviewMutationCompatibilityBase):

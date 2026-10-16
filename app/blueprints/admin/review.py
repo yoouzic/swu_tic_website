@@ -568,9 +568,10 @@ def submit_review(form_id):
 
         # —— 行为保持迁移（8B-P3A）：版本/评分/审计注记/草稿/事务执行全部
         # 交由 application core；本 route 保留 HTTP adapter 与 plan 构造。
-        # 版本兼容分支（P0 characterization）：update 分支正常流程不可达，
-        # 但必须继续可表达；append 分支不触碰历史物理版本的评分记录。
-        if latest_form.status == new_status:
+        # 部长复核须追加版本，保留小组长的审核意见、内容和评分。
+        # 其余路径保留原有版本策略。
+        department_recheck = permission == '审表_部门' and original_form.status == '部门已审核'
+        if latest_form.status == new_status and not department_recheck:
             version_action = VersionAction.UPDATE_LATEST
         else:
             version_action = VersionAction.APPEND_VERSION
@@ -1442,9 +1443,11 @@ def submit_form_review(form_id):
         validate_opened_review_revision(original_form, data, form_data)
         claimed_at = claim_review_form(original_form, unique_id)
         target_form = None
+        department_recheck = permission == '审表_部门' and original_form.status == '部门已审核'
+        # 部长复核单独留痕，不覆盖小组长已通过的版本。
         # 如果当前版本已经是审核产生的版本（ID != unique_id），则直接在当前版本上修改
         # 或者如果状态没有改变，也在当前版本上修改
-        if latest_form and (latest_form.id != unique_id or latest_form.status == new_status):
+        if latest_form and not department_recheck and (latest_form.id != unique_id or latest_form.status == new_status):
             target_form = latest_form
         else:
             target_form = LectureForm(

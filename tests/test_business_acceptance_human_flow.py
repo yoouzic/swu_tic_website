@@ -513,7 +513,10 @@ class BusinessAcceptanceHumanFlowTest(unittest.TestCase):
         for admin in (*self.group_admins, *self.department_admins):
             with self.subTest(role='first-stage', admin=admin.number):
                 self.assertTrue(can_review_status(admin.id, STATUS_PENDING))
-                self.assertFalse(can_review_status(admin.id, STATUS_DEPARTMENT))
+                self.assertEqual(
+                    can_review_status(admin.id, STATUS_DEPARTMENT),
+                    admin in self.department_admins,
+                )
                 self.assertFalse(can_review_status(admin.id, STATUS_CENTER))
                 self.assertFalse(can_review_status(admin.id, STATUS_REJECTED))
 

@@ -147,7 +147,7 @@ def get_reviewable_status_list(user_id):
         return ['待审核', '部门已审核', '中心已审核', '已驳回']
     
     elif permission in ['审表_部门', '审表_小组']:
-        # 可以查看所有状态，但只能审核待审核和部门已审核状态
+        # 可查看所有状态；具体操作权限由 can_review_status 判断。
         return ['待审核', '部门已审核', '中心已审核', '已驳回']
     
     return []
@@ -164,8 +164,12 @@ def can_review_status(user_id, form_status, permission=None):
         # 最终审核必须接收已由首阶段管理员推进的表单。
         return form_status == '部门已审核'
 
-    elif permission in ['审表_部门', '审表_小组']:
-        # 首阶段管理员只能审核待审核版本，避免重复推进同一阶段。
+    elif permission == '审表_部门':
+        # 部长可复核小组长已通过的表单；复核通过仍交由中心终审。
+        return form_status in ['待审核', '部门已审核']
+
+    elif permission == '审表_小组':
+        # 小组长仅处理待审核版本，不能覆盖已通过的审核结论。
         return form_status == '待审核'
     
     return False

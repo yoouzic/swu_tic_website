@@ -252,12 +252,12 @@ class SecurityAuthorizationTest(unittest.TestCase):
         self.assertTrue(data.get('success'))
         self.assertEqual(data.get('new_status'), '已驳回')
 
-    def test_reject_state_forbidden_for_department_on_department_approved(self):
+    def test_reject_state_forbidden_for_department_on_center_approved(self):
         self._login(self.department_admin_a)
-        form = self._make_form(self.officer_a, status='部门已审核')
+        form = self._make_form(self.officer_a, status='中心已审核')
         response = self.client.post(f'/admin/api/review/reject/{form.id}', json={'reason': 'no'})
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(db.session.get(LectureForm, form.id).status, '部门已审核')
+        self.assertEqual(db.session.get(LectureForm, form.id).status, '中心已审核')
 
     def test_reject_unknown_owner_fail_closed(self):
         self._login(self.department_admin_a)
