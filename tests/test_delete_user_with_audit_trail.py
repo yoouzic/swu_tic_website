@@ -126,6 +126,13 @@ class DeleteUserWithAuditTrailTest(unittest.TestCase):
             f'/admin/api/users/{target_id}', json={'password': ADMIN_PASSWORD},
         )
         self.assertEqual(response.status_code, 400)
+        body = response.get_json()
+        self.assertEqual(body.get('code'), 'has_lecture_forms')
+        self.assertIn('离任', body.get('message', ''))
+        self.assertEqual(body['forms_count'], 1)
+        self.assertEqual(body['action']['kind'], 'depart')
+        self.assertEqual(body['action']['user_id'], target_id)
+        self.assertEqual(body['action']['user_name'], target.name)
         self.assertIsNotNone(db.session.get(User, target_id))
 
 

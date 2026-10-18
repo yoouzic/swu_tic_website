@@ -782,7 +782,14 @@ def depart_user(user_id):
                 'code': 'outstanding_reviews',
                 'message': f'该用户还有{outstanding_count}份未结听课表，请先在审核队列完成审核或驳回，再办理离任。',
                 'outstanding_count': outstanding_count,
-                'action': {'label': '处理未结听课表', 'url': url_for('admin.review_forms')},
+                'action': {
+                    'label': '处理未结听课表',
+                    'url': url_for(
+                        'admin.review_forms',
+                        review_queue=1,
+                        user_ids=user_to_depart.id,
+                    ),
+                },
             }), 409
 
         before_snapshot = _snapshot_user_for_movement(user_to_depart)
@@ -866,11 +873,24 @@ def delete_user(user_id):
         serialize_new_submission(user_to_delete.id)
         db.session.refresh(user_to_delete)
         
-        # 检查是否有相关的听课表单
+        # 检查是否有相关的听课表单：历史记录必须保留，提示改用离任（软删除）
+        target_user_id = user_to_delete.id
+        target_user_name = user_to_delete.name
         forms_count = LectureForm.query.filter_by(listener_number=user_to_delete.number).count()
         if forms_count > 0:
             db.session.rollback()
-            return jsonify({'success': False, 'message': f'无法删除用户，该用户有 {forms_count} 条听课记录'}), 400
+            return jsonify({
+                'success': False,
+                'code': 'has_lecture_forms',
+                'message': f'无法删除用户：该用户有 {forms_count} 条听课记录，历史记录必须保留，请改用「离任」。',
+                'forms_count': forms_count,
+                'action': {
+                    'label': '改为办理离任',
+                    'kind': 'depart',
+                    'user_id': target_user_id,
+                    'user_name': target_user_name,
+                },
+            }), 400
         
         delete_snapshot = _snapshot_user_for_movement(user_to_delete)
 

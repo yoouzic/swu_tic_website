@@ -814,6 +814,8 @@
                     <label for="deletePassword" class="form-label">请输入您的登录密码以确认：</label>
                     <input type="password" class="form-control" id="deletePassword" name="password" autocomplete="current-password" placeholder="输入密码">
                 </div>
+                <div id="confirmDeleteFeedback" class="activity-feedback" role="status" aria-live="polite" hidden></div>
+                <div id="confirmDeleteAction" class="mt-2" hidden></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
@@ -827,7 +829,6 @@
 <script>
 // 全局变量
 let currentEditUserId = null;
-let deleteCallback = null;
 let currentMoveType = null; // 'department' or 'group'
 let allDepartmentsData = [];
 
@@ -840,6 +841,12 @@ function escapePeopleHtml(value) {
 function setPeopleManagementFeedback(message, level = 'info') {
     if (typeof window.setAdminFeedback === 'function') {
         window.setAdminFeedback('peopleManagementFeedback', message, level);
+        if (message) {
+            const element = document.getElementById('peopleManagementFeedback');
+            if (element && typeof element.scrollIntoView === 'function') {
+                element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }
+        }
     }
 }
 
@@ -1730,23 +1737,15 @@ function editDepartment(id) {
 
 // 解散部门
 function disbandDepartment(id, name) {
-    showPasswordConfirm(`确定要解散部门"${name}"吗？该部门下的小组将被解散，所有用户会转入“未分配部门 / 未分配小组”。`, '解散', (password) => {
-        fetch(`/admin/api/departments/${id}/disband`, { 
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password: password })
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showAlert(data.message, 'success');
-                    loadDepartments();
-                    loadUsersForSelect();
-                } else {
-                    showAlert(data.message, 'error');
-                }
-            });
-    });
+    showPasswordConfirm(
+        `确定要解散部门"${name}"吗？该部门下的小组将被解散，所有用户会转入“未分配部门 / 未分配小组”。`,
+        '解散',
+        (password) => postPasswordAction(`/admin/api/departments/${id}/disband`, password),
+        () => {
+            loadDepartments();
+            loadUsersForSelect();
+        }
+    );
 }
 
 // 编辑小组
@@ -1775,22 +1774,14 @@ function editGroup(id) {
 
 // 解散小组
 function disbandGroup(id, name) {
-    showPasswordConfirm(`确定要解散小组"${name}"吗？该小组用户会转入“未分配小组”。`, '解散', (password) => {
-        fetch(`/admin/api/groups/${id}/disband`, { 
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password: password })
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showAlert(data.message, 'success');
-                    loadDepartments();
-                } else {
-                    showAlert(data.message, 'error');
-                }
-            });
-    });
+    showPasswordConfirm(
+        `确定要解散小组"${name}"吗？该小组用户会转入“未分配小组”。`,
+        '解散',
+        (password) => postPasswordAction(`/admin/api/groups/${id}/disband`, password),
+        () => {
+            loadDepartments();
+        }
+    );
 }
 
 // 编辑用户
@@ -1831,46 +1822,30 @@ function editUser(id) {
 
 // 用户离任
 function departUser(id, name) {
-    showPasswordConfirm(`确定要将用户"${name}"设为离任吗？离任后该用户不再登录、不再参与活动，并从各页面隐藏。`, '离任', (password) => {
-        fetch(`/admin/api/users/${id}/depart`, { 
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password: password })
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showAlert(data.message, 'success');
-                    loadDepartments();
-                    loadUsersForSelect();
-                    refreshPersonnelMovementRecordsIfOpen();
-                } else {
-                    showAlert(data.message, 'error');
-                }
-            });
-    });
+    showPasswordConfirm(
+        `确定要将用户"${name}"设为离任吗？离任后该用户不再登录、不再参与活动，并从各页面隐藏。`,
+        '离任',
+        (password) => postPasswordAction(`/admin/api/users/${id}/depart`, password),
+        () => {
+            loadDepartments();
+            loadUsersForSelect();
+            refreshPersonnelMovementRecordsIfOpen();
+        }
+    );
 }
 
 // 删除用户
 function deleteUser(id, name) {
-    showPasswordConfirm(`确定要删除用户"${name}"吗？该操作会物理删除账号，仅建议超级管理员在无历史数据时使用。`, '删除', (password) => {
-        fetch(`/admin/api/users/${id}`, { 
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password: password })
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showAlert(data.message, 'success');
-                    loadDepartments();
-                    loadUsersForSelect();
-                    refreshPersonnelMovementRecordsIfOpen();
-                } else {
-                    showAlert(data.message, 'error');
-                }
-            });
-    });
+    showPasswordConfirm(
+        `确定要删除用户"${name}"吗？该操作会物理删除账号，仅建议超级管理员在无历史数据时使用。`,
+        '删除',
+        (password) => postPasswordAction(`/admin/api/users/${id}`, password, 'DELETE'),
+        () => {
+            loadDepartments();
+            loadUsersForSelect();
+            refreshPersonnelMovementRecordsIfOpen();
+        }
+    );
 }
 
 function renderPersonnelMovementRecords(records) {
@@ -2344,38 +2319,186 @@ function savePermissions() {
     });
 }
 
-// 显示需要密码的确认对话框
-function showPasswordConfirm(message, actionLabel, callback) {
+// 密码确认对话框内的行内反馈，保证失败原因始终显示在操作位置
+function setConfirmFeedback(message, level = 'info') {
+    const element = document.getElementById('confirmDeleteFeedback');
+    if (!element) {
+        return;
+    }
+    const allowedLevels = new Set(['info', 'success', 'error', 'warning']);
+    const safeLevel = allowedLevels.has(level) ? level : 'info';
+    element.className = `activity-feedback activity-feedback--${safeLevel}`;
+    element.setAttribute('role', safeLevel === 'error' ? 'alert' : 'status');
+    element.textContent = String(message || '');
+    element.hidden = !message;
+}
+
+function clearConfirmAction() {
+    const holder = document.getElementById('confirmDeleteAction');
+    if (!holder) {
+        return;
+    }
+    holder.hidden = true;
+    holder.replaceChildren();
+}
+
+function renderConfirmAction(action) {
+    const holder = document.getElementById('confirmDeleteAction');
+    if (!holder || !action) {
+        return;
+    }
+    holder.replaceChildren();
+    if (action.kind === 'depart' && Number.isInteger(Number(action.user_id)) && Number(action.user_id) > 0) {
+        const userId = Number(action.user_id);
+        const userName = action.user_name || '该用户';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn btn-sm btn-outline-danger';
+        button.textContent = action.label || '改为办理离任';
+        button.addEventListener('click', () => {
+            const modalElement = document.getElementById('confirmDeleteModal');
+            const modalInstance = bootstrap.Modal.getOrCreateInstance(modalElement);
+            const startDepart = () => departUser(userId, userName);
+            if (modalElement.classList.contains('show')) {
+                modalElement.addEventListener('hidden.bs.modal', startDepart, { once: true });
+                modalInstance.hide();
+            } else {
+                startDepart();
+            }
+        });
+        holder.appendChild(button);
+        holder.hidden = false;
+        return;
+    }
+    if (action.url) {
+        const link = document.createElement('a');
+        link.className = 'btn btn-sm btn-primary';
+        link.href = action.url;
+        link.textContent = action.label || '前往处理';
+        holder.appendChild(link);
+        holder.hidden = false;
+    }
+}
+
+async function postPasswordAction(url, password, method = 'POST') {
+    let response;
+    try {
+        response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: password }),
+        });
+    } catch (error) {
+        console.error(error);
+        return { success: false, message: '网络连接失败，请稍后重试。' };
+    }
+    let data = null;
+    try {
+        data = await response.json();
+    } catch (error) {
+        data = null;
+    }
+    if (!data || typeof data !== 'object') {
+        if (response.status === 401) {
+            return { success: false, message: '登录状态已失效，请刷新页面后重新登录。' };
+        }
+        return { success: false, message: `操作失败（HTTP ${response.status}），请刷新页面后重试。` };
+    }
+    if (data.success === false && !data.message) {
+        data.message = `操作失败（HTTP ${response.status}），请稍后重试。`;
+    }
+    return data;
+}
+
+// 显示需要密码的确认对话框；请求失败时保留对话框，并在操作位置显示原因
+function showPasswordConfirm(message, actionLabel, executor, onSuccess) {
+    const modalElement = document.getElementById('confirmDeleteModal');
     const title = document.getElementById('confirmActionTitle');
     const confirmBtn = document.getElementById('confirmDeleteBtn');
+    const passwordInput = document.getElementById('deletePassword');
+    const messageElement = document.getElementById('deleteMessage');
+    if (!modalElement || !confirmBtn || !passwordInput) {
+        return;
+    }
+    const label = actionLabel || '操作';
     if (title) {
-        title.textContent = `确认${actionLabel || '操作'}`;
+        title.textContent = `确认${label}`;
     }
-    if (confirmBtn) {
-        confirmBtn.textContent = `确认${actionLabel || '操作'}`;
-        confirmBtn.classList.toggle('btn-danger', actionLabel === '删除');
-        confirmBtn.classList.toggle('btn-primary', actionLabel !== '删除');
+    confirmBtn.textContent = `确认${label}`;
+    confirmBtn.classList.toggle('btn-danger', label === '删除');
+    confirmBtn.classList.toggle('btn-primary', label !== '删除');
+    confirmBtn.disabled = false;
+    if (messageElement) {
+        messageElement.textContent = message;
     }
-    document.getElementById('deleteMessage').textContent = message;
-    document.getElementById('deletePassword').value = ''; // 清空密码框
-    deleteCallback = callback;
-    
-    const modal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
+    passwordInput.value = ''; // 清空密码框
+    setConfirmFeedback('');
+    clearConfirmAction();
+
+    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
     modal.show();
-    
-    confirmBtn.onclick = function() {
-        const password = document.getElementById('deletePassword').value;
-        if (!password) {
-            setPeopleManagementFeedback('请输入密码后再确认操作。', 'warning');
+
+    let submitting = false;
+    const runConfirm = async () => {
+        if (submitting || typeof executor !== 'function') {
             return;
         }
-        
-        if (deleteCallback) {
-            deleteCallback(password);
-            deleteCallback = null;
+        const password = passwordInput.value;
+        setConfirmFeedback('');
+        clearConfirmAction();
+        if (!password) {
+            setConfirmFeedback('请输入密码后再确认操作。', 'warning');
+            passwordInput.focus();
+            return;
         }
-        modal.hide();
+        submitting = true;
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = '处理中…';
+        try {
+            const result = await executor(password);
+            if (result && result.success) {
+                modal.hide();
+                showAlert(result.message || `已完成${label}。`, 'success');
+                if (typeof onSuccess === 'function') {
+                    onSuccess(result);
+                }
+            } else {
+                // 保留对话框并显示失败原因；提供可继续操作的入口。
+                const message = (result && result.message) || '操作失败，请稍后重试。';
+                setConfirmFeedback(message, 'error');
+                if (!modalElement.classList.contains('show')) {
+                    // 请求期间用户关闭了对话框时，仍要在页面上留下结果提示。
+                    showAlert(message, 'error');
+                }
+                if (result && result.action) {
+                    renderConfirmAction(result.action);
+                }
+            }
+        } catch (error) {
+            console.error(error);
+            setConfirmFeedback('操作失败，请稍后重试。', 'error');
+        } finally {
+            submitting = false;
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = `确认${label}`;
+        }
     };
+
+    confirmBtn.onclick = runConfirm;
+    const form = document.getElementById('confirmDeleteForm');
+    if (form) {
+        form.onsubmit = (event) => {
+            event.preventDefault();
+            runConfirm();
+        };
+    }
+    modalElement.addEventListener('shown.bs.modal', () => passwordInput.focus(), { once: true });
+    modalElement.addEventListener('hidden.bs.modal', () => {
+        setConfirmFeedback('');
+        clearConfirmAction();
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = `确认${label}`;
+    }, { once: true });
 }
 
 // 显示添加用户模态框内的错误信息

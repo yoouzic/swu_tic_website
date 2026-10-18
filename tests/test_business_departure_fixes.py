@@ -34,6 +34,8 @@ class BusinessDepartureFixesTest(_ReviewMutationCompatibilityBase):
         )
 
     def test_pending_latest_blocks_departure_without_deactivating_or_moving_user(self):
+        from urllib.parse import parse_qs, urlparse
+
         self._make_form(self.officer, status='待审核')
         response = self.depart()
         self.assertEqual(response.status_code, 409)
@@ -41,7 +43,11 @@ class BusinessDepartureFixesTest(_ReviewMutationCompatibilityBase):
         self.assertFalse(body['success'])
         self.assertEqual(body['outstanding_count'], 1)
         self.assertIn('未结', body['message'])
-        self.assertEqual(body['action']['url'], '/admin/review_forms')
+        action_url = urlparse(body['action']['url'])
+        self.assertEqual(action_url.path, '/admin/review_forms')
+        action_params = parse_qs(action_url.query)
+        self.assertEqual(action_params.get('review_queue'), ['1'])
+        self.assertEqual(action_params.get('user_ids'), [str(self.officer.id)])
         db.session.refresh(self.officer)
         self.assertTrue(self.officer.is_active)
         self.assertEqual(self.officer.department, self.dept_a.name)
@@ -86,3 +92,17 @@ class BusinessDepartureFixesTest(_ReviewMutationCompatibilityBase):
         response = self.depart()
         self.assertEqual(response.status_code, 200)
         self.assertFalse(self.officer.is_active)
+
+    def test_manage_departments_page_renders_inline_outcome_feedback(self):
+        response = self.client.get('/admin/manage_departments')
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        for marker in (
+            'id="confirmDeleteFeedback"',
+            'id="confirmDeleteAction"',
+            'async function postPasswordAction(',
+            'function showPasswordConfirm(message, actionLabel, executor, onSuccess)',
+            'form.onsubmit = (event) => {',
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, html)

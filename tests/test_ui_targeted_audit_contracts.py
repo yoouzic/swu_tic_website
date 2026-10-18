@@ -124,6 +124,24 @@ class UITargetedAuditContractTests(unittest.TestCase):
         self.assertNotIn("btn-success", source)
         self.assertNotRegex(source, r'style="[^\"]*max-height')
 
+    def test_password_confirmation_reports_outcome_in_place(self):
+        """人员离任/删除的失败原因必须显示在确认对话框内，而不是远在页首。"""
+        source = self.template("admin/manage_departments.html")
+        for marker in (
+            'id="confirmDeleteFeedback"',
+            'id="confirmDeleteAction"',
+            "function setConfirmFeedback(",
+            "function renderConfirmAction(",
+            "async function postPasswordAction(",
+            "function showPasswordConfirm(message, actionLabel, executor, onSuccess)",
+            "form.onsubmit = (event) => {",
+            "setConfirmFeedback(message, 'error')",
+            "showAlert(message, 'error')",
+            "renderConfirmAction(result.action)",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, source)
+
     def test_large_business_template_styles_are_page_scoped(self):
         cases = {
             "admin/course_feedback_management.html": "course-feedback-page",
