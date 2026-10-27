@@ -40,6 +40,11 @@
                     </div>
                 </div>
                 
+                <div class="alert alert-warning d-none" id="forceReviewAlert" role="status">
+                    <i class="bi bi-shield-exclamation me-1" aria-hidden="true"></i>
+                    该表单尚未经部门审核（当前状态：待审核）。提交后将直接进入「中心已审核」，即中心直审、跳过部门审核阶段。
+                </div>
+
                 <div class="review-form-surface__body" id="reviewFormContent" style="display: none;">
                     <form id="reviewForm">
                         <input type="hidden" id="formId" name="form_id">
@@ -585,6 +590,15 @@ function loadFormData() {
                 populateForm(data.form);
                 document.getElementById('statusBadge').textContent = `当前状态：${data.form.status}`;
                 document.getElementById('statusBadge').className = `badge ${getStatusClass(data.form.status)}`;
+                const forceReviewAlert = document.getElementById('forceReviewAlert');
+                if (forceReviewAlert) {
+                    const isForceReview = data.permission === '审表_中心' && data.form.status === '待审核';
+                    if (isForceReview) {
+                        forceReviewAlert.classList.remove('d-none');
+                    } else {
+                        forceReviewAlert.classList.add('d-none');
+                    }
+                }
                 // 移除显式的 style.color，由 getStatusClass 控制
                 document.getElementById('loadingAlert').style.display = 'none';
                 document.getElementById('reviewFormContent').style.display = 'block';

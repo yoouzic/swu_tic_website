@@ -509,7 +509,7 @@ class BusinessAcceptanceHumanFlowTest(unittest.TestCase):
         self.assertNotIn('review_comment', loaded)
         self.assertNotIn('response', loaded)
 
-    def test_production_status_gate_matches_the_four_stage_business_flow(self):
+    def test_production_status_gate_matches_the_staged_business_flow(self):
         for admin in (*self.group_admins, *self.department_admins):
             with self.subTest(role='first-stage', admin=admin.number):
                 self.assertTrue(can_review_status(admin.id, STATUS_PENDING))
@@ -523,7 +523,8 @@ class BusinessAcceptanceHumanFlowTest(unittest.TestCase):
         for admin in (self.center_admin, self.super_admin):
             with self.subTest(role='final-stage', admin=admin.number):
                 self.assertTrue(can_review_status(admin.id, STATUS_DEPARTMENT))
-                self.assertFalse(can_review_status(admin.id, STATUS_PENDING))
+                # 中心级可在部门未推进时强制直审待审核表单。
+                self.assertTrue(can_review_status(admin.id, STATUS_PENDING))
                 self.assertFalse(can_review_status(admin.id, STATUS_CENTER))
                 self.assertFalse(can_review_status(admin.id, STATUS_REJECTED))
 
@@ -548,7 +549,7 @@ class BusinessAcceptanceHumanFlowTest(unittest.TestCase):
         self.assertEqual(set(center.list_review_form_ids()), expected_global)
         self.assertEqual(set(super_admin.list_review_form_ids()), expected_global)
 
-    def test_group_and_department_actions_keep_manual_fields_and_final_review_requires_department_stage(self):
+    def test_group_and_department_actions_keep_manual_fields_and_center_can_force_final_review(self):
         group_actor = self.actors['groups'][0]
         department_actor = self.actors['departments'][0]
         center_actor = self.actors['center']
@@ -565,9 +566,15 @@ class BusinessAcceptanceHumanFlowTest(unittest.TestCase):
             assessment['suggested_comment'],
             '自动审核建议：请人工复核。',
         )
-        with self.assertRaisesRegex(HumanFlowError, 'department-approved'):
-            center_actor.approve(group_forms[2].id, '中心管理员不得直审待审核表单')
-        self.assertEqual(self._snapshot_model(group_forms[2].id).status, STATUS_PENDING)
+        # 中心级直审：部门尚未推进的待审核表单可直接终审，并留下中心直审标记。
+        force_reviewed = center_actor.approve(group_forms[2].id, '中心管理员直审待审核表单')
+        self.assertEqual(force_reviewed.status, STATUS_CENTER)
+        self.assertEqual(force_reviewed.reviewer_id, center_actor.user_id)
+        self.assertTrue(force_reviewed.review_comment.startswith('[中心直审]'))
+        self.assertEqual(
+            self._snapshot_model(group_forms[2].id).status,
+            STATUS_PENDING,
+        )
         group_approved = group_actor.approve(group_forms[0].id, '小组管理员验收通过')
         self.assertEqual(group_approved.status, STATUS_DEPARTMENT)
         self.assertEqual(group_approved.review_comment, '小组管理员验收通过')

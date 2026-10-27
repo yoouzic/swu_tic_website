@@ -7,7 +7,7 @@ from app.models import User, Group, LectureForm, CourseRegistration, db, SystemS
 from datetime import datetime, timedelta
 from app.utils.auto_review import AutoReviewEngine
 from app.security import login_required, role_required
-from app.utils.review_permissions import get_user_review_permission, can_review_status, get_user_structure_for_review, get_reviewable_users, get_next_status_after_review, get_review_permission_presentation
+from app.utils.review_permissions import get_user_review_permission, can_review_status, get_user_structure_for_review, get_reviewable_users, get_next_status_after_review, get_review_permission_presentation, is_center_force_review
 from app.utils.permission_feedback import build_forbidden_message, forbidden_json, flash_forbidden
 from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.audit_tags import REVIEW_TAG_OPTIONS, LATE_TAG_OPTIONS, build_audit_tag, parse_audit_tag, validate_audit_tag
@@ -47,6 +47,17 @@ def _json_object_request():
         return None
     data = request.get_json(silent=True)
     return data if isinstance(data, dict) else None
+
+
+CENTER_FORCE_REVIEW_NOTE = '[中心直审]'
+
+
+def _resolve_review_comment(permission, form_status, review_comment):
+    """Tag a center-level decision that skipped the department review stage."""
+    if not is_center_force_review(permission, form_status):
+        return review_comment
+    base = (review_comment or '').strip() or '无'
+    return f'{CENTER_FORCE_REVIEW_NOTE} {base}'
 
 
 def _serialize_audit_tag(audit_tag):
@@ -504,6 +515,9 @@ def submit_review(form_id):
                 'field_errors': field_errors,
             }), 400
         new_status = get_next_status_after_review(session['user_id'])
+        resolved_review_comment = _resolve_review_comment(
+            permission, original_form.status, review_comment
+        )
 
         course_changes_raw = (form_data.get('course_changes') or '').strip()
         resolved_course_changes = course_changes_raw or (original_form.course_changes or '无')
@@ -549,7 +563,7 @@ def submit_review(form_id):
             'status': new_status,
             'reviewer_id': session['user_id'],
             'review_time': datetime.now(),
-            'review_comment': review_comment,
+            'review_comment': resolved_review_comment,
             'updated_at': datetime.now()  # 更新时间为审核时间
         }
 
@@ -596,8 +610,8 @@ def submit_review(form_id):
             target_status=new_status,
             registration_id=original_form.registration_id,
             resolved_fields=new_form_data,
-            resolved_review_comment=review_comment,
-            audit_note_base=(review_comment or '').strip() or '无',
+            resolved_review_comment=resolved_review_comment,
+            audit_note_base=(resolved_review_comment or '').strip() or '无',
             modified_fields=tuple(modified_fields),
             version_action=version_action,
             score_action=score_action,
@@ -1435,6 +1449,9 @@ def submit_form_review(form_id):
         )
         
         new_status = get_next_status_after_review(session['user_id'])
+        resolved_review_comment = _resolve_review_comment(
+            permission, original_form.status, review_comment
+        )
         unique_id = original_form.unique_id or original_form.id
         latest_form = original_form.get_latest_version()
         if latest_form and latest_form.id != original_form.id:
@@ -1507,7 +1524,7 @@ def submit_form_review(form_id):
         target_form.status = new_status
         target_form.reviewer_id = session['user_id']
         target_form.review_time = datetime.now()
-        target_form.review_comment = review_comment
+        target_form.review_comment = resolved_review_comment
         target_form.updated_at = max(datetime.now(), claimed_at)
 
         if not original_form.unique_id:
@@ -1558,7 +1575,7 @@ def submit_form_review(form_id):
         # 如果有修改字段，在审核意见后添加修改说明
         if modified_fields:
             target_form.review_comment = append_review_modification_note(
-                review_comment or '无',
+                resolved_review_comment or '无',
                 modified_fields,
             )
 

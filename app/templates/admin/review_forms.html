@@ -1314,6 +1314,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
         const groupCollapseId = `versions-${uniqueId}`;
         const chevronId = `chevron-${uniqueId}`;
         const latestCanReview = latestForm.can_review === true;
+        const isForceReview = currentPermission === '审表_中心' && latestForm.status === '待审核';
         const groupLocked = isFormLocked(latestForm.id);
         const groupTargetFormId = (latestCanReview || groupLocked) ? latestForm.id : '';
         const groupSelectable = currentPermission === '审表_中心' && !!groupTargetFormId && latestCanReview;
@@ -1358,8 +1359,8 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                 <div class="review-item__action-cell">
                     <div class="review-item__actions">
                         ${latestCanReview ? `
-                            <button class="review-item__primary-action btn btn-primary btn-sm" type="button" data-open-review="${latestForm.id}" title="审核">
-                                <i class="bi bi-pencil me-1"></i> 审核
+                            <button class="review-item__primary-action btn ${isForceReview ? 'btn-warning' : 'btn-primary'} btn-sm" type="button" data-open-review="${latestForm.id}" title="${isForceReview ? '强制审核：该表尚未经部门审核，提交后直接进入中心已审核' : '审核'}">
+                                <i class="bi ${isForceReview ? 'bi-shield-exclamation' : 'bi-pencil'} me-1"></i> ${isForceReview ? '强制审核' : '审核'}
                             </button>
                         ` : `
                             <button class="review-item__primary-action btn btn-outline-primary btn-sm" type="button" onclick="viewForm(${latestForm.id})" title="查看最新版本">
@@ -1408,6 +1409,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                                             ${forms.map((version, idx) => {
                                                 const isLatest = idx === 0;
                                                 const canReviewVersion = isLatest && version.can_review === true;
+                                                const versionForceReview = canReviewVersion && currentPermission === '审表_中心' && version.status === '待审核';
                                                 const canSelectVersion = currentPermission === '审表_中心' && canReviewVersion;
                                                 const versionLocked = isFormLocked(version.id);
                                                 const versionChecked = versionLocked || checkedIdSet.has(String(version.id));
@@ -1439,8 +1441,8 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                                                                     <i class="bi bi-eye me-1"></i> 查看此版本
                                                                 </button>
                                                                 ${canReviewVersion ? `
-                                                                    <button class="btn btn-primary btn-sm" type="button" data-open-review="${version.id}" title="审核">
-                                                                        <i class="bi bi-pencil me-1"></i> 审核
+                                                                    <button class="btn ${versionForceReview ? 'btn-warning' : 'btn-primary'} btn-sm" type="button" data-open-review="${version.id}" title="${versionForceReview ? '强制审核：该表尚未经部门审核，提交后直接进入中心已审核' : '审核'}">
+                                                                        <i class="bi ${versionForceReview ? 'bi-shield-exclamation' : 'bi-pencil'} me-1"></i> ${versionForceReview ? '强制审核' : '审核'}
                                                                     </button>
                                                                 ` : ''}
                                                                 ${currentPermission === '审表_中心' ? `
@@ -1758,6 +1760,26 @@ function resetSelectedExportCheckState() {
     document.getElementById('btnConfirmSelectedExport').disabled = true;
 }
 
+// 已选表单可能包含「待审核」等非默认筛选状态；打开导出弹窗时按所选状态同步勾选，
+// 避免用户明明选了表单却在预检时被告知 0 条可导出。
+function syncSelectedExportStatusFilters(formIds) {
+    const selectedIds = new Set((formIds || []).map(value => String(value)));
+    const selectedStatuses = new Set();
+    currentFormGroups.forEach(group => {
+        (group.forms || []).forEach(form => {
+            if (selectedIds.has(String(form.id))) {
+                selectedStatuses.add(form.status);
+            }
+        });
+    });
+    if (selectedStatuses.size === 0) {
+        return;
+    }
+    document.querySelectorAll('.selected-export-status-checkbox').forEach(checkbox => {
+        checkbox.checked = selectedStatuses.has(checkbox.value);
+    });
+}
+
 function handleSelectedExportModeChange() {
     const mode = document.querySelector('input[name="export_mode"]:checked').value;
     document.getElementById('selectedExportFilenameGroup').style.display = mode === 'standard' ? 'block' : 'none';
@@ -1776,6 +1798,7 @@ function openSelectedFormsExportModal() {
         return;
     }
     document.getElementById('selectedFormsExportSummary').textContent = `导出范围：已选择 ${formIds.length} 份表单`;
+    syncSelectedExportStatusFilters(formIds);
     resetSelectedExportCheckState();
     handleSelectedExportModeChange();
     bootstrap.Modal.getOrCreateInstance(document.getElementById('selectedFormsExportModal')).show();

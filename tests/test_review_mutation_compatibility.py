@@ -44,7 +44,11 @@ from app.models import (
     User,
     db,
 )
-from app.utils.review_permissions import can_review_status, get_next_status_after_review
+from app.utils.review_permissions import (
+    can_review_status,
+    get_next_status_after_review,
+    is_center_force_review,
+)
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
 from tests.review_request_utils import post_opened_review
 
@@ -673,14 +677,18 @@ class ReviewMutationVersionCompatibilityTest(_ReviewMutationCompatibilityBase):
         self.assertNotIn('stage1', reasons)
 
     def test_only_department_review_allows_rechecking_the_same_status(self):
-        """Department heads may recheck first-stage approvals before final review."""
+        """Department heads may recheck first-stage approvals; center may force-finalize pending forms."""
         for user in (self.group_admin, self.dept_admin, self.center_admin):
             accepted = [s for s in ALL_STATUSES if can_review_status(user.id, s)]
             if user.id == self.dept_admin.id:
                 self.assertEqual(accepted, ['待审核', '部门已审核'])
                 self.assertEqual(get_next_status_after_review(user.id), '部门已审核')
+            elif user.id == self.center_admin.id:
+                # 中心级可终审部门已审核表单，也可对部门未推进的待审核表单强制直审。
+                self.assertEqual(accepted, ['待审核', '部门已审核'])
+                self.assertEqual(get_next_status_after_review(user.id), '中心已审核')
             else:
-                self.assertEqual(len(accepted), 1)
+                self.assertEqual(accepted, ['待审核'])
                 self.assertNotIn(get_next_status_after_review(user.id), accepted)
 
 
@@ -1152,6 +1160,149 @@ class ReviewMutationResponseCompatibilityTest(_ReviewMutationCompatibilityBase):
         modified = response_b.get_json()['modified_fields']
         self.assertIn('听课时间', modified)
         self.assertIn('第几节', modified)
+
+
+class ReviewMutationCenterForceReviewTest(_ReviewMutationCompatibilityBase):
+    """中心级对『待审核』表单强制直审（部门未审核时跳过部门阶段）。"""
+
+    def test_force_review_helpers_only_apply_to_center_and_pending(self):
+        self.assertTrue(is_center_force_review('审表_中心', '待审核'))
+        self.assertFalse(is_center_force_review('审表_中心', '部门已审核'))
+        self.assertFalse(is_center_force_review('审表_部门', '待审核'))
+        self.assertFalse(is_center_force_review(None, '待审核'))
+
+    def test_route_a_center_force_reviews_pending_form_with_marker(self):
+        form = self._make_form(self.officer)
+        self._login(self.center_admin)
+        response = self._submit_a(form.id, {
+            'form_data': self._full_form_data(form),
+            'review_comment': '内容无误，中心直审通过',
+            'score_data': [],
+        })
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body['success'])
+        self.assertEqual(body['new_status'], '中心已审核')
+
+        rows = self._logical_rows(form)
+        self.assertEqual(len(rows), 2)
+        latest, base = rows
+        self.assertEqual(base.id, form.id)
+        self.assertEqual(base.status, '待审核')
+        self.assertEqual(latest.status, '中心已审核')
+        self.assertEqual(latest.reviewer_id, self.center_admin.id)
+        self.assertTrue(latest.review_comment.startswith('[中心直审] '))
+        self.assertIn('内容无误，中心直审通过', latest.review_comment)
+
+    def test_route_a_force_review_keeps_marker_before_modification_note(self):
+        form = self._make_form(self.officer)
+        improved_feedback = (
+            '该老师讲解清楚，课堂互动自然，学生理解良好。教师先介绍学习目标，'
+            '再结合具体例题说明重点，课堂练习后逐项回应学生疑问，课程组织完整。'
+        )
+        self._login(self.center_admin)
+        response = self._submit_a(form.id, {
+            'form_data': self._full_form_data(
+                form,
+                course_feedback=improved_feedback,
+            ),
+            'review_comment': '直审并修正反馈',
+            'score_data': [],
+        })
+        self.assertTrue(response.get_json()['success'])
+        latest = self._logical_rows(form)[0]
+        self.assertTrue(latest.review_comment.startswith('[中心直审] '))
+        self.assertIn('[系统记录]', latest.review_comment)
+
+    def test_route_b_center_force_reviews_pending_form(self):
+        form = self._make_form(self.officer)
+        self._login(self.center_admin)
+        response = self._submit_b(form.id, {
+            'form_data': self._full_form_data(form),
+            'review_comment': '直审通过',
+            'score_data': [],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['success'])
+        latest = self._logical_rows(form)[0]
+        self.assertEqual(latest.status, '中心已审核')
+        self.assertTrue(latest.review_comment.startswith('[中心直审]'))
+
+    def test_force_review_works_for_super_admin_role(self):
+        super_admin = self._make_user(
+            'S900', 'admin-s900', '超级管理员', self.dept_b.name, None,
+        )
+        form = self._make_form(self.officer)
+        self._login(super_admin)
+        response = self._submit_a(form.id, {
+            'form_data': self._full_form_data(form),
+            'review_comment': '',
+            'score_data': [],
+        })
+        body = response.get_json()
+        self.assertTrue(body['success'])
+        self.assertEqual(body['new_status'], '中心已审核')
+        latest = self._logical_rows(form)[0]
+        self.assertEqual(latest.review_comment, '[中心直审] 无')
+
+    def test_center_cannot_force_review_rejected_or_finalized_forms(self):
+        self._login(self.center_admin)
+        for status in ('已驳回', '中心已审核'):
+            form = self._make_form(self.officer, status=status)
+            response = self._submit_a(form.id, {
+                'form_data': self._full_form_data(form),
+                'review_comment': 'x',
+                'score_data': [],
+            })
+            self.assertFalse(response.get_json()['success'], status)
+            self.assertEqual(len(self._logical_rows(form)), 1, status)
+
+    def test_center_can_reject_pending_form(self):
+        form = self._make_form(self.officer)
+        self._login(self.center_admin)
+        response = post_opened_review(
+            self.client,
+            f'/admin/api/review/reject/{form.id}',
+            json={'reason': '材料不合规，中心直接驳回'},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body['success'])
+        self.assertEqual(body['new_status'], '已驳回')
+        latest = self._logical_rows(form)[0]
+        self.assertEqual(latest.status, '已驳回')
+        self.assertEqual(latest.reviewer_id, self.center_admin.id)
+
+    def test_review_queue_marks_center_can_review_pending_form(self):
+        pending = self._make_form(self.officer)
+        rejected = self._make_form(self.officer, status='已驳回')
+        self._login(self.center_admin)
+        response = self.client.get('/admin/api/review/forms')
+        self.assertEqual(response.status_code, 200)
+        rows = {
+            row['id']: row
+            for group in response.get_json()['forms']
+            for row in (group.get('forms') or [])
+        }
+        self.assertTrue(rows[pending.id]['can_review'])
+        self.assertFalse(rows[rejected.id]['can_review'])
+
+    def test_export_query_supports_pending_status_selection(self):
+        from app.blueprints.admin.forms_io import get_export_query
+
+        form = self._make_form(self.officer, status='待审核')
+        self.assertEqual(
+            get_export_query('selected', ['待审核'], [str(form.id)]).count(),
+            1,
+        )
+        self.assertEqual(
+            get_export_query(
+                'selected',
+                ['中心已审核', '部门已审核'],
+                [str(form.id)],
+            ).count(),
+            0,
+        )
 
 
 if __name__ == '__main__':

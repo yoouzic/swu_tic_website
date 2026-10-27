@@ -163,7 +163,8 @@ class DepartmentReviewRecheckTest(_ReviewMutationCompatibilityBase):
         for actor, reviewable, pending_count in (
             (self.dept_admin, True, 2),
             (self.group_admin, False, 1),
-            (self.center_admin, True, 1),
+            # 中心级可终审部门已审核表单，也可强制直审待审核表单：两个逻辑表单均可操作。
+            (self.center_admin, True, 2),
         ):
             with self.subTest(actor=actor.number):
                 self._login(actor)

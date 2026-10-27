@@ -20,14 +20,16 @@ class BusinessWorkspaceFixTest(_ReviewMutationCompatibilityBase):
         snapshot = load_workspace_snapshot(self.group_admin)
         self.assertEqual(snapshot.pending_forms, 1)
 
-    def test_center_permission_on_admin_role_counts_only_final_stage(self):
+    def test_center_permission_on_admin_role_counts_all_actionable_stages(self):
         first = self._make_form(self.officer)
         final = self._make_form(self.officer, status='部门已审核')
         final.unique_id = first.id
         self._make_form(self.officer_b, status='部门已审核')
         self._make_form(self.officer_b)
         db.session.commit()
-        self.assertEqual(load_workspace_snapshot(self.center_admin).pending_forms, 2)
+        # 中心级既可终审部门已审核表单，也可强制直审待审核表单：
+        # 逻辑表单1（同 unique_id 最新版=部门已审核）+ 逻辑表单2（部门已审核）+ 逻辑表单3（待审核）。
+        self.assertEqual(load_workspace_snapshot(self.center_admin).pending_forms, 3)
 
     def test_listener_total_is_unique_forms_not_review_versions(self):
         first = self._make_form(self.officer)

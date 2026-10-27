@@ -152,6 +152,11 @@ def get_reviewable_status_list(user_id):
     
     return []
 
+def is_center_force_review(permission, form_status):
+    """中心级在部门尚未推进时直接终审（跳过部门审核阶段）。"""
+    return permission == '审表_中心' and form_status == '待审核'
+
+
 def can_review_status(user_id, form_status, permission=None):
     """
     检查用户是否可以审核指定状态的表单
@@ -161,8 +166,8 @@ def can_review_status(user_id, form_status, permission=None):
         return False
     
     if permission == '审表_中心':
-        # 最终审核必须接收已由首阶段管理员推进的表单。
-        return form_status == '部门已审核'
+        # 中心级终审部门已审核的表单；部门未推进时允许强制直审（跳过部门阶段）。
+        return form_status in ['待审核', '部门已审核']
 
     elif permission == '审表_部门':
         # 部长可复核小组长已通过的表单；复核通过仍交由中心终审。

@@ -4,6 +4,7 @@ import unittest
 
 COURSE_TEMPLATE = Path("app/templates/admin/course_feedback_management.html")
 REVIEW_TEMPLATE = Path("app/templates/admin/review_forms.html")
+REVIEW_FORM_TEMPLATE = Path("app/templates/admin/review_form.html")
 STATISTICS_TEMPLATE = Path("app/templates/admin/statistics.html")
 PEOPLE_TEMPLATE = Path("app/templates/admin/manage_departments.html")
 REVIEW_BLUEPRINT = Path("app/blueprints/admin/review.py")
@@ -18,6 +19,7 @@ class ThirdPassUIContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.course = COURSE_TEMPLATE.read_text(encoding="utf-8")
         cls.review = REVIEW_TEMPLATE.read_text(encoding="utf-8")
+        cls.review_form = REVIEW_FORM_TEMPLATE.read_text(encoding="utf-8")
         cls.statistics = STATISTICS_TEMPLATE.read_text(encoding="utf-8")
         cls.people = PEOPLE_TEMPLATE.read_text(encoding="utf-8")
         cls.review_source = REVIEW_BLUEPRINT.read_text(encoding="utf-8")
@@ -73,6 +75,15 @@ class ThirdPassUIContractTests(unittest.TestCase):
         self.assertIn("setReviewQueueFeedback(summaryMessage, 'success', true)", self.review)
         self.assertIn('.activity-feedback--compact', self.style)
         self.assertIn('aria-live="polite"', self.review)
+
+    def test_center_force_review_is_explicit_in_review_ui(self):
+        self.assertIn('is_center_force_review', self.review_source)
+        self.assertIn('CENTER_FORCE_REVIEW_NOTE', self.review_source)
+        self.assertIn('isForceReview', self.review)
+        self.assertIn('强制审核', self.review)
+        self.assertIn('syncSelectedExportStatusFilters(formIds)', self.review)
+        self.assertIn('forceReviewAlert', self.review_form)
+        self.assertIn("data.permission === '审表_中心'", self.review_form)
 
     def test_statistics_has_complete_subnav_metric_layout_and_data_states(self):
         subnav = Path('app/templates/partials/_statistics_nav.html').read_text(encoding='utf-8')

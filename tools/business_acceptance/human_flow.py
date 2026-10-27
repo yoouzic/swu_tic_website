@@ -13,7 +13,6 @@ from flask import Flask
 
 from app.models import LectureForm, User, db
 from app.review_automation.models import ReviewAssessment
-from app.utils.review_permissions import get_user_review_permission
 
 
 FORM_FIELDS = (
@@ -386,16 +385,6 @@ class BusinessActor:
 
     def approve(self, form_id: int, review_comment: str) -> FormSnapshot:
         detail = self.get_form(form_id)
-        with self.app.app_context():
-            current_user = db.session.get(User, int(self.user_id))
-            is_final_reviewer = bool(
-                current_user
-                and get_user_review_permission(current_user.id) == '\u5ba1\u8868_\u4e2d\u5fc3'
-            )
-        if is_final_reviewer and detail.get('status') != '\u90e8\u95e8\u5df2\u5ba1\u6838':
-            raise HumanFlowError(
-                'final review requires a department-approved form'
-            )
         response = self.client.post(
             f'/admin/api/review/submit/{int(form_id)}',
             json={

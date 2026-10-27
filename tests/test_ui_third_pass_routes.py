@@ -196,7 +196,8 @@ class ThirdPassRouteContractTest(unittest.TestCase):
             for group in payload['forms']
             for form in group['forms']
         }
-        self.assertFalse(by_id[self.pending.id])
+        # 中心级可对待审核表单强制直审；非最新版本与已驳回状态仍不可审。
+        self.assertTrue(by_id[self.pending.id])
         self.assertFalse(by_id[self.department_reviewed.id])
         self.assertTrue(by_id[newer.id])
         self.assertFalse(by_id[self.rejected.id])
