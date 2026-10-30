@@ -25,6 +25,7 @@ class ReferenceDrawerUiTest(unittest.TestCase):
         self.assertIn('scrollbar-gutter: stable', style)
         self.assertIn('.reference-drawer-resizer__grip', style)
         self.assertIn('width: 34px; height: 68px', style)
+        self.assertIn('.reference-drawer-body::-webkit-scrollbar-thumb', style)
 
     def test_drawer_uses_shared_paper_texture(self):
         style = self.STYLE.read_text(encoding='utf-8')
