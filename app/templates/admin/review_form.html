@@ -38,6 +38,7 @@
                             <i class="bi bi-search" aria-hidden="true"></i> 查看参考数据
                         </button>
                         <span class="badge bg-info text-dark" id="statusBadge">加载中...</span>
+                        <span id="reviewStageBadge"></span>
                         <span id="departmentReadBadge"></span>
                     </div>
                 </div>
@@ -633,6 +634,15 @@ function loadFormData() {
                 // 移除显式的 style.color，由 getStatusClass 控制
                 document.getElementById('loadingAlert').style.display = 'none';
                 document.getElementById('reviewFormContent').style.display = 'block';
+                const stageBadge = document.getElementById('reviewStageBadge');
+                if (data.form.review_stage) {
+                    stageBadge.textContent = data.form.review_stage;
+                    stageBadge.className = 'badge ms-1 bg-light border ' +
+                        (data.form.review_stage === '部长已审核' ? 'text-primary' : 'text-secondary');
+                } else {
+                    stageBadge.textContent = '';
+                    stageBadge.className = '';
+                }
                 if (window.ReviewReadReceipts) {
                     document.getElementById('departmentReadBadge').innerHTML = window.ReviewReadReceipts.renderBadge(data.form);
                     window.ReviewReadReceipts.acknowledgeDisplayed(data.form, document.getElementById('reviewFormContent'), {

@@ -35,6 +35,7 @@ from app.services.review_schedule_source import resolve_review_schedule_source
 from app.services.review_concurrency import ReviewConflict, claim_review_form, validate_opened_review_revision
 from app.services.lecture_form_validation import review_field_errors
 from app.services.review_read_receipts import department_read_states, record_department_read
+from app.services.review_stage import review_stage_labels
 
 
 def _json_object_request():
@@ -743,6 +744,7 @@ def get_form_detail(form_id):
         score_record = ScoreRecord.query.filter_by(form_id=form.id).first()
         department_read = (department_read_states(user.id, [form])[form.id]
                            if form.get_latest_version().id == form.id else None)
+        review_stage = review_stage_labels([form]).get(form.id)
         if request.args.get('format') != 'json':
             return render_template(
                 'admin/form_detail_page.html',
@@ -750,6 +752,7 @@ def get_form_detail(form_id):
                 reviewer_display_mode=reviewer_display_mode,
                 score_record=score_record,
                 department_read=department_read,
+                review_stage=review_stage,
             )
         html = render_template(
             'admin/form_detail_content.html',
@@ -757,6 +760,7 @@ def get_form_detail(form_id):
             reviewer_display_mode=reviewer_display_mode,
             score_record=score_record,
             department_read=department_read,
+            review_stage=review_stage,
         )
         return jsonify({'success': True, 'html': html, 'form_id': form.id,
                         'expected_form_updated_at': form.updated_at.isoformat() if form.updated_at else '',
@@ -1102,6 +1106,7 @@ def get_forms_for_review():
         # 获取所有表单，按updated_at倒序排列
         forms = query.order_by(LectureForm.updated_at.desc(), LectureForm.id.desc()).all()
         personal_read_states = department_read_states(session['user_id'], forms, permission=permission)
+        stage_labels = review_stage_labels(forms)
         reviewer_display_mode = get_reviewer_display_mode()
         reviewer_ids = list({f.reviewer_id for f in forms if f.reviewer_id})
         reviewer_map = {}
@@ -1167,6 +1172,7 @@ def get_forms_for_review():
                     'lecture_date': form.lecture_date,
                     'status': form.status,
                     'department_read': personal_read_states[form.id] if form.id == latest_form.id else None,
+                    'review_stage': stage_labels.get(form.id),
                     'expected_form_updated_at': form.updated_at.isoformat() if form.updated_at else '',
                     'can_review': (
                         form.id == latest_form.id
@@ -1251,6 +1257,7 @@ def get_form_for_review(form_id):
             'status': form.status,
             'department_read': (department_read_states(session['user_id'], [form], permission=permission)[form.id]
                                 if form.id == latest_form.id else None),
+            'review_stage': review_stage_labels([form]).get(form.id),
             'can_review': (
                 form.id == latest_form.id
                 and can_review_status(session['user_id'], form.status, permission=permission)

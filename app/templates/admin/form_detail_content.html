@@ -107,6 +107,10 @@
                             {% else %}
                                 <span class="text-success">{{ form.status }}</span>
                             {% endif %}
+                            {% if review_stage %}
+                            <span class="badge ms-1 bg-light border {{ 'text-primary' if review_stage == '部长已审核' else 'text-secondary' }}"
+                                  data-review-stage>{{ review_stage }}</span>
+                            {% endif %}
                             {% if department_read %}
                             <span class="badge ms-1 {{ 'bg-light text-secondary border' if department_read.state == 'read' else 'bg-warning-subtle text-dark border' }}"
                                   data-read-receipt-badge data-read-receipt-form-id="{{ form.id }}"

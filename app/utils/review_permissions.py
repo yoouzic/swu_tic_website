@@ -32,49 +32,56 @@ def get_review_permission_presentation(permission):
     })
     return dict(presentation)
 
+def get_user_review_permissions(user_ids):
+    """Bulk-resolve review permissions for active users without per-row queries."""
+    ids = {int(user_id) for user_id in user_ids if user_id}
+    if not ids:
+        return {}
+
+    users = User.query.filter(User.id.in_(ids), active_user_filter()).all()
+    permissions = {}
+    admin_ids = []
+    for user in users:
+        if user.role == '超级管理员':
+            permissions[user.id] = '审表_中心'
+        elif user.role == '管理员':
+            admin_ids.append(user.id)
+        else:
+            permissions[user.id] = None
+
+    if admin_ids:
+        custom_roles = {f'特殊角色_{user_id}': user_id for user_id in admin_ids}
+        custom_rows = db.session.query(RolePermission.role, Permission.name).join(
+            Permission, RolePermission.permission_id == Permission.id
+        ).filter(RolePermission.role.in_(list(custom_roles))).all()
+        custom_permissions = {}
+        for role, name in custom_rows:
+            custom_permissions.setdefault(custom_roles[role], set()).add(name)
+        default_names = {
+            name for name, in db.session.query(Permission.name).join(
+                RolePermission, RolePermission.permission_id == Permission.id
+            ).filter(RolePermission.role == '管理员').all()
+        }
+        for user_id in admin_ids:
+            names = custom_permissions.get(user_id) or default_names
+            if '审表_中心' in names:
+                permissions[user_id] = '审表_中心'
+            elif '审表_部门' in names:
+                permissions[user_id] = '审表_部门'
+            elif '审表_小组' in names:
+                permissions[user_id] = '审表_小组'
+            else:
+                permissions[user_id] = None
+
+    return permissions
+
+
 def get_user_review_permission(user_id):
     """
     获取用户的审核权限
     返回: None, '审表_小组', '审表_部门', '审表_中心'
     """
-    user = User.query.get(user_id)
-    if not user or not is_user_active(user):
-        return None
-    
-    # 超级管理员默认具有最高审表权限
-    if user.role == '超级管理员':
-        return '审表_中心'
-    
-    # 信息员无审表权限
-    if user.role == '信息员':
-        return None
-    
-    # 管理员需要根据role_permissions表确定审表权限
-    if user.role == '管理员':
-        # 首先检查是否有自定义权限
-        custom_permissions = db.session.query(Permission).join(RolePermission).filter(
-            RolePermission.role == f'特殊角色_{user.id}'
-        ).all()
-        
-        if custom_permissions:
-            # 有自定义权限，检查审表权限
-            permission_names = [perm.name for perm in custom_permissions]
-        else:
-            # 没有自定义权限，查询角色默认权限
-            role_permissions = db.session.query(Permission).join(RolePermission).filter(
-                RolePermission.role == user.role
-            ).all()
-            permission_names = [perm.name for perm in role_permissions]
-        
-        # 按优先级返回最高权限
-        if '审表_中心' in permission_names:
-            return '审表_中心'
-        elif '审表_部门' in permission_names:
-            return '审表_部门'
-        elif '审表_小组' in permission_names:
-            return '审表_小组'
-    
-    return None
+    return get_user_review_permissions([user_id]).get(user_id)
 
 def check_review_permission(user_id, required_permission):
     """
