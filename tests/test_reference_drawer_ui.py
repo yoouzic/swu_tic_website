@@ -35,6 +35,15 @@ class ReferenceDrawerUiTest(unittest.TestCase):
             style,
         )
 
+    def test_drawer_has_collapsed_reopen_widget(self):
+        template = self.TEMPLATE.read_text(encoding='utf-8')
+        self.assertIn('id="referenceDrawerReopen"', template)
+        self.assertIn('reopen.hidden = isOpen', template)
+
+        style = self.STYLE.read_text(encoding='utf-8')
+        self.assertIn('.reference-drawer-reopen', style)
+        self.assertIn('writing-mode: vertical-rl', style)
+
 
 if __name__ == '__main__':
     unittest.main()

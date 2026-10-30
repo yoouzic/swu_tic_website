@@ -472,7 +472,7 @@
 </div>
 
 <!-- 参考数据侧边抽屉 -->
-<div class="reference-drawer" id="referenceDataDrawer" role="complementary" aria-label="参考数据" aria-hidden="true">
+<div class="reference-drawer" id="referenceDataDrawer" role="complementary" aria-label="参考数据" aria-hidden="true" inert>
     <button type="button" class="reference-drawer-handle" id="referenceDrawerHandle" aria-controls="referenceDataDrawer" aria-expanded="false" onclick="toggleReferenceDrawer(event.currentTarget)" aria-label="展开参考数据" title="展开参考数据">
         <i class="bi bi-chevron-left" id="referenceDrawerToggleIcon"></i>
     </button>
@@ -516,6 +516,12 @@
         </div>
     </div>
 </div>
+
+<button type="button" class="reference-drawer-reopen" id="referenceDrawerReopen" aria-controls="referenceDataDrawer" aria-expanded="false" aria-label="展开参考数据" title="展开参考数据" onclick="showReferenceData(event.currentTarget)">
+    <i class="bi bi-journal-text" aria-hidden="true"></i>
+    <span class="reference-drawer-reopen__label">参考数据</span>
+    <i class="bi bi-chevron-left reference-drawer-reopen__chevron" aria-hidden="true"></i>
+</button>
 
 <script>
 let originalFormData = {};
@@ -1455,6 +1461,7 @@ function setReferenceDrawerState(isOpen) {
     const drawer = document.getElementById('referenceDataDrawer');
     if (!drawer) return;
     drawer.classList.toggle('is-open', isOpen);
+    drawer.inert = !isOpen;
     drawer.setAttribute('aria-hidden', String(!isOpen));
     ['referenceDrawerTrigger', 'referenceDrawerHandle'].forEach(id => {
         const control = document.getElementById(id);
@@ -1464,6 +1471,11 @@ function setReferenceDrawerState(isOpen) {
     if (headerToggle) headerToggle.setAttribute('aria-expanded', String(isOpen));
     const resizer = document.getElementById('referenceDrawerResizer');
     if (resizer) resizer.tabIndex = isOpen ? 0 : -1;
+    const reopen = document.getElementById('referenceDrawerReopen');
+    if (reopen) {
+        reopen.hidden = isOpen;
+        reopen.setAttribute('aria-expanded', String(isOpen));
+    }
     updateReferenceDrawerIcon();
 }
 
