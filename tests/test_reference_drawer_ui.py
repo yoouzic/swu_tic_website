@@ -23,6 +23,7 @@ class ReferenceDrawerUiTest(unittest.TestCase):
         style = self.STYLE.read_text(encoding='utf-8')
         self.assertIn('--reference-drawer-width: 500px', style)
         self.assertIn('scrollbar-gutter: stable', style)
+        self.assertIn('padding: 16px 14px 24px 24px', style)
         self.assertIn('.reference-drawer-resizer__grip', style)
         self.assertIn('width: 34px; height: 68px', style)
         self.assertIn('.reference-drawer-body::-webkit-scrollbar-thumb', style)

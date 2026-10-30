@@ -443,10 +443,10 @@ body,.public-shell,.app-sidebar,.workspace > .page-header { background-size: var
 .reference-drawer-handle:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .reference-drawer-panel { position: relative; display: flex; height: 100%; flex-direction: column; border-left: 1px solid rgb(116 98 71 / .28); background: var(--color-nav) var(--texture-paper); background-size: var(--texture-paper-size); background-blend-mode: multiply; box-shadow: -20px 0 52px rgb(41 51 62 / .18), inset 1px 0 rgb(255 255 255 / .5); }
 .reference-drawer-panel::before { position: absolute; z-index: 0; inset: 0; background: radial-gradient(120% 80% at 100% 0%,rgb(255 254 250 / .34),transparent 58%),linear-gradient(180deg,rgb(116 98 71 / .035),transparent 18%); pointer-events: none; content: ''; }
-.reference-drawer-header { position: relative; z-index: 1; display: flex; width: 100%; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 16px 24px 16px 18px; border: 0; border-bottom: 1px solid rgb(116 98 71 / .18); color: var(--color-text); background: linear-gradient(180deg,rgb(255 254 250 / .48),rgb(255 254 250 / .08)); text-align: left; }
+.reference-drawer-header { position: relative; z-index: 1; display: flex; width: 100%; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 16px 24px; border: 0; border-bottom: 1px solid rgb(116 98 71 / .18); color: var(--color-text); background: linear-gradient(180deg,rgb(255 254 250 / .48),rgb(255 254 250 / .08)); text-align: left; }
 .reference-drawer-header > span { display: grid; gap: 3px; }
 .reference-drawer-header small { color: var(--color-text-muted); font-weight: 400; }
-.reference-drawer-body { position: relative; z-index: 1; min-height: 0; padding: 16px 24px 24px 16px; overflow-y: auto; scrollbar-gutter: stable; }
+.reference-drawer-body { position: relative; z-index: 1; min-height: 0; padding: 16px 14px 24px 24px; overflow-y: auto; scrollbar-gutter: stable; } /* 14px + 10px scrollbar gutter = 24px visual margin. */
 .reference-drawer-body::-webkit-scrollbar { width: 10px; }
 .reference-drawer-body::-webkit-scrollbar-track { border-left: 1px solid rgb(116 98 71 / .08); background: rgb(216 197 162 / .18); }
 .reference-drawer-body::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: rgb(116 98 71 / .55); background-clip: content-box; }
@@ -755,8 +755,8 @@ body,.public-shell,.app-sidebar,.workspace > .page-header { background-size: var
     .review-scoring-table td::before { color: var(--color-text-muted); content: attr(data-label); font-size: var(--font-size-sm); font-weight: 600; }
     .review-scoring-table td .btn { width: 100%; min-height: 40px; }
     .reference-drawer { width: calc(100vw - 24px); }
-    .reference-drawer-header { padding: 16px 20px 16px 16px; }
-    .reference-drawer-body { padding: 14px 20px 20px 14px; }
+    .reference-drawer-header { padding: 16px 18px; }
+    .reference-drawer-body { padding: 14px 18px 20px; scrollbar-gutter: auto; }
     .reference-drawer-resizer { display: none; }
 }
 @media (max-width: 576px) { .app-user-menu__name { display: none; } .app-user-menu__toggle { padding-inline: 6px; } }
