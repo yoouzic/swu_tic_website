@@ -1,4 +1,8 @@
-<div class="container-fluid form-detail-content">
+<div class="container-fluid form-detail-content" data-read-receipt-detail
+     data-read-receipt-form-id="{{ form.id }}"
+     data-read-receipt-revision="{{ form.updated_at.isoformat() if form.updated_at else '' }}"
+     data-read-receipt-state="{{ department_read.state if department_read else '' }}"
+     data-read-receipt-read-at="{{ department_read.read_at or '' if department_read else '' }}">
     <div class="row">
         <div class="col-md-12">
             <h4 class="text-center mb-4">西南大学学生教学质量监控信息（意见）处理笺</h4>
@@ -102,6 +106,12 @@
                                 <span class="text-danger">{{ form.status }}</span>
                             {% else %}
                                 <span class="text-success">{{ form.status }}</span>
+                            {% endif %}
+                            {% if department_read %}
+                            <span class="badge ms-1 {{ 'bg-light text-secondary border' if department_read.state == 'read' else 'bg-warning-subtle text-dark border' }}"
+                                  data-read-receipt-badge data-read-receipt-form-id="{{ form.id }}"
+                                  data-read-receipt-revision="{{ form.updated_at.isoformat() if form.updated_at else '' }}"
+                                  title="{{ ('我已阅 · ' ~ department_read.read_at) if department_read.read_at else ('我已阅（本人已审核）' if department_read.state == 'read' else '此版本尚未记录为我已阅') }}">{{ '我已阅' if department_read.state == 'read' else '我未阅' }}</span>
                             {% endif %}
                         </td>
                         <th>审核时间</th>

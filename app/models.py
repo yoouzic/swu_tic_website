@@ -251,6 +251,19 @@ class LectureForm(db.Model):
             return [self]
         return self._version_query().order_by(LectureForm.id.desc()).all()
 
+class ReviewReadReceipt(db.Model):
+    """A department reviewer's acknowledgement of one exact form revision."""
+    __tablename__ = 'review_read_receipts'
+
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    form_id = db.Column(db.Integer, db.ForeignKey('lecture_forms.id', ondelete='CASCADE'), primary_key=True)
+    form_updated_at = db.Column(db.DateTime, nullable=True)
+    read_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
+
+    user = db.relationship('User', backref=db.backref('review_read_receipts', cascade='all, delete-orphan'))
+    form = db.relationship('LectureForm', backref=db.backref('read_receipts', cascade='all, delete-orphan'))
+
+
 # 权限表（用于更细粒度的权限控制）
 class Permission(db.Model):
     __tablename__ = 'permissions'

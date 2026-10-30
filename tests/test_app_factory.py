@@ -34,7 +34,13 @@ class AppFactoryTests(unittest.TestCase):
         self.assertTrue(hasattr(create_app, '__call__'))
 
     def test_singleton_route_contract(self):
-        self.assertEqual(_route_counts(app), (186, 130, 37))
+        self.assertEqual(_route_counts(app), (188, 131, 38))
+        self.assertTrue(any(
+            rule.endpoint == 'admin.acknowledge_review_form_read'
+            and rule.rule == '/admin/api/review/form/<int:form_id>/read-receipt'
+            and 'POST' in rule.methods
+            for rule in app.url_map.iter_rules()
+        ))
         self.assertTrue(any(
             rule.endpoint == 'admin.assign_assessment_override_semester'
             and rule.rule == '/admin/api/assessment-overrides/<int:override_id>/semester'
@@ -54,7 +60,7 @@ class AppFactoryTests(unittest.TestCase):
                 'AUTOMATION_UPLOAD_DIR': str(automation_upload_dir),
                 'DEEPSEEK_MODEL': 'override-model',
             })
-            self.assertEqual(_route_counts(a2), (186, 130, 37))
+            self.assertEqual(_route_counts(a2), (188, 131, 38))
             self.assertEqual(_route_contract(a2), _route_contract(app))
             self.assertEqual(a2.config['DEEPSEEK_MODEL'], 'override-model')
             self.assertEqual(

@@ -694,6 +694,7 @@ let selectionLocked = false;
 let lockedFormIds = new Set();
 let lockedFormGroups = new Map();
 let reviewQueueBatchPoll = null;
+let reviewDetailRequestId = 0;
 
 function escapeAttrValue(value) {
     return String(value || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
@@ -1348,6 +1349,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                     </div>
                     <div class="review-item__badges">
                         <span class="badge ${getStatusClass(latestForm.status)}">${escapeHtml(latestForm.status || '-')}</span>
+                        ${window.ReviewReadReceipts ? window.ReviewReadReceipts.renderBadge(latestForm) : ''}
                         <span class="badge ${getAutomationCategoryClass(automationCategory)}" data-automation-category>${escapeHtml(automationCategory)}</span>
                         <span class="badge ${getAutomationCoverageClass(automationCoverage)}" data-automation-coverage="${automationCoverage}">课表${getAutomationCoverageLabel(automationCoverage)}</span>
                         <button type="button" class="badge bg-light text-dark border-0"
@@ -1431,7 +1433,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                                                             <span class="badge bg-light text-dark">v${forms.length - idx}</span>
                                                             ${isLatest ? '<span class="badge bg-primary ms-1">最新</span>' : ''}
                                                         </td>
-                                                        <td><span class="badge ${getStatusClass(version.status)}">${version.status || '-'}</span></td>
+                                                        <td><span class="badge ${getStatusClass(version.status)}">${version.status || '-'}</span>${window.ReviewReadReceipts ? window.ReviewReadReceipts.renderBadge(version) : ''}</td>
                                                         <td>${version.updated_at || version.created_at || '-'}</td>
                                                         <td>${version.reviewer_display || '-'}</td>
                                                         <td><span title="${escapeHtml(version.review_comment || '')}">${escapeHtml((version.review_comment || '-').length > 24 ? version.review_comment.substring(0, 24) + '...' : (version.review_comment || '-'))}</span></td>
@@ -1490,6 +1492,7 @@ function getStatusClass(status) {
 
 // 查看表单详情
 function viewForm(formId) {
+    const requestId = ++reviewDetailRequestId;
     if (window.markReviewQueueSelection) {
         window.markReviewQueueSelection(formId);
     }
@@ -1513,15 +1516,26 @@ function viewForm(formId) {
         previewEl.innerHTML = loadingHtml;
     }
     
-    fetch(`/admin/form/${formId}?format=json`)
-        .then(response => response.json())
+    return fetch(`/admin/form/${formId}?format=json`)
+        .then(response => {
+            if (!response.ok) throw new Error('加载失败。');
+            return response.json();
+        })
         .then(data => {
+            if (requestId !== reviewDetailRequestId) return;
             if (data.success) {
                 // 如果后端返回的是JSON包装的HTML字符串
                 if (data.html) {
                     document.getElementById('formDetailContent').innerHTML = data.html;
                     if (previewEl) {
                         previewEl.innerHTML = data.html;
+                    }
+                    if (String(data.form_id) === String(formId) && window.ReviewReadReceipts) {
+                        window.ReviewReadReceipts.acknowledgeDisplayed(data, useModal ? document.getElementById('formDetailContent') : previewEl, {
+                            isCurrent: () => requestId === reviewDetailRequestId,
+                            onRead: receipt => updateDepartmentReadReceipt(data.form_id, data.expected_form_updated_at, receipt),
+                            onReload: () => viewForm(formId),
+                        });
                     }
                 } else {
                     // 如果直接返回HTML片段（视后端实现而定，这里假设admin/form/id返回的是JSON {success:true, html:...}）
@@ -1537,10 +1551,21 @@ function viewForm(formId) {
             }
         })
         .catch(error => {
+            if (requestId !== reviewDetailRequestId) return;
             console.error('Error:', error);
             setReviewFormPreviewError(document.getElementById('formDetailContent'), formId, '加载失败，请重试。');
             setReviewFormPreviewError(previewEl, formId, '加载失败，请重试。');
         });
+}
+
+function updateDepartmentReadReceipt(formId, revision, receipt) {
+    currentFormGroups.forEach(group => {
+        (group.forms || []).forEach(form => {
+            if (String(form.id) === String(formId) && String(form.expected_form_updated_at || '') === String(revision || '')) {
+                form.department_read = receipt;
+            }
+        });
+    });
 }
 
 // 审核表单
@@ -2336,5 +2361,6 @@ function getAutomationCoverageClass(coverage) {
 </script>
 {% endblock %}
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/review-read-receipts.js') }}"></script>
 <script src="{{ url_for('static', filename='js/review-queue.js') }}"></script>
 {% endblock %}

@@ -38,6 +38,7 @@
                             <i class="bi bi-search" aria-hidden="true"></i> 查看参考数据
                         </button>
                         <span class="badge bg-info text-dark" id="statusBadge">加载中...</span>
+                        <span id="departmentReadBadge"></span>
                     </div>
                 </div>
                 
@@ -632,6 +633,12 @@ function loadFormData() {
                 // 移除显式的 style.color，由 getStatusClass 控制
                 document.getElementById('loadingAlert').style.display = 'none';
                 document.getElementById('reviewFormContent').style.display = 'block';
+                if (window.ReviewReadReceipts) {
+                    document.getElementById('departmentReadBadge').innerHTML = window.ReviewReadReceipts.renderBadge(data.form);
+                    window.ReviewReadReceipts.acknowledgeDisplayed(data.form, document.getElementById('reviewFormContent'), {
+                        onReload: loadFormData,
+                    });
+                }
                 
                 // 监听表单变化
                 setupFormChangeDetection();
@@ -1795,5 +1802,6 @@ function renderContactsResults(matches) {
 </script>
 {% endblock %}
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/review-read-receipts.js') }}"></script>
 <script src="{{ url_for('static', filename='js/review-queue.js') }}"></script>
 {% endblock %}

@@ -3,7 +3,7 @@
 {% block title %}表单详情{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
+<div class="container mt-4" data-read-receipt-auto>
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h3 class="mb-0">表单详情</h3>
         <button type="button" class="btn btn-outline-secondary" onclick="history.back()">返回</button>
@@ -15,4 +15,7 @@
         </div>
     </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/review-read-receipts.js') }}"></script>
 {% endblock %}

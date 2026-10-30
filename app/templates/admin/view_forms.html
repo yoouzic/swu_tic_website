@@ -479,7 +479,9 @@ function executeExport() {
     const exportModal = bootstrap.Modal.getInstance(document.getElementById('exportModal'));
     exportModal.hide();
 }
+let formDetailRequestId = 0;
 function viewFormDetail(formId) {
+    const requestId = ++formDetailRequestId;
     // 显示模态框
     const modalEl = document.getElementById('formDetailModal');
     let modal = bootstrap.Modal.getInstance(modalEl);
@@ -487,18 +489,31 @@ function viewFormDetail(formId) {
         modal = new bootstrap.Modal(modalEl);
     }
     modal.show();
+    document.getElementById('formDetailContent').innerHTML = '<div class="text-center py-4" role="status">正在加载...</div>';
     
     // 加载表单详情
-    fetch(`/admin/form/${formId}?format=json`)
-        .then(response => response.json())
+    return fetch(`/admin/form/${formId}?format=json`)
+        .then(response => {
+            if (!response.ok) throw new Error('加载失败。');
+            return response.json();
+        })
         .then(data => {
+            if (requestId !== formDetailRequestId) return;
             if (data.success) {
-                document.getElementById('formDetailContent').innerHTML = data.html;
+                const content = document.getElementById('formDetailContent');
+                content.innerHTML = data.html;
+                if (String(data.form_id) === String(formId) && window.ReviewReadReceipts) {
+                    window.ReviewReadReceipts.acknowledgeDisplayed(data, content, {
+                        isCurrent: () => requestId === formDetailRequestId,
+                        onReload: () => viewFormDetail(formId),
+                    });
+                }
             } else {
                 document.getElementById('formDetailContent').innerHTML = '<p class="text-danger">加载失败：' + data.message + '</p>';
             }
         })
         .catch(error => {
+            if (requestId !== formDetailRequestId) return;
             document.getElementById('formDetailContent').innerHTML = '<p class="text-danger">加载失败，请重试</p>';
         });
 }
@@ -544,4 +559,7 @@ function toggleVersions(uniqueId) {
     }
 }
 </script>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/review-read-receipts.js') }}"></script>
 {% endblock %}

@@ -14,6 +14,7 @@ from app.utils.audit_tags import REVIEW_TAG_OPTIONS, LATE_TAG_OPTIONS, build_aud
 from app.utils.user_status import UNASSIGNED_GROUP_NAME
 from app.utils.review_drafts import delete_review_form_draft, load_review_form_draft, normalize_review_draft_payload, parse_review_form_draft, save_review_form_draft
 import json
+from sqlalchemy.exc import IntegrityError
 from . import admin_bp
 from .shared import _active_user_query, _build_review_form_filter_datetime, _get_form_latest_timestamp, _latest_form_groups_for_users, _normalize_review_form_time_filter, get_reviewer_display_mode
 from app.services.review_domain import is_form_in_review_scope, partition_forms_by_review_scope
@@ -33,6 +34,7 @@ from app.services.review_reference_data import search_review_reference_data
 from app.services.review_schedule_source import resolve_review_schedule_source
 from app.services.review_concurrency import ReviewConflict, claim_review_form, validate_opened_review_revision
 from app.services.lecture_form_validation import review_field_errors
+from app.services.review_read_receipts import department_read_states, record_department_read
 
 
 def _json_object_request():
@@ -58,6 +60,53 @@ def _resolve_review_comment(permission, form_status, review_comment):
         return review_comment
     base = (review_comment or '').strip() or '无'
     return f'{CENTER_FORCE_REVIEW_NOTE} {base}'
+
+
+@admin_bp.route('/api/review/form/<int:form_id>/read-receipt', methods=['POST'])
+@login_required
+def acknowledge_review_form_read(form_id):
+    """Acknowledge displayed details without making a review decision."""
+    user_id = session['user_id']
+    if get_user_review_permission(user_id) != '审表_部门':
+        return forbidden_json('个人已阅记录', '仅部门级审核账号可记录已阅。', action='操作')
+    form = LectureForm.query.get_or_404(form_id)
+    if not is_form_in_review_scope(user_id, form):
+        return forbidden_json('个人已阅记录', '该表单不在当前审核范围内。', action='操作')
+    if form.status != '部门已审核':
+        return forbidden_json('个人已阅记录', '仅部门已审核的表单可记录已阅。', action='操作')
+    payload = _json_object_request()
+    if payload is None:
+        return jsonify({'success': False, 'message': '请求数据格式错误'}), 400
+    try:
+        validate_opened_review_revision(form, payload)
+        if form.get_latest_version().id != form.id:
+            raise ReviewConflict('表单已有更新版本，请打开最新表单后重试。')
+        try:
+            record_department_read(user_id, form)
+        except IntegrityError:
+            # A second tab can insert the same personal receipt first.
+            db.session.rollback()
+            db.session.refresh(form)
+            validate_opened_review_revision(form, payload)
+            if form.get_latest_version().id != form.id or form.status != '部门已审核':
+                raise ReviewConflict('表单已更新，请重新打开详情后重试。')
+            record_department_read(user_id, form)
+        # Receipt writes hold a database write lock. Recheck after writing so
+        # a request validated before another update cannot regress its receipt.
+        db.session.refresh(form)
+        validate_opened_review_revision(form, payload)
+        if form.get_latest_version().id != form.id or form.status != '部门已审核':
+            raise ReviewConflict('表单已更新，请重新打开详情后重试。')
+        db.session.commit()
+        return jsonify({'success': True,
+                        'department_read': department_read_states(user_id, [form])[form.id]})
+    except ReviewConflict as error:
+        db.session.rollback()
+        return jsonify({'success': False, 'code': 'review_conflict', 'message': str(error)}), 409
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Unable to record personal review read receipt')
+        return jsonify({'success': False, 'message': '已阅记录保存失败，请重新打开详情重试。'}), 500
 
 
 def _serialize_audit_tag(audit_tag):
@@ -692,20 +741,26 @@ def get_form_detail(form_id):
         # 渲染表单详情模板
         reviewer_display_mode = get_reviewer_display_mode()
         score_record = ScoreRecord.query.filter_by(form_id=form.id).first()
+        department_read = (department_read_states(user.id, [form])[form.id]
+                           if form.get_latest_version().id == form.id else None)
         if request.args.get('format') != 'json':
             return render_template(
                 'admin/form_detail_page.html',
                 form=form,
                 reviewer_display_mode=reviewer_display_mode,
-                score_record=score_record
+                score_record=score_record,
+                department_read=department_read,
             )
         html = render_template(
             'admin/form_detail_content.html',
             form=form,
             reviewer_display_mode=reviewer_display_mode,
-            score_record=score_record
+            score_record=score_record,
+            department_read=department_read,
         )
-        return jsonify({'success': True, 'html': html})
+        return jsonify({'success': True, 'html': html, 'form_id': form.id,
+                        'expected_form_updated_at': form.updated_at.isoformat() if form.updated_at else '',
+                        'department_read': department_read})
         
     except Exception as e:
         if request.args.get('format') != 'json':
@@ -1046,6 +1101,7 @@ def get_forms_for_review():
 
         # 获取所有表单，按updated_at倒序排列
         forms = query.order_by(LectureForm.updated_at.desc(), LectureForm.id.desc()).all()
+        personal_read_states = department_read_states(session['user_id'], forms, permission=permission)
         reviewer_display_mode = get_reviewer_display_mode()
         reviewer_ids = list({f.reviewer_id for f in forms if f.reviewer_id})
         reviewer_map = {}
@@ -1110,6 +1166,8 @@ def get_forms_for_review():
                     'teacher_name': form.teacher_name,
                     'lecture_date': form.lecture_date,
                     'status': form.status,
+                    'department_read': personal_read_states[form.id] if form.id == latest_form.id else None,
+                    'expected_form_updated_at': form.updated_at.isoformat() if form.updated_at else '',
                     'can_review': (
                         form.id == latest_form.id
                         and can_review_status(session['user_id'], form.status, permission=permission)
@@ -1191,6 +1249,8 @@ def get_form_for_review(form_id):
             'student_signature2': form.student_signature2,
             'contact_phone2': form.contact_phone2,
             'status': form.status,
+            'department_read': (department_read_states(session['user_id'], [form], permission=permission)[form.id]
+                                if form.id == latest_form.id else None),
             'can_review': (
                 form.id == latest_form.id
                 and can_review_status(session['user_id'], form.status, permission=permission)

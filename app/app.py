@@ -140,6 +140,9 @@ def create_app(config_override: dict | None = None):
     with app.app_context():
         from app.services.lecture_form_draft_entry_schema import ensure_lecture_form_draft_entry_schema
         ensure_lecture_form_draft_entry_schema()
+    with app.app_context():
+        from app.services.review_read_receipt_schema import ensure_review_read_receipt_schema
+        ensure_review_read_receipt_schema()
     csrf.init_app(app)
 
     @app.errorhandler(CSRFError)

@@ -354,7 +354,9 @@ function toggleVersions(collapseId, chevronId) {
     }
 }
 
+let formDetailRequestId = 0;
 function viewForm(formId) {
+    const requestId = ++formDetailRequestId;
     const modalEl = document.getElementById('formDetailModal');
     let modal = bootstrap.Modal.getInstance(modalEl);
     if (!modal) {
@@ -362,16 +364,28 @@ function viewForm(formId) {
     }
     modal.show();
     document.getElementById('formDetailContent').innerHTML = '<div class="text-center py-4"><i class="bi bi-arrow-repeat icon-spin"></i> 正在加载...</div>';
-    fetch(`/admin/form/${formId}?format=json`)
-        .then(response => response.json())
+    return fetch(`/admin/form/${formId}?format=json`)
+        .then(response => {
+            if (!response.ok) throw new Error('加载失败。');
+            return response.json();
+        })
         .then(data => {
+            if (requestId !== formDetailRequestId) return;
             if (data.success && data.html) {
-                document.getElementById('formDetailContent').innerHTML = data.html;
+                const content = document.getElementById('formDetailContent');
+                content.innerHTML = data.html;
+                if (String(data.form_id) === String(formId) && window.ReviewReadReceipts) {
+                    window.ReviewReadReceipts.acknowledgeDisplayed(data, content, {
+                        isCurrent: () => requestId === formDetailRequestId,
+                        onReload: () => viewForm(formId),
+                    });
+                }
                 return;
             }
             document.getElementById('formDetailContent').innerHTML = `<div class="alert alert-danger">${escapeHtml(data.message || '加载失败')}</div>`;
         })
         .catch(() => {
+            if (requestId !== formDetailRequestId) return;
             document.getElementById('formDetailContent').innerHTML = '<div class="alert alert-danger">加载失败，请重试</div>';
         });
 }
@@ -872,4 +886,7 @@ function initPage() {
 
 document.addEventListener('DOMContentLoaded', initPage);
 </script>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/review-read-receipts.js') }}"></script>
 {% endblock %}
