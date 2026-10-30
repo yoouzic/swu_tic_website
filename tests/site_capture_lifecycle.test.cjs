@@ -16,7 +16,7 @@ class Node {
   scrollIntoView() {this.scrollCalls++;}
   dispatchEvent(event) { for (const callback of this.listeners[event.type] || []) callback(event); }
 }
-async function captureFixture(route, {scheduleReady=true}={}) {
+async function captureFixture(route, {scheduleReady=true,locationRuntime=null}={}) {
   const nodes = Object.fromEntries(['status','camera','open','retake','manual','cancel','new','shoot','find','classroom','later','review','record','photo','time','pending','history','corrections','tools','courses','video','map-row','course-title'].map(id => [id, new Node()]));
   nodes['course-title'].hidden=true;
   if(!scheduleReady){delete nodes.find;delete nodes.courses;}
@@ -47,21 +47,21 @@ async function captureFixture(route, {scheduleReady=true}={}) {
     },
   };
   const sampler = {stop(){},best:() => null,samples:() => []};
-  window.SiteLocation = {start:() => sampler};
+  window.SiteLocation = locationRuntime?.api||{start:() => sampler};
   window.saveLectureFormDraft = async () => true;
   window.loadLectureFormDraft = async () => true;
-  const calls = [];
+  const calls = [];let pendingListFailure=false;
   const fetch = async (url, options={}) => {
     calls.push({url,options});
     if (url === '/user/api/site-capture/settings') return {ok:true,json:async () => ({success:true,data:{buildings:[]}})};
-    if (url === '/user/api/site-capture/records') return {ok:true,json:async () => ({success:true,data:[]})};
+    if (url === '/user/api/site-capture/records') {if(pendingListFailure)throw new Error('pending records unavailable');return {ok:true,json:async () => ({success:true,data:[]})};}
     return route(url, options);
   };
   const navigator = {};
-  const context = {document,window,navigator,fetch,Headers,AbortController,Blob,FormData,CustomEvent:class {constructor(type,options={}){this.type=type;this.detail=options.detail;}},setTimeout:callback=>{timers.push(callback);return timers.length;},clearTimeout(){},console};
+  const context = {document,window,navigator,fetch,Headers,AbortController,Blob,FormData,Date:locationRuntime?.Date||Date,CustomEvent:class {constructor(type,options={}){this.type=type;this.detail=options.detail;}},setTimeout:locationRuntime?.setTimeout||((callback)=>{timers.push(callback);return timers.length;}),clearTimeout:locationRuntime?.clearTimeout||(()=>{}),console};
   vm.runInNewContext(source,context);ready();await Promise.resolve();await Promise.resolve();
   nodes.video.videoWidth = 1280;nodes.video.videoHeight = 720;
-  return {nodes,inputs,form,assistant,reviewGuide,completion,window,calls,timers,navigator};
+  return {nodes,inputs,form,assistant,reviewGuide,completion,window,calls,timers,navigator,failPendingList(){pendingListFailure=true;}};
 }
 const photo = id => ({id,photo_url:`/photo/${id}`,received_at:'2026-10-03T09:00:00',room_number:'601',building:'8',course_confirmed:false});
 const response = (data, ok=true) => ({ok,json:async () => data});
@@ -116,12 +116,12 @@ test('a restore started before clearing the form cannot resurrect the old photo 
 });
 
 test('a saved new capture recovered after response failure also reloads its own form draft', async () => {
-  let uploaded=false;
-  const fixture = await captureFixture(async url => {
-    if (url === '/user/api/site-capture') {uploaded=true;throw new Error('response lost');}
+  let uploaded=false,capturedAt;
+  const fixture = await captureFixture(async (url,options) => {
+    if (url === '/user/api/site-capture') {uploaded=true;capturedAt=options.body.get('captured_at');throw new Error('response lost');}
     if (url === '/user/api/lecture_form_draft') return response({success:true,data:{site_capture_id:uploaded?8:7}});
     if (url === '/user/api/site-capture/7') return response({success:true,data:photo(7)});
-    if (url === '/user/api/site-capture/8') return response({success:true,data:photo(8)});
+    if (url === '/user/api/site-capture/8') return response({success:true,data:{...photo(8),client_captured_at:capturedAt}});
     throw new Error(url);
   });
   await fixture.window.fire('lecture-form-draft-loaded',{data:{site_capture_id:7}});
@@ -474,4 +474,237 @@ test('photo review still scrolls to classroom fields if the evaluation guide has
   assert.equal(fixture.reviewGuide.hidden,false);
   assert.equal(fixture.completion.scrollCalls,0);
   assert.equal(fixture.inputs['classroom-review'].scrollCalls,1);
+});
+
+function locationRuntime(){
+  const {start}=require('../app/static/js/site-location.js');
+  let clock=100000,nextTimer=0;const timers=new Map(),watches=[];
+  const setTimeout=(fn,ms)=>{const id=++nextTimer;timers.set(id,{fn,at:clock+ms});return id;};
+  const clearTimeout=id=>timers.delete(id);
+  const geo={watchPosition(success,error){const id=watches.length;watches.push({success,error,active:true});return id;},clearWatch(id){watches[id].active=false;}};
+  const runtime={Date:class extends Date{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}},setTimeout,clearTimeout,
+    api:{start:opts=>start({...opts,geo,now:()=>clock,setTimer:setTimeout,clearTimer:clearTimeout})},
+    starts:()=>watches.length,active:()=>watches.at(-1)?.active,setClock(ms){clock=100000+ms;},point(accuracy=25,latitude=29.82,watch=watches.length-1){watches[watch].success({coords:{latitude,longitude:106.43,accuracy},timestamp:clock});},
+    async advance(ms){const until=100000+ms;for(;;){const next=[...timers].filter(([,t])=>t.at<=until).sort((a,b)=>a[1].at-b[1].at)[0];if(!next)break;clock=next[1].at;timers.delete(next[0]);next[1].fn();await settle();}clock=until;await settle();},
+  };
+  return runtime;
+}
+
+test('a GPS fix received during a slow photo upload is persisted after its live freshness expires',async()=>{
+  const runtime=locationRuntime();let resolveUpload;const patches=[];
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture')return new Promise(resolve=>{resolveUpload=resolve;});
+    if(url==='/user/api/site-capture/21/location'){patches.push(JSON.parse(options.body));return response({success:true,data:photo(21)});}
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  fixture.navigator.mediaDevices={getUserMedia:async()=>({getTracks:()=>[]})};await fixture.nodes.open.click();
+  const upload=fixture.nodes.shoot.click();await settle();
+  assert.equal(fixture.calls.find(call=>call.url==='/user/api/site-capture').options.body.get('location'),'{}');
+  await runtime.advance(2000);runtime.point(25);await runtime.advance(9000);
+  resolveUpload(response({success:true,data:photo(21)}));await upload;await settle();
+  assert.equal(patches.length,1);assert.equal(patches[0].location.accuracy,25);
+  assert.equal(patches[0].location.samples[0].timestamp,102000);
+});
+
+test('shooting preserves a running sampler that has not yet acquired its first fix',async()=>{
+  const runtime=locationRuntime();let resolveUpload;
+  const fixture=await captureFixture(url=>{
+    if(url==='/user/api/site-capture')return new Promise(resolve=>{resolveUpload=resolve;});
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  fixture.navigator.mediaDevices={getUserMedia:async()=>({getTracks:()=>[]})};await fixture.nodes.open.click();
+  await runtime.advance(2000);const upload=fixture.nodes.shoot.click();await settle();
+  assert.equal(runtime.starts(),1);
+  resolveUpload(response({success:true,data:photo(21)}));await upload;
+});
+
+test('an expired early-stopped sampler restarts at shooting and excludes the older room fix',async()=>{
+  const runtime=locationRuntime();let resolveUpload;const patches=[];
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture')return new Promise(resolve=>{resolveUpload=resolve;});
+    if(url==='/user/api/site-capture/21/location'){patches.push(JSON.parse(options.body));return response({success:true,data:photo(21)});}
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  fixture.navigator.mediaDevices={getUserMedia:async()=>({getTracks:()=>[]})};await fixture.nodes.open.click();runtime.point(8);
+  await runtime.advance(1000);runtime.point(9);await runtime.advance(7000);
+  const upload=fixture.nodes.shoot.click();await settle();assert.equal(runtime.starts(),2);
+  assert.equal(fixture.calls.find(call=>call.url==='/user/api/site-capture').options.body.get('location'),'{}');
+  await runtime.advance(8000);runtime.point(25,29.83);resolveUpload(response({success:true,data:photo(21)}));await upload;await settle();
+  assert.equal(patches.length,1);assert.equal(patches[0].location.latitude,29.83);
+  assert.ok(patches[0].location.samples.every(sample=>sample.timestamp>=107000));
+});
+
+test('a failed GPS PATCH retries its frozen observations after sampling ends and then stops',async()=>{
+  const runtime=locationRuntime();let resolveUpload;const patches=[];
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture')return new Promise(resolve=>{resolveUpload=resolve;});
+    if(url==='/user/api/site-capture/21/location'){patches.push(JSON.parse(options.body));throw new Error('offline');}
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  fixture.navigator.mediaDevices={getUserMedia:async()=>({getTracks:()=>[]})};await fixture.nodes.open.click();
+  const upload=fixture.nodes.shoot.click();await settle();await runtime.advance(2000);runtime.point(25);await runtime.advance(9000);
+  resolveUpload(response({success:true,data:photo(21)}));await upload;await settle();await runtime.advance(31000);
+  assert.equal(patches.length,3);assert.deepEqual(patches[1],patches[0]);assert.deepEqual(patches[2],patches[0]);
+});
+
+test('switching records stops old location retries and ignores a late GPS PATCH display response',async()=>{
+  const runtime=locationRuntime();let resolvePatch;const patches=[];
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture')return response({success:true,data:photo(21)});
+    if(url==='/user/api/site-capture/21/location'){patches.push(JSON.parse(options.body));return new Promise(resolve=>{resolvePatch=resolve;});}
+    if(url==='/user/api/site-capture/22')return response({success:true,data:photo(22)});
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  await fixture.nodes.shoot.click();await runtime.advance(1000);runtime.point(25);await settle();
+  await fixture.window.fire('lecture-form-draft-loaded',{data:{site_capture_id:22}});await settle();
+  resolvePatch(response({success:true,data:photo(21)}));await settle();await runtime.advance(2000);runtime.point(20,29.83,0);await runtime.advance(31000);
+  assert.equal(fixture.inputs.site_capture_id.value,'22');assert.equal(patches.length,1);
+});
+
+test('a late location response cannot undo a newer same-capture course confirmation',async()=>{
+  const runtime=locationRuntime();let resolvePatch;
+  const fixture=await captureFixture(async url=>{
+    if(url==='/user/api/site-capture')return response({success:true,data:photo(21)});
+    if(url==='/user/api/site-capture/21/location')return new Promise(resolve=>{resolvePatch=resolve;});
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  await fixture.nodes.shoot.click();await runtime.advance(1000);runtime.point(25);await settle();
+  await fixture.window.fire('lecture-site-ocr-updated',{data:{...photo(21),course_confirmed:true,course_title:'已确认数据结构'},message:'已确认'});
+  resolvePatch(response({success:true,data:photo(21)}));await settle();
+  assert.equal(fixture.nodes['course-title'].textContent,'已确认数据结构');assert.equal(fixture.nodes.review.hidden,false);
+});
+
+test('shooting extends an active late camera sampler for eight seconds without starting another watch',async()=>{
+  const runtime=locationRuntime();let resolveUpload;const patches=[];
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture')return new Promise(resolve=>{resolveUpload=resolve;});
+    if(url==='/user/api/site-capture/21/location'){patches.push(JSON.parse(options.body));return response({success:true,data:photo(21)});}
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  fixture.navigator.mediaDevices={getUserMedia:async()=>({getTracks:()=>[]})};await fixture.nodes.open.click();
+  await runtime.advance(11000);const upload=fixture.nodes.shoot.click();await settle();assert.equal(runtime.starts(),1);
+  await runtime.advance(13000);runtime.point(25);await runtime.advance(18999);assert.equal(runtime.active(),true);
+  await runtime.advance(19000);assert.equal(runtime.active(),false);resolveUpload(response({success:true,data:photo(21)}));await upload;await settle();
+  assert.equal(patches.length,1);assert.equal(patches[0].location.samples[0].timestamp,113000);
+});
+
+test('recovering a saved photo after its upload response is lost persists the same frozen GPS session',async()=>{
+  const runtime=locationRuntime();let rejectUpload,capturedAt;const patches=[];
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture'){capturedAt=options.body.get('captured_at');return new Promise((resolve,reject)=>{rejectUpload=reject;});}
+    if(url==='/user/api/lecture_form_draft')return response({success:true,data:{site_capture_id:21}});
+    if(url==='/user/api/site-capture/21')return response({success:true,data:{...photo(21),client_captured_at:capturedAt.replace('Z','+00:00')}});
+    if(url==='/user/api/site-capture/21/location'){patches.push(JSON.parse(options.body));return response({success:true,data:photo(21)});}
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  const upload=fixture.nodes.shoot.click();await settle();await runtime.advance(2000);runtime.point(25);await runtime.advance(9000);
+  rejectUpload(new Error('response lost'));await upload;await settle();
+  assert.equal(fixture.inputs.site_capture_id.value,'21');assert.equal(patches.length,1);assert.equal(patches[0].location.samples[0].timestamp,102000);
+});
+
+test('initial photo evidence keeps recent equal or worse fixes and excludes older pre-photo readings',async()=>{
+  const runtime=locationRuntime();let submitted;
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture'){submitted=JSON.parse(options.body.get('location'));return response({success:true,data:photo(21)});}
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  fixture.navigator.mediaDevices={getUserMedia:async()=>({getTracks:()=>[]})};await fixture.nodes.open.click();runtime.point(25);
+  await runtime.advance(3000);runtime.point(25);await runtime.advance(6000);runtime.point(80);await fixture.nodes.shoot.click();
+  assert.equal(submitted.accuracy,25);assert.equal(submitted.timestamp,103000);
+  assert.deepEqual(submitted.samples.map(sample=>sample.timestamp),[103000,106000]);
+});
+
+test('retrying a rejected photo cannot reuse frozen GPS evidence older than the new photo window',async()=>{
+  const runtime=locationRuntime();const uploads=[];
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture'){
+      uploads.push(JSON.parse(options.body.get('location')));
+      if(uploads.length===1)return {...response({success:false,message:'rejected'},false),status:400};
+      return response({success:true,data:photo(21)});
+    }
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  fixture.navigator.mediaDevices={getUserMedia:async()=>({getTracks:()=>[]})};await fixture.nodes.open.click();runtime.point(25);await fixture.nodes.shoot.click();
+  await runtime.advance(6000);runtime.point(80);await fixture.nodes.shoot.click();
+  assert.equal(uploads[1].timestamp,106000);assert.equal(uploads[1].accuracy,80);
+  assert.deepEqual(uploads[1].samples.map(sample=>sample.timestamp),[106000]);
+  await runtime.advance(13000);assert.equal(runtime.active(),true);await runtime.advance(14000);assert.equal(runtime.active(),false);
+});
+
+test('a photo recovered after the upload timeout still persists its original frozen GPS at thirty-one seconds',async()=>{
+  const runtime=locationRuntime();let resolveDraft,capturedAt;const patches=[];
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture'){capturedAt=options.body.get('captured_at');return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(Object.assign(new Error('timed out'),{name:'AbortError'}))));}
+    if(url==='/user/api/lecture_form_draft')return new Promise(resolve=>{resolveDraft=resolve;});
+    if(url==='/user/api/site-capture/21')return response({success:true,data:{...photo(21),client_captured_at:capturedAt}});
+    if(url==='/user/api/site-capture/21/location'){patches.push(JSON.parse(options.body));return response({success:true,data:photo(21)});}
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  const upload=fixture.nodes.shoot.click();await settle();await runtime.advance(2000);runtime.point(25);await runtime.advance(20000);
+  assert.equal(typeof resolveDraft,'function');await runtime.advance(31000);runtime.point(5,29.9,0);
+  resolveDraft(response({success:true,data:{site_capture_id:21}}));await upload;await settle();
+  assert.equal(patches.length,1);assert.equal(patches[0].location.latitude,29.82);
+  assert.deepEqual(patches[0].location.samples.map(sample=>sample.timestamp),[102000]);
+});
+
+test('a late recovered photo retries for at most thirty seconds after binding its capture id',async()=>{
+  const runtime=locationRuntime();let resolveDraft,capturedAt;const patches=[];
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture'){capturedAt=options.body.get('captured_at');return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(Object.assign(new Error('timed out'),{name:'AbortError'}))));}
+    if(url==='/user/api/lecture_form_draft')return new Promise(resolve=>{resolveDraft=resolve;});
+    if(url==='/user/api/site-capture/21')return response({success:true,data:{...photo(21),client_captured_at:capturedAt}});
+    if(url==='/user/api/site-capture/21/location'){
+      patches.push(JSON.parse(options.body));
+      return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(Object.assign(new Error('timed out'),{name:'AbortError'}))));
+    }
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  const upload=fixture.nodes.shoot.click();await settle();await runtime.advance(2000);runtime.point(25);await runtime.advance(31000);
+  resolveDraft(response({success:true,data:{site_capture_id:21}}));await upload;await settle();await runtime.advance(100000);
+  assert.equal(patches.length,2);assert.deepEqual(patches[1],patches[0]);
+  assert.deepEqual(patches[0].location.samples.map(sample=>sample.timestamp),[102000]);
+});
+
+for(const stamp of ['2026-10-14T08:00:00Z',undefined,'invalid'])test(`uncertain upload cannot adopt another draft photo with capture timestamp ${String(stamp)}`,async()=>{
+  const runtime=locationRuntime();let rejectUpload;const patches=[];
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture')return new Promise((resolve,reject)=>{rejectUpload=reject;});
+    if(url==='/user/api/lecture_form_draft')return response({success:true,data:{site_capture_id:22}});
+    if(url==='/user/api/site-capture/22')return response({success:true,data:{...photo(22),client_captured_at:stamp}});
+    if(url==='/user/api/site-capture/22/location'){patches.push(JSON.parse(options.body));return response({success:true,data:photo(22)});}
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  const upload=fixture.nodes.shoot.click();await settle();await runtime.advance(2000);runtime.point(25);await runtime.advance(9000);
+  rejectUpload(new Error('upload did not arrive'));await upload;await settle();
+  assert.equal(fixture.inputs.site_capture_id.value,'');assert.equal(patches.length,0);
+  assert.equal(fixture.nodes.camera.hidden,false);assert.match(fixture.nodes.status.textContent,/未能确认|upload did not arrive/);
+});
+
+test('verified photo recovery persists its frozen GPS even if listing other pending records fails',async()=>{
+  const runtime=locationRuntime();let rejectUpload,capturedAt;const patches=[];
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture'){capturedAt=options.body.get('captured_at');return new Promise((resolve,reject)=>{rejectUpload=reject;});}
+    if(url==='/user/api/lecture_form_draft')return response({success:true,data:{site_capture_id:21}});
+    if(url==='/user/api/site-capture/21')return response({success:true,data:{...photo(21),client_captured_at:capturedAt}});
+    if(url==='/user/api/site-capture/21/location'){patches.push(JSON.parse(options.body));return response({success:true,data:photo(21)});}
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  const upload=fixture.nodes.shoot.click();await settle();await runtime.advance(2000);runtime.point(25);await runtime.advance(9000);
+  fixture.failPendingList();rejectUpload(new Error('response lost'));await upload;await settle();
+  assert.equal(fixture.inputs.site_capture_id.value,'21');assert.equal(patches.length,1);
+  assert.deepEqual(patches[0].location.samples.map(sample=>sample.timestamp),[102000]);
+});
+
+test('photo GPS window uses the sent capture timestamp even if starting its sampler takes time',async()=>{
+  const runtime=locationRuntime();const originalStart=runtime.api.start;
+  runtime.api.start=opts=>{const sampler=originalStart(opts);runtime.setClock(123);return sampler;};
+  let resolveUpload;const patches=[];
+  const fixture=await captureFixture(async(url,options)=>{
+    if(url==='/user/api/site-capture')return new Promise(resolve=>{resolveUpload=resolve;});
+    if(url==='/user/api/site-capture/21/location'){patches.push(JSON.parse(options.body));return response({success:true,data:photo(21)});}
+    throw new Error(url);
+  },{locationRuntime:runtime});
+  const upload=fixture.nodes.shoot.click();await settle();await runtime.advance(8050);runtime.point(25);
+  resolveUpload(response({success:true,data:photo(21)}));await upload;await settle();
+  assert.equal(patches.length,0);
 });

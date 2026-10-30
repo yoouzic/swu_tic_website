@@ -166,7 +166,7 @@ def _value(candidate,kind):
     return candidate.get('teacher_name','')
 
 
-def _next_question(candidates,facts,asked,parameters,hypotheses=(), *, minimum=4,max_options=None):
+def _next_question(candidates,facts,asked,parameters,hypotheses=(), *, minimum=4):
     if len(set(asked))>=4:return None
     if hypotheses and 'room_number' not in facts and 'room_number' not in asked:
         if len(hypotheses)>1:
@@ -192,7 +192,9 @@ def _next_question(candidates,facts,asked,parameters,hypotheses=(), *, minimum=4
             if not value or len(value)>120:continue
             if kind=='room_number' and not re.fullmatch(r'[A-Za-z]?\d{3,4}',value):continue
             mass,count=groups.get(value,(0,0));groups[value]=(mass+w,count+1)
-        if len(groups)<2 or (max_options is not None and len(groups)>max_options):continue
+        # The client paginates every choice list. Reading cost can favour an
+        # easier question without discarding a useful larger discriminator.
+        if len(groups)<2:continue
         # Question answers partition candidate mass: their entropy is expected reduction.
         covered=sum(m for m,_ in groups.values())
         gain=-sum((m/covered)*math.log2(m/covered) for m,_ in groups.values())*covered
@@ -285,11 +287,13 @@ def rank_site_candidates(candidates, *, location=None, door_hypotheses=(), clock
                        'match_uncertainties':flags,'requires_manual_time':manual_time,
                        'site_support':support,'site_distance_m':round(distance) if distance is not None else None})
     ranked.sort(key=lambda c:(-c['match_score'],c['candidate_id']))
+    door_question=(_next_question(ranked,facts,(),parameters,hypotheses)
+                   if len(hypotheses)>1 and 'room_number' not in facts else None)
     guidance=choose_guidance(ranked,facts=facts,asked=asked,question_count=question_count,
         scoped_location=scoped_location,question_picker=lambda pool:_next_question(
-            pool,facts,asked,parameters,minimum=2,max_options=6))
+            pool,facts,asked,parameters,minimum=2),door_question=door_question)
     guidance.update(location_scoped=scoped_location,nearby_radius_m=round(radius) if scoped_location else None)
     return {'model_version':'site-context-v3','score_kind':'uncalibrated_match','guidance':guidance,
-            'candidates':ranked,'question':_next_question(ranked,facts,asked,parameters,hypotheses),
+            'candidates':ranked,'question':guidance['question'],
             'confirmed_facts':facts,'requires_confirmation':True,'manual_available':True,
             'uncertainties':uncertainties}

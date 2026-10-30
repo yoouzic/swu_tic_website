@@ -61,6 +61,7 @@ def _public(record):
     course_title=stored.get('course_title') if confirmed else None
     return {'id':record.id,'photo_url':url_for('user.site_capture_photo',capture_id=record.id),
             'received_at':record.received_at,'record_date':record.received_at[:10],
+            'client_captured_at':getattr(record,'client_captured_at',None),
             'room_number':record.room_number,'building':record.building,
             'period_number':record.period_number,'ocr_status':record.ocr_status,
             'alternatives':capture_service.decode_ocr_evidence(record.ocr_alternatives_json)['alternatives'],
@@ -143,7 +144,9 @@ def site_capture_upload(user):
         db.session.rollback()
         return jsonify(success=False,message='照片无法读取，请重新拍摄。'),400
     received=capture_service.now_at_site()
-    try:location=capture_service.normalize_location_evidence(json.loads(request.form.get('location') or '{}'))
+    try:location=capture_service.normalize_photo_location_evidence(
+        json.loads(request.form.get('location') or '{}'),
+        received_at=received.isoformat(),captured_at=request.form.get('captured_at'))
     except (ValueError,TypeError):location={}
     folder=_folder();folder.mkdir(parents=True,exist_ok=True)
     key=f'{uuid.uuid4().hex}.jpg';path=folder/key
@@ -293,10 +296,12 @@ def site_capture_location(user,capture_id):
     from datetime import datetime
     _enabled();record=_owned(capture_id,user)
     age=(capture_service.now_at_site()-datetime.fromisoformat(record.received_at)).total_seconds()
-    if record.form_id or record.is_archived or not 0<=age<=30:
+    if record.form_id or record.is_archived or not 0<=age<=120:
         return jsonify(success=False,message='本次定位已结束。'),409
     body=request.get_json(silent=True)
-    location=capture_service.normalize_location_evidence(body.get('location') if isinstance(body,dict) else None)
+    location=capture_service.normalize_photo_location_evidence(
+        body.get('location') if isinstance(body,dict) else None,
+        received_at=record.received_at,captured_at=record.client_captured_at)
     if not location:return jsonify(success=False,message='定位数据无效。'),400
     existing=json.loads(record.location_json)
     merged=capture_service.merge_location_evidence(existing,location)

@@ -9,7 +9,6 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class GuidanceParameters:
     max_questions: int = 2
-    max_options: int = 6
     leading_margin: float = .7
 
 
@@ -17,7 +16,7 @@ POLICY = GuidanceParameters()
 
 
 def choose_guidance(ranked, *, facts, asked, question_count, scoped_location, question_picker,
-                    parameters=POLICY):
+                    door_question=None, parameters=POLICY):
     def scope_ok(c):
         return not scoped_location or bool(facts.get('building')) or c['site_support']['nearby']
 
@@ -48,6 +47,36 @@ def choose_guidance(ranked, *, facts, asked, question_count, scoped_location, qu
     if not ranked:
         result['reason']='暂未找到课程，照片已保存，可调整信息或稍后补充。'
         return result
+    if door_question:
+        # Competing photo readings remain unresolved even if only one happens
+        # to have a timetable match. Skipping keeps expansion available.
+        if 'room_number' in asked or question_count>=parameters.max_questions:
+            result['reason']='门牌读数仍需核对，可扩大范围查看课程或修改信息。'
+            return result
+        result.update(mode='clarify',candidate_ids=[c['candidate_id'] for c in pool],
+                      question=door_question,reason='门牌读数还不确定，请核对照片上的数字。')
+        return result
+    if not scoped_location and 'building' not in facts and 'building' not in asked:
+        # Even if the photo supplied no usable reading, the current timetable
+        # can supply buildings to ask about, without claiming a sensor match.
+        building_pool=pool or [c for c in ranked if c['site_support']['room_number']]
+        options={}
+        for c in building_pool:
+            support=c['site_support'];value=support['building']
+            if not value or not support['room_number']:continue
+            options.setdefault(value,{'value':value,
+                'label':f'{value}教' if value.isdigit() else value,'candidate_count':0})['candidate_count']+=1
+        if options:
+            if question_count>=parameters.max_questions:
+                result['reason']='仍无法确定课程，可扩大范围查看课程或修改信息。'
+                return result
+            # Confirm location before asking about periods. All supported
+            # buildings remain reachable through the client's paginated list.
+            result.update(mode='clarify',candidate_ids=[c['candidate_id'] for c in building_pool],
+                question={'kind':'building','prompt':'你在哪栋教学楼？',
+                          'options':list(options.values()),'expected_gain_bits':None},
+                reason='未取得可靠定位，请补充教学楼以缩小范围。')
+            return result
     if qualified and len(pool)==1:
         result.update(mode='recommend',candidate_ids=[pool[0]['candidate_id']],reason='已找到更吻合的课程，请确认本次听课。')
         return result
@@ -77,7 +106,7 @@ def choose_guidance(ranked, *, facts, asked, question_count, scoped_location, qu
                        f'{value}教' if kind=='building' and value.isdigit() else
                        f'第{value}节' if kind=='period' else value)
                 options.setdefault(value,{'value':value,'label':label,'candidate_count':0})['candidate_count']+=1
-            if 0<len(options)<=parameters.max_options:
+            if options:
                 question={'kind':kind,'prompt':{'room_number':'请核对门牌上的数字：',
                     'building':'定位与课程位置不一致，请核对教学楼：','period':'请核对本次听课节次：'}[kind],
                     'options':list(options.values()),'expected_gain_bits':None}

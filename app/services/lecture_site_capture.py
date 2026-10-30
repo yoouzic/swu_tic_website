@@ -188,6 +188,39 @@ def normalize_location_evidence(value, *, now_ms=None):
     return result
 
 
+def normalize_photo_location_evidence(value, *, received_at, captured_at=None, now_ms=None):
+    """Keep delayed photo observations within their scene, rather than 'now'."""
+    result=normalize_location(value)
+    if not result:return {}
+    received=datetime.fromisoformat(received_at.replace('Z','+00:00'))
+    if received.tzinfo is None:received=received.replace(tzinfo=SHANGHAI)
+    reference=received
+    try:
+        captured=datetime.fromisoformat((captured_at or '').replace('Z','+00:00'))
+        if (captured.tzinfo is not None and captured.astimezone(SHANGHAI).date()==received.astimezone(SHANGHAI).date()
+                and -5<=(received-captured).total_seconds()<=600):reference=captured
+    except (ValueError,TypeError,AttributeError):pass
+    if now_ms is None:now_ms=now_at_site().timestamp()*1000
+    stamp=value.get('timestamp')
+    if stamp is None:
+        # Older clients may supply only coordinates immediately after upload.
+        return normalize_location_evidence(value,now_ms=now_ms) if now_ms-received.timestamp()*1000<=30000 else {}
+    start,end=reference.timestamp()*1000-5000,reference.timestamp()*1000+8000
+    def in_window(timestamp):
+        return (type(timestamp) in (int,float) and math.isfinite(timestamp)
+                and start<=timestamp<=end and timestamp<=now_ms+2000)
+    if not in_window(stamp):return {}
+    raw=value.get('samples',[]) if isinstance(value.get('samples',[]),list) else []
+    samples={}
+    for item in raw[-64:]+[{**result,'timestamp':stamp}]:
+        point=normalize_location(item)
+        timestamp=item.get('timestamp') if isinstance(item,dict) else None
+        if point and in_window(timestamp):
+            samples[(timestamp,point['latitude'],point['longitude'],point['accuracy'])]={**point,'timestamp':timestamp}
+    result['samples']=sorted(samples.values(),key=lambda p:p['timestamp'])[-12:]
+    return result
+
+
 def merge_location_evidence(existing,incoming):
     if not normalize_location(incoming):return existing
     best=incoming if not normalize_location(existing) or incoming['accuracy']<existing['accuracy'] else existing

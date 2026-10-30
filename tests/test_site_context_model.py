@@ -86,7 +86,8 @@ def test_break_and_delayed_photo_are_soft_time_evidence():
 
 def test_active_question_asks_building_when_it_is_only_distinction():
     r=model.rank_site_candidates([candidate('a','8-609'),candidate('b','25-609'),
-                                 candidate('c','8-609'),candidate('d','25-609')])
+                                 candidate('c','8-609'),candidate('d','25-609')],
+                                door_hypotheses=[{'value':'0609','score':.99}],clock='09:00')
     assert r['question']['kind']=='building'
     assert {o['value'] for o in r['question']['options']}=={'8','25'}
 
@@ -94,7 +95,8 @@ def test_active_question_asks_building_when_it_is_only_distinction():
 def test_active_question_avoids_known_or_already_asked_kinds():
     rows=[candidate('a','8-609',teacher='甲'),candidate('b','8-612',teacher='乙'),
           candidate('c','8-609',teacher='甲'),candidate('d','8-612',teacher='乙')]
-    r=model.rank_site_candidates(rows,confirmed_facts={'building':'8'},asked=['room_number'])
+    r=model.rank_site_candidates(rows,location=at_building('8'),clock='09:00',
+                                confirmed_facts={'building':'8'},asked=['room_number'])
     assert r['question']['kind']=='teacher_name'
     exhausted=model.rank_site_candidates(rows,asked=['building','room_number','period','teacher_name'])
     assert exhausted['question'] is None
@@ -192,8 +194,8 @@ def test_missing_map_does_not_beat_matching_biased_building_by_default():
     assert all(c['match_components']['location']>=0 for c in r['candidates'])
 
 
-def test_three_courses_go_directly_to_cards_unless_photo_reads_conflict():
+def test_three_courses_without_location_ask_building_unless_photo_reads_conflict():
     rows=[candidate(str(i),'8-609',teacher=str(i)) for i in range(3)]
-    assert model.rank_site_candidates(rows)['question'] is None
+    assert model.rank_site_candidates(rows)['question']['kind']=='building'
     r=model.rank_site_candidates(rows,door_hypotheses=[{'value':'0609','score':.99},{'value':'6090','score':.99}])
     assert r['question']['kind']=='room_number'

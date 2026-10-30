@@ -10,34 +10,46 @@
         const classroomButton=el('find')||el('classroom');
         let record=null,stream=null,location={},busy=false,reviewMode=false,newRecord=false,recordRevision=0,formRevision=0;
         let locationSession=null;
-        function endLocation(){if(locationSession){locationSession.ended=true;locationSession.sampler.stop();}locationSession=null;}
+        function endLocation(){if(locationSession){locationSession.ended=true;locationSession.sampler.stop();clearTimeout(locationSession.retryTimer);clearTimeout(locationSession.stopTimer);}locationSession=null;}
         function beginLocation(){
             endLocation();location={};
-            const session={sampler:null,captureId:null,savedAccuracy:Infinity,pending:false,ended:false,
-                observationRevision:0,savedRevision:0,lastAttemptRevision:-1};
-            async function persist(sample){
-                if(!session.captureId||session.ended||session.pending||session.observationRevision<=session.savedRevision||session.observationRevision<=session.lastAttemptRevision)return;
+            const session={sampler:null,captureId:null,pending:false,ended:false,photoAt:null,evidence:null,
+                observationRevision:0,savedRevision:0,failures:0,retryTimer:null,stopTimer:null,retryUntil:null,retryDisabled:false};
+            function freeze(){
+                if(session.photoAt===null||Date.now()>session.photoAt+8000)return session.evidence;
+                const point=session.sampler?.best();
+                if(point&&point.timestamp>=session.photoAt-5000&&point.timestamp<=session.photoAt+8000&&
+                   (!session.evidence||point.accuracy<session.evidence.accuracy))session.evidence={...point};
+                if(session.evidence)session.evidence.samples=session.sampler.samples().filter(p=>p.timestamp>=session.photoAt-5000&&p.timestamp<=session.photoAt+8000);
+                return session.evidence;
+            }
+            function queuePersist(){
+                if(session.ended||session.retryTimer!==null)return;
+                session.retryTimer=setTimeout(()=>{session.retryTimer=null;persist();},800);
+            }
+            async function persist(){
+                const evidence=freeze();
+                if(!session.captureId||session.ended||session.pending||!evidence||session.retryDisabled||
+                   session.failures>=3||Date.now()>session.retryUntil||session.observationRevision<=session.savedRevision)return;
                 session.pending=true;
-                const revision=session.observationRevision;session.lastAttemptRevision=revision;
+                const revision=session.observationRevision,displayRevision=recordRevision;
                 try{
-                    const result=await request(`/user/api/site-capture/${session.captureId}/location`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:{...sample,samples:session.sampler.samples()}})});
-                    session.savedAccuracy=result.data.location_accuracy;
-                    session.savedRevision=revision;
-                    if(record?.id===session.captureId)showRecord(result.data);
-                }catch(error){/* Photo and manual classroom remain usable. */}
+                    const result=await request(`/user/api/site-capture/${session.captureId}/location`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:evidence})});
+                    session.savedRevision=Math.max(session.savedRevision,revision);session.failures=0;
+                    if(!session.ended&&locationSession===session&&record?.id===session.captureId&&recordRevision===displayRevision)showRecord(result.data);
+                }catch(error){session.failures++;if(error.definiteFailure)session.retryDisabled=true;}
                 finally{
                     session.pending=false;
-                    const latest=session.sampler?.best();
-                    if(latest&&session.observationRevision>session.savedRevision&&!session.ended)setTimeout(()=>persist(latest),800);
+                    if(session.observationRevision>session.savedRevision&&!session.retryDisabled&&session.failures<3&&Date.now()<session.retryUntil)queuePersist();
                 }
             }
-            session.persist=persist;
+            session.persist=persist;session.freeze=freeze;
             session.sampler=window.SiteLocation.start({onUpdate:sample=>{
                 if(locationSession===session)location=sample;
-                persist(sample);
+                freeze();persist();
             },onSample:()=>{
                 session.observationRevision++;
-                if(session.captureId)setTimeout(()=>{const best=session.sampler?.best();if(best)persist(best);},800);
+                freeze();if(session.captureId)queuePersist();
             }});
             locationSession=session;
             location=session.sampler.best()||{};
@@ -142,9 +154,10 @@
             const title=el('course-title');if(title){title.textContent='';title.hidden=true;}
             status(scheduleReady?'拍摄门牌，查找本次课程。':'拍摄门牌，确认本次教室。');el('courses')?.replaceChildren();setMode(false);
         }
-        async function restore(id){
+        async function restore(id,verifiedData=null){
+            if(record?.id!==id&&locationSession?.captureId!==id)endLocation();
             const revision=++recordRevision;
-            const result=await request(`/user/api/site-capture/${id}`);
+            const result=verifiedData?{data:verifiedData}:await request(`/user/api/site-capture/${id}`);
             if(revision!==recordRevision)return;
             showRecord(result.data);
             await listPending();
@@ -196,9 +209,11 @@
             canvas.width=Math.round(video.videoWidth*scale);canvas.height=Math.round(video.videoHeight*scale);
             canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
             const capturedAt=new Date().toISOString();
-            const session=locationSession?.sampler.best()?locationSession:beginLocation();
-            const initialLocation=session.sampler.best()?{...session.sampler.best(),samples:session.sampler.samples()}:{};
-            setTimeout(()=>session.sampler.stop(),8000);
+            const session=locationSession&&(locationSession.sampler.best()||locationSession.sampler.active?.())?locationSession:beginLocation();
+            session.photoAt=Date.parse(capturedAt);session.evidence=null;
+            session.sampler.extend?.(8000);
+            const initialLocation=session.freeze()||{},initialRevision=session.observationRevision;
+            clearTimeout(session.stopTimer);session.stopTimer=setTimeout(()=>session.sampler.stop(),8000);
             const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.88));
             if(version!==formRevision)return;
             if(!blob)throw new Error('拍照失败，请重新拍摄。');
@@ -207,14 +222,22 @@
             else if(record)body.append('replace_capture_id',String(record.id));
             let saved=false;
             status('正在保存照片…');
-            try{const result=await request('/user/api/site-capture',{method:'POST',body});saved=true;if(version!==formRevision)return;session.captureId=result.data.id;session.savedAccuracy=result.data.location_accuracy||Infinity;const latest=session.sampler.best();if(latest)session.persist(latest);newRecord=false;showRecord(result.data);stop();await ensureDraftLoaded();if(version===formRevision)setMode(false);}
+            try{const result=await request('/user/api/site-capture',{method:'POST',body});saved=true;if(version!==formRevision||record?.id!==previousId||session.ended)return;session.captureId=result.data.id;session.retryUntil=Date.now()+30000;session.savedRevision=initialLocation.latitude!==undefined?initialRevision:0;newRecord=false;showRecord(result.data);session.persist();stop();await ensureDraftLoaded();if(version===formRevision)setMode(false);}
             catch(error){
                 if(version!==formRevision)return;
                 if(saved||error.definiteFailure)throw error;
                 const draft=await request('/user/api/lecture_form_draft');
                 if(version!==formRevision)return;
                 if(draft.data?.site_capture_id&&String(draft.data.site_capture_id)!==String(previousId)){
-                    await restore(draft.data.site_capture_id);if(version!==formRevision)return;newRecord=false;stop();await ensureDraftLoaded();if(version===formRevision)setMode(false);
+                    if(record?.id!==previousId||session.ended)return;
+                    const recovered=await request(`/user/api/site-capture/${draft.data.site_capture_id}`);
+                    if(version!==formRevision||record?.id!==previousId||session.ended)return;
+                    const recoveredAt=Date.parse(recovered.data?.client_captured_at),shotAt=Date.parse(capturedAt);
+                    if(!Number.isFinite(recoveredAt)||!Number.isFinite(shotAt)||recoveredAt!==shotAt||String(recovered.data?.id)!==String(draft.data.site_capture_id))
+                        throw new Error('未能确认本次照片已保存，请重新拍摄。');
+                    session.captureId=draft.data.site_capture_id;session.retryUntil=Date.now()+30000;session.savedRevision=initialLocation.latitude!==undefined?initialRevision:0;
+                    session.persist();
+                    await restore(draft.data.site_capture_id,recovered.data);if(version!==formRevision||session.ended)return;session.persist();newRecord=false;stop();await ensureDraftLoaded();if(version===formRevision)setMode(false);
                 }
                 else throw error;
             }

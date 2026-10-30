@@ -13,8 +13,10 @@
     function start({geo=typeof navigator==='object'?navigator.geolocation:null,now=Date.now,
                     onUpdate=()=>{},onSample=()=>{},setTimer=setTimeout,clearTimer=clearTimeout,budget=12000}={}){
         let best=null,pending=null,watch=null,timer=null,done=false,stable=0,lastTimestamp=-Infinity;
-        const observations=[];
+        const observations=[],accepted=[];
         const samples=()=>observations.filter(p=>now()-p.timestamp<=30000).map(p=>({...p}));
+        const freshBest=()=>accepted.filter(p=>now()-p.timestamp<=5000).reduce((chosen,p)=>
+            !chosen||p.accuracy<chosen.accuracy||(p.accuracy===chosen.accuracy&&p.timestamp>chosen.timestamp)?p:chosen,null);
         const stop=()=>{if(done)return;done=true;if(watch!==null)geo?.clearWatch?.(watch);if(timer!==null)clearTimer(timer);};
         const success=position=>{
             if(done)return;
@@ -25,16 +27,20 @@
             lastTimestamp=timestamp;
             const sample={latitude:c.latitude,longitude:c.longitude,accuracy:c.accuracy,timestamp};
             observations.push(sample);if(observations.length>12)observations.shift();onSample({...sample});
-            if(best&&distance(best,sample)>best.accuracy+sample.accuracy+20){
+            const reference=freshBest()||best;
+            if(reference&&distance(reference,sample)>reference.accuracy+sample.accuracy+20){
                 if(!pending||now()-pending.timestamp>5000||distance(pending,sample)>pending.accuracy+sample.accuracy+10){pending=sample;return;}
             }
             pending=null;
-            if(best&&distance(best,sample)<=best.accuracy+sample.accuracy+10)stable++;
+            if(reference&&distance(reference,sample)<=reference.accuracy+sample.accuracy+10)stable++;
             else stable=0;
-            if(!best||sample.accuracy<best.accuracy){best=sample;onUpdate({...best});}
+            accepted.push(sample);if(accepted.length>12)accepted.shift();
+            const current=freshBest();
+            if(!best||current.timestamp!==best.timestamp){best=current;onUpdate({...best});}
             if(best.accuracy<=15&&stable>=1)stop();
         };
-        if(!geo)return {best:()=>null,samples,stop};
+        const extend=ms=>{if(done)return;if(timer!==null)clearTimer(timer);timer=setTimer(stop,ms);};
+        if(!geo)return {best:()=>null,samples,stop,active:()=>false,extend:()=>{}};
         timer=setTimer(stop,budget);
         try{
             const options={enableHighAccuracy:true,maximumAge:0,timeout:10000};
@@ -43,7 +49,7 @@
                 if(done&&watch!==null)geo.clearWatch(watch);
             }else geo.getCurrentPosition(success,stop,options);
         }catch(error){stop();}
-        return {best:()=>best&&now()-best.timestamp<=5000?{...best}:null,samples,stop};
+        return {best:()=>{const point=freshBest();return point?{...point}:null;},samples,stop,active:()=>!done,extend};
     }
     return {start};
 });
