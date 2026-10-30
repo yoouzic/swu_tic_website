@@ -477,6 +477,9 @@
         <i class="bi bi-chevron-left" id="referenceDrawerToggleIcon"></i>
     </button>
     <div class="reference-drawer-panel">
+        <div class="reference-drawer-resizer" id="referenceDrawerResizer" role="separator" aria-orientation="vertical" aria-label="调整参考数据面板宽度" aria-controls="referenceDataDrawer" aria-valuemin="360" aria-valuemax="820" aria-valuenow="500" tabindex="-1" title="拖动调整宽度，双击恢复默认">
+            <span class="reference-drawer-resizer__grip" aria-hidden="true"></span>
+        </div>
         <button type="button" class="reference-drawer-header" id="referenceDrawerHeaderToggle" aria-controls="referenceDataDrawer" aria-expanded="true" onclick="toggleReferenceDrawerCollapse(event.currentTarget)">
             <span><strong>参考数据</strong><small>按当前表单内容查询</small></span>
             <i class="bi bi-chevron-right" aria-hidden="true"></i>
@@ -526,6 +529,10 @@ let reviewDraftInterval = null;
 let reviewDraftRestoring = false;
 let reviewDraftStale = false;
 let referenceDrawerReturnFocus = null;
+const REFERENCE_DRAWER_WIDTH_KEY = 'reviewReferenceDrawerWidth';
+const REFERENCE_DRAWER_DEFAULT_WIDTH = 500;
+const REFERENCE_DRAWER_MIN_WIDTH = 360;
+const REFERENCE_DRAWER_MAX_WIDTH = 820;
 
 function getReviewReturnUrl() {
     const link = document.querySelector('[data-review-return]');
@@ -553,6 +560,7 @@ function returnToReviewQueue() {
 
 // 页面加载时获取表单数据
 document.addEventListener('DOMContentLoaded', function() {
+    initReferenceDrawerResize();
     // 从URL获取表单ID
     const pathParts = window.location.pathname.split('/');
     formId = pathParts[pathParts.length - 1];
@@ -1454,6 +1462,8 @@ function setReferenceDrawerState(isOpen) {
     });
     const headerToggle = document.getElementById('referenceDrawerHeaderToggle');
     if (headerToggle) headerToggle.setAttribute('aria-expanded', String(isOpen));
+    const resizer = document.getElementById('referenceDrawerResizer');
+    if (resizer) resizer.tabIndex = isOpen ? 0 : -1;
     updateReferenceDrawerIcon();
 }
 
@@ -1491,6 +1501,106 @@ function updateReferenceDrawerIcon() {
     if (!drawer || !toggleIcon) return;
     const isOpen = drawer.classList.contains('is-open');
     toggleIcon.className = isOpen ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+}
+
+function readReferenceDrawerWidth() {
+    try {
+        const saved = Number(window.localStorage.getItem(REFERENCE_DRAWER_WIDTH_KEY));
+        return Number.isFinite(saved) && saved > 0 ? saved : 0;
+    } catch (error) {
+        return 0;
+    }
+}
+
+function getReferenceDrawerMaxWidth() {
+    return Math.max(
+        REFERENCE_DRAWER_MIN_WIDTH,
+        Math.min(REFERENCE_DRAWER_MAX_WIDTH, Math.floor(window.innerWidth * 0.92))
+    );
+}
+
+function setReferenceDrawerWidth(width, options = {}) {
+    const drawer = document.getElementById('referenceDataDrawer');
+    if (!drawer) return;
+    const maxWidth = getReferenceDrawerMaxWidth();
+    const clamped = Math.min(Math.max(Math.round(width), REFERENCE_DRAWER_MIN_WIDTH), maxWidth);
+    drawer.style.setProperty('--reference-drawer-width', `${clamped}px`);
+    const resizer = document.getElementById('referenceDrawerResizer');
+    if (resizer) {
+        resizer.setAttribute('aria-valuemin', String(REFERENCE_DRAWER_MIN_WIDTH));
+        resizer.setAttribute('aria-valuemax', String(maxWidth));
+        resizer.setAttribute('aria-valuenow', String(clamped));
+        resizer.setAttribute('aria-valuetext', `${clamped} 像素`);
+    }
+    if (options.persist) {
+        try {
+            window.localStorage.setItem(REFERENCE_DRAWER_WIDTH_KEY, String(clamped));
+        } catch (error) {
+            // Storage can be unavailable in private contexts; resizing still works.
+        }
+    }
+}
+
+function restoreReferenceDrawerWidth() {
+    const savedWidth = readReferenceDrawerWidth();
+    setReferenceDrawerWidth(savedWidth || REFERENCE_DRAWER_DEFAULT_WIDTH);
+}
+
+function initReferenceDrawerResize() {
+    const drawer = document.getElementById('referenceDataDrawer');
+    const resizer = document.getElementById('referenceDrawerResizer');
+    if (!drawer || !resizer) return;
+    const mobileQuery = typeof window.matchMedia === 'function'
+        ? window.matchMedia('(max-width: 575.98px)')
+        : null;
+    let dragState = null;
+
+    restoreReferenceDrawerWidth();
+    resizer.tabIndex = drawer.classList.contains('is-open') ? 0 : -1;
+
+    const currentWidth = () => drawer.getBoundingClientRect().width;
+    const finishDrag = () => {
+        if (!dragState) return;
+        dragState = null;
+        drawer.classList.remove('is-resizing');
+        setReferenceDrawerWidth(currentWidth(), {persist: true});
+    };
+
+    resizer.addEventListener('pointerdown', event => {
+        if (mobileQuery && mobileQuery.matches) return;
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        event.preventDefault();
+        dragState = {pointerId: event.pointerId, startX: event.clientX, startWidth: currentWidth()};
+        drawer.classList.add('is-resizing');
+        if (typeof resizer.setPointerCapture === 'function') {
+            resizer.setPointerCapture(event.pointerId);
+        }
+    });
+    resizer.addEventListener('pointermove', event => {
+        if (!dragState || event.pointerId !== dragState.pointerId) return;
+        setReferenceDrawerWidth(dragState.startWidth + dragState.startX - event.clientX);
+    });
+    resizer.addEventListener('pointerup', finishDrag);
+    resizer.addEventListener('pointercancel', finishDrag);
+    resizer.addEventListener('dblclick', () => {
+        setReferenceDrawerWidth(REFERENCE_DRAWER_DEFAULT_WIDTH, {persist: true});
+    });
+    resizer.addEventListener('keydown', event => {
+        const maxWidth = getReferenceDrawerMaxWidth();
+        const step = event.shiftKey ? 48 : 16;
+        let nextWidth;
+        if (event.key === 'ArrowLeft') nextWidth = currentWidth() + step;
+        else if (event.key === 'ArrowRight') nextWidth = currentWidth() - step;
+        else if (event.key === 'Home') nextWidth = REFERENCE_DRAWER_MIN_WIDTH;
+        else if (event.key === 'End') nextWidth = maxWidth;
+        else return;
+        event.preventDefault();
+        setReferenceDrawerWidth(nextWidth, {persist: true});
+    });
+    window.addEventListener('resize', () => {
+        const savedWidth = readReferenceDrawerWidth();
+        setReferenceDrawerWidth(savedWidth || currentWidth());
+    });
 }
 
 function toggleReferenceSection(sectionId, trigger) {
@@ -1554,28 +1664,6 @@ function displayValue(value) {
     return text && text.toLowerCase() !== 'nan' ? escapeHtml(text) : '-';
 }
 
-function describeScheduleMatchType(matchType) {
-    const type = String(matchType || '');
-    const labels = [];
-    if (type.startsWith('exact')) {
-        labels.push('教师+课程');
-    } else if (type.startsWith('teacher_name')) {
-        labels.push('教师');
-    } else if (type.startsWith('course_name')) {
-        labels.push('课程');
-    }
-    if (type.includes('_with_time')) labels.push('时间');
-    if (type.includes('_with_location')) labels.push('地点');
-    if (type.includes('_with_class')) labels.push('班级');
-    return labels.length ? labels.join(' + ') : '参考匹配';
-}
-
-function describeContactMatch(match) {
-    if (match.match_type === 'id') return '编号匹配';
-    if (match.match_type === 'name') return '姓名匹配';
-    return '通讯录匹配';
-}
-
 function renderScheduleResults(matches) {
     const container = document.getElementById('scheduleResults');
     if (!container) return;
@@ -1588,7 +1676,6 @@ function renderScheduleResults(matches) {
         <div class="reference-result-item">
             <div class="reference-result-title">
                 <strong>${displayValue(match.course_name)}</strong>
-                <span class="badge bg-light text-dark border">${escapeHtml(describeScheduleMatchType(match.match_type))}</span>
             </div>
             <dl class="reference-result-meta">
                 <div><dt>教师</dt><dd>${displayValue(match.teacher_name)}（${displayValue(match.teacher_college)}）</dd></div>
@@ -1608,23 +1695,19 @@ function renderContactsResults(matches) {
         return;
     }
 
-    container.innerHTML = matches.map(match => {
-        const similarity = match.similarity ? `相似度 ${Number(match.similarity).toFixed(2)}` : '精确匹配';
-        return `
-            <div class="reference-result-item">
-                <div class="reference-result-title">
-                    <strong>${displayValue(match.name)}</strong>
-                    <span class="badge bg-light text-dark border">${escapeHtml(describeContactMatch(match))} · ${escapeHtml(similarity)}</span>
-                </div>
-                <dl class="reference-result-meta">
-                    <div><dt>编号</dt><dd>${displayValue(match.id)}</dd></div>
-                    <div><dt>学院</dt><dd>${displayValue(match.college)}</dd></div>
-                    <div><dt>部门/组别</dt><dd>${displayValue(match.department)}</dd></div>
-                    <div><dt>电话</dt><dd>${displayValue(match.phone)}</dd></div>
-                </dl>
+    container.innerHTML = matches.map(match => `
+        <div class="reference-result-item">
+            <div class="reference-result-title">
+                <strong>${displayValue(match.name)}</strong>
             </div>
-        `;
-    }).join('');
+            <dl class="reference-result-meta">
+                <div><dt>编号</dt><dd>${displayValue(match.id)}</dd></div>
+                <div><dt>学院</dt><dd>${displayValue(match.college)}</dd></div>
+                <div><dt>部门/组别</dt><dd>${displayValue(match.department)}</dd></div>
+                <div><dt>电话</dt><dd>${displayValue(match.phone)}</dd></div>
+            </dl>
+        </div>
+    `).join('');
 }
 </script>
 {% endblock %}
