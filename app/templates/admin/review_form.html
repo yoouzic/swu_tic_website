@@ -539,6 +539,19 @@ const REFERENCE_DRAWER_WIDTH_KEY = 'reviewReferenceDrawerWidth';
 const REFERENCE_DRAWER_DEFAULT_WIDTH = 500;
 const REFERENCE_DRAWER_MIN_WIDTH = 360;
 const REFERENCE_DRAWER_MAX_WIDTH = 820;
+let referenceDataCache = null;
+let referenceDataRequestId = 0;
+const REFERENCE_LOOKUP_FIELDS = [
+    'listener_name',
+    'listener_number',
+    'teacher_name',
+    'teacher_college',
+    'course_title',
+    'student_grade_class',
+    'lecture_location',
+    'lecture_date',
+    'class_period'
+];
 
 function getReviewReturnUrl() {
     const link = document.querySelector('[data-review-return]');
@@ -1417,14 +1430,36 @@ function getStatusClass(status) {
     }
 }
 
+function getReferenceLookupSignature(formData) {
+    return JSON.stringify(
+        REFERENCE_LOOKUP_FIELDS.map(field => String(formData[field] ?? '').trim())
+    );
+}
+
+function renderReferenceResult(result) {
+    const scheduleMatches = result.schedule_matches || [];
+    const contactMatches = result.contact_matches || [];
+    renderScheduleResults(scheduleMatches);
+    renderContactsResults(contactMatches);
+    const scheduleCount = document.getElementById('scheduleCount');
+    if (scheduleCount) scheduleCount.textContent = scheduleMatches.length;
+    document.getElementById('contactsCount').textContent = contactMatches.length;
+}
+
 // 显示参考数据
 function showReferenceData(trigger) {
     const formData = collectFormData();
+    const signature = getReferenceLookupSignature(formData);
     openReferenceDrawer(trigger);
+    if (referenceDataCache && referenceDataCache.signature === signature) {
+        renderReferenceResult(referenceDataCache.result || {});
+        return;
+    }
+    const requestId = ++referenceDataRequestId;
     const scheduleResults = document.getElementById('scheduleResults');
-    const scheduleCount = document.getElementById('scheduleCount');
     if (scheduleResults) scheduleResults.innerHTML = '<div class="text-center"><i class="bi bi-arrow-repeat icon-spin"></i> 正在搜索...</div>';
     document.getElementById('contactsResults').innerHTML = '<div class="text-center"><i class="bi bi-arrow-repeat icon-spin"></i> 正在搜索...</div>';
+    const scheduleCount = document.getElementById('scheduleCount');
     if (scheduleCount) scheduleCount.textContent = '0';
     document.getElementById('contactsCount').textContent = '0';
     
@@ -1437,20 +1472,18 @@ function showReferenceData(trigger) {
     })
     .then(response => response.json())
     .then(data => {
+        if (requestId !== referenceDataRequestId) return;
         if (data.success) {
             const result = data.result || {};
-            const scheduleMatches = result.schedule_matches || [];
-            const contactMatches = result.contact_matches || [];
-            renderScheduleResults(scheduleMatches);
-            renderContactsResults(contactMatches);
-            if (scheduleCount) scheduleCount.textContent = scheduleMatches.length;
-            document.getElementById('contactsCount').textContent = contactMatches.length;
+            renderReferenceResult(result);
+            referenceDataCache = {signature, result};
         } else {
             if (scheduleResults) scheduleResults.textContent = '搜索失败：' + data.message;
             document.getElementById('contactsResults').textContent = '搜索失败：' + data.message;
         }
     })
     .catch(error => {
+        if (requestId !== referenceDataRequestId) return;
         console.error('Error:', error);
         if (scheduleResults) scheduleResults.textContent = '请求失败';
         document.getElementById('contactsResults').textContent = '请求失败';

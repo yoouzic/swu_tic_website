@@ -18,7 +18,7 @@ function page() {
       minLength: Number(attrs.match(/minlength="(\d+)"/)?.[1] || 0),
       type: attrs.match(/type="([^"]*)"/)?.[1] || 'text',
       customValidity: '',
-      classList: {add: value => classes.add(value), remove: value => classes.delete(value), contains: value => classes.has(value)},
+      classList: {add: value => classes.add(value), remove: value => classes.delete(value), contains: value => classes.has(value), toggle(value, force) { const next = force === undefined ? !classes.has(value) : force; if (next) classes.add(value); else classes.delete(value); return next; }},
       setAttribute(key, value) { this[key] = value; }, removeAttribute(key) { delete this[key]; },
       setCustomValidity(value) { this.customValidity = value; },
       checkValidity() { return !this.customValidity && (!this.required || this.value.trim()) && (!this.pattern || new RegExp(this.pattern).test(this.value)) && this.value.length >= this.minLength; },
@@ -64,7 +64,7 @@ function page() {
   };
   const context = vm.createContext({
     document, console: {error() {}, warn() {}, log() {}}, URLSearchParams,
-    window: {setTimeout() {return 1;}, clearTimeout() {}, setInterval(fn) {state.intervals.push(fn); return 1;}, location: {}, setAdminFeedback(id, message) {state.feedback.push(message);}},
+    window: {setTimeout() {return 1;}, clearTimeout() {}, setInterval(fn) {state.intervals.push(fn); return 1;}, requestAnimationFrame(fn) {fn(); return 1;}, location: {}, setAdminFeedback(id, message) {state.feedback.push(message);}},
     bootstrap: {Modal: {getOrCreateInstance: modal => ({show() {state.shown.push(modal.id);}, hide() {}})}},
     FormData: class {entries() {return [...elements.values()].map(el => [el.id, el.value]);}},
     fetch: async (url, options) => {state.requests.push({url, options}); return {ok: true, json: async () => ({success: true})};},
@@ -198,4 +198,22 @@ test('valid fields allow confirmation without sending a review mutation', () => 
   p.run('submitReview()');
   assert.equal(p.state.shown.includes('submitConfirmModal'), true);
   assert.equal(p.state.requests.length, 0);
+});
+
+test('reference lookup reuses cached results until a lookup field changes', async () => {
+  const p = page();
+  const lookupRequests = () => p.state.requests.filter(request => request.url === '/admin/api/review/reference_data').length;
+
+  p.run("showReferenceData({focus() {}})");
+  await new Promise(setImmediate);
+  assert.equal(lookupRequests(), 1);
+
+  p.run("showReferenceData({focus() {}})");
+  await new Promise(setImmediate);
+  assert.equal(lookupRequests(), 1);
+
+  p.get('teacher_name').value = '王老师';
+  p.run("showReferenceData({focus() {}})");
+  await new Promise(setImmediate);
+  assert.equal(lookupRequests(), 2);
 });
