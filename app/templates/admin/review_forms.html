@@ -35,10 +35,10 @@
                                         <i class="bi bi-list-ul me-2"></i>表单列表
                                         <span class="badge bg-primary text-white ms-2" id="formsCount">0</span>
                                     </h5>
-                                    <div class="automation-coverage-legend small" aria-label="课表证据覆盖">
-                                        <span class="badge automation-coverage-badge automation-coverage-badge--none" data-automation-coverage="none">缺失</span>
-                                        <span class="badge automation-coverage-badge automation-coverage-badge--basic" data-automation-coverage="basic">基础</span>
-                                        <span class="badge automation-coverage-badge automation-coverage-badge--complete" data-automation-coverage="complete">完整</span>
+                                    <div class="automation-coverage-legend small" aria-label="个人课表证据覆盖">
+                                        <span class="badge automation-coverage-badge automation-coverage-badge--none" data-automation-coverage="none">个人课表缺失</span>
+                                        <span class="badge automation-coverage-badge automation-coverage-badge--basic" data-automation-coverage="basic">个人课表基础</span>
+                                        <span class="badge automation-coverage-badge automation-coverage-badge--complete" data-automation-coverage="complete">个人课表完整</span>
                                     </div>
                                     <div class="review-list-header__actions">
                                         <span class="badge bg-info text-dark me-2" id="selectedFormsHint" style="display:none;">已选择0表单</span>
@@ -123,6 +123,7 @@
                                             <label for="riskFilter">自动化分类：</label>
                                             <select class="form-select" id="riskFilter">
                                                 <option value="">全部分类</option>
+                                                <option value="未检查">未检查</option>
                                                 <option value="无明显风险">无明显风险</option>
                                                 <option value="建议复核">建议复核</option>
                                                 <option value="高风险疑似假表">高风险疑似假表</option>
@@ -1311,7 +1312,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
         const automationCategory = getAutomationCategoryLabel(automation.category);
         const automationCoverage = ['none', 'basic', 'complete'].includes(automation.coverage)
             ? automation.coverage
-            : 'none';
+            : 'unchecked';
         const groupCollapseId = `versions-${uniqueId}`;
         const chevronId = `chevron-${uniqueId}`;
         const latestCanReview = latestForm.can_review === true;
@@ -1352,7 +1353,7 @@ function renderFormsList(formGroups, checkedFormIds = []) {
                         ${latestForm.review_stage ? `<span class="badge ${getReviewStageClass(latestForm.review_stage)}" data-review-stage>${escapeHtml(latestForm.review_stage)}</span>` : ''}
                         ${window.ReviewReadReceipts ? window.ReviewReadReceipts.renderBadge(latestForm) : ''}
                         <span class="badge ${getAutomationCategoryClass(automationCategory)}" data-automation-category>${escapeHtml(automationCategory)}</span>
-                        <span class="badge ${getAutomationCoverageClass(automationCoverage)}" data-automation-coverage="${automationCoverage}">课表${getAutomationCoverageLabel(automationCoverage)}</span>
+                        <span class="badge ${getAutomationCoverageClass(automationCoverage)}" data-automation-coverage="${automationCoverage}">个人课表${getAutomationCoverageLabel(automationCoverage)}</span>
                         <button type="button" class="badge bg-light text-dark border-0"
                                 onclick="toggleVersions('${groupCollapseId}', '${chevronId}')"
                                 aria-expanded="false" aria-controls="${groupCollapseId}"
@@ -2090,9 +2091,10 @@ function renderAutomationBatchPreview(stats) {
     const values = [
         ['可处理', stats.processable],
         ['可复用缓存', stats.cache_reusable],
-        ['基础课表证据', stats.basic],
-        ['完整课表证据', stats.complete],
-        ['缺失课表证据', stats.missing],
+        ['尚未检查', stats.unchecked],
+        ['个人课表基础证据', stats.basic],
+        ['个人课表完整证据', stats.complete],
+        ['个人课表缺失', stats.missing],
     ];
     values.forEach(([label, value]) => {
         const item = document.createElement('div');
@@ -2200,12 +2202,26 @@ function renderAutomationBatchProgress(batch) {
 
 function updateAutomationRows(results) {
     (Array.isArray(results) ? results : []).forEach(result => {
+        if (!result.assessment_id) return;
+        currentFormGroups.forEach(group => {
+            (group.forms || []).forEach(form => {
+                if (String(form.id) === String(result.form_id)) {
+                    form.automation = {...(form.automation || {}), ...result};
+                }
+            });
+        });
         const row = document.querySelector(`[data-review-row-form-id="${result.form_id}"]`);
         const badge = row?.querySelector('[data-automation-category]');
         if (!badge) return;
         const category = getAutomationCategoryLabel(result.category);
         badge.textContent = category;
         badge.className = `badge ${getAutomationCategoryClass(category)}`;
+        const coverageBadge = row.querySelector('[data-automation-coverage]');
+        if (coverageBadge && ['none', 'basic', 'complete'].includes(result.coverage)) {
+            coverageBadge.textContent = `个人课表${getAutomationCoverageLabel(result.coverage)}`;
+            coverageBadge.className = `badge ${getAutomationCoverageClass(result.coverage)}`;
+            coverageBadge.dataset.automationCoverage = result.coverage;
+        }
     });
 }
 
@@ -2260,7 +2276,7 @@ function renderAutomationAssessment(formId, assessment) {
         grouped[automationEvidenceSource(finding, assessment)].push(`${finding.title || ''}${finding.message ? `：${finding.message}` : ''}`);
     });
     Object.keys(grouped).forEach(source => setAutomationEvidenceValue(source, grouped[source].join('；')));
-    if (assessment.coverage) setAutomationEvidenceValue('schedule', `覆盖：${getAutomationCoverageLabel(assessment.coverage)}；${grouped.schedule.join('；')}`);
+    if (assessment.coverage) setAutomationEvidenceValue('schedule', `个人课表覆盖：${getAutomationCoverageLabel(assessment.coverage)}；${grouped.schedule.join('；')}`);
     if (assessment.model_result && Object.keys(assessment.model_result).length > 0) setAutomationEvidenceValue('llm', '智能分析已完成。');
     if (assessment.error_code) setAutomationEvidenceValue('system', `系统记录：${assessment.error_code}`);
     const comment = document.getElementById('automationSuggestedComment');
@@ -2337,6 +2353,7 @@ function resetFilters() {
 }
 
 function getAutomationCategoryLabel(category) {
+    if (!category || category === '未检查') return '未检查';
     const labels = {
         '无明显风险': '无明显风险',
         '建议复核': '建议复核',
@@ -2348,6 +2365,7 @@ function getAutomationCategoryLabel(category) {
 
 function getAutomationCategoryClass(category) {
     switch (getAutomationCategoryLabel(category)) {
+        case '未检查': return 'bg-light text-dark';
         case '无明显风险': return 'automation-risk-badge automation-risk-badge--clear';
         case '建议复核': return 'automation-risk-badge automation-risk-badge--review';
         case '高风险疑似假表': return 'automation-risk-badge automation-risk-badge--high';
@@ -2356,12 +2374,13 @@ function getAutomationCategoryClass(category) {
 }
 
 function getAutomationCoverageLabel(coverage) {
-    return ({none: '缺失', basic: '基础', complete: '完整'})[coverage] || '缺失';
+    return ({none: '缺失', basic: '基础', complete: '完整'})[coverage] || '未检查';
 }
 
 function getAutomationCoverageClass(coverage) {
-    const safeCoverage = ['none', 'basic', 'complete'].includes(coverage) ? coverage : 'none';
-    return `automation-coverage-badge automation-coverage-badge--${safeCoverage}`;
+    return ['none', 'basic', 'complete'].includes(coverage)
+        ? `automation-coverage-badge automation-coverage-badge--${coverage}`
+        : 'bg-light text-dark';
 }
 </script>
 {% endblock %}

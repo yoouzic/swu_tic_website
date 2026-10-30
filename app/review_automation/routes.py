@@ -438,8 +438,12 @@ def latest_assessment_summaries(form_ids):
 
 def _coverage_counts(summaries, form_ids):
     counts = Counter({item.value: 0 for item in ScheduleCoverage})
+    counts['unchecked'] = 0
     for form_id in form_ids:
-        coverage = (summaries.get(form_id) or {}).get('coverage', ScheduleCoverage.NONE.value)
+        if not summaries.get(form_id):
+            counts['unchecked'] += 1
+            continue
+        coverage = summaries[form_id].get('coverage', ScheduleCoverage.NONE.value)
         counts[coverage if coverage in counts else ScheduleCoverage.NONE.value] += 1
     return counts
 
@@ -500,6 +504,7 @@ def _batch_preview_payload(data, actor_id):
         'basic': coverage[ScheduleCoverage.BASIC.value],
         'complete': coverage[ScheduleCoverage.COMPLETE.value],
         'missing': coverage[ScheduleCoverage.NONE.value],
+        'unchecked': coverage['unchecked'],
         'coverage': dict(coverage),
         'llm_enabled': llm_enabled,
         'review_mode': review_mode.value,
@@ -576,6 +581,9 @@ def _batch_payload(batch):
         ReviewBatchItem.ordinal.asc(),
     ).all()
     if items:
+        coverages = dict(db.session.query(ReviewAssessment.id, ReviewAssessment.coverage).filter(
+            ReviewAssessment.id.in_([item.assessment_id for item in items if item.assessment_id]),
+        ).all())
         processed_count = sum(
             item.status in {'completed', 'failed', 'cancelled'}
             for item in items
@@ -594,6 +602,7 @@ def _batch_payload(batch):
                 'form_id': item.form_id,
                 'assessment_id': item.assessment_id,
                 'category': item.category,
+                'coverage': coverages.get(item.assessment_id),
                 'error_code': item.error_code,
                 'cache_hit': bool(item.cache_hit),
                 'http_attempts': int(item.http_attempts or 0),

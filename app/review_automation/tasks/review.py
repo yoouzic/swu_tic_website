@@ -25,10 +25,11 @@ from ..models import ReviewAssessment, ReviewBatch, ReviewBatchItem, ReviewRuleR
 from ..service import AssessmentService
 from ..schedules.importer import CLASS_MAPPING_KIND, PERSONAL_KIND, SCHOOL_KIND
 from ..schedules.repository import (
-    find_school_candidates_for_dataset,
+    find_school_candidates_for_ref,
     get_active_dataset,
     get_listener_schedule_for_datasets,
 )
+from ..schedules.canonical import snapshot_canonical_school
 
 
 celery_app = get_celery_app(flask_app)
@@ -47,7 +48,7 @@ def _dataset_snapshot(semester):
     for kind in (SCHOOL_KIND, CLASS_MAPPING_KIND, PERSONAL_KIND):
         dataset = get_active_dataset(kind, semester) if semester else None
         if dataset is None:
-            result[kind] = None
+            result[kind] = snapshot_canonical_school(semester) if kind == SCHOOL_KIND and semester else None
             continue
         stamp = dataset.updated_at or dataset.created_at
         result[kind] = {
@@ -56,6 +57,28 @@ def _dataset_snapshot(semester):
             'version': stamp.isoformat() if hasattr(stamp, 'isoformat') else str(stamp),
         }
     return result
+
+
+def _review_calendar_context(semester, semester_monday):
+    """Resolve omitted request parameters once, before the batch is frozen."""
+    from app.services.academic_term import get_current_teaching_semester, normalize_semester_identifier
+    from app.services.schedule_snapshots import resolve_current_schedule_snapshot
+    from app.services.teaching_calendar import teaching_term_start
+    from app.services.teaching_calendar_settings import load_teaching_calendar_config
+
+    current = get_current_teaching_semester().strip()
+    selected = current if semester is None else normalize_semester_identifier(semester)
+    if selected:
+        selection = resolve_current_schedule_snapshot(selected, include_rows=False)
+        if selection.is_ready:
+            selected = selection.semester
+    current_selection = resolve_current_schedule_snapshot(current, include_rows=False) if current else None
+    current = current_selection.semester if current_selection and current_selection.is_ready else current
+    if semester_monday is None and selected and selected == current:
+        calendar, _ = load_teaching_calendar_config()
+        if calendar is not None:
+            semester_monday = teaching_term_start(calendar)
+    return selected or None, semester_monday
 
 
 def _rule_snapshot():
@@ -127,11 +150,10 @@ def build_default_service(config=None):
         )
 
     def school_matches_loader(form):
-        school_ref = dataset_refs.get(SCHOOL_KIND) or {}
-        dataset_id = school_ref.get('id') if isinstance(school_ref, Mapping) else school_ref
-        if not dataset_id:
-            return ()
-        return find_school_candidates_for_dataset(form, dataset_id, semester)
+        return find_school_candidates_for_ref(
+            form, dataset_refs.get(SCHOOL_KIND), semester,
+            semester_monday=semester_monday,
+        )
 
     frozen_rules = config.get('rule_revisions') if 'rule_revisions' in config else None
     return AssessmentService(
@@ -140,7 +162,14 @@ def build_default_service(config=None):
         schedule_loader=schedule_loader,
         school_matches_loader=school_matches_loader,
         listener_profile_loader=_profile_for_form,
-        schedule_dependencies=dataset_refs,
+        schedule_dependencies={
+            **dataset_refs,
+            'review_context': {
+                'semester': semester,
+                'semester_monday': semester_monday,
+                'version': 'review-context-v1',
+            },
+        },
         rule_revisions=frozen_rules,
         semester=semester,
         semester_monday=semester_monday,
@@ -217,6 +246,7 @@ def _result_payload(
     return {
         'assessment_id': _summary_value(summary, 'assessment_id'),
         'category': _summary_value(summary, 'category', ReviewCategory.UNKNOWN.value),
+        'coverage': _summary_value(summary, 'coverage'),
         'error_code': error_code or _summary_value(summary, 'error_code'),
         'cache_hit': bool(_summary_value(summary, 'cache_hit', False)),
         'http_attempts': int(attempts or 0),
@@ -469,11 +499,12 @@ def _cancel_unstarted_items(batch_id: str):
         db.session.commit()
 
 
-def _item_result(item: ReviewBatchItem) -> dict[str, Any]:
+def _item_result(item: ReviewBatchItem, coverage=None) -> dict[str, Any]:
     return {
         'form_id': int(item.form_id),
         'assessment_id': item.assessment_id,
         'category': item.category or ReviewCategory.UNKNOWN.value,
+        'coverage': coverage,
         'error_code': item.error_code,
         'cache_hit': bool(item.cache_hit),
         'http_attempts': int(item.http_attempts or 0),
@@ -492,12 +523,15 @@ def _aggregate_batch(batch_id: str, *, cancelled: bool = False):
     items = ReviewBatchItem.query.filter_by(batch_id=str(batch.id)).order_by(
         ReviewBatchItem.ordinal.asc(),
     ).all()
-    results = [_item_result(item) for item in items]
     assessment_ids = [
         item.assessment_id
         for item in items
         if isinstance(item.assessment_id, str)
     ]
+    coverages = dict(db.session.query(ReviewAssessment.id, ReviewAssessment.coverage).filter(
+        ReviewAssessment.id.in_(assessment_ids),
+    ).all())
+    results = [_item_result(item, coverages.get(item.assessment_id)) for item in items]
     counts = {
         ReviewCategory.CLEAR.value: 0,
         ReviewCategory.REVIEW.value: 0,
@@ -649,6 +683,7 @@ def create_review_batch(
         raise ValueError('transient_retries must be an integer from 0 to 3') from exc
     if not 0 <= transient_retries_value <= 3:
         raise ValueError('transient_retries must be an integer from 0 to 3')
+    semester, semester_monday = _review_calendar_context(semester, semester_monday)
     if isinstance(semester_monday, date):
         semester_monday_value = semester_monday.isoformat()
     elif semester_monday is None:

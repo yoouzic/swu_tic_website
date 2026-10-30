@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 
 from app.models import db
+from app.services.listening_assistant_contracts import normalize_room
 from app.review_automation.contracts import EvidenceStrength, ScheduleCoverage
 from app.review_automation.models import (
     AutomationAuditLog,
@@ -16,15 +17,15 @@ from app.review_automation.models import (
 )
 
 from .importer import CLASS_MAPPING_KIND, PERSONAL_KIND, SCHOOL_KIND, normalize_dataset_kind
+from .canonical import CANONICAL_SOURCE, load_canonical_school_entries
 from .normalization import (
     NormalizationError,
     normalize_college,
+    normalize_date,
     normalize_identifier,
     normalize_name,
     normalize_weekday,
     parse_period_range,
-    parse_weeks,
-    periods_overlap,
 )
 
 
@@ -47,7 +48,7 @@ class ListenerSchedule:
 
 @dataclass(frozen=True)
 class SchoolScheduleMatch:
-    entry: SchoolScheduleEntry
+    entry: object
     confidence: float
     matched_fields: tuple[str, ...]
     mismatched_fields: tuple[str, ...]
@@ -224,13 +225,29 @@ def _dataset_for_id(dataset_ref, kind, semester):
     return dataset
 
 
+def get_school_entries_for_ref(ref, semester):
+    """Read exactly one frozen school source, with legacy dataset compatibility."""
+    if isinstance(ref, dict) and ref.get('source') == CANONICAL_SOURCE:
+        return load_canonical_school_entries(ref, semester)
+    if isinstance(ref, dict) and ref.get('source') not in (None, 'automation_dataset'):
+        return []
+    dataset = _dataset_for_id(ref, SCHOOL_KIND, semester)
+    if dataset is None:
+        return []
+    return SchoolScheduleEntry.query.filter_by(dataset_id=dataset.id).order_by(
+        SchoolScheduleEntry.id.asc(),
+    ).all()
+
+
 def get_listener_schedule_for_datasets(listener_number, student_id, semester, dataset_refs):
     """Read listener schedule rows only from the supplied immutable dataset IDs."""
     refs = dataset_refs or {}
     listener_number = _identity(listener_number)
     student_id = _identity(student_id)
     mapping_dataset = _dataset_for_id(refs.get(CLASS_MAPPING_KIND), CLASS_MAPPING_KIND, semester)
-    school_dataset = _dataset_for_id(refs.get(SCHOOL_KIND), SCHOOL_KIND, semester)
+    school_ref = refs.get(SCHOOL_KIND)
+    automation_school = not isinstance(school_ref, dict) or school_ref.get('source') in (None, 'automation_dataset')
+    school_dataset = _dataset_for_id(school_ref, SCHOOL_KIND, semester) if automation_school else None
     personal_dataset = _dataset_for_id(refs.get(PERSONAL_KIND), PERSONAL_KIND, semester)
 
     mappings = []
@@ -243,8 +260,8 @@ def get_listener_schedule_for_datasets(listener_number, student_id, semester, da
 
     slot_map: dict[tuple, ScheduleSlot] = {}
     admin_classes = {mapping.admin_class for mapping in mappings}
-    if school_dataset:
-        entries = SchoolScheduleEntry.query.filter_by(dataset_id=school_dataset.id).all()
+    entries = get_school_entries_for_ref(school_ref, semester) if mappings else []
+    if entries:
         for mapping in mappings:
             for entry in entries:
                 if _entry_matches_class(entry, mapping.admin_class):
@@ -264,7 +281,7 @@ def get_listener_schedule_for_datasets(listener_number, student_id, semester, da
 
     if personal_count:
         coverage = ScheduleCoverage.COMPLETE
-    elif mappings and school_dataset:
+    elif mappings and (school_dataset or entries):
         coverage = ScheduleCoverage.BASIC
     else:
         coverage = ScheduleCoverage.NONE
@@ -287,74 +304,56 @@ def _field(form, *names):
     return None
 
 
-def find_school_candidates(form, semester):
+def find_school_candidates(form, semester, *, semester_monday=None):
     dataset = get_active_dataset(SCHOOL_KIND, semester)
-    if not dataset:
-        return []
-
-    course = _field(form, 'course_title', 'course_name')
-    teacher = _field(form, 'teacher_name')
-    college = _field(form, 'teacher_college', 'college')
-    location = _field(form, 'lecture_location', 'location')
-    period_value = _field(form, 'class_period', 'periods')
-    weekday_value = _field(form, 'weekday', 'lecture_weekday')
-    if weekday_value is None:
-        lecture_date = _field(form, 'lecture_date')
-        if lecture_date:
-            try:
-                from .normalization import normalize_date
-                weekday_value = normalize_date(lecture_date).weekday() + 1
-            except NormalizationError:
-                weekday_value = None
-
-    normalized_course = normalize_name(course) if course else None
-    normalized_teacher = normalize_name(teacher) if teacher else None
-    normalized_college = normalize_college(college) if college else None
-    normalized_location = normalize_name(location) if location else None
-    period_range = parse_period_range(period_value) if period_value else None
-    weekday = normalize_weekday(weekday_value) if weekday_value is not None else None
-
-    matches = []
-    for entry in SchoolScheduleEntry.query.filter_by(dataset_id=dataset.id).all():
-        course_anchor = bool(normalized_course and entry.course_title == normalized_course)
-        teacher_anchor = bool(normalized_teacher and entry.teacher_name == normalized_teacher)
-        if not (course_anchor or teacher_anchor):
-            continue
-        matched = []
-        mismatched = []
-        comparisons = (
-            ('course_title', normalized_course, entry.course_title),
-            ('teacher_name', normalized_teacher, entry.teacher_name),
-            ('teacher_college', normalized_college, entry.teacher_college),
-            ('location', normalized_location, entry.location),
-        )
-        for name, expected, actual in comparisons:
-            if expected is None:
-                continue
-            (matched if expected == actual else mismatched).append(name)
-        if weekday is not None:
-            (matched if weekday == entry.weekday else mismatched).append('weekday')
-        if period_range is not None:
-            (matched if periods_overlap(*period_range, entry.start_period, entry.end_period) else mismatched).append('periods')
-        considered = len(matched) + len(mismatched)
-        confidence = len(matched) / considered if considered else 0.0
-        matches.append(SchoolScheduleMatch(
-            entry=entry,
-            confidence=confidence,
-            matched_fields=tuple(matched),
-            mismatched_fields=tuple(mismatched),
-        ))
-    return sorted(matches, key=lambda item: (-item.confidence, item.entry.id))
+    return find_school_candidates_for_ref(
+        form, {'id': dataset.id}, semester, semester_monday=semester_monday,
+    ) if dataset else []
 
 
-def find_school_candidates_for_dataset(form, dataset_id, semester=None):
-    """Find school candidates only in one frozen school dataset."""
-    dataset = _dataset_for_id(dataset_id, SCHOOL_KIND, semester) if semester is not None else db.session.get(
-        ScheduleDataset, str(dataset_id)
+def find_school_candidates_for_dataset(form, dataset_id, semester=None, *, semester_monday=None):
+    """Find school candidates only in one frozen automation dataset."""
+    if semester is None:
+        dataset = db.session.get(ScheduleDataset, str(dataset_id))
+        if dataset is None or dataset.kind != normalize_dataset_kind(SCHOOL_KIND):
+            return []
+        semester = dataset.semester
+    return find_school_candidates_for_ref(
+        form, {'id': dataset_id}, semester, semester_monday=semester_monday,
     )
-    if dataset is None or dataset.kind != normalize_dataset_kind(SCHOOL_KIND):
-        return []
 
+
+def find_school_candidates_for_ref(form, ref, semester, *, semester_monday=None):
+    """Compare form anchors with one explicit canonical or automation source."""
+    entries = get_school_entries_for_ref(ref, semester)
+    if not entries:
+        return []
+    return _find_school_candidates(
+        form, entries, semester_monday=semester_monday,
+    )
+
+
+def _teaching_week(form, semester_monday):
+    explicit = _field(form, 'teaching_week', 'lecture_week', 'week')
+    if explicit is not None and str(explicit).strip():
+        try:
+            week = int(str(explicit))
+            return week
+        except (TypeError, ValueError):
+            return None
+    lecture_date = _field(form, 'lecture_date')
+    if lecture_date is None or semester_monday is None:
+        return None
+    try:
+        monday = normalize_date(semester_monday)
+        current = normalize_date(lecture_date, semester_monday=monday)
+        week = (current - monday).days // 7 + 1
+        return week
+    except (NormalizationError, TypeError, ValueError):
+        return None
+
+
+def _find_school_candidates(form, entries, *, semester_monday=None):
     course = _field(form, 'course_title', 'course_name')
     teacher = _field(form, 'teacher_name')
     college = _field(form, 'teacher_college', 'college')
@@ -365,7 +364,6 @@ def find_school_candidates_for_dataset(form, dataset_id, semester=None):
         lecture_date = _field(form, 'lecture_date')
         if lecture_date:
             try:
-                from .normalization import normalize_date
                 weekday_value = normalize_date(lecture_date).weekday() + 1
             except NormalizationError:
                 weekday_value = None
@@ -373,12 +371,13 @@ def find_school_candidates_for_dataset(form, dataset_id, semester=None):
     normalized_course = normalize_name(course) if course else None
     normalized_teacher = normalize_name(teacher) if teacher else None
     normalized_college = normalize_college(college) if college else None
-    normalized_location = normalize_name(location) if location else None
+    normalized_location = normalize_room(location) if location else None
     period_range = parse_period_range(period_value) if period_value else None
     weekday = normalize_weekday(weekday_value) if weekday_value is not None else None
+    week = _teaching_week(form, semester_monday)
 
     matches = []
-    for entry in SchoolScheduleEntry.query.filter_by(dataset_id=dataset.id).all():
+    for entry in entries:
         course_anchor = bool(normalized_course and entry.course_title == normalized_course)
         teacher_anchor = bool(normalized_teacher and entry.teacher_name == normalized_teacher)
         if not (course_anchor or teacher_anchor):
@@ -389,7 +388,7 @@ def find_school_candidates_for_dataset(form, dataset_id, semester=None):
             ('course_title', normalized_course, entry.course_title),
             ('teacher_name', normalized_teacher, entry.teacher_name),
             ('teacher_college', normalized_college, entry.teacher_college),
-            ('location', normalized_location, entry.location),
+            ('location', normalized_location, normalize_room(entry.location) if entry.location else None),
         )
         for name, expected, actual in comparisons:
             if expected is None:
@@ -398,7 +397,14 @@ def find_school_candidates_for_dataset(form, dataset_id, semester=None):
         if weekday is not None:
             (matched if weekday == entry.weekday else mismatched).append('weekday')
         if period_range is not None:
-            (matched if periods_overlap(*period_range, entry.start_period, entry.end_period) else mismatched).append('periods')
+            contains_periods = entry.start_period <= period_range[0] <= period_range[1] <= entry.end_period
+            (matched if contains_periods else mismatched).append('periods')
+        if week is not None:
+            try:
+                in_teaching_weeks = week in _weeks(entry.weeks_json)
+            except NormalizationError:
+                in_teaching_weeks = False
+            (matched if in_teaching_weeks else mismatched).append('weeks')
         considered = len(matched) + len(mismatched)
         confidence = len(matched) / considered if considered else 0.0
         matches.append(SchoolScheduleMatch(
@@ -417,7 +423,9 @@ __all__ = [
     'activate_dataset',
     'find_school_candidates',
     'find_school_candidates_for_dataset',
+    'find_school_candidates_for_ref',
     'get_active_dataset',
     'get_listener_schedule',
     'get_listener_schedule_for_datasets',
+    'get_school_entries_for_ref',
 ]

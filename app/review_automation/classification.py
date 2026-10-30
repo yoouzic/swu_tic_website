@@ -98,7 +98,7 @@ def aggregate_classification(
     if coverage_value in {ScheduleCoverage.NONE, ScheduleCoverage.BASIC} and 'schedule_data_missing' not in existing_keys:
         result_findings.append(_system_finding(
             'schedule_data_missing',
-            '课表覆盖不完整，自动审核保留该缺口并继续运行其他规则。',
+            '信息员个人课表覆盖不完整，相关时间冲突仍需人工核实；其他规则继续运行。',
             code='schedule_data_missing',
         ))
     has_llm_system_finding = any(

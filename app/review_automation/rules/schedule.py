@@ -261,7 +261,13 @@ def evaluate_schedule_rules(
 
     if only_rule in (None, 'school_schedule_mismatch'):
         candidates = tuple(school_matches or ())
-        mismatched = [item for item in candidates if _candidate_value(item, 'mismatched_fields', ())]
+        # Other classes of the same teacher/course are legitimate alternatives.
+        # A fully matching class resolves this check without accusing the form
+        # of disagreeing with every other class in the whole-school timetable.
+        has_match = any(not _candidate_value(item, 'mismatched_fields', ()) for item in candidates)
+        mismatched = [] if has_match else [
+            item for item in candidates if _candidate_value(item, 'mismatched_fields', ())
+        ]
         if mismatched:
             confidences = [float(_candidate_value(item, 'confidence', 0.0)) for item in mismatched]
             ambiguous = len(mismatched) > 1 and len(set(confidences)) == 1
