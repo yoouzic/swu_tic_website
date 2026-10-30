@@ -473,7 +473,7 @@
 
 <!-- 参考数据侧边抽屉 -->
 <div class="reference-drawer" id="referenceDataDrawer" role="complementary" aria-label="参考数据" aria-hidden="true">
-    <button type="button" class="reference-drawer-handle" id="referenceDrawerHandle" aria-controls="referenceDataDrawer" aria-expanded="false" onclick="toggleReferenceDrawer(event.currentTarget)" aria-label="展开或折叠参考数据">
+    <button type="button" class="reference-drawer-handle" id="referenceDrawerHandle" aria-controls="referenceDataDrawer" aria-expanded="false" onclick="toggleReferenceDrawer(event.currentTarget)" aria-label="展开参考数据" title="展开参考数据">
         <i class="bi bi-chevron-left" id="referenceDrawerToggleIcon"></i>
     </button>
     <div class="reference-drawer-panel">
@@ -1501,6 +1501,12 @@ function updateReferenceDrawerIcon() {
     if (!drawer || !toggleIcon) return;
     const isOpen = drawer.classList.contains('is-open');
     toggleIcon.className = isOpen ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+    const handle = document.getElementById('referenceDrawerHandle');
+    if (handle) {
+        const label = isOpen ? '收起参考数据' : '展开参考数据';
+        handle.setAttribute('aria-label', label);
+        handle.title = label;
+    }
 }
 
 function readReferenceDrawerWidth() {

@@ -18,11 +18,13 @@ class ReferenceDrawerUiTest(unittest.TestCase):
         self.assertIn('role="separator"', template)
         self.assertIn('aria-orientation="vertical"', template)
         self.assertIn('REFERENCE_DRAWER_WIDTH_KEY', template)
+        self.assertIn("handle.setAttribute('aria-label', label)", template)
 
         style = self.STYLE.read_text(encoding='utf-8')
         self.assertIn('--reference-drawer-width: 500px', style)
         self.assertIn('scrollbar-gutter: stable', style)
         self.assertIn('.reference-drawer-resizer__grip', style)
+        self.assertIn('width: 34px; height: 68px', style)
 
     def test_drawer_uses_shared_paper_texture(self):
         style = self.STYLE.read_text(encoding='utf-8')
