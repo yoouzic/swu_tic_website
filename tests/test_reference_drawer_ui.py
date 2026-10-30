@@ -35,6 +35,16 @@ class ReferenceDrawerUiTest(unittest.TestCase):
             style,
         )
 
+    def test_open_drawer_can_shift_main_content(self):
+        template = self.TEMPLATE.read_text(encoding='utf-8')
+        self.assertIn('updateReferenceDrawerLayout', template)
+        self.assertIn("classList.toggle('reference-drawer-open'", template)
+
+        style = self.STYLE.read_text(encoding='utf-8')
+        self.assertIn('body.reference-drawer-open .app-frame', style)
+        self.assertIn('padding-right 240ms var(--ease-out)', style)
+        self.assertIn('transition: transform 240ms var(--ease-out)', style)
+
     def test_drawer_has_collapsed_reopen_widget(self):
         template = self.TEMPLATE.read_text(encoding='utf-8')
         self.assertIn('id="referenceDrawerReopen"', template)

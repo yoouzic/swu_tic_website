@@ -539,6 +539,8 @@ const REFERENCE_DRAWER_WIDTH_KEY = 'reviewReferenceDrawerWidth';
 const REFERENCE_DRAWER_DEFAULT_WIDTH = 500;
 const REFERENCE_DRAWER_MIN_WIDTH = 360;
 const REFERENCE_DRAWER_MAX_WIDTH = 820;
+const REFERENCE_DRAWER_GAP = 12;
+const REFERENCE_DRAWER_MIN_MAIN_WIDTH = 760;
 let referenceDataCache = null;
 let referenceDataRequestId = 0;
 const REFERENCE_LOOKUP_FIELDS = [
@@ -1490,6 +1492,24 @@ function showReferenceData(trigger) {
     });
 }
 
+function updateReferenceDrawerLayout() {
+    const drawer = document.getElementById('referenceDataDrawer');
+    if (!drawer || typeof drawer.getBoundingClientRect !== 'function' || !document.body || !document.documentElement) return;
+    const isOpen = drawer.classList.contains('is-open');
+    if (!isOpen) {
+        document.body.classList.remove('reference-drawer-open');
+        document.documentElement.style.setProperty('--reference-drawer-offset', '0px');
+        return;
+    }
+    const frame = document.querySelector('.app-frame');
+    const frameWidth = frame ? frame.getBoundingClientRect().width : window.innerWidth;
+    const drawerWidth = drawer.getBoundingClientRect().width;
+    const available = frameWidth - drawerWidth - REFERENCE_DRAWER_GAP;
+    const canShift = window.innerWidth >= 1100 && available >= REFERENCE_DRAWER_MIN_MAIN_WIDTH;
+    document.documentElement.style.setProperty('--reference-drawer-offset', `${Math.round(drawerWidth + REFERENCE_DRAWER_GAP)}px`);
+    document.body.classList.toggle('reference-drawer-open', canShift);
+}
+
 function setReferenceDrawerState(isOpen) {
     const drawer = document.getElementById('referenceDataDrawer');
     if (!drawer) return;
@@ -1509,6 +1529,7 @@ function setReferenceDrawerState(isOpen) {
         reopen.hidden = isOpen;
         reopen.setAttribute('aria-expanded', String(isOpen));
     }
+    updateReferenceDrawerLayout();
     updateReferenceDrawerIcon();
 }
 
@@ -1590,6 +1611,7 @@ function setReferenceDrawerWidth(width, options = {}) {
             // Storage can be unavailable in private contexts; resizing still works.
         }
     }
+    updateReferenceDrawerLayout();
 }
 
 function restoreReferenceDrawerWidth() {
@@ -1614,6 +1636,7 @@ function initReferenceDrawerResize() {
         if (!dragState) return;
         dragState = null;
         drawer.classList.remove('is-resizing');
+        document.body.classList.remove('reference-drawer-resizing');
         setReferenceDrawerWidth(currentWidth(), {persist: true});
     };
 
@@ -1623,6 +1646,7 @@ function initReferenceDrawerResize() {
         event.preventDefault();
         dragState = {pointerId: event.pointerId, startX: event.clientX, startWidth: currentWidth()};
         drawer.classList.add('is-resizing');
+        document.body.classList.add('reference-drawer-resizing');
         if (typeof resizer.setPointerCapture === 'function') {
             resizer.setPointerCapture(event.pointerId);
         }
