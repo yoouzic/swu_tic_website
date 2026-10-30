@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}审核表单 - 管理员面板{% endblock %}
+{% block body_class %}review-page{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -540,7 +541,7 @@ const REFERENCE_DRAWER_DEFAULT_WIDTH = 500;
 const REFERENCE_DRAWER_MIN_WIDTH = 360;
 const REFERENCE_DRAWER_MAX_WIDTH = 820;
 const REFERENCE_DRAWER_GAP = 12;
-const REFERENCE_DRAWER_MIN_MAIN_WIDTH = 760;
+const REFERENCE_DRAWER_MIN_MAIN_WIDTH = 640;
 let referenceDataCache = null;
 let referenceDataRequestId = 0;
 const REFERENCE_LOOKUP_FIELDS = [
@@ -1585,10 +1586,17 @@ function readReferenceDrawerWidth() {
 }
 
 function getReferenceDrawerMaxWidth() {
-    return Math.max(
-        REFERENCE_DRAWER_MIN_WIDTH,
-        Math.min(REFERENCE_DRAWER_MAX_WIDTH, Math.floor(window.innerWidth * 0.92))
-    );
+    const viewportMax = Math.floor(window.innerWidth * 0.92);
+    const baseMax = Math.min(REFERENCE_DRAWER_MAX_WIDTH, viewportMax);
+    const frame = document.querySelector('.app-frame');
+    if (window.innerWidth >= 1100 && frame && typeof frame.getBoundingClientRect === 'function') {
+        const frameWidth = frame.getBoundingClientRect().width;
+        const layoutMax = Math.floor(frameWidth - REFERENCE_DRAWER_MIN_MAIN_WIDTH - REFERENCE_DRAWER_GAP);
+        if (layoutMax >= REFERENCE_DRAWER_MIN_WIDTH) {
+            return Math.min(baseMax, layoutMax);
+        }
+    }
+    return Math.max(REFERENCE_DRAWER_MIN_WIDTH, baseMax);
 }
 
 function setReferenceDrawerWidth(width, options = {}) {

@@ -109,6 +109,7 @@ body.reference-drawer-resizing .app-frame { transition: none; }
 .app-search .form-control { background: var(--color-bg-subtle); }
 .app-search .btn { border-color: var(--color-control-border); }
 .app-content { width: min(100%,var(--content-max)); margin: 0 auto; padding: 24px 32px 34px; }
+body.review-page .app-content { padding-bottom: 0; }
 .public-shell { min-height: 100dvh; display: grid; grid-template-columns: minmax(0,1120px); place-content: center; justify-items: center; padding: 40px 24px; background: var(--color-background) var(--texture-paper); }
 .public-shell > .app-messages { width: min(1120px,100%); }
 .app-messages:empty { display: none; }
@@ -429,7 +430,7 @@ body,.public-shell,.app-sidebar,.workspace > .page-header { background-size: var
 .review-form-section__header h2 { margin: 0; color: var(--color-text); font-size: 1rem; }
 .review-form-section__body { min-width: 0; padding-bottom: 4px; }
 .review-form-section--decision { margin-top: var(--space-3); padding-inline: 16px; border: 1px solid var(--color-border); border-radius: var(--control-radius); background: var(--color-background); }
-.review-form-actions { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin: 0 -20px -20px; padding: 14px 20px; border-top: 1px solid var(--color-border); background: rgb(255 255 255 / .96); backdrop-filter: blur(6px); }
+.review-form-actions { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin: 0 -20px -20px; padding: 14px 20px; border-top: 1px solid rgb(116 98 71 / .16); border-radius: 0 0 var(--surface-radius) var(--surface-radius); background: var(--color-surface) var(--texture-paper); background-size: var(--texture-paper-size); background-blend-mode: multiply; box-shadow: 0 -10px 24px rgb(41 51 62 / .06); }
 .review-form-loading { padding: 48px 20px; }
 .review-scoring-section { margin-top: var(--space-4); }
 .review-scoring-table th:first-child { width: 40%; }
@@ -755,8 +756,9 @@ body,.public-shell,.app-sidebar,.workspace > .page-header { background-size: var
     .file-status-item .file-path { grid-column: 1 / -1; }
 }
 @media (max-width: 575.98px) {
-    .review-form-actions { align-items: stretch; flex-direction: column; }
-    .review-form-actions .btn { width: 100%; }
+    .review-form-actions { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(0,1.12fr); align-items: stretch; gap: 8px; margin: 0 -16px -20px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+    .review-form-actions .btn { width: 100%; min-height: 44px; flex: none; padding-inline: 6px; font-size: .79rem; }
+    .review-form-actions .btn i { font-size: .9rem; }
     .review-scoring-table,.review-scoring-table tbody,.review-scoring-table tr,.review-scoring-table td { display: block; width: 100%; }
     .review-scoring-table thead { display: none; }
     .review-scoring-table tbody { display: grid; gap: var(--space-3); }
@@ -768,11 +770,12 @@ body,.public-shell,.app-sidebar,.workspace > .page-header { background-size: var
     .reference-drawer-header { padding: 16px 18px; }
     .reference-drawer-body { padding: 14px 18px 20px; scrollbar-gutter: auto; }
     .reference-drawer-resizer { display: none; }
-    .reference-drawer-reopen { top: auto; right: 12px; bottom: 18px; width: auto; min-height: 0; height: 44px; padding: 0 14px; grid-auto-flow: column; gap: 8px; border: 1px solid rgb(116 98 71 / .26); border-radius: 999px; box-shadow: 0 8px 22px rgb(41 51 62 / .16),inset 1px 0 rgb(255 255 255 / .6); }
+    .reference-drawer-reopen { top: auto; right: 12px; bottom: calc(80px + env(safe-area-inset-bottom)); width: auto; min-height: 0; height: 44px; padding: 0 14px; grid-auto-flow: column; gap: 8px; border: 1px solid rgb(116 98 71 / .26); border-radius: 999px; box-shadow: 0 8px 22px rgb(41 51 62 / .16),inset 1px 0 rgb(255 255 255 / .6); }
     .reference-drawer-reopen::before { display: none; }
     .reference-drawer-reopen__label { font-size: .82rem; letter-spacing: .04em; writing-mode: horizontal-tb; }
     .reference-drawer-reopen__chevron { display: none; }
 }
+@media (max-width: 360px) { .review-form-actions .btn i { display: none; } }
 @media (max-width: 576px) { .app-user-menu__name { display: none; } .app-user-menu__toggle { padding-inline: 6px; } }
 @media (max-width: 768px) {
     .public-shell { padding: 16px; }

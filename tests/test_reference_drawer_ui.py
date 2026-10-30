@@ -28,6 +28,11 @@ class ReferenceDrawerUiTest(unittest.TestCase):
         self.assertIn('width: 34px; height: 68px', style)
         self.assertIn('.reference-drawer-body::-webkit-scrollbar-thumb', style)
 
+    def test_drawer_max_width_respects_the_main_column(self):
+        template = self.TEMPLATE.read_text(encoding='utf-8')
+        self.assertIn('layoutMax', template)
+        self.assertIn('REFERENCE_DRAWER_MIN_MAIN_WIDTH', template)
+
     def test_drawer_uses_shared_paper_texture(self):
         style = self.STYLE.read_text(encoding='utf-8')
         self.assertIn(
