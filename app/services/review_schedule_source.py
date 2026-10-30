@@ -88,6 +88,20 @@ KNOWN_SCALAR_KINDS = {
     'nat',
 }
 
+# SQLite builds before 3.32 cap a statement at 999 bind variables.
+ROW_ID_QUERY_CHUNK_SIZE = 500
+
+
+def _scalar_metas_by_row_id(row_ids):
+    metas = {}
+    for start in range(0, len(row_ids), ROW_ID_QUERY_CHUNK_SIZE):
+        chunk = row_ids[start:start + ROW_ID_QUERY_CHUNK_SIZE]
+        for meta in ScheduleImportRowScalarMeta.query.filter(
+            ScheduleImportRowScalarMeta.row_id.in_(chunk)
+        ).all():
+            metas[meta.row_id] = meta
+    return metas
+
 
 def _exists(path: str) -> bool:
     try:
@@ -133,12 +147,7 @@ def snapshot_scalar_metadata_complete(rows: List[ScheduleImportRow]) -> bool:
     if not row_ids:
         return True
 
-    metas = ScheduleImportRowScalarMeta.query.filter(
-        ScheduleImportRowScalarMeta.row_id.in_(row_ids)
-    ).all()
-    by_row: Dict[int, ScheduleImportRowScalarMeta] = {
-        meta.row_id: meta for meta in metas
-    }
+    by_row: Dict[int, ScheduleImportRowScalarMeta] = _scalar_metas_by_row_id(row_ids)
 
     for row in rows:
         meta = by_row.get(row.id)
@@ -157,10 +166,7 @@ def snapshot_scalar_metadata_valid(rows: List[ScheduleImportRow]) -> bool:
     if not row_ids:
         return True
 
-    metas = ScheduleImportRowScalarMeta.query.filter(
-        ScheduleImportRowScalarMeta.row_id.in_(row_ids)
-    ).all()
-    by_row = {meta.row_id: meta for meta in metas}
+    by_row = _scalar_metas_by_row_id(row_ids)
 
     for row in rows:
         meta = by_row.get(row.id)
@@ -243,14 +249,7 @@ def snapshot_rows_to_legacy_df(
 ) -> pd.DataFrame:
     """Convert canonical snapshot rows to legacy matcher-facing DataFrame."""
     row_ids = [row.id for row in rows if row.id is not None]
-    meta_by_row: Dict[int, ScheduleImportRowScalarMeta] = {}
-    if row_ids:
-        meta_by_row = {
-            meta.row_id: meta
-            for meta in ScheduleImportRowScalarMeta.query.filter(
-                ScheduleImportRowScalarMeta.row_id.in_(row_ids)
-            ).all()
-        }
+    meta_by_row: Dict[int, ScheduleImportRowScalarMeta] = _scalar_metas_by_row_id(row_ids)
 
     data = []
     for row in rows:
