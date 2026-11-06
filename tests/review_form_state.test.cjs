@@ -64,7 +64,7 @@ function page() {
   };
   const context = vm.createContext({
     document, console: {error() {}, warn() {}, log() {}}, URLSearchParams,
-    window: {setTimeout() {return 1;}, clearTimeout() {}, setInterval(fn) {state.intervals.push(fn); return 1;}, requestAnimationFrame(fn) {fn(); return 1;}, location: {}, setAdminFeedback(id, message) {state.feedback.push(message);}},
+    window: {SwuFeedbackText: require('../app/static/js/feedback-text.js'), setTimeout() {return 1;}, clearTimeout() {}, setInterval(fn) {state.intervals.push(fn); return 1;}, requestAnimationFrame(fn) {fn(); return 1;}, location: {}, setAdminFeedback(id, message) {state.feedback.push(message);}},
     bootstrap: {Modal: {getOrCreateInstance: modal => ({show() {state.shown.push(modal.id);}, hide() {}})}},
     FormData: class {entries() {return [...elements.values()].map(el => [el.id, el.value]);}},
     fetch: async (url, options) => {state.requests.push({url, options}); return {ok: true, json: async () => ({success: true})};},
@@ -75,6 +75,19 @@ function page() {
   context.detectChanges = () => [];
   return {get, state, context, run: code => vm.runInContext(code, context), json: code => JSON.parse(JSON.stringify(vm.runInContext(code, context)))};
 }
+
+test('review feedback threshold excludes punctuation and emoji but counts mixed letters and digits', () => {
+  const p = page();
+  for (const [value, expected] of [
+    ['课'.repeat(49) + '，。!?\n🙂', false],
+    ['课'.repeat(20) + 'Abcde'.repeat(3) + '12345'.repeat(3) + '，\n🙂', true],
+    ['𠮷'.repeat(49) + '，', false],
+    ['𠮷'.repeat(50), true],
+  ]) {
+    p.get('course_feedback').value = value;
+    assert.equal(p.run('validateReviewForm()'), expected);
+  }
+});
 
 test('cancel and reopen retains manually entered score values and auto marker', () => {
   const p = page();

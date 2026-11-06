@@ -19,6 +19,7 @@ from ..services.legacy_review_compat import (
     resolve_legacy_semester_monday,
 )
 from ..services.review_schedule_source import resolve_review_schedule_source
+from ..services.feedback_text import MINIMUM_FEEDBACK_CHARACTERS, count_feedback_characters
 from ..services.review_schedule_matcher import (
     find_course_in_schedule,
     normalize_class_period,
@@ -457,8 +458,8 @@ class AutoReviewEngine:
         # 验证课程反馈
         course_feedback = getattr(form_like, 'course_feedback', None)
         if course_feedback:
-            if len(course_feedback) < 50:
-                issues.append('课程反馈字数应大于50字')
+            if count_feedback_characters(course_feedback) < MINIMUM_FEEDBACK_CHARACTERS:
+                issues.append('课程反馈字数至少为50字（不含标点、空白和表情）')
             if 'ppt' in course_feedback.lower() and 'PPT' not in course_feedback:
                 fixes.append('课程反馈中的PPT应为大写')
 

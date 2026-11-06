@@ -23,7 +23,7 @@ function fixture() {
     manual_entry_allowed:{name:'manual_entry_allowed',value:'false'},
   };
   const context = {
-    window:{lectureFormSiteCaptureId:null}, CSS:{escape:key=>key},
+    window:{lectureFormSiteCaptureId:null,SwuFeedbackText:require('../app/static/js/feedback-text.js')}, CSS:{escape:key=>key},
     lectureFormIsEditMode:false, lectureScheduleReady:true, lectureRegistrationReady:true,
     lectureCaptureReady:true, lectureCurrentSemester:'2026-2027-1', lectureCurrentScheduleBatchId:'1',
     document:{getElementById:id=>fields[id]||null, querySelectorAll:selector=>{

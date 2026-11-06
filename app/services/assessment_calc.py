@@ -578,7 +578,7 @@ def build_department_monthly_assessment_payload(current_user_id, start_date, end
             'required_submission_per_member': reward_settings['required_submission'],
             'scope_label': '、'.join(selected_departments) if selected_departments else '未选择部门',
             'period_label': '、'.join(item['month_label'] for item in month_templates) if month_templates else '无完整教学月',
-            'submission_status_note': '中心审核有效数为0不代表未交表。实际交表数按每次听课的最新版本统计；待完成审核与已驳回单独列示，考核有效数仍按中心审核及豁免规则计算。',
+            'submission_status_note': '中心审核有效数为0不代表未交表。实际交表数按每次听课的最新版本统计；待审核合计拆分为待初审和待中心完成审核，已驳回单独列示，考核有效数仍按中心审核及豁免规则计算。',
             'disclaimer': '考评情况为系统根据当前考评规则和数据自动给出，不代表真实考评情况，请认真核实，建议核实无误后保存或导出数据。'
         }
     }
@@ -650,6 +650,8 @@ def build_department_monthly_assessment_payload(current_user_id, start_date, end
                     'required_submission': week_required,
                     'submitted_count': 0,
                     'awaiting_review_count': 0,
+                    'initial_review_pending_count': 0,
+                    'center_review_pending_count': 0,
                     'rejected_count': 0,
                     'effective_count': 0,
                     'error_count': 0,
@@ -678,6 +680,8 @@ def build_department_monthly_assessment_payload(current_user_id, start_date, end
                     'required_submission': 0,
                     'submitted_count': 0,
                     'awaiting_review_count': 0,
+                    'initial_review_pending_count': 0,
+                    'center_review_pending_count': 0,
                     'rejected_count': 0,
                     'effective_count': 0,
                     'error_count': 0,
@@ -727,6 +731,10 @@ def build_department_monthly_assessment_payload(current_user_id, start_date, end
         week_row['submitted_count'] += 1
         if latest_form.status in {'待审核', '部门已审核', '已审核'}:
             week_row['awaiting_review_count'] += 1
+            if latest_form.status == '待审核':
+                week_row['initial_review_pending_count'] += 1
+            else:
+                week_row['center_review_pending_count'] += 1
         elif latest_form.status == '已驳回':
             week_row['rejected_count'] += 1
 
@@ -798,9 +806,9 @@ def build_department_monthly_assessment_payload(current_user_id, start_date, end
 
         for month_row in department_row['months']:
             for week_row in month_row['weeks']:
-                for key in ['required_submission', 'submitted_count', 'awaiting_review_count', 'rejected_count', 'effective_count', 'error_count', 'extra_count', 'shortage_count', 'missing_count', 'missing_penalty', 'assessment_total_score', 'assessment_actual_score', 'raw_score', 'final_score']:
+                for key in ['required_submission', 'submitted_count', 'awaiting_review_count', 'initial_review_pending_count', 'center_review_pending_count', 'rejected_count', 'effective_count', 'error_count', 'extra_count', 'shortage_count', 'missing_count', 'missing_penalty', 'assessment_total_score', 'assessment_actual_score', 'raw_score', 'final_score']:
                     month_row['summary'][key] += float(week_row[key])
-            for int_key in ['required_submission', 'submitted_count', 'awaiting_review_count', 'rejected_count', 'effective_count', 'error_count', 'extra_count', 'shortage_count', 'missing_count', 'missing_penalty']:
+            for int_key in ['required_submission', 'submitted_count', 'awaiting_review_count', 'initial_review_pending_count', 'center_review_pending_count', 'rejected_count', 'effective_count', 'error_count', 'extra_count', 'shortage_count', 'missing_count', 'missing_penalty']:
                 month_row['summary'][int_key] = int(month_row['summary'][int_key])
 
         department_row.pop('users', None)
@@ -904,7 +912,7 @@ def build_department_monthly_workbook(payload):
     wb = openpyxl.Workbook()
     summary_ws = wb.active
     summary_ws.title = '月度考评汇总'
-    summary_headers = ['部门', '教学月', '周次范围', '成员数', '实际交表数', '待完成审核数', '已驳回数', '中心审核有效数', '月多交表', '个人审核缺口', '月错误表单扣分（原始分）', '月错误表单扣分（实际扣分）', '月总考评分']
+    summary_headers = ['部门', '教学月', '周次范围', '成员数', '实际交表数', '待完成审核数', '待初审数', '待中心完成审核数', '已驳回数', '中心审核有效数', '月多交表', '个人审核缺口', '月错误表单扣分（原始分）', '月错误表单扣分（实际扣分）', '月总考评分']
     summary_ws.append(summary_headers)
     for department_row in payload.get('departments', []):
         for month_row in department_row.get('months', []):
@@ -916,6 +924,8 @@ def build_department_monthly_workbook(payload):
                 department_row.get('member_count'),
                 summary.get('submitted_count', '未记录'),
                 summary.get('awaiting_review_count', '未记录'),
+                summary.get('initial_review_pending_count', '未记录'),
+                summary.get('center_review_pending_count', '未记录'),
                 summary.get('rejected_count', '未记录'),
                 summary.get('effective_count'),
                 summary.get('extra_count'),
@@ -928,7 +938,7 @@ def build_department_monthly_workbook(payload):
         cell.font = Font(bold=True)
 
     detail_ws = wb.create_sheet('周度考评明细')
-    detail_headers = ['部门', '教学月', '周次', '时间范围', '需交表数', '实际交表数', '待完成审核数', '已驳回数', '中心审核有效数', '错误表单数', '多交表（+1分/张）', '个人审核缺口（-2分/张）', '中心审核口径缺口（-3/张）', '错误表单扣分（原始分）', '错误表单扣分（实际扣分）', '周考评分', '扣分档位汇总']
+    detail_headers = ['部门', '教学月', '周次', '时间范围', '需交表数', '实际交表数', '待完成审核数', '待初审数', '待中心完成审核数', '已驳回数', '中心审核有效数', '错误表单数', '多交表（+1分/张）', '个人审核缺口（-2分/张）', '中心审核口径缺口（-3/张）', '错误表单扣分（原始分）', '错误表单扣分（实际扣分）', '周考评分', '扣分档位汇总']
     detail_ws.append(detail_headers)
     for department_row in payload.get('departments', []):
         for month_row in department_row.get('months', []):
@@ -945,6 +955,8 @@ def build_department_monthly_workbook(payload):
                     week_row.get('required_submission'),
                     week_row.get('submitted_count', '未记录'),
                     week_row.get('awaiting_review_count', '未记录'),
+                    week_row.get('initial_review_pending_count', '未记录'),
+                    week_row.get('center_review_pending_count', '未记录'),
                     week_row.get('rejected_count', '未记录'),
                     week_row.get('effective_count'),
                     week_row.get('error_count'),

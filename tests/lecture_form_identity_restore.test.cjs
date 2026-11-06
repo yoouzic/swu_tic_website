@@ -16,7 +16,7 @@ function fixture({scheduleReady=true,captureReady=scheduleReady}={}) {
     unique_id:{value:''}, expected_form_id:{value:''}, expected_form_updated_at:{value:''},
   };
   const context = {
-    window:{lectureFormSiteCaptureId:7}, CSS:{escape:key=>key},
+    window:{lectureFormSiteCaptureId:7,SwuFeedbackText:require('../app/static/js/feedback-text.js')}, CSS:{escape:key=>key},
     lectureScheduleReady:scheduleReady, lectureRegistrationReady:scheduleReady,
     lectureCaptureReady:captureReady,
     lectureCurrentSemester:'2026-2027-1',
@@ -39,6 +39,12 @@ test('new photo draft cannot clear the required readonly listener identity',()=>
   assert.equal(f.fields.listener_name.value,'拍照流程验收（测试学院）');
   assert.equal(f.fields.listener_number.value,'PHOTO-AUDIT');
   assert.equal(f.context.window.lectureFormSiteCaptureId,8);
+});
+
+test('restored feedback counter excludes punctuation and emoji',()=>{
+  const f=fixture();
+  f.context.applyLectureFormDraftData({course_feedback:'课'.repeat(49)+'，。!?\n🙂'});
+  assert.equal(f.fields.feedback_counter.textContent,'已输入 49 字');
 });
 test('older per-photo identity cannot replace the current rendered profile',()=>{
   const f=fixture();

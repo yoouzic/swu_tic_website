@@ -17,6 +17,7 @@ function fixture(){
   const fields=Object.fromEntries(ids.map(id=>[id,node(id)]));
   for(const id of ['tm_ppt','tm_lecture','tm_interactive'])fields[id].type='checkbox';
   const panel=node(),form=node(),window=node();
+  window.SwuFeedbackText=require('../app/static/js/feedback-text.js');
   const parts=Object.fromEntries(['issues','methods','ratings','rating-detail','rating-title','rating-progress','courseware-choice','method-confirm','rating-confirm','recommendation','summary','checklist','missing','count'].map(key=>[key,node()]));
   const methodChoices=['tm_ppt','tm_lecture','tm_interactive'].map(id=>Object.assign(node(),{dataset:{completionMethod:id},type:'checkbox'}));
   const ratingChoices=['classroom_discipline','classroom_atmosphere','courseware_quality','overall_effect'].map(id=>Object.assign(node(),{dataset:{completionRating:id},type:'checkbox'}));

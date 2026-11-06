@@ -82,6 +82,20 @@ test('completion requires enough feedback and real phone format, and clears when
   assert.equal(assistant.needsAttention(form.fields.contact_phone1), false);
 });
 
+test('completion counts letters and digits but not punctuation, spaces or emoji', () => {
+  const form = formFixture();
+  for (const [text, missing] of [
+    ['课'.repeat(49) + '，。!?\n 🙂', true],
+    ['课'.repeat(20) + 'Abcde'.repeat(3) + '12345'.repeat(3) + '，\n🙂', false],
+    ['𠮷'.repeat(49) + '，', true],
+    ['𠮷'.repeat(50), false],
+    ['e\u0301'.repeat(49) + '。', true],
+  ]) {
+    form.fields.course_feedback.value = text;
+    assert.equal(assistant.needsAttention(form.fields.course_feedback), missing);
+  }
+});
+
 test('confirming no issues again remembers the most recent manual value for undo', () => {
   const form = formFixture();
   const owned = new Map();

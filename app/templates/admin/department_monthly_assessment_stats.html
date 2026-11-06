@@ -17,7 +17,7 @@
     </div>
 
     <div class="alert alert-warning alert-dismissible" role="note">
-        中心审核有效数为0不代表未交表，请先核对实际交表数和待完成审核数。以下缺口和考评分沿用当前审核口径计算，请核实后保存或导出。
+        中心审核有效数为0不代表未交表，请先核对实际交表数、待初审和待中心完成审核数。以下缺口和考评分沿用当前审核口径计算，请核实后保存或导出。
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭统计说明"></button>
     </div>
 
@@ -251,7 +251,9 @@ function renderMonthlyResults(payload) {
                         <div class="p-3">
                             <div class="row g-2 mb-3">
                                 <div class="col-md-auto">实际交表数：<span class="fw-bold">${formatSubmissionCount(monthRow.summary, 'submitted_count')}</span></div>
-                                <div class="col-md-auto">待完成审核数：<span class="fw-bold">${formatSubmissionCount(monthRow.summary, 'awaiting_review_count')}</span></div>
+                                <div class="col-md-auto">待审核合计：<span class="fw-bold">${formatSubmissionCount(monthRow.summary, 'awaiting_review_count')}</span></div>
+                                <div class="col-md-auto">其中待初审：<span class="fw-bold">${formatSubmissionCount(monthRow.summary, 'initial_review_pending_count')}</span></div>
+                                <div class="col-md-auto">待中心完成审核：<span class="fw-bold">${formatSubmissionCount(monthRow.summary, 'center_review_pending_count')}</span></div>
                                 <div class="col-md-auto">已驳回数：<span class="fw-bold">${formatSubmissionCount(monthRow.summary, 'rejected_count')}</span></div>
                                 <div class="col-md-auto">中心审核有效数：<span class="fw-bold">${Number((monthRow.summary || {}).effective_count || 0)}</span></div>
                             </div>
@@ -270,7 +272,9 @@ function renderMonthlyResults(payload) {
                                             <th>时间范围</th>
                                             <th>需交表数</th>
                                             <th>实际交表数</th>
-                                            <th>待完成审核数</th>
+                                            <th>待审核合计</th>
+                                            <th>待初审数</th>
+                                            <th>待中心完成审核数</th>
                                             <th>已驳回数</th>
                                             <th>中心审核有效数</th>
                                             <th>错误表单数</th>
@@ -291,6 +295,8 @@ function renderMonthlyResults(payload) {
                                                 <td>${Number(weekRow.required_submission || 0)}</td>
                                                 <td>${formatSubmissionCount(weekRow, 'submitted_count')}</td>
                                                 <td>${formatSubmissionCount(weekRow, 'awaiting_review_count')}</td>
+                                                <td>${formatSubmissionCount(weekRow, 'initial_review_pending_count')}</td>
+                                                <td>${formatSubmissionCount(weekRow, 'center_review_pending_count')}</td>
                                                 <td>${formatSubmissionCount(weekRow, 'rejected_count')}</td>
                                                 <td>${Number(weekRow.effective_count || 0)}</td>
                                                 <td>${Number(weekRow.error_count || 0)}</td>
@@ -308,6 +314,8 @@ function renderMonthlyResults(payload) {
                                             <td>${Number((monthRow.summary || {}).required_submission || 0)}</td>
                                             <td>${formatSubmissionCount(monthRow.summary, 'submitted_count')}</td>
                                             <td>${formatSubmissionCount(monthRow.summary, 'awaiting_review_count')}</td>
+                                            <td>${formatSubmissionCount(monthRow.summary, 'initial_review_pending_count')}</td>
+                                            <td>${formatSubmissionCount(monthRow.summary, 'center_review_pending_count')}</td>
                                             <td>${formatSubmissionCount(monthRow.summary, 'rejected_count')}</td>
                                             <td>${Number((monthRow.summary || {}).effective_count || 0)}</td>
                                             <td>${Number((monthRow.summary || {}).error_count || 0)}</td>

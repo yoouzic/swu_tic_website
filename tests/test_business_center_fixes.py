@@ -389,10 +389,14 @@ class BusinessCenterFixTests(unittest.TestCase):
         week = month['weeks'][2]
         self.assertEqual(week['submitted_count'], 3)
         self.assertEqual(week['awaiting_review_count'], 2)
+        self.assertEqual(week['initial_review_pending_count'], 1)
+        self.assertEqual(week['center_review_pending_count'], 1)
         self.assertEqual(week['rejected_count'], 1)
         self.assertEqual(week['effective_count'], 0)
         self.assertEqual(month['summary']['submitted_count'], 3)
         self.assertEqual(month['summary']['awaiting_review_count'], 2)
+        self.assertEqual(month['summary']['initial_review_pending_count'], 1)
+        self.assertEqual(month['summary']['center_review_pending_count'], 1)
         self.assertIn('不代表未交表', result['meta']['submission_status_note'])
         # Informational review counts must not silently change the score rule.
         self.assertEqual(month['summary']['final_score'], -20)
@@ -405,6 +409,8 @@ class BusinessCenterFixTests(unittest.TestCase):
         values = dict(zip(rows[0], rows[1]))
         self.assertEqual(values['实际交表数'], 3)
         self.assertEqual(values['待完成审核数'], 2)
+        self.assertEqual(values['待初审数'], 1)
+        self.assertEqual(values['待中心完成审核数'], 1)
         self.assertEqual(values['已驳回数'], 1)
         self.assertEqual(values['中心审核有效数'], 0)
 
@@ -418,8 +424,28 @@ class BusinessCenterFixTests(unittest.TestCase):
         for sheet in ['月度考评汇总', '周度考评明细']:
             rows = list(workbook[sheet].iter_rows(values_only=True))
             values = dict(zip(rows[0], rows[1]))
-            for column in ['实际交表数', '待完成审核数', '已驳回数']:
+            for column in ['实际交表数', '待完成审核数', '待初审数', '待中心完成审核数', '已驳回数']:
                 self.assertEqual(values[column], '未记录')
+
+    def test_legacy_department_approval_waits_for_center_but_finished_group_does_not(self):
+        listener = self.add_listener()
+        self.assertTrue(self.teaching_settings().get_json()['success'])
+        legacy = self.form(listener.number, status='已审核')
+        original = self.form(listener.number, status='待审核')
+        db.session.add_all([legacy, original])
+        db.session.flush()
+        final = self.form(listener.number, status='中心已审核', unique_id=original.id)
+        db.session.add(final)
+        db.session.commit()
+        result = self.client.get('/admin/api/review/department-monthly-assessment/stats',
+                                 query_string={'start_date': '2026-09-07', 'end_date': '2026-10-04',
+                                               'departments': '测试部门'}).get_json()
+        summary = result['departments'][0]['months'][0]['summary']
+        self.assertEqual(summary['submitted_count'], 2)
+        self.assertEqual(summary['awaiting_review_count'], 1)
+        self.assertEqual(summary['initial_review_pending_count'], 0)
+        self.assertEqual(summary['center_review_pending_count'], 1)
+        self.assertEqual(summary['effective_count'], 1)
 
     def test_overlapping_month_save_fails_and_keeps_previous_configuration(self):
         valid = [{'start_week': 1, 'end_week': 4, 'label': '原月'},

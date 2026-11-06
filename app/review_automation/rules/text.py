@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from typing import Any
+from app.services.feedback_text import count_feedback_characters
 
 from app.review_automation.contracts import (
     EvidenceStrength,
@@ -77,16 +78,14 @@ class MinimumLengthRule:
     @staticmethod
     def evaluate(context: RuleContext, revision: RuleRevisionView):
         source = feedback_text(context)
-        normalized = normalize_feedback(source)
-        chinese_count = sum('\u3400' <= char <= '\u9fff' for char in normalized)
-        character_count = chinese_count if chinese_count else len(normalized)
+        character_count = count_feedback_characters(source)
         minimum = int(revision.parameters['minimum_characters'])
         if character_count >= minimum:
             return ()
         return (_finding(
             revision,
             title='反馈内容偏短',
-            message=f'规范化反馈少于 {minimum} 个字，建议人工复核具体性。',
+            message=f'反馈少于 {minimum} 字（不含标点、空白和表情），建议人工复核具体性。',
             evidence={
                 'character_count': character_count,
                 'minimum_characters': minimum,

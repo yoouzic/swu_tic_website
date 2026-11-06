@@ -2,6 +2,7 @@
 import re
 
 from app.services.review_mutation import REVIEW_EDITABLE_FIELD_LABELS
+from app.services.feedback_text import MINIMUM_FEEDBACK_CHARACTERS, count_feedback_characters
 from app.services.teaching_calendar import parse_lecture_date
 
 
@@ -39,8 +40,8 @@ def review_field_errors(original, submitted_fields):
         if field in {'contact_phone1', 'contact_phone2'}:
             if re.fullmatch(r'1[3-9]\d{9}', value) is None:
                 errors[field] = '请填写有效的11位手机号码'
-        elif field == 'course_feedback' and len(value) < 50:
-            errors[field] = '课程反馈至少需要50字'
+        elif field == 'course_feedback' and count_feedback_characters(value) < MINIMUM_FEEDBACK_CHARACTERS:
+            errors[field] = '课程反馈至少需要50字（不含标点、空白和表情）'
         elif field == 'lecture_date' and parse_lecture_date(value) is None:
             errors[field] = '请填写有效的听课日期'
         elif field == 'class_period':

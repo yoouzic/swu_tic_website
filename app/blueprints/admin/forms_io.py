@@ -703,6 +703,10 @@ def _format_excel_value(value):
         return ''
     if isinstance(value, datetime):
         return value.strftime('%Y-%m-%d %H:%M:%S')
+    if isinstance(value, str):
+        # XML has LF line endings; normalize explicitly so Windows writers do
+        # not turn existing CRLF into CRCRLF and introduce blank paragraphs.
+        return value.replace('\r\n', '\n').replace('\r', '\n')
     return value
 
 
@@ -710,7 +714,8 @@ def _sort_export_forms(forms, sort_by):
     if sort_by == 'course':
         forms.sort(key=lambda x: (x.teacher_college or '', x.teacher_name or '', x.course_title or ''))
     else:
-        forms.sort(key=lambda x: x.lecture_date or '', reverse=True)
+        forms.sort(key=lambda x: (parse_lecture_date_value(x.lecture_date) or datetime.min.date(), x.id),
+                   reverse=True)
 
 
 def _build_standard_forms_workbook(forms):
@@ -775,7 +780,10 @@ def _build_standard_forms_workbook(forms):
         ]
 
         for col_idx, val in enumerate(row_data, 1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=str(val) if val is not None else '')
+            cell = ws.cell(row=row_idx, column=col_idx, value=str(_format_excel_value(val)))
+            # These are submitted form values, never executable spreadsheet formulas.
+            cell.data_type = 's'
+            cell.number_format = '@'
             cell.font = font_data
             cell.alignment = align_left
             cell.border = border_all
@@ -899,7 +907,11 @@ def _build_all_data_forms_workbook(forms):
         if form.id > max_id:
             max_id = form.id
         for col_idx, (attr, _) in enumerate(columns, 1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=_format_excel_value(getattr(form, attr, None)))
+            value = _format_excel_value(getattr(form, attr, None))
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            if isinstance(value, str):
+                cell.data_type = 's'
+                cell.number_format = '@'
             cell.font = data_font
             cell.alignment = Alignment(horizontal='left', vertical='center')
             cell.border = border
@@ -983,11 +995,7 @@ def download_export_forms():
             export_mode = 'standard'
             wb, max_id = _build_standard_forms_workbook(forms)
         
-        # 4. 更新SystemSetting (如果是latest模式)
-        if scope == 'latest' and max_id > 0:
-            SystemSetting.set('last_exported_form_id', str(max_id))
-            
-        # 5. 返回文件
+        # Serialize before advancing the cursor so a failed export remains retryable.
         output = BytesIO()
         wb.save(output)
         output.seek(0)
@@ -1012,6 +1020,9 @@ def download_export_forms():
         
         # 设置Content-Disposition header以支持中文文件名
         rv.headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{filename_encoded}"
+
+        if scope == 'latest' and max_id > 0:
+            SystemSetting.set('last_exported_form_id', str(max_id))
         
         return rv
         

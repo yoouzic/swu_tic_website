@@ -1,5 +1,7 @@
 (function () {
     'use strict';
+    const feedbackText = typeof module !== 'undefined' && module.exports
+        ? require('./feedback-text.js') : window.SwuFeedbackText;
     const ISSUE_FIELDS = ['course_changes', 'abnormal_situation', 'suggestions'];
     const METHODS = ['tm_ppt', 'tm_lecture', 'tm_interactive'];
     const METHOD_LABELS = {tm_ppt: 'PPT演示法', tm_lecture: '讲授法', tm_interactive: '师生互动法'};
@@ -86,7 +88,7 @@
         if (!field || field.disabled) return false;
         const value = String(field.value || '').trim();
         if (!value) return true;
-        if (field.id === 'course_feedback' && value.length < 50) return true;
+        if (field.id === 'course_feedback' && feedbackText.countFeedbackCharacters(value) < feedbackText.MINIMUM_FEEDBACK_CHARACTERS) return true;
         if (/^contact_phone[12]$/.test(field.id) && !/^\d{11}$/.test(value)) return true;
         return Boolean(field.validity && !field.validity.valid);
     }
@@ -171,7 +173,7 @@
             missing.forEach(field => {
                 const label = form.querySelector(`label[for="${field.id}"]`) || field.closest('.mb-3')?.querySelector('label');
                 let title = field.id === 'tm_ppt' ? '主要教学方法' : String(label?.textContent || field.name || field.id).replace(/\s*\*\s*/g, '').trim();
-                if (field.id === 'course_feedback') title += '（至少50字）';
+                if (field.id === 'course_feedback') title += '（至少50字，标点不计）';
                 if (/^contact_phone[12]$/.test(field.id)) title += '（11位手机号）';
                 const button = document.createElement('button');
                 button.type = 'button';

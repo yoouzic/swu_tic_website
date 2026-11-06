@@ -7,6 +7,7 @@
 {% block body_class %}lecture-form-page{% endblock %}
 
 {% block head %}
+<script src="{{ url_for('static', filename='js/feedback-text.js', v='20261106') }}"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/listening-assistant.css', v='20261013-complement') }}">
 {% if capture_enabled and not form %}<link rel="stylesheet" href="{{ url_for('static', filename='css/site-capture.css', v='20261014-course-title') }}">{% endif %}
 {% endblock %}
@@ -97,7 +98,7 @@
             if (data.course_feedback) {
                 const el = document.getElementById('course_feedback');
                 if (el) {
-                    document.getElementById('feedback_counter').textContent = `已输入 ${el.value.length} 字`;
+                    document.getElementById('feedback_counter').textContent = `已输入 ${window.SwuFeedbackText.countFeedbackCharacters(el.value)} 字`;
                 }
             }
             
@@ -547,10 +548,10 @@
                                 <div class="mb-3">
                             <label for="course_feedback" class="form-label">课程反馈（优点） <span class="text-danger">*</span></label>
                                     <textarea class="form-control" id="course_feedback" name="course_feedback" rows="4" 
-                                              placeholder="至少50字，请写具体的课堂优点。" required></textarea>
+                                              placeholder="至少50字，请写具体的课堂优点；标点、空白和表情不计数。" required></textarea>
                                     <div class="d-flex justify-content-between">
                                         <small id="feedback_counter" class="text-muted">已输入 0 字</small>
-                                        <small id="feedback_limit_hint" class="text-danger" style="display:none">反馈内容需至少50字</small>
+                                        <small id="feedback_limit_hint" class="text-danger" style="display:none">至少50字，标点、空白和表情不计数</small>
                                     </div>
                                 </div>
                             </div>
@@ -1058,7 +1059,7 @@ function applyLectureFormDraftData(data) {
     const feedback = document.getElementById('course_feedback');
     const counter = document.getElementById('feedback_counter');
     if (feedback && counter) {
-        counter.textContent = `已输入 ${feedback.value.trim().length} 字`;
+        counter.textContent = `已输入 ${window.SwuFeedbackText.countFeedbackCharacters(feedback.value)} 字`;
     }
 }
 
@@ -1232,8 +1233,9 @@ document.getElementById('lectureForm').addEventListener('submit', function(e) {
     }
 
     const feedback = document.getElementById('course_feedback').value.trim();
-    document.getElementById('feedback_counter').textContent = `已输入 ${feedback.length} 字`;
-    if (feedback.length < 50) {
+    const feedbackCount = window.SwuFeedbackText.countFeedbackCharacters(feedback);
+    document.getElementById('feedback_counter').textContent = `已输入 ${feedbackCount} 字`;
+    if (feedbackCount < window.SwuFeedbackText.MINIMUM_FEEDBACK_CHARACTERS) {
         document.getElementById('feedback_limit_hint').style.display = 'inline';
         document.getElementById('course_feedback').classList.add('is-invalid');
         isValid = false;
@@ -1298,8 +1300,9 @@ document.getElementById('lectureForm').addEventListener('reset', () => {
 
 document.getElementById('course_feedback').addEventListener('input', function() {
     const val = this.value.trim();
-    document.getElementById('feedback_counter').textContent = `已输入 ${val.length} 字`;
-    if (val.length < 50) {
+    const feedbackCount = window.SwuFeedbackText.countFeedbackCharacters(val);
+    document.getElementById('feedback_counter').textContent = `已输入 ${feedbackCount} 字`;
+    if (feedbackCount < window.SwuFeedbackText.MINIMUM_FEEDBACK_CHARACTERS) {
         document.getElementById('feedback_limit_hint').style.display = 'inline';
     } else {
         document.getElementById('feedback_limit_hint').style.display = 'none';
@@ -1341,7 +1344,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% if candidates_ready %}<script src="{{ url_for('static', filename='js/listening-assistant.js', v='20261014-copy') }}"></script>{% endif %}
-<script src="{{ url_for('static', filename='js/form-completion-assistant.js', v='20261013-complement') }}"></script>
+<script src="{{ url_for('static', filename='js/form-completion-assistant.js', v='20261106-feedback-count') }}"></script>
 <script src="{{ url_for('static', filename='js/student-grade-class-input.js', v='20261106') }}"></script>
 {% if capture_enabled and not form %}<script src="{{ url_for('static', filename='js/site-location.js', v='20261014-location-fix-1') }}"></script>{% if candidates_ready %}<script src="{{ url_for('static', filename='js/site-context-guide.js', v='20261014-copy') }}"></script>{% endif %}<script src="{{ url_for('static', filename='js/site-capture.js', v='20261014-location-fix-1') }}"></script><script src="{{ url_for('static', filename='js/site-door-crop.js', v='20261014-copy') }}"></script><script src="{{ url_for('static', filename='js/site-building-map.js', v='20261014-copy') }}"></script>{% endif %}
 {% endblock %}
