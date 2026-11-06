@@ -28,13 +28,49 @@
     <script>
         var initialFormData = {{ form_data | tojson }};
         document.addEventListener('DOMContentLoaded', function() {
-            // 延迟一点执行以确保其他初始化脚本已运行
+            const form = document.getElementById('lectureForm');
+            const beforeRestore = new Map();
+            const edited = new Set();
+            for (const element of form?.querySelectorAll('input, textarea, select') || []) {
+                beforeRestore.set(element, {value: element.value, checked: element.checked});
+                // Autofill may happen before DOMContentLoaded without an input event.
+                if (element.type !== 'hidden' && !element.readOnly &&
+                    typeof element.defaultValue === 'string' && element.value !== element.defaultValue) {
+                    edited.add(element);
+                }
+            }
+            const markEdited = event => { if (event.target?.form === form) edited.add(event.target); };
+            form?.addEventListener('input', markEdited);
+            form?.addEventListener('change', markEdited);
+            // Let dependent controls initialize, but never replace intervening input.
             setTimeout(function() {
-                populateForm(initialFormData);
+                const mayRestore = element => {
+                    if (element.type === 'hidden' || element.readOnly) return true;
+                    const before = beforeRestore.get(element);
+                    return !edited.has(element) && (!before ||
+                        (element.value === before.value && element.checked === before.checked));
+                };
+                try {
+                    populateForm(initialFormData, mayRestore);
+                    if (!lectureFormIsEditMode) {
+                        // Error recovery still needs photo/assistant state, without
+                        // fetching an older draft over the submitted form fields.
+                        const recoveryData = {...initialFormData};
+                        const captureId = Number(recoveryData.site_capture_id);
+                        recoveryData.site_capture_id = Number.isSafeInteger(captureId) && captureId > 0 ? captureId : null;
+                        recoveryData.student_grade_class = document.getElementById('student_grade_class')?.value || '';
+                        const restored = applyLectureFormDraftData(recoveryData, true);
+                        window.dispatchEvent(new CustomEvent('lecture-form-draft-loaded', {detail: {data: restored}}));
+                    }
+                } finally {
+                    form?.removeEventListener('input', markEdited);
+                    form?.removeEventListener('change', markEdited);
+                }
             }, 100);
         });
 
         function populateForm(data) {
+            const mayRestore = typeof arguments[1] === 'function' ? arguments[1] : () => true;
             console.log('Populating form with data:', data);
             
             // 遍历数据并填充
@@ -49,7 +85,7 @@
                     const value = data[key];
                     const element = document.getElementById(key);
                     
-                    if (element) {
+                    if (element && mayRestore(element)) {
                         if (element.type === 'checkbox') {
                             // 特殊处理复选框 (如教学方法)
                             // 这里假设 key 是 input 的 id，但教学方法是 hidden input 'teaching_method' 
@@ -71,7 +107,7 @@
                 const methods = data.teaching_method.split('、');
                 ['tm_ppt', 'tm_lecture', 'tm_interactive'].forEach(id => {
                     const el = document.getElementById(id);
-                    if (el && methods.includes(el.value)) {
+                    if (el && mayRestore(el) && methods.includes(el.value)) {
                         el.checked = true;
                     }
                 });
@@ -89,8 +125,8 @@
                     const startEl = document.getElementById('start_period');
                     const endEl = document.getElementById('end_period');
                     
-                    if (startEl) startEl.value = startPeriod;
-                    if (endEl) endEl.value = endPeriod;
+                    if (startEl && mayRestore(startEl)) startEl.value = startPeriod;
+                    if (endEl && mayRestore(endEl)) endEl.value = endPeriod;
                 }
             }
             
@@ -437,7 +473,7 @@
                                 <div class="mb-3">
                                     <label for="student_grade_class" class="form-label">专业年级 <span class="text-danger">*</span></label>
                                     <input type="text" class="form-control" id="student_grade_class" name="student_grade_class" 
-                                           data-format-url="{{ url_for('user.format_student_grade_class_input') }}"
+                                           autocomplete="off"
                                            placeholder="如：2019级英语（师范）01、02班" required>
                                     <div class="form-text">多个专业用中文分号分隔。</div>
                                 </div>
@@ -1008,6 +1044,9 @@ function applyLectureFormDraftData(data) {
     if (assistantInput) {
         assistantInput.value = assistantPayload ? JSON.stringify(assistantPayload) : '';
     }
+    // Initial error recovery has already populated text with per-field guards.
+    // Reuse the same provenance cleanup and runtime state without rewriting it.
+    if (arguments[1] === true) return data;
     Object.keys(data).forEach(key => {
         // Readonly listener fields come from the current server-rendered profile.
         if (key === 'assistant' || key === 'assistant_payload' ||
@@ -1068,20 +1107,30 @@ async function loadLectureFormDraft() {
         return false;
     }
     try {
+        const preserveClassInput = arguments[0]?.preserveClassInput === true;
+        const classInput = typeof document === 'undefined' ? null : document.getElementById('student_grade_class');
+        const classValue = classInput?.value;
         const sequence = ++lectureFormDraftLoadSequence;
         const editRevision = lectureFormDraftEditRevision;
         const response = await fetch(lectureFormDraftUrl);
         const result = await response.json();
-        if (sequence !== lectureFormDraftLoadSequence || editRevision !== lectureFormDraftEditRevision) return false;
+        if (sequence !== lectureFormDraftLoadSequence || editRevision !== lectureFormDraftEditRevision ||
+            (classInput && classInput.value !== classValue)) return false;
         if (!response.ok || !result.success) {
             throw new Error(result.message || '草稿读取失败');
         }
         if (result.success && result.exists) {
+            let preservedClassChanged = false;
+            if (preserveClassInput && typeof classValue === 'string' && classValue.trim()) {
+                preservedClassChanged = result.data?.student_grade_class !== classValue;
+                result.data = {...result.data, student_grade_class: classValue};
+            }
             applyLectureFormDraftData(result.data);
             window.dispatchEvent(new CustomEvent('lecture-form-draft-loaded', {
                 detail: {data: result.data, updated_at: result.updated_at}
             }));
             setLectureDraftStatus(`已保存 ${formatLectureDraftTime(result.updated_at)}`, 'success');
+            if (preservedClassChanged) scheduleLectureFormDraftSave();
             return true;
         }
         return false;
@@ -1322,7 +1371,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!form || lectureFormIsEditMode) {
         return;
     }
-    loadLectureFormDraft();
+    // A failed submission already supplies its own newer form_data.
+    if (typeof initialFormData === 'undefined') {
+        loadLectureFormDraft({preserveClassInput: true});
+    }
     form.addEventListener('input', scheduleLectureFormDraftSave);
     form.addEventListener('change', scheduleLectureFormDraftSave);
     form.addEventListener('reset', function() {
@@ -1345,6 +1397,5 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 {% if candidates_ready %}<script src="{{ url_for('static', filename='js/listening-assistant.js', v='20261014-copy') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='js/form-completion-assistant.js', v='20261106-feedback-count') }}"></script>
-<script src="{{ url_for('static', filename='js/student-grade-class-input.js', v='20261106') }}"></script>
 {% if capture_enabled and not form %}<script src="{{ url_for('static', filename='js/site-location.js', v='20261014-location-fix-1') }}"></script>{% if candidates_ready %}<script src="{{ url_for('static', filename='js/site-context-guide.js', v='20261014-copy') }}"></script>{% endif %}<script src="{{ url_for('static', filename='js/site-capture.js', v='20261014-location-fix-1') }}"></script><script src="{{ url_for('static', filename='js/site-door-crop.js', v='20261014-copy') }}"></script><script src="{{ url_for('static', filename='js/site-building-map.js', v='20261014-copy') }}"></script>{% endif %}
 {% endblock %}

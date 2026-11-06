@@ -144,6 +144,25 @@ class ClassFormattingSourceTest(unittest.TestCase):
                 self.assertEqual(self.client.get('/user/api/lecture_form_draft').json['data']['student_grade_class'],
                                  expected)
 
+    def test_mechanism_and_agricultural_class_names_remain_in_timetable_form(self):
+        self.add_source([('2025机制01班;2025机制02班;2025机制03班', '机械设计制造及其自动化'),
+                         ('2025农机班', '农业机械化及其自动化')])
+        raw = '2025机制01班;2025机制02班;2025机制03班;2025农机班'
+        expected = '2025级机制01、02、03班；2025级农机班'
+        self.assertEqual(self.client.post('/user/api/student_grade_class/format',
+                                         json={'value': raw}).json['value'], expected)
+        self.assertEqual(candidate(raw).to_public_dict()['student_grade_class'], expected)
+        self.assertEqual(safe_field_snapshot(candidate(raw), {})['student_grade_class'], expected)
+        response = self.client.put('/user/api/lecture_form_draft',
+                                   json={'data': {'student_grade_class': raw}})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.get('/user/api/lecture_form_draft').json['data']['student_grade_class'],
+                         expected)
+        explicitly_written_full_name = '2025级机械设计制造及其自动化01、02、03班；2025级农机班'
+        self.assertEqual(self.client.post('/user/api/student_grade_class/format',
+                                         json={'value': explicitly_written_full_name}).json['value'],
+                         explicitly_written_full_name)
+
     def test_draft_write_and_read_are_normalized(self):
         response = self.client.put('/user/api/lecture_form_draft',
                                    json={'data': {'student_grade_class': '2024英语(师)1班'}})
