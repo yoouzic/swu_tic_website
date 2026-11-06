@@ -73,7 +73,7 @@ class TimeValidatorWeekdayOffsetCharacterizationTests(unittest.TestCase):
             total_weeks=20,
         )
         with patch(
-            'app.services.teaching_calendar_settings.load_teaching_calendar_config',
+            'app.services.teaching_calendar_settings.load_schedule_calendar_config',
             return_value=(config, None),
         ):
             return TimeValidator.calculate_target_date(1, 1)
@@ -101,7 +101,7 @@ class TimeValidatorWeekdayOffsetCharacterizationTests(unittest.TestCase):
             total_weeks=20,
         )
         with patch(
-            'app.services.teaching_calendar_settings.load_teaching_calendar_config',
+            'app.services.teaching_calendar_settings.load_schedule_calendar_config',
             return_value=(config, None),
         ), patch('app.utils.time_validator.datetime', FrozenDateTime):
             suggestion = TimeValidator.get_time_suggestion()
@@ -174,7 +174,7 @@ class TotalWeeksBoundaryTests(unittest.TestCase):
             total_weeks=20,
         )
         with patch(
-            'app.services.teaching_calendar_settings.load_teaching_calendar_config',
+            'app.services.teaching_calendar_settings.load_schedule_calendar_config',
             return_value=(config, None),
         ):
             self.assertEqual(

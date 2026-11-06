@@ -345,6 +345,82 @@ class BusinessCenterFixTests(unittest.TestCase):
         self.assertEqual(month['summary']['missing_penalty'], 9)
         self.assertEqual(month['summary']['shortage_count'], 3)
 
+    def test_extra_lectures_count_separately_but_old_and_pending_versions_do_not(self):
+        listener = self.add_listener()
+        self.assertTrue(self.teaching_settings().get_json()['success'])
+        original = self.form(listener.number, status='已驳回')
+        db.session.add(original)
+        db.session.flush()
+        final = self.form(listener.number, unique_id=original.id)
+        extra = self.form(listener.number)
+        extra.course_title = '另一门课程'
+        pending = self.form(listener.number, status='待审核')
+        pending.course_title = '尚未审核课程'
+        department_only = self.form(listener.number, status='部门已审核')
+        department_only.course_title = '尚未中心复审课程'
+        db.session.add_all([final, extra, pending, department_only])
+        db.session.commit()
+        query = '?start_date=2026-09-07&end_date=2026-10-04&departments=测试部门'
+        result = self.client.get('/admin/api/review/department-monthly-assessment/stats' + query).get_json()
+        week = result['departments'][0]['months'][0]['weeks'][2]
+        self.assertEqual(week['effective_count'], 2)
+        self.assertEqual(week['extra_count'], 1)
+        self.assertEqual(week['shortage_count'], 0)
+        counts = self.client.get('/admin/api/review/submission-count/stats' + query).get_json()
+        row = next(item for item in counts['users'] if item['user_id'] == listener.id)
+        self.assertEqual(row['submission_group_count'], 4)
+        self.assertEqual(row['reward_effective_count'], 2)
+        self.assertEqual(row['reward_form_count'], 1)
+
+    def test_monthly_distinguishes_submitted_forms_from_unfinished_review(self):
+        listener = self.add_listener()
+        self.assertTrue(self.teaching_settings().get_json()['success'])
+        original = self.form(listener.number, status='待审核')
+        db.session.add(original)
+        db.session.flush()
+        department_reviewed = self.form(listener.number, status='部门已审核', unique_id=original.id)
+        pending = self.form(listener.number, status='待审核')
+        rejected = self.form(listener.number, status='已驳回')
+        db.session.add_all([department_reviewed, pending, rejected])
+        db.session.commit()
+        query = '?start_date=2026-09-07&end_date=2026-10-04&departments=测试部门'
+        result = self.client.get('/admin/api/review/department-monthly-assessment/stats' + query).get_json()
+        month = result['departments'][0]['months'][0]
+        week = month['weeks'][2]
+        self.assertEqual(week['submitted_count'], 3)
+        self.assertEqual(week['awaiting_review_count'], 2)
+        self.assertEqual(week['rejected_count'], 1)
+        self.assertEqual(week['effective_count'], 0)
+        self.assertEqual(month['summary']['submitted_count'], 3)
+        self.assertEqual(month['summary']['awaiting_review_count'], 2)
+        self.assertIn('不代表未交表', result['meta']['submission_status_note'])
+        # Informational review counts must not silently change the score rule.
+        self.assertEqual(month['summary']['final_score'], -20)
+
+        exported = self.client.get('/admin/api/review/department-monthly-assessment/export' + query)
+        from io import BytesIO
+        from openpyxl import load_workbook
+        workbook = load_workbook(BytesIO(exported.data), read_only=True)
+        rows = list(workbook['月度考评汇总'].iter_rows(values_only=True))
+        values = dict(zip(rows[0], rows[1]))
+        self.assertEqual(values['实际交表数'], 3)
+        self.assertEqual(values['待完成审核数'], 2)
+        self.assertEqual(values['已驳回数'], 1)
+        self.assertEqual(values['中心审核有效数'], 0)
+
+    def test_old_monthly_snapshot_does_not_invent_zero_submissions(self):
+        from app.services.assessment_calc import build_department_monthly_workbook
+        payload = {'departments': [{'department': '测试部门', 'months': [{
+            'month_label': '历史月', 'summary': {'effective_count': 0},
+            'weeks': [{'week_label': '第1周', 'effective_count': 0}],
+        }]}]}
+        workbook = build_department_monthly_workbook(payload)
+        for sheet in ['月度考评汇总', '周度考评明细']:
+            rows = list(workbook[sheet].iter_rows(values_only=True))
+            values = dict(zip(rows[0], rows[1]))
+            for column in ['实际交表数', '待完成审核数', '已驳回数']:
+                self.assertEqual(values[column], '未记录')
+
     def test_overlapping_month_save_fails_and_keeps_previous_configuration(self):
         valid = [{'start_week': 1, 'end_week': 4, 'label': '原月'},
                  {'start_week': 5, 'end_week': 8, 'label': '下月'}]

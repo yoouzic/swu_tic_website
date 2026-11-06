@@ -20,12 +20,12 @@ class AutomationSettingsTemplateTest(unittest.TestCase):
     def test_statistics_exposes_logical_form_group_count(self):
         template = STATISTICS_TEMPLATE.read_text(encoding='utf-8')
         blueprint = ADMIN_BLUEPRINT.read_text(encoding='utf-8')
-        self.assertIn('逻辑表单组数', template)
+        self.assertIn('当前表单数', template)
         self.assertIn('logical_form_count', template)
         self.assertIn('{% from "partials/_metric.html" import metric %}', template)
         self.assertRegex(
             template,
-            r"metric\('逻辑表单组数',\s*logical_form_count,\s*tone='neutral'\)",
+            r"metric\('当前表单数',\s*logical_form_count,\s*tone='neutral'\)",
         )
         self.assertIn('logical_form_count', blueprint)
 

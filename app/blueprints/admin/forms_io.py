@@ -7,6 +7,7 @@ from app.models import User, LectureForm, db, SystemSetting
 from datetime import datetime
 from app.security import login_required, role_required
 from app.services.workbook import workbook_response
+from app.services.review_form_queries import parse_lecture_date_value
 from app.utils.audit_tags import REVIEW_TAG_REQUIRED, validate_audit_tag
 from app.utils.user_status import active_user_filter
 import pandas as pd
@@ -318,32 +319,14 @@ def view_forms():
         # 信息员只能查看自己的表单
         base_query = LectureForm.query.filter_by(listener_number=user.number)
     
-    # 应用搜索过滤
-    if search:
-        base_query = base_query.filter(
-            db.or_(
-                LectureForm.listener_name.contains(search),
-                LectureForm.teacher_name.contains(search),
-                LectureForm.course_title.contains(search)
-            )
-        )
-    
-    if date_filter:
-        base_query = base_query.filter(LectureForm.lecture_date.contains(date_filter))
-    
-    if status_filter:
-        if status_filter == '已审核':
-            base_query = base_query.filter(LectureForm.status.in_(['已审核', '部门已审核', '中心已审核']))
-        else:
-            base_query = base_query.filter(LectureForm.status == status_filter)
-    
-    # 获取所有符合条件的表单，按unique_id分组
-    all_forms = base_query.order_by(LectureForm.unique_id, LectureForm.updated_at.desc()).all()
+    # Choose the current revision before filtering; historical matches must not
+    # resurrect a replaced form. Keep all revisions for the history expander.
+    all_forms = base_query.order_by(LectureForm.id.desc()).all()
     
     # 按unique_id分组，每组只取最新的表单作为代表
     form_groups = {}
     for form in all_forms:
-        unique_id = form.unique_id or f"single_{form.id}"  # 处理没有unique_id的旧表单
+        unique_id = form.logical_id
         if unique_id not in form_groups:
             form_groups[unique_id] = {
                 'latest_form': form,
@@ -351,21 +334,33 @@ def view_forms():
             }
         form_groups[unique_id]['versions'].append(form)
     
-    # 转换为列表并按创建时间排序（使用组内第一个版本的创建时间）
     grouped_forms = list(form_groups.values())
+
+    if search:
+        search_text = search.casefold()
+        grouped_forms = [
+            group for group in grouped_forms
+            if any(search_text in (getattr(group['latest_form'], field) or '').casefold()
+                   for field in ('listener_name', 'teacher_name', 'course_title'))
+        ]
+    if date_filter:
+        selected_date = parse_lecture_date_value(date_filter)
+        grouped_forms = [
+            group for group in grouped_forms
+            if selected_date is not None
+            and parse_lecture_date_value(group['latest_form'].lecture_date) == selected_date
+        ]
+    if status_filter:
+        statuses = {'已审核', '部门已审核', '中心已审核'} if status_filter == '已审核' else {status_filter}
+        grouped_forms = [group for group in grouped_forms if group['latest_form'].status in statuses]
     
     # 获取每个组的最早版本时间作为排序依据
     for group in grouped_forms:
-        # 在 form_groups 构建时，versions 是按 updated_at desc 排列的
-        # 所以 versions[-1] 是最早的版本（如果按时间倒序）
-        # 或者更稳妥地，重新排序 versions 找到最早的 created_at
         versions = group['versions']
-        if versions:
-            # 找到最早的创建时间
-            earliest_time = min(v.created_at for v in versions if v.created_at)
-            group['sort_time'] = earliest_time
-        else:
-            group['sort_time'] = datetime.now() # Fallback
+        group['sort_time'] = min(
+            (version.created_at for version in versions if version.created_at),
+            default=datetime.min,
+        )
 
     # 按最早创建时间倒序排序
     grouped_forms.sort(key=lambda x: x['sort_time'], reverse=True)
@@ -677,8 +672,10 @@ def _parse_export_form_ids(raw_form_ids=None):
 
 
 def get_export_query(scope, status_list=None, form_ids=None):
-    """构建导出查询对象"""
-    query = LectureForm.query
+    """Export the final revision of each logical form, then apply filters."""
+    logical_id = db.func.coalesce(db.func.nullif(LectureForm.unique_id, 0), LectureForm.id)
+    latest_ids = db.session.query(db.func.max(LectureForm.id)).group_by(logical_id)
+    query = LectureForm.query.filter(LectureForm.id.in_(latest_ids))
     scope = scope if scope in ['latest', 'selected', 'all'] else 'latest'
 
     # 1. 范围筛选
@@ -687,7 +684,10 @@ def get_export_query(scope, status_list=None, form_ids=None):
         query = query.filter(LectureForm.id > last_id)
     elif scope == 'selected':
         form_ids = _parse_export_form_ids(form_ids)
-        query = query.filter(LectureForm.id.in_(form_ids))
+        # A selected row can become historical while its review is in progress.
+        # Resolve its logical identity instead of exporting that stale revision.
+        selected_logical_ids = db.session.query(logical_id).filter(LectureForm.id.in_(form_ids))
+        query = query.filter(logical_id.in_(selected_logical_ids))
     # scope == 'all' 不做额外ID/时间筛选
 
     # 2. 状态筛选

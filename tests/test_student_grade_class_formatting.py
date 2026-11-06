@@ -5,7 +5,7 @@ from pathlib import Path
 
 from app.services.listening_assistant_contracts import Candidate
 from app.services.listening_assistant_evidence import safe_field_snapshot
-from app.services.student_grade_class_formatting import build_major_aliases, format_class_text, format_student_grade_class
+from app.services.student_grade_class_formatting import build_major_aliases, current_major_aliases, format_class_text, format_student_grade_class
 
 
 def candidate(class_text):
@@ -105,13 +105,15 @@ class ClassFormattingSourceTest(unittest.TestCase):
         self.db.session.commit()
         return batch
 
-    def test_only_unique_current_source_aliases_expand(self):
+    def test_current_source_aliases_are_only_used_for_matching(self):
         self.add_source([('2024水保1班', '水土保持与荒漠化防治'),
                          ('2024生科(师范)1班', '生物科学(师范)'),
                          ('2024化学1班', '化学'), ('2024化学2班', '应用化学'),
                          ('2024药学远志班', '药学(远志全英文创新实验班)')])
         self.add_source([('2023水保1班', '错误旧名称')], semester='2025-2026-1', selected=False)
         self.assertEqual(format_student_grade_class('2024水保1班;2024生科(师)2班'),
+                         '2024级水保01班；2024级生科（师范）02班')
+        self.assertEqual(format_class_text('2024水保1班;2024生科(师)2班', current_major_aliases()),
                          '2024级水土保持与荒漠化防治01班；2024级生物科学（师范）02班')
         self.assertEqual(format_student_grade_class('2024化学1班'), '2024级化学01班')
         self.assertEqual(format_student_grade_class('2024药学远志班'), '2024级药学远志班')
@@ -124,6 +126,23 @@ class ClassFormattingSourceTest(unittest.TestCase):
         self.assertNotIn('warnings', response.json)
         self.assertEqual(self.client.post('/user/api/student_grade_class/format',
                                          json={'value': []}).status_code, 400)
+
+    def test_manual_class_name_is_not_replaced_by_major_alias(self):
+        self.add_source([('2026公管类1班', '公共管理类'),
+                         ('2026数学(师范)3班', '数学与应用数学(师范)')])
+        for raw, expected in [
+            ('2026公管类1班', '2026级公管类01班'),
+            ('2026数学(师范)3、4班', '2026级数学（师范）03、04班'),
+        ]:
+            with self.subTest(raw=raw):
+                response = self.client.post('/user/api/student_grade_class/format',
+                                            json={'value': raw})
+                self.assertEqual(response.json['value'], expected)
+                response = self.client.put('/user/api/lecture_form_draft',
+                                           json={'data': {'student_grade_class': raw}})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(self.client.get('/user/api/lecture_form_draft').json['data']['student_grade_class'],
+                                 expected)
 
     def test_draft_write_and_read_are_normalized(self):
         response = self.client.put('/user/api/lecture_form_draft',

@@ -137,9 +137,10 @@ let previewModalInstance = null;
 
 function setDefaultDates() {
     const now = new Date();
-    const end = now.toISOString().slice(0, 10);
+    const localDate = value => [value.getFullYear(), String(value.getMonth() + 1).padStart(2, '0'), String(value.getDate()).padStart(2, '0')].join('-');
+    const end = localDate(now);
     const startObj = new Date(now.getFullYear(), now.getMonth(), 1);
-    const start = startObj.toISOString().slice(0, 10);
+    const start = localDate(startObj);
     document.getElementById('startDate').value = start;
     document.getElementById('endDate').value = end;
 }

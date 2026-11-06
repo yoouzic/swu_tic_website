@@ -5,8 +5,10 @@
 from flask import render_template, request, session, jsonify
 from app.models import User, LectureForm, db
 from datetime import datetime
+from sqlalchemy import func
 from app.security import role_required
 from app.services.workbook import workbook_response
+from app.services.teaching_calendar import parse_lecture_date
 from app.utils.review_permissions import get_user_review_permission
 from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.user_status import active_user_filter
@@ -14,7 +16,7 @@ import openpyxl
 from openpyxl.styles import Font
 import json
 from . import admin_bp
-from .shared import _active_user_query, _get_accessible_department_users
+from .shared import _get_accessible_department_users
 
 
 STATISTICS_APPROVED_STATUSES = {'已审核', '部门已审核', '中心已审核'}
@@ -28,10 +30,15 @@ STATISTICS_TEACHER_KEY_SEPARATOR = '\u241f'
 
 def _statistics_query(current_user, args):
     """Build the shared, permission-scoped query used by statistics views and exports."""
+    # Resolve revisions before applying dates/statuses. Filtering first can bring
+    # back an old pending/rejected row whose current revision no longer matches.
+    latest_ids = db.session.query(func.max(LectureForm.id)).group_by(
+        func.coalesce(func.nullif(LectureForm.unique_id, 0), LectureForm.id)
+    )
     query = db.session.query(LectureForm, User).join(
         User,
         LectureForm.listener_number == User.number,
-    ).filter(active_user_filter())
+    ).filter(active_user_filter(), LectureForm.id.in_(latest_ids))
 
     if current_user and current_user.role != '超级管理员':
         query = query.filter(User.department == current_user.department)
@@ -48,14 +55,27 @@ def _statistics_query(current_user, args):
             datetime.strptime(end_date, '%Y-%m-%d')
         except ValueError:
             end_date = ''
-    if start_date:
-        query = query.filter(LectureForm.lecture_date >= start_date)
-    if end_date:
-        query = query.filter(LectureForm.lecture_date <= end_date)
-
     department = (args.get('department') or '').strip()
     if department and current_user and current_user.role == '超级管理员':
         query = query.filter(User.department == department)
+
+    if start_date or end_date:
+        range_start = datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else None
+        range_end = datetime.strptime(end_date, '%Y-%m-%d').date() if end_date else None
+        matching_ids = []
+        # Saved dates include YYYY/MM/DD星期X and other legacy display formats.
+        # Parse exactly as the calendar/reward services do, rather than compare
+        # the stored display strings lexicographically with ISO filter values.
+        for form_id, raw_date in query.with_entities(LectureForm.id, LectureForm.lecture_date).all():
+            lecture_date = parse_lecture_date(raw_date)
+            if lecture_date is None:
+                continue
+            if range_start and lecture_date < range_start:
+                continue
+            if range_end and lecture_date > range_end:
+                continue
+            matching_ids.append(form_id)
+        query = query.filter(LectureForm.id.in_(matching_ids))
 
     status = (args.get('status') or '').strip()
     if status == '已审核':
@@ -163,16 +183,10 @@ def statistics():
     form_query = _statistics_query(current_user, request.args)
     records = form_query.order_by(LectureForm.created_at.asc(), LectureForm.id.asc()).all()
     forms = [form for form, _listener in records]
-    total_forms = len(forms)
-    logical_form_keys = {
-        ('unique_id', str(unique_id).strip())
-        if unique_id is not None and str(unique_id).strip()
-        else ('id', str(form_id))
-        for unique_id, form_id in ((form.unique_id, form.id) for form in forms)
-    }
-    logical_form_count = len(logical_form_keys)
+    logical_form_count = len(forms)
     pending_forms = sum(form.status == '待审核' for form in forms)
     approved_forms = sum(form.status in STATISTICS_APPROVED_STATUSES for form in forms)
+    total_forms = approved_forms
     rejected_forms = sum(form.status == '已驳回' for form in forms)
 
     trend_counts = {}
@@ -231,7 +245,7 @@ def export_statistics():
     workbook = openpyxl.Workbook()
     worksheet = workbook.active
     worksheet.title = '统计汇总'
-    headers = dimension_headers[dimension] + ['总数', '待审核', '已通过', '已驳回', '通过率']
+    headers = dimension_headers[dimension] + ['当前表单数', '待审核', '已通过', '已驳回', '通过率']
     worksheet.append(headers)
     for cell in worksheet[1]:
         cell.font = Font(bold=True)
@@ -272,54 +286,20 @@ def get_statistics_data():
     """获取统计数据API"""
     user = User.query.get(session['user_id'])
     
-    # 获取筛选参数
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-    department = request.args.get('department')
-    status = request.args.get('status')
-    
-    # 构建基础查询
-    if user.role == '超级管理员':
-        query = LectureForm.query.join(User, LectureForm.listener_number == User.number).filter(active_user_filter())
-    else:
-        # 管理员只能查看本部门数据
-        query = LectureForm.query.join(User, LectureForm.listener_number == User.number)\
-                                 .filter(User.department == user.department, active_user_filter())
-    
-    # 应用筛选条件（先不按状态过滤，后续按“表单组最新状态”过滤）
-    if start_date:
-        # 注意：lecture_date 是字符串字段，此处比较仅作为简单示例，可能需要根据实际存储格式调整
-        query = query.filter(LectureForm.lecture_date >= start_date)
-    if end_date:
-        query = query.filter(LectureForm.lecture_date <= end_date)
-    if department and user.role == '超级管理员':
-        query = query.filter(User.department == department, active_user_filter())
-    
-    forms = query.order_by(LectureForm.updated_at.desc(), LectureForm.id.desc()).all()
-
-    latest_forms_by_group = {}
-    for form in forms:
-        uid = form.unique_id or form.id
-        if uid not in latest_forms_by_group:
-            latest_forms_by_group[uid] = form
-
-    latest_forms = list(latest_forms_by_group.values())
+    records = _statistics_query(user, request.args).order_by(LectureForm.id.desc()).all()
+    latest_forms = [form for form, _listener in records]
     
     review_permission = get_user_review_permission(user.id)
-    if review_permission == '审表_中心':
+    if review_permission in {'审表_中心', '超级管理员'}:
         pending_statuses = {'待审核', '部门已审核'}
     else:
         pending_statuses = {'待审核'}
-
-    if status:
-        latest_forms = [f for f in latest_forms if f.status == status]
 
     pending_forms = len([f for f in latest_forms if f.status in pending_statuses])
     
     # 按部门统计
     dept_stats = {}
-    for form in latest_forms:
-        listener = _active_user_query().filter_by(number=form.listener_number).first()
+    for form, listener in records:
         if listener:
             dept = listener.department
             if dept not in dept_stats:
@@ -340,20 +320,8 @@ def get_statistics_data():
     month_stats = {}
     for form in latest_forms:
         if form.lecture_date:
-            # 假设 lecture_date 格式为 YYYY-MM-DD
-            try:
-                date_str = str(form.lecture_date)
-                # 提取年份和月份
-                if '-' in date_str:
-                    parts = date_str.split('-')
-                    if len(parts) >= 2:
-                        month_key = f"{parts[0]}-{parts[1]}"
-                    else:
-                        month_key = '未知'
-                else:
-                    month_key = '未知'
-            except:
-                month_key = '未知'
+            lecture_date = parse_lecture_date(form.lecture_date)
+            month_key = lecture_date.strftime('%Y-%m') if lecture_date else '未知'
 
             if month_key not in month_stats:
                 month_stats[month_key] = {'pending': 0, 'pending_ids': set()}

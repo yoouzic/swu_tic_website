@@ -7,6 +7,7 @@
 {% block content %}
 <div class="container-fluid">
     {{ page_header('部门月度考评统计', '按教学月和部门范围核对考评结果；自动结果必须经过人工复核。', secondary_actions=[{'label': '考核对象与指标设定', 'href': url_for('admin.assessment_exemption_settings')}]) }}
+    <p class="small text-muted">有效表单与多交表按每次听课的最新版本统计，仅计入中心已审核的表单；同一周多次听课分别计数。</p>
     {{ statistics_nav('department') }}
 
     <div class="statistics-page-actions mb-3">
@@ -16,7 +17,7 @@
     </div>
 
     <div class="alert alert-warning alert-dismissible" role="note">
-        考评结果由现有规则和记录计算，请核实后保存或导出。
+        中心审核有效数为0不代表未交表，请先核对实际交表数和待完成审核数。以下缺口和考评分沿用当前审核口径计算，请核实后保存或导出。
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭统计说明"></button>
     </div>
 
@@ -119,9 +120,10 @@ let currentMonthlySnapshotId = null;
 
 function setDefaultDates() {
     const now = new Date();
-    const end = now.toISOString().slice(0, 10);
+    const localDate = value => [value.getFullYear(), String(value.getMonth() + 1).padStart(2, '0'), String(value.getDate()).padStart(2, '0')].join('-');
+    const end = localDate(now);
     const startObj = new Date(now.getFullYear(), now.getMonth(), 1);
-    const start = startObj.toISOString().slice(0, 10);
+    const start = localDate(startObj);
     document.getElementById('startDate').value = start;
     document.getElementById('endDate').value = end;
 }
@@ -211,6 +213,11 @@ function renderAssessmentTierText(tiers) {
     `).join('');
 }
 
+function formatSubmissionCount(row, key) {
+    // Older saved snapshots did not record submission/review stage counts.
+    return row && row[key] !== undefined && row[key] !== null ? Number(row[key]) : '未记录';
+}
+
 function renderMonthlyResults(payload) {
     const root = document.getElementById('resultBody');
     const safePayload = payload || {};
@@ -243,8 +250,14 @@ function renderMonthlyResults(payload) {
                         </div>
                         <div class="p-3">
                             <div class="row g-2 mb-3">
+                                <div class="col-md-auto">实际交表数：<span class="fw-bold">${formatSubmissionCount(monthRow.summary, 'submitted_count')}</span></div>
+                                <div class="col-md-auto">待完成审核数：<span class="fw-bold">${formatSubmissionCount(monthRow.summary, 'awaiting_review_count')}</span></div>
+                                <div class="col-md-auto">已驳回数：<span class="fw-bold">${formatSubmissionCount(monthRow.summary, 'rejected_count')}</span></div>
+                                <div class="col-md-auto">中心审核有效数：<span class="fw-bold">${Number((monthRow.summary || {}).effective_count || 0)}</span></div>
+                            </div>
+                            <div class="row g-2 mb-3">
                                 <div class="col-md-2">月多交表：<span class="fw-bold">${Number((monthRow.summary || {}).extra_count || 0)}</span></div>
-                                <div class="col-md-2">月少交表：<span class="fw-bold text-danger">${Number((monthRow.summary || {}).shortage_count || 0)}</span></div>
+                                <div class="col-md-2">个人审核缺口：<span class="fw-bold text-danger">${Number((monthRow.summary || {}).shortage_count || 0)}</span></div>
                                 <div class="col-md-auto">月错误表单扣分（原始分）：<span class="fw-bold text-danger">${formatScore((monthRow.summary || {}).assessment_total_score || 0)}</span></div>
                                 <div class="col-md-auto">月错误表单扣分（实际扣分）：<span class="fw-bold text-danger">${formatScore((monthRow.summary || {}).assessment_actual_score || 0)}</span></div>
                                 <div class="col-md-2">月总考评分：<span class="fw-bold">${formatScore((monthRow.summary || {}).final_score || 0)}</span></div>
@@ -256,11 +269,14 @@ function renderMonthlyResults(payload) {
                                             <th>周次</th>
                                             <th>时间范围</th>
                                             <th>需交表数</th>
-                                            <th>有效表单数</th>
+                                            <th>实际交表数</th>
+                                            <th>待完成审核数</th>
+                                            <th>已驳回数</th>
+                                            <th>中心审核有效数</th>
                                             <th>错误表单数</th>
                                             <th>多交表（+1分/张）</th>
-                                            <th>少交表（-2分/张）</th>
-                                            <th>实际交表少于应交表数（-3/张）</th>
+                                            <th>个人审核缺口（-2分/张）</th>
+                                            <th>中心审核口径缺口（-3/张）</th>
                                             <th>考评扣分分布</th>
                                             <th>错误表单扣分（原始分）</th>
                                             <th>错误表单扣分（实际扣分）</th>
@@ -273,6 +289,9 @@ function renderMonthlyResults(payload) {
                                                 <td>${escapeHtml(weekRow.week_label || '')}</td>
                                                 <td>${escapeHtml(weekRow.start_date || '')} ~ ${escapeHtml(weekRow.end_date || '')}</td>
                                                 <td>${Number(weekRow.required_submission || 0)}</td>
+                                                <td>${formatSubmissionCount(weekRow, 'submitted_count')}</td>
+                                                <td>${formatSubmissionCount(weekRow, 'awaiting_review_count')}</td>
+                                                <td>${formatSubmissionCount(weekRow, 'rejected_count')}</td>
                                                 <td>${Number(weekRow.effective_count || 0)}</td>
                                                 <td>${Number(weekRow.error_count || 0)}</td>
                                                 <td>${Number(weekRow.extra_count || 0)}</td>
@@ -287,6 +306,9 @@ function renderMonthlyResults(payload) {
                                         <tr class="table-secondary fw-bold">
                                             <td colspan="2">本月汇总</td>
                                             <td>${Number((monthRow.summary || {}).required_submission || 0)}</td>
+                                            <td>${formatSubmissionCount(monthRow.summary, 'submitted_count')}</td>
+                                            <td>${formatSubmissionCount(monthRow.summary, 'awaiting_review_count')}</td>
+                                            <td>${formatSubmissionCount(monthRow.summary, 'rejected_count')}</td>
                                             <td>${Number((monthRow.summary || {}).effective_count || 0)}</td>
                                             <td>${Number((monthRow.summary || {}).error_count || 0)}</td>
                                             <td>${Number((monthRow.summary || {}).extra_count || 0)}</td>

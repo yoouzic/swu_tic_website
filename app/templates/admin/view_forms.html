@@ -108,7 +108,7 @@
                                     <td colspan="10">
                                         <div class="card">
                                             <div class="card-header">
-                                                <h6 class="mb-0">版本历史 (按更新时间排序)</h6>
+                                                <h6 class="mb-0">版本历史 (最新版本在前)</h6>
                                             </div>
                                             <div class="card-body p-2">
                                                 <div class="table-responsive">
@@ -277,6 +277,7 @@
                     <!-- 导出范围 -->
                     <div class="mb-3">
                         <label>导出范围</label>
+                        <p class="form-text text-muted mb-2">每张表只导出最后版本，并按最后版本的状态筛选；同一人一周内的多次听课分别保留。</p>
                         <div class="form-check">
                             <input type="radio" id="scopeLatest" name="scope" value="latest" class="form-check-input" checked onchange="handleExportScopeChange()">
                             <label class="form-check-label" for="scopeLatest">导出最新 (上次导出后新增的)</label>

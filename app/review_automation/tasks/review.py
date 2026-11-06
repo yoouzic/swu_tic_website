@@ -64,7 +64,7 @@ def _review_calendar_context(semester, semester_monday):
     from app.services.academic_term import get_current_teaching_semester, normalize_semester_identifier
     from app.services.schedule_snapshots import resolve_current_schedule_snapshot
     from app.services.teaching_calendar import teaching_term_start
-    from app.services.teaching_calendar_settings import load_teaching_calendar_config
+    from app.services.teaching_calendar_settings import load_schedule_calendar_config
 
     current = get_current_teaching_semester().strip()
     selected = current if semester is None else normalize_semester_identifier(semester)
@@ -75,7 +75,7 @@ def _review_calendar_context(semester, semester_monday):
     current_selection = resolve_current_schedule_snapshot(current, include_rows=False) if current else None
     current = current_selection.semester if current_selection and current_selection.is_ready else current
     if semester_monday is None and selected and selected == current:
-        calendar, _ = load_teaching_calendar_config()
+        calendar, _ = load_schedule_calendar_config()
         if calendar is not None:
             semester_monday = teaching_term_start(calendar)
     return selected or None, semester_monday

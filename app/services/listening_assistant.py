@@ -465,9 +465,9 @@ def _calendar_week(target: date, calendar: object) -> int | None:
 def _default_calendar() -> TeachingCalendarConfig | None:
     """Read settings lazily so pure loader-injected service tests stay safe."""
     try:
-        from app.services.teaching_calendar_settings import load_teaching_calendar_config
+        from app.services.teaching_calendar_settings import load_schedule_calendar_config
 
-        config, _error_code = load_teaching_calendar_config()
+        config, _error_code = load_schedule_calendar_config()
         return config
     except Exception:
         # Missing application context, an uninitialized database, and malformed

@@ -13,6 +13,7 @@ from app.services.academic_term import (
     get_current_teaching_semester,
     normalize_semester_identifier,
 )
+from app.services.teaching_calendar_settings import SETTING_KEY_SCHEDULE_FIRST_MONDAY
 from werkzeug.security import check_password_hash
 import json
 from . import admin_bp
@@ -105,6 +106,7 @@ def get_teaching_settings():
 
         data = {
             'first_week_monday': first_week_value,
+            'schedule_first_week_monday': SystemSetting.get(SETTING_KEY_SCHEDULE_FIRST_MONDAY) or '',
             'week_start_day': week_start_day,
             'total_weeks': total_weeks,
             'required_submission_count': required_submission,
@@ -220,6 +222,21 @@ def update_teaching_settings():
                 ensure_ascii=False,
             ),
         }
+
+        # Additive field: older clients must not erase the school's calendar.
+        if 'schedule_first_week_monday' in data:
+            schedule_first_week = data['schedule_first_week_monday']
+            if not isinstance(schedule_first_week, str):
+                return jsonify({'success': False, 'message': '学校课表第一周周一必须为日期字符串'}), 400
+            schedule_first_week = schedule_first_week.strip()
+            if schedule_first_week:
+                try:
+                    school_monday = datetime.strptime(schedule_first_week, '%Y-%m-%d')
+                    if school_monday.weekday() != 0:
+                        raise ValueError('not Monday')
+                except ValueError:
+                    return jsonify({'success': False, 'message': '学校课表第一周周一必须是有效周一，格式为YYYY-MM-DD'}), 400
+            settings_map[SETTING_KEY_SCHEDULE_FIRST_MONDAY] = schedule_first_week
 
         # Additive current-semester control-plane field.  Old clients that do
         # not send it keep the previously saved value.

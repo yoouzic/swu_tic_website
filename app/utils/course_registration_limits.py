@@ -47,9 +47,9 @@ def normalize_course_weekly_limit_count(value):
 
 def get_current_teaching_week_no():
     from app.services.teaching_calendar import teaching_week_number
-    from app.services.teaching_calendar_settings import load_teaching_calendar_config
+    from app.services.teaching_calendar_settings import load_schedule_calendar_config
 
-    config, error = load_teaching_calendar_config()
+    config, error = load_schedule_calendar_config()
     if error is not None or config is None:
         return None
     return teaching_week_number(datetime.now().date(), config)

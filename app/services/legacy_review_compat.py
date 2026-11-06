@@ -2,9 +2,9 @@
 """Compatibility boundary between canonical system data and legacy review.
 
 The legacy AutoReviewEngine historically read ``semester_first_monday`` and
-computed weeks with a simple Monday-based delta.  This adapter now prefers the
-canonical teaching-calendar semantics (``first_week_date``, ``week_start_day``,
-``total_weeks``) when the canonical configuration is valid.  The legacy key is
+computed weeks with a simple Monday-based delta. This adapter prefers the
+school timetable calendar, retaining the shared teaching calendar when no
+independent school date is configured. The legacy key is
 only a fallback when the canonical first-week setting is completely missing;
 an explicitly invalid canonical setting is not silently masked by a stale
 legacy value.
@@ -19,7 +19,7 @@ from app.services.teaching_calendar import teaching_week_number
 from app.services.teaching_calendar_settings import (
     INVALID_FIRST_WEEK,
     MISSING_FIRST_WEEK,
-    load_teaching_calendar_config,
+    load_schedule_calendar_config,
 )
 
 
@@ -39,11 +39,11 @@ def resolve_legacy_semester_monday():
     """Return a ``YYYY-MM-DD`` first-week-Monday string for legacy compatibility.
 
     Precedence:
-        1. valid canonical ``teaching_first_week_monday``
+        1. independent school calendar, otherwise canonical teaching calendar
         2. legacy ``semester_first_monday`` when canonical is completely missing
         3. ``None`` otherwise (including invalid canonical, which is not masked)
     """
-    config, error = load_teaching_calendar_config()
+    config, error = load_schedule_calendar_config()
     if error is None and config is not None:
         return config.first_week_date.isoformat()
 
@@ -61,7 +61,7 @@ def get_legacy_review_week_no(target_date) -> Optional[int]:
     - canonical missing -> legacy Monday-delta fallback
     - canonical invalid -> ``None`` (no stale legacy masking)
     """
-    config, error = load_teaching_calendar_config()
+    config, error = load_schedule_calendar_config()
     if error is None and config is not None:
         return teaching_week_number(target_date, config)
 

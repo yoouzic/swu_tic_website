@@ -33,7 +33,7 @@ def _frozen_datetime(target):
 class TimeSuggestionCorrectnessTests(unittest.TestCase):
     def _suggestion(self, target):
         with patch(
-            'app.services.teaching_calendar_settings.load_teaching_calendar_config',
+            'app.services.teaching_calendar_settings.load_schedule_calendar_config',
             return_value=(CONFIG, None),
         ), patch('app.utils.time_validator.datetime', _frozen_datetime(target)):
             return TimeValidator.get_time_suggestion()
@@ -47,7 +47,7 @@ class TimeSuggestionCorrectnessTests(unittest.TestCase):
 
     def test_missing_settings_returns_original_prompt(self):
         with patch(
-            'app.services.teaching_calendar_settings.load_teaching_calendar_config',
+            'app.services.teaching_calendar_settings.load_schedule_calendar_config',
             return_value=(None, 'MISSING_FIRST_WEEK'),
         ), patch('app.utils.time_validator.datetime', _frozen_datetime(datetime(2026, 9, 7))):
             suggestion = TimeValidator.get_time_suggestion()

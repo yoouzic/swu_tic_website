@@ -8,12 +8,13 @@
 <div class="container-fluid">
     {{ page_header('交表数量统计', '按人员范围核对逻辑表单组、奖励表和明细。') }}
     {{ statistics_nav('submission') }}
+    <p class="small text-muted">交表数量包含各状态的最新版本，每次听课分别计数；奖励表仅按中心已审核的表单计算。</p>
 
     <div class="statistics-tool-grid statistics-tool-grid--single">
     <section class="activity-panel">
         <div class="activity-panel__header">
             <h2>筛选条件</h2>
-            <p>时间条件只影响交表数量；奖励表周次按最新版本听课时间或教学周修正计算。</p>
+            <p>时间条件只影响交表数量；奖励表周次按最新版本听课时间或考核周修正计算。</p>
         </div>
         <div class="activity-panel__body">
             <div class="statistics-filter-grid statistics-filter-grid--four">
@@ -155,9 +156,10 @@ let currentSubmissionSnapshotId = null;
 
 function setDefaultDates() {
     const now = new Date();
-    const end = now.toISOString().slice(0, 10);
+    const localDate = value => [value.getFullYear(), String(value.getMonth() + 1).padStart(2, '0'), String(value.getDate()).padStart(2, '0')].join('-');
+    const end = localDate(now);
     const startObj = new Date(now.getFullYear(), now.getMonth(), 1);
-    const start = startObj.toISOString().slice(0, 10);
+    const start = localDate(startObj);
     document.getElementById('startDate').value = start;
     document.getElementById('endDate').value = end;
 }

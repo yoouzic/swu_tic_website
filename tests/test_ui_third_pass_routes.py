@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from datetime import datetime
+from unittest.mock import patch
 
 from openpyxl import load_workbook
 from werkzeug.security import generate_password_hash
@@ -176,6 +177,92 @@ class ThirdPassRouteContractTest(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload['pagination']['total'], 2)
         self.assertEqual({item['listener_department'] for item in payload['forms']}, {'甲部门'})
+
+    def _revise_pending_form(self, status='部门已审核', lecture_date='2026-08-01'):
+        revision = self._create_form(
+            self.listener_a, status=status, lecture_date=lecture_date,
+            teacher_name='修订教师', teacher_college='学院甲',
+            created_at=datetime(2026, 8, 5, 9, 0),
+        )
+        revision.unique_id = self.pending.id
+        revision.updated_at = datetime(2026, 8, 5, 9, 0)
+        # Imported legacy base rows can have no unique_id, and an audit can touch
+        # an old version after a newer version has already been submitted.
+        self.pending.unique_id = None
+        self.pending.updated_at = datetime(2026, 8, 9, 9, 0)
+        db.session.commit()
+        return revision
+
+    def test_statistics_details_keep_latest_revision_and_distinct_lectures(self):
+        revision = self._revise_pending_form()
+        result = self.client.get('/admin/api/statistics_detail?department=甲部门').get_json()
+        self.assertEqual(result['pagination']['total'], 2)
+        self.assertEqual({item['id'] for item in result['forms']},
+                         {revision.id, self.department_reviewed.id})
+        self.assertEqual({item['status'] for item in result['forms']}, {'部门已审核'})
+
+    def test_statistics_status_filter_does_not_resurrect_old_pending_revision(self):
+        self._revise_pending_form()
+        result = self.client.get('/admin/api/statistics_detail?department=甲部门&status=待审核').get_json()
+        self.assertEqual(result['pagination']['total'], 0)
+        exported = self.client.get('/admin/export_statistics?department=甲部门&dimension=user')
+        workbook = load_workbook(filename=__import__('io').BytesIO(exported.data), read_only=True)
+        rows = list(workbook.active.iter_rows(values_only=True))
+        self.assertEqual(rows[1][0:6], ('甲用户', '甲部门', 2, 0, 2, 0))
+
+    def test_statistics_date_filter_runs_after_revision_selection(self):
+        self._revise_pending_form(lecture_date='2026-09-01')
+        result = self.client.get(
+            '/admin/api/statistics_detail?department=甲部门&end_date=2026-08-31').get_json()
+        self.assertEqual({item['id'] for item in result['forms']}, {self.department_reviewed.id})
+
+    def test_statistics_date_range_accepts_stored_slash_weekday_and_legacy_formats(self):
+        expected_ids = set()
+        for date_text in ['2026/11/05星期四', '2026年11月5日', '2026.11.05', '2026-11-05']:
+            form = self._create_form(
+                self.listener_a, status='部门已审核', lecture_date=date_text,
+                teacher_name='教师日期', teacher_college='学院甲',
+                created_at=datetime(2026, 11, 5, 9, 0),
+            )
+            expected_ids.add(form.id)
+        db.session.commit()
+        query = '?department=甲部门&start_date=2026-11-05&end_date=2026-11-05'
+        result = self.client.get('/admin/api/statistics_detail' + query).get_json()
+        self.assertEqual({item['id'] for item in result['forms']}, expected_ids)
+        counts = self.client.get('/admin/api/statistics_data' + query).get_json()
+        self.assertEqual(counts['month_stats'], {'2026-11': {'pending': 4}})
+        workbook = load_workbook(filename=__import__('io').BytesIO(
+            self.client.get('/admin/export_statistics' + query).data), read_only=True)
+        self.assertEqual(workbook.active['B2'].value, 4)
+
+    def test_statistics_pending_api_ignores_touched_old_revision(self):
+        self._revise_pending_form(status='中心已审核')
+        self._login(self.department_admin)
+        result = self.client.get('/admin/api/statistics_data?department=甲部门').get_json()
+        self.assertEqual(result['overview']['pending_forms'], 0)
+
+    def test_statistics_headline_counts_approved_latest_forms_only(self):
+        self._revise_pending_form()
+        pending = self._create_form(
+            self.listener_a, status='待审核', lecture_date='2026-08-06',
+            teacher_name='待审教师', teacher_college='学院甲',
+            created_at=datetime(2026, 8, 6, 9, 0),
+        )
+        db.session.commit()
+        with patch('app.blueprints.admin.statistics.render_template', return_value='ok') as render:
+            self.assertEqual(self.client.get('/admin/statistics?department=甲部门').status_code, 200)
+        context = render.call_args.kwargs
+        self.assertEqual(context['total_forms'], 2)
+        self.assertEqual(context['logical_form_count'], 3)
+        self.assertEqual(context['pending_forms'], 1)
+
+    def test_statistics_keeps_distinct_legacy_zero_identity_forms(self):
+        self.pending.unique_id = 0
+        self.department_reviewed.unique_id = 0
+        db.session.commit()
+        with patch('app.blueprints.admin.statistics.render_template', return_value='ok') as render:
+            self.client.get('/admin/statistics?department=甲部门')
+        self.assertEqual(render.call_args.kwargs['logical_form_count'], 2)
 
     def test_review_queue_serializes_server_authoritative_reviewability(self):
         newer = self._create_form(

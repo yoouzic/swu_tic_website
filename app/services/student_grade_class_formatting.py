@@ -117,7 +117,9 @@ def current_major_aliases(*, source_batch_id=None):
 
 
 def format_student_grade_class(value, *, source_batch_id=None):
-    return format_class_text(value, current_major_aliases(source_batch_id=source_batch_id))
+    # A class-composition name need not equal the associated major name.
+    # Keep aliases for search/review matching, never for rewriting user data.
+    return format_class_text(value)
 
 
 def class_text_matches(requested, scheduled, major_aliases=None):

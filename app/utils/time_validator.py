@@ -25,8 +25,8 @@ class TimeValidator:
 
     @classmethod
     def get_teaching_calendar_settings(cls) -> Tuple[Optional[datetime], int]:
-        from ..services.teaching_calendar_settings import load_teaching_calendar_config
-        config, error = load_teaching_calendar_config()
+        from ..services.teaching_calendar_settings import load_schedule_calendar_config
+        config, error = load_schedule_calendar_config()
         if error is not None or config is None:
             return None, 0
         return datetime.combine(config.first_week_date, datetime.min.time()), config.week_start_day
@@ -116,9 +116,9 @@ class TimeValidator:
         """
         try:
             from ..services.teaching_calendar import TeachingCalendarConfig, date_for_teaching_weekday
-            from ..services.teaching_calendar_settings import load_teaching_calendar_config
+            from ..services.teaching_calendar_settings import load_schedule_calendar_config
             if not semester_start:
-                config, error = load_teaching_calendar_config()
+                config, error = load_schedule_calendar_config()
                 if error is not None or config is None:
                     return None
             else:
@@ -186,14 +186,14 @@ class TimeValidator:
         The returned teaching week is guaranteed to be within total_weeks and
         therefore valid for ``calculate_target_date``.
         """
-        from ..services.teaching_calendar_settings import load_teaching_calendar_config
+        from ..services.teaching_calendar_settings import load_schedule_calendar_config
         from ..services.teaching_calendar import (
             teaching_term_end,
             teaching_term_start,
             teaching_week_number,
         )
 
-        config, error = load_teaching_calendar_config()
+        config, error = load_schedule_calendar_config()
         if error is not None or config is None:
             return "请先在系统听课制度设置中配置教学周起始时间"
 

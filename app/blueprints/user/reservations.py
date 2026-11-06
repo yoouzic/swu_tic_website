@@ -20,6 +20,7 @@ from app.services.registration_course_identity import (
 )
 from app.services.schedule_availability import current_schedule_availability
 from app.services.teaching_calendar import parse_lecture_date
+from app.services.teaching_calendar_settings import load_schedule_calendar_config
 from app.services.form_bindings import (
     get_registration_logical_form_counts,
     registration_has_form_binding,
@@ -126,7 +127,8 @@ def listening_registration():
     if not can_submit or not availability['registration_ready']:
         active_tab = 'records'
     records = _build_activity_records(user, request.args)
-    semester_configured = bool((SystemSetting.get('teaching_first_week_monday') or '').strip())
+    schedule_calendar, calendar_error = load_schedule_calendar_config()
+    semester_configured = calendar_error is None and schedule_calendar is not None
     return render_template(
         'user/activity_center.html',
         user=user,
@@ -310,8 +312,8 @@ def api_create_reservation():
             }), 400
         
         # 后端独立确认教学周期已配置，未配置时拒绝登记。
-        semester_configured = bool((SystemSetting.get('teaching_first_week_monday') or '').strip())
-        if not semester_configured:
+        schedule_calendar, calendar_error = load_schedule_calendar_config()
+        if calendar_error or schedule_calendar is None:
             return jsonify({
                 'success': False,
                 'message': '学期尚未设置，请联系管理员后再登记。'

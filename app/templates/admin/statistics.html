@@ -12,12 +12,13 @@
 
     <!-- 统计概览必须先于低频管理模块。 -->
     <section class="metric-grid statistics-metrics mb-4" aria-label="统计概览">
-        {{ metric('物理版本总数', total_forms, tone='neutral') }}
-        {{ metric('逻辑表单组数', logical_form_count, tone='neutral') }}
+        {{ metric('有效交表数', total_forms, tone='neutral') }}
+        {{ metric('当前表单数', logical_form_count, tone='neutral') }}
         {{ metric('待审核表单', pending_forms, tone='attention') }}
         {{ metric('已通过表单', approved_forms, tone='success') }}
         {{ metric('已驳回表单', rejected_forms, tone='danger') }}
     </section>
+    <p class="small text-muted">每张听课表只统计最新版本。有效交表数包含部门已审核、中心已审核；待审核和已驳回单独展示。</p>
 
     {% if can_manage_department_leave %}
     <details class="statistics-secondary mb-4" id="leaveManagement">
@@ -211,7 +212,7 @@
                                     {% elif statistics_dimension == 'date' %}
                                     <th>日期</th>
                                     {% endif %}
-                                    <th>总数</th>
+                                    <th>当前表单数</th>
                                     <th>待审核</th>
                                     <th>已通过</th>
                                     <th>已驳回</th>
