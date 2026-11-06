@@ -90,6 +90,8 @@ OCR 用例。Python 编译与差异空白检查通过。
 真实照片用例 `test_real_photo_upload_reload_and_guidance_keep_identical_ocr_order`
 仍在 `guide['question']` 为 `None` 时失败；在独立解压的原 `ad4aa46` 版本中复跑
 同样失败。该处 OCR/候选引导源码未改，单独记录为既有问题，不作为本轮通过项目。
+后续专项复核已确认是过时断言，修订测试并重新验证，见
+[OCR 测试专项记录](ocr-regression-audit-2026-11-07.md)。
 全项目扩展测试未完成，不宣称整个项目测试全部通过；最终以本轮受影响接口集合的
 完整回归结果为准。
 

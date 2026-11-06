@@ -1,5 +1,6 @@
 from datetime import date
 import math
+import pytest
 
 from app.services import site_context_model as model
 from app.services.campus_buildings import load_buildings, representative_point
@@ -102,9 +103,17 @@ def test_active_question_avoids_known_or_already_asked_kinds():
     assert exhausted['question'] is None
 
 
-def test_empty_candidates_offer_manual_without_fabricated_options():
-    r=model.rank_site_candidates([])
+@pytest.mark.parametrize('hypotheses',[
+    [],
+    [{'value':'0609','score':.99}],
+    [{'value':'0609','score':.997},{'value':'6090','score':.998}],
+])
+def test_empty_candidates_offer_manual_without_fabricated_options(hypotheses):
+    r=model.rank_site_candidates([],door_hypotheses=hypotheses)
     assert r['candidates']==[] and r['question'] is None and r['manual_available'] is True
+    assert r['guidance']['mode']=='expand' and r['guidance']['question'] is None
+    if len(hypotheses)>1:
+        assert '门牌读数需核对' in r['uncertainties']
 
 
 def test_unstable_location_has_weaker_weight_than_stable_fix():

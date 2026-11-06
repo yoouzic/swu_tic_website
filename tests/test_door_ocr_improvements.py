@@ -89,6 +89,7 @@ def test_weak_rotated_noise_is_retained_but_does_not_veto_a_strong_direct_read(t
 
 def test_saved_ocr_evidence_keeps_the_direct_orientation_of_near_ties():
     import json
+    from app.services.site_context_model import rank_site_candidates
     evidence={'hypotheses':[
         {'value':'0609','score':.997,'method':'whole'},
         {'value':'6090','score':.998,'method':'region_single_line_rot180'},
@@ -98,10 +99,17 @@ def test_saved_ocr_evidence_keeps_the_direct_orientation_of_near_ties():
     assert first['alternatives']==second['alternatives']==['0609','6090']
     assert first['hypotheses'][0]['score']==.997
     assert first['hypotheses'][1]['score']==.998
+    guide=rank_site_candidates(
+        [{'candidate_id':'photo-room','room':'8-609','period':[1,2]}],
+        door_hypotheses=second['hypotheses'])
+    assert guide['guidance']['mode']=='clarify'
+    assert guide['question']==guide['guidance']['question']
+    assert guide['question']['kind']=='room_number'
+    assert [(option['value'],option['label']) for option in guide['question']['options']]==[
+        ('609','0609'),('6090','6090')]
 
 
 def test_real_photo_upload_reload_and_guidance_keep_identical_ocr_order(setup_capture):
-    import json
     from pathlib import Path
     from datetime import datetime,timezone,timedelta
     from app.models import db,LectureSiteCapture
@@ -121,9 +129,25 @@ def test_real_photo_upload_reload_and_guidance_keep_identical_ocr_order(setup_ca
     reload=case.client.get(f"/user/api/site-capture/{record.id}").get_json()['data']
     assert reload['alternatives']==public['alternatives']
     evidence=capture.decode_ocr_evidence(record.ocr_alternatives_json)
+    assert evidence['alternatives']==direct['alternatives']==public['alternatives']
+    assert evidence['hypotheses']==direct['hypotheses']
     from app.services.site_context_model import rank_site_candidates
-    guide=rank_site_candidates([],door_hypotheses=evidence['hypotheses'])
-    assert guide['question']['options'][0]['value']=='609'
+    # With no timetable candidates the UI opens manual correction directly.
+    empty=rank_site_candidates([],door_hypotheses=evidence['hypotheses'])
+    assert empty['guidance']['mode']=='expand'
+    assert empty['question'] is None and empty['guidance']['question'] is None
+    assert empty['manual_available'] is True
+    # Once a course is available, photo ambiguity must still be resolved in
+    # the same order as the upload/reload evidence, not by timetable matches.
+    guide=rank_site_candidates(
+        [{'candidate_id':'photo-room','room':'8-609','period':[1,2]}],
+        door_hypotheses=evidence['hypotheses'])
+    assert guide['guidance']['mode']=='clarify'
+    assert guide['question']==guide['guidance']['question']
+    assert guide['question']['kind']=='room_number'
+    options=guide['question']['options']
+    assert [option['label'] for option in options]==public['alternatives']
+    assert options[0]['value']=='609'
 
 
 @pytest.mark.parametrize('score',[True,False,float('nan'),float('inf'),-1,1.1])
