@@ -4,6 +4,7 @@
 {% block body_class %}review-page{% endblock %}
 
 {% block head %}
+{% if request.args.get('class_trace') == '1' %}<script src="{{ url_for('static', filename='js/class-input-diagnostics.js', v='20261107-1') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='js/feedback-text.js', v='20261106') }}"></script>
 {% endblock %}
 
@@ -541,6 +542,11 @@ let reviewDraftTimer = null;
 let reviewDraftInterval = null;
 let reviewDraftRestoring = false;
 let reviewDraftStale = false;
+let reviewFormLoaded = false;
+let reviewFormLoadSequence = 0;
+let reviewDraftLoadSequence = 0;
+let reviewDraftEditRevision = 0;
+const reviewChangeDetectionElements = new WeakSet();
 let referenceDrawerReturnFocus = null;
 const REFERENCE_DRAWER_WIDTH_KEY = 'reviewReferenceDrawerWidth';
 const REFERENCE_DRAWER_DEFAULT_WIDTH = 500;
@@ -610,9 +616,25 @@ document.addEventListener('keydown', function(event) {
 
 // 加载表单数据
 function loadFormData() {
-    fetch(`/admin/api/review/form/${formId}`)
-        .then(response => response.json())
+    const requestedFormId = String(formId);
+    const sequence = ++reviewFormLoadSequence;
+    ++reviewDraftLoadSequence;
+    const editRevision = reviewDraftEditRevision;
+    const wasLoaded = reviewFormLoaded;
+    const inputSnapshot = captureReviewInputSnapshot();
+    const isCurrent = () => sequence === reviewFormLoadSequence && requestedFormId === String(formId);
+    return fetch(`/admin/api/review/form/${requestedFormId}`)
+        .then(response => {
+            if (!response.ok) throw new Error('加载表单数据失败');
+            return response.json();
+        })
         .then(data => {
+            if (!isCurrent()) return false;
+            if (wasLoaded && (editRevision !== reviewDraftEditRevision || inputSnapshot !== captureReviewInputSnapshot())) {
+                setReviewDraftStatus('已保留当前修改，未用加载结果覆盖。', 'info');
+                if (editRevision === reviewDraftEditRevision) scheduleReviewFormDraftSave();
+                return false;
+            }
             if (data.success) {
                 originalFormData = data.form;
                 userPermission = data.permission;
@@ -624,6 +646,8 @@ function loadFormData() {
                     ? `审核《${courseTitle}》听课表`
                     : `审核表单 #${formId}`;
                 populateForm(data.form);
+                reviewFormLoaded = true;
+                reviewDraftStale = false;
                 document.getElementById('statusBadge').textContent = `当前状态：${data.form.status}`;
                 document.getElementById('statusBadge').className = `badge ${getStatusClass(data.form.status)}`;
                 const forceReviewAlert = document.getElementById('forceReviewAlert');
@@ -658,13 +682,17 @@ function loadFormData() {
                 setupFormChangeDetection();
                 loadReviewFormDraft();
                 startReviewDraftAutosave();
+                return true;
             } else {
                 showError(data.message || '加载表单数据失败');
+                return false;
             }
         })
         .catch(error => {
+            if (!isCurrent()) return false;
             console.error('Error:', error);
             showError('网络错误，请稍后重试');
+            return false;
         });
 }
 
@@ -752,6 +780,8 @@ function setupFormChangeDetection() {
     const formElements = document.querySelectorAll('#reviewForm input, #reviewForm textarea, #reviewForm select');
     
     formElements.forEach(element => {
+        if (reviewChangeDetectionElements.has(element)) return;
+        reviewChangeDetectionElements.add(element);
         element.addEventListener('input', detectChanges);
         element.addEventListener('change', detectChanges);
         element.addEventListener('input', scheduleReviewFormDraftSave);
@@ -759,7 +789,8 @@ function setupFormChangeDetection() {
     });
 
     const scoringBody = document.getElementById('scoringTableBody');
-    if (scoringBody) {
+    if (scoringBody && !reviewChangeDetectionElements.has(scoringBody)) {
+        reviewChangeDetectionElements.add(scoringBody);
         scoringBody.addEventListener('input', scheduleReviewFormDraftSave);
         scoringBody.addEventListener('change', scheduleReviewFormDraftSave);
     }
@@ -916,6 +947,12 @@ function collectReviewDraftData() {
     };
 }
 
+function captureReviewInputSnapshot() {
+    const fields = Array.from(document.querySelectorAll('#reviewForm input, #reviewForm textarea, #reviewForm select'),
+        element => [element.id || element.name, element.value, element.checked]);
+    return JSON.stringify([fields, document.getElementById('reviewComment').value, collectScoreData(true)]);
+}
+
 function populateScoreRows(scoreData) {
     const wasRestoring = reviewDraftRestoring;
     reviewDraftRestoring = true;
@@ -956,28 +993,43 @@ function applyReviewDraftData(data) {
 }
 
 async function loadReviewFormDraft() {
+    const requestedFormId = String(formId);
+    const sequence = ++reviewDraftLoadSequence;
+    const editRevision = reviewDraftEditRevision;
+    const inputSnapshot = captureReviewInputSnapshot();
+    const isCurrent = () => sequence === reviewDraftLoadSequence && requestedFormId === String(formId);
     try {
         const response = await fetch(getReviewDraftUrl());
         const result = await response.json();
-        if (!result.success) {
+        if (!isCurrent()) return false;
+        if (editRevision !== reviewDraftEditRevision || inputSnapshot !== captureReviewInputSnapshot()) {
+            // Browser autofill can change values without emitting an input event.
+            if (editRevision === reviewDraftEditRevision) scheduleReviewFormDraftSave();
+            return false;
+        }
+        if (!response.ok || !result.success) {
             setReviewDraftStatus(result.message || '草稿加载失败', 'warning');
-            return;
+            return false;
         }
         if (result.exists) {
             if (result.stale) {
                 reviewDraftStale = true;
                 setReviewDraftStatus('原始表单已更新，旧审核草稿已保留，未自动恢复。请核对最新表单后重新编辑。', 'warning');
-                return;
+                return false;
             }
             applyReviewDraftData(result.data);
             setReviewDraftStatus(
                 result.updated_at ? `已恢复审核草稿，保存时间：${result.updated_at}` : '已恢复审核草稿',
                 'info'
             );
+            return true;
         }
+        return false;
     } catch (error) {
+        if (!isCurrent()) return false;
         console.error('Failed to load review draft:', error);
         setReviewDraftStatus('草稿加载失败，刷新后可重试', 'warning');
+        return false;
     }
 }
 
@@ -1010,6 +1062,7 @@ async function saveReviewFormDraft() {
 
 function scheduleReviewFormDraftSave() {
     if (reviewDraftRestoring || !formId) return;
+    ++reviewDraftEditRevision;
     reviewDraftStale = false;
     if (reviewDraftTimer) {
         window.clearTimeout(reviewDraftTimer);
@@ -1029,10 +1082,16 @@ function startReviewDraftAutosave() {
 }
 
 async function deleteReviewFormDraft() {
+    const sequence = ++reviewDraftLoadSequence;
+    if (reviewDraftTimer) window.clearTimeout(reviewDraftTimer);
+    reviewDraftTimer = null;
     if (!formId) return;
+    const requestedFormId = String(formId);
     try {
         await fetch(getReviewDraftUrl(), { method: 'DELETE' });
-        setReviewDraftStatus('草稿已清除', 'secondary');
+        if (sequence === reviewDraftLoadSequence && requestedFormId === String(formId)) {
+            setReviewDraftStatus('草稿已清除', 'secondary');
+        }
     } catch (error) {
         console.error('Failed to delete review draft:', error);
     }
@@ -1042,6 +1101,7 @@ async function deleteReviewFormDraft() {
 // 重置表单
 function resetForm() {
     showReviewActionDialog('确定要重置表单到原始状态吗？所有修改将丢失。', () => {
+        ++reviewFormLoadSequence;
         populateForm(originalFormData);
         document.getElementById('reviewComment').value = originalFormData.review_comment || '';
         document.getElementById('changesDisplay').style.display = 'none';

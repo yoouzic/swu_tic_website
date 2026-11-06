@@ -129,10 +129,12 @@ class ClassFormattingSourceTest(unittest.TestCase):
 
     def test_manual_class_name_is_not_replaced_by_major_alias(self):
         self.add_source([('2026公管类1班', '公共管理类'),
-                         ('2026数学(师范)3班', '数学与应用数学(师范)')])
+                         ('2026数学(师范)3班', '数学与应用数学(师范)'),
+                         ('2024农林经济01班', '农林经济管理')])
         for raw, expected in [
             ('2026公管类1班', '2026级公管类01班'),
             ('2026数学(师范)3、4班', '2026级数学（师范）03、04班'),
+            ('2024农林经济01班', '2024级农林经济01班'),
         ]:
             with self.subTest(raw=raw):
                 response = self.client.post('/user/api/student_grade_class/format',

@@ -8,9 +8,10 @@ const source = template.match(/<script>([\s\S]*?)<\/script>/)[1];
 // Execute the real page script with only its browser boundary represented here.
 function page() {
   const elements = new Map();
-  const state = {rows: [], shown: [], focused: null, reported: [], feedback: [], requests: [], intervals: []};
+  const state = {rows: [], shown: [], focused: null, reported: [], feedback: [], requests: [], intervals: [], timers: []};
   function element(id, attrs = '') {
     const classes = new Set();
+    const listeners = new Map();
     return {
       id, value: 'valid', textContent: '', style: {}, dataset: {}, disabled: false,
       required: /\brequired\b/.test(attrs), readOnly: /\breadonly\b/.test(attrs),
@@ -23,7 +24,12 @@ function page() {
       setCustomValidity(value) { this.customValidity = value; },
       checkValidity() { return !this.customValidity && (!this.required || this.value.trim()) && (!this.pattern || new RegExp(this.pattern).test(this.value)) && this.value.length >= this.minLength; },
       reportValidity() { state.reported.push(id); return this.checkValidity(); },
-      focus() { state.focused = id; }, scrollIntoView() {}, addEventListener() {},
+      focus() { state.focused = id; }, scrollIntoView() {},
+      addEventListener(type, callback) {
+        if (!listeners.has(type)) listeners.set(type, []);
+        listeners.get(type).push(callback);
+      },
+      dispatchEvent(event) { for (const callback of listeners.get(event.type) || []) callback(event); },
       appendChild() {}, replaceChildren() {}, append() {},
       closest() { return {appendChild() {}, querySelector() { return null; }}; },
     };
@@ -64,7 +70,7 @@ function page() {
   };
   const context = vm.createContext({
     document, console: {error() {}, warn() {}, log() {}}, URLSearchParams,
-    window: {SwuFeedbackText: require('../app/static/js/feedback-text.js'), setTimeout() {return 1;}, clearTimeout() {}, setInterval(fn) {state.intervals.push(fn); return 1;}, requestAnimationFrame(fn) {fn(); return 1;}, location: {}, setAdminFeedback(id, message) {state.feedback.push(message);}},
+    window: {SwuFeedbackText: require('../app/static/js/feedback-text.js'), setTimeout(fn) {state.timers.push(fn); return state.timers.length;}, clearTimeout() {}, setInterval(fn) {state.intervals.push(fn); return 1;}, requestAnimationFrame(fn) {fn(); return 1;}, location: {}, setAdminFeedback(id, message) {state.feedback.push(message);}},
     bootstrap: {Modal: {getOrCreateInstance: modal => ({show() {state.shown.push(modal.id);}, hide() {}})}},
     FormData: class {entries() {return [...elements.values()].map(el => [el.id, el.value]);}},
     fetch: async (url, options) => {state.requests.push({url, options}); return {ok: true, json: async () => ({success: true})};},
@@ -229,4 +235,137 @@ test('reference lookup reuses cached results until a lookup field changes', asyn
   p.run("showReferenceData({focus() {}})");
   await new Promise(setImmediate);
   assert.equal(lookupRequests(), 2);
+});
+
+function deferRequests(p) {
+  const requests = [];
+  p.context.fetch = (url, options) => new Promise(resolve => requests.push({url, options, resolve}));
+  return (index, body, ok = true) => requests[index].resolve({ok, json: async () => body});
+}
+
+function reviewDraft(value) {
+  return {success: true, exists: true, stale: false, data: {
+    form_data: {student_grade_class: value}, review_comment: '旧审核意见', score_data: [],
+  }};
+}
+
+function reviewRecord(value) {
+  return {success: true, form: {id: 1, student_grade_class: value, status: '待审核'}, score_data: [], permission: '审表_中心'};
+}
+
+test('late review draft preserves a manually corrected class after an input event', async () => {
+  const p = page(); const reply = deferRequests(p);
+  p.run("originalFormData = {id:1, student_grade_class:'2024级农林经济管理01班'}; populateForm(originalFormData)");
+  const loading = p.run('loadReviewFormDraft()');
+  p.get('student_grade_class').value = '2024级农林经济01班';
+  p.run('scheduleReviewFormDraftSave()');
+  reply(0, reviewDraft('2024级农林经济管理01班'));
+  await loading;
+  assert.equal(p.get('student_grade_class').value, '2024级农林经济01班');
+});
+
+test('late review draft also preserves browser value changes without input events', async () => {
+  const p = page(); const reply = deferRequests(p);
+  const loading = p.run('loadReviewFormDraft()');
+  p.get('student_grade_class').value = '2024级农林经济01班';
+  reply(0, reviewDraft('2024级农林经济管理01班'));
+  await loading;
+  assert.equal(p.get('student_grade_class').value, '2024级农林经济01班');
+  assert.equal(p.state.timers.length, 1);
+});
+
+test('unchanged review fields still restore their current draft', async () => {
+  const p = page(); const reply = deferRequests(p);
+  const loading = p.run('loadReviewFormDraft()');
+  reply(0, reviewDraft('2024级农林经济01班'));
+  await loading;
+  assert.equal(p.get('student_grade_class').value, '2024级农林经济01班');
+  assert.equal(p.get('reviewComment').value, '旧审核意见');
+});
+
+test('only the latest review draft request can restore data', async () => {
+  const p = page(); const reply = deferRequests(p);
+  const older = p.run('loadReviewFormDraft()');
+  const newer = p.run('loadReviewFormDraft()');
+  reply(1, reviewDraft('新草稿')); await newer;
+  reply(0, reviewDraft('旧草稿')); await older;
+  assert.equal(p.get('student_grade_class').value, '新草稿');
+});
+
+test('deleting a review draft invalidates an in-flight restore', async () => {
+  const p = page(); const reply = deferRequests(p);
+  const loading = p.run('loadReviewFormDraft()');
+  const deleting = p.run('deleteReviewFormDraft()');
+  p.get('student_grade_class').value = '保留当前班级';
+  reply(0, reviewDraft('旧草稿')); await loading;
+  reply(1, {success:true}); await deleting;
+  assert.equal(p.get('student_grade_class').value, '保留当前班级');
+});
+
+test('resetting a review invalidates an in-flight restore', async () => {
+  const p = page(); const reply = deferRequests(p);
+  p.context.showReviewActionDialog = (_message, callback) => callback();
+  p.run("originalFormData = {id:1, student_grade_class:'原始班级', review_comment:'原始意见'}");
+  const loading = p.run('loadReviewFormDraft()');
+  p.run('resetForm()');
+  reply(0, reviewDraft('旧草稿')); await loading;
+  assert.equal(p.get('student_grade_class').value, '原始班级');
+  assert.equal(p.get('reviewComment').value, '原始意见');
+  reply(1, {success:true}); await new Promise(setImmediate);
+});
+
+test('review draft from a previous form cannot populate a different form', async () => {
+  const p = page(); const reply = deferRequests(p);
+  const loading = p.run('loadReviewFormDraft()');
+  p.run('formId = 2');
+  reply(0, reviewDraft('上一张表')); await loading;
+  assert.equal(p.get('student_grade_class').value, 'valid');
+});
+
+test('failed review draft response never restores a success-shaped payload', async () => {
+  const p = page(); const reply = deferRequests(p);
+  const loading = p.run('loadReviewFormDraft()');
+  reply(0, reviewDraft('失败请求的草稿'), false); await loading;
+  assert.equal(p.get('student_grade_class').value, 'valid');
+});
+
+test('older form response cannot replace a newer loaded review record', async () => {
+  const p = page(); const reply = deferRequests(p);
+  const older = p.run('loadFormData()');
+  const newer = p.run('loadFormData()');
+  reply(1, reviewRecord('新服务器版本')); await newer; await new Promise(setImmediate);
+  reply(0, reviewRecord('旧服务器版本')); await older; await new Promise(setImmediate);
+  assert.equal(p.get('student_grade_class').value, '新服务器版本');
+});
+
+test('reloading a review preserves edits made while the request is pending', async () => {
+  const p = page(); const reply = deferRequests(p);
+  const initial = p.run('loadFormData()');
+  reply(0, reviewRecord('原始班级')); await initial; await new Promise(setImmediate);
+  reply(1, {success:true,exists:false}); await new Promise(setImmediate);
+  const loading = p.run('loadFormData()');
+  p.get('student_grade_class').value = '手改班级';
+  p.run('scheduleReviewFormDraftSave()');
+  reply(2, reviewRecord('服务器旧值')); await loading; await new Promise(setImmediate);
+  assert.equal(p.get('student_grade_class').value, '手改班级');
+});
+
+test('reloading a review schedules saving browser value changes without an input event', async () => {
+  const p = page(); const reply = deferRequests(p);
+  const initial = p.run('loadFormData()');
+  reply(0, reviewRecord('原始班级')); await initial; await new Promise(setImmediate);
+  reply(1, {success:true,exists:false}); await new Promise(setImmediate);
+  const loading = p.run('loadFormData()');
+  p.get('student_grade_class').value = '浏览器填写班级';
+  reply(2, reviewRecord('服务器旧值')); await loading;
+  assert.equal(p.get('student_grade_class').value, '浏览器填写班级');
+  assert.equal(p.state.timers.length, 1);
+  assert.equal(p.get('draftSaveStatus').dataset.state, 'secondary');
+});
+
+test('repeated setup binds each review input listener only once', () => {
+  const p = page();
+  p.run('setupFormChangeDetection(); setupFormChangeDetection()');
+  p.get('student_grade_class').dispatchEvent({type:'input'});
+  assert.equal(p.state.timers.length, 1);
 });

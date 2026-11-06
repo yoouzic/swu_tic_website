@@ -7,6 +7,7 @@
 {% block body_class %}lecture-form-page{% endblock %}
 
 {% block head %}
+{% if request.args.get('class_trace') == '1' %}<script src="{{ url_for('static', filename='js/class-input-diagnostics.js', v='20261107-1') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='js/feedback-text.js', v='20261106') }}"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/listening-assistant.css', v='20261013-complement') }}">
 {% if capture_enabled and not form %}<link rel="stylesheet" href="{{ url_for('static', filename='css/site-capture.css', v='20261014-course-title') }}">{% endif %}
