@@ -48,6 +48,7 @@ class ManualOnlyWithoutScheduleTest(_ReviewMutationCompatibilityBase):
         payload['site_capture_id']=photo.id
         db.session.add(LectureFormDraft(user_id=self.officer.id,draft_key='submit_form',payload_json=json.dumps(payload,ensure_ascii=False)))
         db.session.commit()
+        self.client.observe_draft_revision()
         return photo
 
     def test_missing_timetable_hides_whole_capture_flow_and_opens_manual_form(self):

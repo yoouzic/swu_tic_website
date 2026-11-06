@@ -8,7 +8,8 @@ def snapshot_submission_draft(draft):
     if draft is None:
         return None
     return {'id': draft.id, 'user_id': draft.user_id, 'draft_key': draft.draft_key,
-            'payload_json': draft.payload_json, 'updated_at': draft.updated_at}
+            'payload_json': draft.payload_json, 'updated_at': draft.updated_at,
+            'entry_mode': draft.entry_mode}
 
 
 def delete_consumed_submission_draft(revision, *, logical_id=None, capture_id=None, legacy_manual_entry=False):
@@ -36,6 +37,7 @@ def delete_consumed_submission_draft(revision, *, logical_id=None, capture_id=No
             LectureFormDraft.id == revision['id'],
             LectureFormDraft.user_id == revision['user_id'],
             LectureFormDraft.draft_key == revision['draft_key'],
+            LectureFormDraft.entry_mode == revision['entry_mode'],
             LectureFormDraft.payload_json == revision['payload_json'],
             timestamp_condition,
         ).execution_options(synchronize_session=False)).rowcount

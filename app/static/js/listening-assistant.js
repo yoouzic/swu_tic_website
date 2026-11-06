@@ -1604,9 +1604,7 @@
             if (typeof updateClassPeriod === 'function') {
                 updateClassPeriod();
             }
-            if (typeof deleteLectureFormDraft === 'function') {
-                deleteLectureFormDraft();
-            }
+            // The form reset handler owns the single draft deletion.
             renderAll();
             setStatus('状态：已新建空白表单，可以开始填写。', 'info');
             form.querySelector('#lecture_date')?.focus();

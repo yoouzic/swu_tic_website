@@ -103,11 +103,22 @@
         function button(label,fn){const b=document.createElement('button');b.type='button';b.className='btn btn-outline-secondary btn-sm';b.textContent=label;b.addEventListener('click',fn);return b;}
         function container(){const d=document.createElement('div');d.className='site-context__actions';return d;}
         async function request(url,options={}){
+            const {draftGuard,...requestOptions}=options;
+            const method=String(options.method||'GET').toUpperCase();
+            const changesDraft=(method==='PATCH'&&/^\/user\/api\/site-capture\/\d+$/.test(url))||
+                (method==='POST'&&/^\/user\/api\/site-capture\/\d+\/confirm$/.test(url));
+            if(changesDraft&&['begin','accept','reject'].some(key=>typeof window.LectureDraftRevision?.[key]!=='function'))throw new Error('页面版本已更新，请刷新并重新打开填表页面后继续；当前内容尚未改写。');
+            const contextRecord=latest?.record?.id;
+            const draftTicket=changesDraft?window.LectureDraftRevision.begin():null;
             const headers=new Headers(options.headers||{});headers.set('X-CSRFToken',document.querySelector('meta[name="csrf-token"]').content);
+            if(draftTicket)headers.set('X-Lecture-Draft-Revision',draftTicket.revision);
             const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
             try{
-                const response=await fetch(url,{...options,headers,signal:controller.signal});
-                const result=await response.json();if(!response.ok||!result.success)throw new Error(result.message||'暂未完成，请重试。');return result;
+                const response=await fetch(url,{...requestOptions,headers,signal:controller.signal});
+                const result=await response.json();
+                if(!response.ok||!result.success){if(draftTicket&&(!draftGuard||draftGuard())&&contextRecord===latest?.record?.id)window.LectureDraftRevision.reject(response,result,draftTicket);throw new Error(result.message||'暂未完成，请重试。');}
+                if(draftTicket&&((draftGuard&&!draftGuard())||contextRecord!==latest?.record?.id||!window.LectureDraftRevision.accept(draftTicket,result)))throw new Error('当前记录已切换，已保留当前填写内容，请重新核对。');
+                return result;
             }finally{clearTimeout(timer);}
         }
         function render(state){
@@ -206,9 +217,9 @@
                 try{
                     if(await window.saveLectureFormDraft()===false)throw new Error('草稿保存失败，请检查网络后重试；当前填写内容已保留。');
                     if(!isCurrent())throw new Error('记录已切换，请重新确认。');
-                    await request(`/user/api/site-capture/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({building:match[1],room_number:match[2]})});
+                    await request(`/user/api/site-capture/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({building:match[1],room_number:match[2]}),draftGuard:isCurrent});
                     if(!isCurrent())throw new Error('记录已切换，请重新确认。');
-                    const result=await request(`/user/api/site-capture/${id}/confirm`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidate_id:course.candidate_id})});
+                    const result=await request(`/user/api/site-capture/${id}/confirm`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidate_id:course.candidate_id}),draftGuard:isCurrent});
                     if(isCurrent()){
                         if(await window.loadLectureFormDraft()===false)throw new Error('课程已确认，但草稿暂未加载，请刷新后重试。');
                         if(isCurrent())form.dispatchEvent(new CustomEvent('lecture-assistant-course-confirmed'));

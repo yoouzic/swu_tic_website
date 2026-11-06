@@ -1,6 +1,7 @@
 """Atomic ordinary-draft saves; surrounding photo updates share the transaction."""
 from datetime import datetime, timedelta
 import json
+import hashlib
 
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy import inspect
@@ -11,6 +12,38 @@ from app.models import LectureFormDraft, db
 
 class LectureFormDraftConflict(Exception):
     """A draft changed, disappeared, or was created by another request."""
+
+
+def get_draft_revision(user_id, draft_key, draft):
+    """Opaque identity for the exact stored row, not its normalized projection."""
+    if draft is None or draft.id is None:
+        return 'none'
+    payload = [int(user_id), draft_key, draft.id, draft.entry_mode,
+               draft.updated_at.isoformat() if draft.updated_at else None,
+               draft.payload_json]
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+
+
+def delete_lecture_form_draft_atomic(user_id, draft_key, draft):
+    if draft is None:
+        return False
+    timestamp = (LectureFormDraft.updated_at.is_(None) if draft.updated_at is None
+                 else LectureFormDraft.updated_at == draft.updated_at)
+    try:
+        with db.session.no_autoflush:
+            deleted = db.session.execute(db.delete(LectureFormDraft).where(
+                LectureFormDraft.id == draft.id, LectureFormDraft.user_id == user_id,
+                LectureFormDraft.draft_key == draft_key,
+                LectureFormDraft.entry_mode == draft.entry_mode,
+                LectureFormDraft.payload_json == draft.payload_json, timestamp,
+            ).execution_options(synchronize_session=False)).rowcount
+    except OperationalError as error:
+        if 'database is locked' in str(error).lower() or 'database table is locked' in str(error).lower():
+            raise LectureFormDraftConflict('听课草稿正在更新，请保留当前输入并重试。') from error
+        raise
+    if deleted != 1:
+        raise LectureFormDraftConflict('听课草稿已更新，请刷新后重试。')
+    return True
 
 
 def save_lecture_form_draft_atomic(user_id, draft_key, original_draft, payload, *, entry_mode=None):
@@ -47,6 +80,7 @@ def save_lecture_form_draft_atomic(user_id, draft_key, original_draft, payload, 
                 LectureFormDraft.id==original_draft.id,
                 LectureFormDraft.user_id==user_id,
                 LectureFormDraft.draft_key==draft_key,
+                LectureFormDraft.entry_mode==original_draft.entry_mode,
                 LectureFormDraft.payload_json==original_draft.payload_json,
                 timestamp_condition,
             ).values(payload_json=serialized,updated_at=written_at,entry_mode=policy).execution_options(synchronize_session=False)

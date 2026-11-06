@@ -1,7 +1,7 @@
 (function (window) {
     'use strict';
     const document = window.document;
-    const version = '20261107-class-trace-1';
+    const version = '20261107-class-trace-2';
     const events = [];
     const openedAt = new Date().toISOString();
     let field;
@@ -33,6 +33,7 @@
             path: limited(window.location.pathname),
             browser: limited(window.navigator.userAgent),
             field: 'student_grade_class', value: field ? limited(field.value) : null,
+            draft_protocol: field?.form?.dataset?.draftProtocol || 'legacy',
             value_length: field ? field.value.length : 0,
             events: events.slice(),
         };

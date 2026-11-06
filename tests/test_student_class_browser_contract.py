@@ -34,6 +34,6 @@ def test_fresh_form_has_no_automatic_class_formatter_or_initial_edit_restore(tmp
             assert 'form-completion-assistant.js' in html
             traced = client.get('/user/submit_form?class_trace=1')
             assert traced.status_code == 200
-            assert 'class-input-diagnostics.js?v=20261107-1' in traced.get_data(as_text=True)
+            assert 'class-input-diagnostics.js?v=20261107-2' in traced.get_data(as_text=True)
         finally:
             cleanup_sqlite_database(db, drop_all=True)

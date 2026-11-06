@@ -13,6 +13,7 @@ from app.services.current_courses import current_course_query, persist_course_ma
 from app.services.listening_assistant_schedule import persist_listening_assistant_entries
 from app.services.schedule_snapshots import persist_import_snapshot
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
+from tests.draft_revision_client import DraftRevisionClient
 
 CURRENT = '2026-2027-1'
 OLD = '2025-2026-2'
@@ -35,9 +36,10 @@ class ScheduleAvailabilityTest(unittest.TestCase):
                          phone='13800000000', qq='-', group='一组')
         db.session.add(self.user)
         db.session.commit()
-        self.client = app.test_client()
+        self.client = DraftRevisionClient(app, app.response_class)
         with self.client.session_transaction() as session:
             session['user_id'] = self.user.id
+        self.client.observe_draft_revision()
         SystemSetting.set('teaching_first_week_monday', '2026-09-07')
 
     def tearDown(self):
@@ -155,6 +157,7 @@ class ScheduleAvailabilityTest(unittest.TestCase):
         db.session.add(LectureFormDraft(user_id=self.user.id, draft_key='submit_form',
                                        payload_json='{"site_capture_id": %d}' % record.id))
         db.session.commit()
+        self.client.observe_draft_revision()
         response = self.client.patch('/user/api/site-capture/%d' % record.id,
                                      json={'building':'8', 'room_number':'309'})
         self.assertEqual(response.status_code, 200)
@@ -188,6 +191,7 @@ class ScheduleAvailabilityTest(unittest.TestCase):
                                  payload_json=json.dumps(payload, ensure_ascii=False))
         db.session.add(draft)
         db.session.commit()
+        self.client.observe_draft_revision()
         response = self.client.patch('/user/api/site-capture/%d' % record.id,
                                      json={'building':'8','room_number':'309'})
         self.assertEqual(response.status_code, 200)

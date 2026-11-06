@@ -120,7 +120,7 @@ def test_submission_paused_after_manual_grant_read_cannot_bypass_newer_photo_res
     assert not worker.is_alive()
     assert 'error' not in result, result
     assert result['status'] == 409
-    assert '听课草稿已更新' in result['text']
+    assert '听课草稿已在其他页面更新' in result['text']
     with case.app.app_context():
         assert LectureForm.query.count() == 0
         draft = LectureFormDraft.query.one()

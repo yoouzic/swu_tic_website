@@ -31,6 +31,7 @@ def test_already_reading_older_put_returns_conflict_without_overwriting_winner(s
             'data': {'course_feedback': 'B 原评价'}, 'expected_site_capture_id': second['id']}).status_code == 200
         assert case.client.post(f"/user/api/site-capture/{first['id']}/resume").status_code == 200
     user_id = case.user.id
+    opened_revision = case.client.draft_revision
     entered, release = threading.Event(), threading.Event()
     result = {}
     original_load = forms._load_lecture_form_draft
@@ -46,6 +47,7 @@ def test_already_reading_older_put_returns_conflict_without_overwriting_winner(s
         client = case.app.test_client()
         with client.session_transaction() as session:
             session.update(user_id=user_id, user_role='信息员')
+        client.set_draft_revision(opened_revision)
         try:
             response = client.put('/user/api/lecture_form_draft', json={
                 'data': {'course_feedback': 'A 迟到旧评价'}, 'expected_site_capture_id': first['id']})
@@ -95,6 +97,7 @@ def test_successive_same_payload_saves_have_monotonic_versions(setup_capture):
     current.updated_at = frozen + timedelta(minutes=1)
     db.session.commit()
     before = current.updated_at
+    case.client.observe_draft_revision()
     # Frozen/regressed wall clocks cannot produce the same revision for two saves.
     clock_module = (forms.save_lecture_form_draft_atomic.__module__
                     if hasattr(forms, 'save_lecture_form_draft_atomic') else forms.__name__)
@@ -166,6 +169,7 @@ def test_site_writer_read_before_newer_put_cannot_overwrite_evaluation(setup_cap
         assert case.client.put('/user/api/lecture_form_draft',json={
             'data':{'course_feedback':'A 较旧人工评价'},'expected_site_capture_id':active}).status_code==200
         uid=case.user.id
+        opened_revision=case.client.draft_revision
         entered,release=threading.Event(),threading.Event()
         original=site_capture._draft
         result={}
@@ -180,6 +184,7 @@ def test_site_writer_read_before_newer_put_cannot_overwrite_evaluation(setup_cap
         def old_writer():
             client=case.app.test_client()
             with client.session_transaction() as session:session.update(user_id=uid,user_role='信息员')
+            client.set_draft_revision(opened_revision)
             try:
                 if writer=='confirm':
                     ret=client.post(f"/user/api/site-capture/{first['id']}/confirm",json={'candidate_id':cid})
@@ -224,6 +229,7 @@ def test_site_writer_read_before_newer_put_cannot_overwrite_evaluation(setup_cap
 def test_photo_upload_losing_draft_creation_race_is_conflict_and_removes_uncommitted_photo(setup_capture):
     case=setup_capture
     uid=case.user.id
+    opened_revision=case.client.draft_revision
     entered,release=threading.Event(),threading.Event()
     original=site_capture._draft
     result={}
@@ -237,6 +243,7 @@ def test_photo_upload_losing_draft_creation_race_is_conflict_and_removes_uncommi
     def older_upload():
         client=case.app.test_client()
         with client.session_transaction() as session:session.update(user_id=uid,user_role='信息员')
+        client.set_draft_revision(opened_revision)
         try:
             with mock.patch('app.services.lecture_site_capture.recognize_door',return_value={
                     'room_number':'302','status':'recognized','alternatives':['302']}):

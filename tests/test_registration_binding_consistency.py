@@ -18,6 +18,7 @@ Covers the Round 8A matrix (A–L):
 import os
 import tempfile
 import unittest
+from tests.draft_revision_client import DraftRevisionClient
 from unittest import mock
 
 from werkzeug.security import generate_password_hash
@@ -63,7 +64,7 @@ class RegistrationBindingConsistencyTest(unittest.TestCase):
         db.drop_all()
         db.create_all()
         self.schedule_batch_id = seed_current_schedule().id
-        self.client = app.test_client()
+        self.client = DraftRevisionClient(app)
         self.user = self._create_user('1001', 'student-1001')
         self._login_as(self.user)
 
@@ -100,6 +101,7 @@ class RegistrationBindingConsistencyTest(unittest.TestCase):
             sess['user_id'] = user.id
             sess['user_role'] = user.role
             sess['user_name'] = user.name
+        self.client.observe_draft_revision()
 
     def _valid_form_payload(self):
         return {

@@ -23,7 +23,9 @@ function fixture(fetch) {
     applyLectureFormDraftData:data => applied.push(data),
     setLectureDraftStatus:(text,kind) => statuses.push({text,kind}),
     formatLectureDraftTime:time => time,
-    window:{lectureFormSiteCaptureId:7, dispatchEvent:event => events.push(event),clearTimeout(){},setTimeout(){}},
+    window:{lectureFormSiteCaptureId:7,
+      lectureFormDraftState:{revision:'r0',epoch:0,blocked:false,deleting:false,deletePromise:null},
+      dispatchEvent:event => events.push(event),clearTimeout(){},setTimeout(){}},
     CustomEvent:class {constructor(type,options){this.type=type;this.detail=options.detail;}},
     console:{error(){}},
   };
@@ -32,7 +34,10 @@ function fixture(fetch) {
   vm.createContext(context); vm.runInContext(source + scheduleSource + deleteSource + resetSource, context);
   return {context,applied,statuses,events,reset:()=>reset()};
 }
-const response = (body,ok=true) => ({ok,json:async()=>body});
+let responseRevision = 0;
+const response = (body,ok=true) => ({ok,json:async()=>({
+  ...body, draft_revision:body.draft_revision || (body.exists === false ? 'none' : `fixture-r${++responseRevision}`),
+})});
 
 test('successful draft save returns a success signal to photo navigation', async()=>{
   const f=fixture(async()=>response({success:true,updated_at:'now'}));

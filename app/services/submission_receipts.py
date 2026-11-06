@@ -55,9 +55,15 @@ def find_submission_receipt(user_id, user_number, signature, now):
         submission_receipts.c.user_id == user_id,
         submission_receipts.c.accepted_at < now - timedelta(seconds=120),
     ))
+    return peek_submission_receipt(user_id, user_number, signature, now)
+
+
+def peek_submission_receipt(user_id, user_number, signature, now):
+    """Read an exact recent acknowledgement without cleanup or other writes."""
     receipt = db.session.execute(db.select(submission_receipts).where(
         submission_receipts.c.user_id == user_id,
         submission_receipts.c.signature == signature,
+        submission_receipts.c.accepted_at >= now - timedelta(seconds=120),
     )).mappings().first()
     if receipt is None:
         return None

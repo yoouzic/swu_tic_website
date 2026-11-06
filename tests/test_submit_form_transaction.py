@@ -20,6 +20,7 @@ Covers:
 import os
 import tempfile
 import unittest
+from tests.draft_revision_client import DraftRevisionClient
 from unittest import mock
 
 from werkzeug.security import generate_password_hash
@@ -70,7 +71,7 @@ class SubmitFormTransactionTest(unittest.TestCase):
         SystemSetting.set('teaching_current_semester', '2025-2026-2')
         SystemSetting.set('teaching_first_week_monday', '2026-03-02')
         db.session.commit()
-        self.client = app.test_client()
+        self.client = DraftRevisionClient(app)
         self.user = self._create_user('1001', 'student-1001')
         self._login_as(self.user)
 
@@ -132,6 +133,7 @@ class SubmitFormTransactionTest(unittest.TestCase):
             sess['user_id'] = user.id
             sess['user_role'] = user.role
             sess['user_name'] = user.name
+        self.client.observe_draft_revision()
 
     def _valid_form_payload(self):
         return {

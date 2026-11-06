@@ -40,6 +40,7 @@ class LaunchSubmissionSafetyTest(_ReviewMutationCompatibilityBase):
         client = client or self.client
         with client.session_transaction() as session:
             session.update(user_id=user.id, user_role=user.role, user_name=user.name)
+        client.observe_draft_revision()
         return client
 
     def create(self, **changes):
@@ -235,6 +236,8 @@ class LaunchSubmissionSafetyTest(_ReviewMutationCompatibilityBase):
         self.assertEqual(loaded['data']['review_comment'],'保留此意见')
     def test_simultaneous_identical_submissions_only_create_one_form(self):
         user_id=self.officer.id
+        self.sign_in(self.officer)
+        draft_revision=self.client.draft_revision
         ready=threading.Barrier(2)
         db.session.remove()
         def submit(_):
@@ -242,7 +245,7 @@ class LaunchSubmissionSafetyTest(_ReviewMutationCompatibilityBase):
                 with client.session_transaction() as session:
                     session.update(user_id=user_id,user_role='信息员')
                 ready.wait(timeout=10)
-                r=client.post('/user/submit_form',data=valid_submission())
+                r=client.post('/user/submit_form',data=valid_submission(expected_draft_revision=draft_revision))
                 return r.status_code,r.headers.get('Location')
         real_find=form_routes._find_recent_duplicate_submission
         def delayed_read(*args):

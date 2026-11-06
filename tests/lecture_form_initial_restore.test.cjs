@@ -17,6 +17,8 @@ function fixture(initial = {}, options = {}) {
     expected_form_id: {value: '', defaultValue: '', type: 'hidden'},
     expected_form_updated_at: {value: '', defaultValue: '', type: 'hidden'},
     assistant_payload: {value: '', defaultValue: '', type: 'hidden'},
+    registration_id: {value: '', defaultValue: '', type: 'hidden'},
+    site_capture_id: {value: '', defaultValue: '', type: 'hidden'},
   };
   const form = {
     querySelectorAll: () => Object.values(fields),
@@ -36,6 +38,7 @@ function fixture(initial = {}, options = {}) {
     console: {log() {}},
     window: {lectureFormSiteCaptureId: null, dispatchEvent(event) { events.push(event); }},
     CSS: {escape: value => value},
+    FormData: class { forEach(callback) {for (const field of Object.values(fields)) callback(field.value,field.name);} },
     CustomEvent: class { constructor(type, detail) { this.type = type; Object.assign(this, detail); } },
     document: {
       addEventListener(type, callback) { if (type === 'DOMContentLoaded') ready = callback; },
@@ -60,6 +63,13 @@ function fixture(initial = {}, options = {}) {
     edit(id, value) {
       const target = fields[id]; target.value = value;
       for (const callback of listeners.get('input') || []) callback({target});
+    },
+    reset() {
+      for (const callback of listeners.get('reset') || []) callback({target: form});
+      for (const field of Object.values(fields)) field.value = field.defaultValue;
+    },
+    selectContext() {
+      for (const callback of listeners.get('lecture-form-context-selected') || []) callback({target: form});
     },
   };
 }
@@ -111,4 +121,34 @@ test('new photo form error restores sanitized capture metadata without undoing c
     assert.equal(Object.hasOwn(f.events[0].detail.data, field), false);
   }
   assert.equal(f.fields.expected_form_id.value, '');
+});
+
+for (const editMode of [false, true]) {
+  test(`reset cancels delayed initial data and metadata restoration (editMode=${editMode})`, () => {
+    const f = fixture({site_capture_id: '7'}, {editMode});
+    f.ready(); f.reset(); f.restore();
+    assert.equal(f.fields.student_grade_class.value, '');
+    assert.equal(f.fields.course_title.value, '');
+    assert.equal(f.fields.expected_form_id.value, '');
+    assert.equal(f.fields.expected_form_updated_at.value, '');
+    assert.equal(f.context.window.lectureFormSiteCaptureId, null);
+    assert.equal(f.events.length, 0);
+  });
+}
+
+test('explicit registration selection preserves new fields while restoring current required photo metadata', () => {
+  const f = fixture({site_capture_id: '7', registration_id: 'old-registration'}, {editMode: false});
+  f.ready();
+  f.fields.registration_id.value = 'new-registration';
+  f.fields.course_title.value = '刚选择的课程';
+  f.selectContext(); f.restore();
+  assert.equal(f.fields.registration_id.value, 'new-registration');
+  assert.equal(f.fields.course_title.value, '刚选择的课程');
+  assert.equal(f.fields.student_grade_class.value, '');
+  assert.equal(f.context.window.lectureFormSiteCaptureId, 7);
+  assert.equal(f.fields.site_capture_id.value, '7');
+  assert.equal(f.events.length, 1);
+  assert.equal(f.events[0].detail.data.registration_id, 'new-registration');
+  assert.equal(f.events[0].detail.data.course_title, '刚选择的课程');
+  assert.equal(f.events[0].detail.data.assistant, undefined);
 });

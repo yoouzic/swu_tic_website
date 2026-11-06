@@ -26,6 +26,7 @@ tests/test_review_mutation_correctness.py.
 import json
 import tempfile
 import unittest
+from tests.draft_revision_client import DraftRevisionClient
 from pathlib import Path
 from unittest import mock
 
@@ -78,7 +79,7 @@ class _ReviewMutationCompatibilityBase(unittest.TestCase):
         self.app_context.push()
         db.drop_all()
         db.create_all()
-        self.client = app.test_client()
+        self.client = DraftRevisionClient(app)
         self._create_organization()
 
     def tearDown(self):
@@ -199,6 +200,7 @@ class _ReviewMutationCompatibilityBase(unittest.TestCase):
             sess['user_id'] = user.id
             sess['user_role'] = user.role
             sess['user_name'] = user.name
+        self.client.observe_draft_revision()
 
     def _full_form_data(self, form, **overrides):
         """A complete form_data payload whose values equal the original row."""

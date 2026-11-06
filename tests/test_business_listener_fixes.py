@@ -20,6 +20,7 @@ from app.services.listening_assistant_evidence import AssistantSelectionError
 from app.services.teaching_calendar import parse_lecture_date
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
 from tests.schedule_fixture import seed_current_schedule
+from tests.draft_revision_client import DraftRevisionClient
 
 
 def valid_payload():
@@ -64,8 +65,9 @@ def listener_case(tmp_path):
         user = make_user('LISTENER-BUSINESS')
         db.session.add(Course(course_code='TEST-C', selection_code='TEST-S', course_name='测试课程'))
         db.session.commit()
-        client = app.test_client()
+        client = DraftRevisionClient(app)
         login(client, user)
+        client.observe_draft_revision()
         yield SimpleNamespace(client=client, user=user, app=app, folder=tmp_path / 'photos')
         app.config['LECTURE_CAPTURE_ENABLED'] = False
         cleanup_sqlite_database(db, drop_all=True)

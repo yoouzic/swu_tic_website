@@ -5,16 +5,19 @@ from tests.test_launch_submission_safety import valid_submission
 from tests import test_schedule_availability as _schedule_fixture
 from app.models import LectureForm, LectureFormDraft, LectureSiteCapture, SystemSetting, db
 from sqlalchemy import inspect
+from tests.draft_revision_client import DraftRevisionClient
 
 
 class ManualDraftScheduleCutoverTest(_ReviewMutationCompatibilityBase):
     def setUp(self):
         super().setUp()
+        self.client = DraftRevisionClient(self.client.application)
         self.capture_config = self.client.application.config.get('LECTURE_CAPTURE_ENABLED')
         self.client.application.config['LECTURE_CAPTURE_ENABLED'] = True
         SystemSetting.set('teaching_current_semester', '2026-2027-1')
         SystemSetting.set('teaching_first_week_monday', '2026-09-07')
         self._login(self.officer)
+        self.client.observe_draft_revision()
 
     def tearDown(self):
         self.client.application.config['LECTURE_CAPTURE_ENABLED'] = self.capture_config

@@ -2,6 +2,7 @@ import unittest
 from datetime import date
 import tempfile
 from pathlib import Path
+from tests.draft_revision_client import DraftRevisionClient
 
 from app.services.listening_assistant_contracts import Candidate
 from app.services.listening_assistant_evidence import safe_field_snapshot
@@ -75,9 +76,10 @@ class ClassFormattingSourceTest(unittest.TestCase):
                     password_hash='unused', group='测试组')
         db.session.add(user)
         db.session.commit()
-        self.client = app.test_client()
+        self.client = DraftRevisionClient(app)
         with self.client.session_transaction() as session:
             session['user_id'] = user.id
+        self.client.observe_draft_revision()
 
     def tearDown(self):
         from tests.app_test_utils import cleanup_sqlite_database

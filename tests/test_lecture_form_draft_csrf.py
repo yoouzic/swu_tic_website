@@ -27,6 +27,7 @@ os.environ.update({
 from app.app import create_app
 from app.models import db, LectureForm, LectureFormDraft, LectureSiteCapture, User
 from tests.app_test_utils import cleanup_sqlite_database
+from tests.draft_revision_client import DraftRevisionClient
 
 
 class _TokenParser(HTMLParser):
@@ -66,7 +67,7 @@ class LectureFormDraftCsrfTest(unittest.TestCase):
         self.runtime.cleanup()
 
     def new_session(self):
-        client = self.app.test_client()
+        client = DraftRevisionClient(self.app)
         with client.session_transaction() as session:
             session.update(user_id=self.user_id, user_role='信息员', user_name='Draft User')
         return client

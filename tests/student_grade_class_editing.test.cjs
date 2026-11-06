@@ -64,15 +64,18 @@ test('professional class field opts out of saved browser values and automatic fo
 
 function pendingDraft(value = '') {
   const input = {value};
+  const revisionInput = {value: 'r0'};
   const statuses = [], timers = [];
   let complete;
   const context = {
     lectureFormIsEditMode: false, lectureFormDraftLoadSequence: 0, lectureFormDraftEditRevision: 0,
     lectureFormDraftSubmitting: false, lectureFormDraftDirty: false, lectureFormDraftTimer: null,
-    lectureFormDraftUrl: '/draft', document: {getElementById: () => input},
+    lectureFormDraftUrl: '/draft', document: {getElementById: id =>
+      id === 'student_grade_class' ? input : id === 'expected_draft_revision' ? revisionInput : null},
     fetch: () => new Promise(resolve => { complete = resolve; }),
     applyLectureFormDraftData: data => { input.value = data.student_grade_class; },
-    window: {dispatchEvent() {}, clearTimeout() {}, setTimeout(callback, delay) { timers.push({callback, delay}); return timers.length; }},
+    window: {lectureFormDraftState: {revision: 'r0', epoch: 0, blocked: false, deleting: false, deletePromise: null},
+      dispatchEvent() {}, clearTimeout() {}, setTimeout(callback, delay) { timers.push({callback, delay}); return timers.length; }},
     CustomEvent: class {}, saveLectureFormDraft() {},
     setLectureDraftStatus(message, level) { statuses.push({message, level}); },
     formatLectureDraftTime() { return ''; }, console,
@@ -83,7 +86,7 @@ function pendingDraft(value = '') {
   vm.runInContext(html.slice(html.indexOf('function scheduleLectureFormDraftSave()'),
                             html.indexOf('async function deleteLectureFormDraft()')), context);
   return {input, context, statuses, timers, load: options => context.loadLectureFormDraft(options),
-    complete: (saved = '2025级机械设计制造及其自动化01班') => complete({ok: true, json: async () => ({success: true, exists: true,
+    complete: (saved = '2025级机械设计制造及其自动化01班') => complete({ok: true, json: async () => ({success: true, exists: true, draft_revision: 'r1',
       data: {student_grade_class: saved}})}),
   };
 }

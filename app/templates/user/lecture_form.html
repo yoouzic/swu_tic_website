@@ -7,7 +7,7 @@
 {% block body_class %}lecture-form-page{% endblock %}
 
 {% block head %}
-{% if request.args.get('class_trace') == '1' %}<script src="{{ url_for('static', filename='js/class-input-diagnostics.js', v='20261107-1') }}"></script>{% endif %}
+{% if request.args.get('class_trace') == '1' %}<script src="{{ url_for('static', filename='js/class-input-diagnostics.js', v='20261107-2') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='js/feedback-text.js', v='20261106') }}"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/listening-assistant.css', v='20261013-complement') }}">
 {% if capture_enabled and not form %}<link rel="stylesheet" href="{{ url_for('static', filename='css/site-capture.css', v='20261014-course-title') }}">{% endif %}
@@ -32,6 +32,8 @@
             const form = document.getElementById('lectureForm');
             const beforeRestore = new Map();
             const edited = new Set();
+            let restoreCancelled = false;
+            let contextSelected = false;
             for (const element of form?.querySelectorAll('input, textarea, select') || []) {
                 beforeRestore.set(element, {value: element.value, checked: element.checked});
                 // Autofill may happen before DOMContentLoaded without an input event.
@@ -41,8 +43,12 @@
                 }
             }
             const markEdited = event => { if (event.target?.form === form) edited.add(event.target); };
+            const cancelRestore = () => { restoreCancelled = true; };
+            const preserveSelectedContext = () => { contextSelected = true; };
             form?.addEventListener('input', markEdited);
             form?.addEventListener('change', markEdited);
+            form?.addEventListener('reset', cancelRestore);
+            form?.addEventListener('lecture-form-context-selected', preserveSelectedContext);
             // Let dependent controls initialize, but never replace intervening input.
             setTimeout(function() {
                 const mayRestore = element => {
@@ -52,12 +58,16 @@
                         (element.value === before.value && element.checked === before.checked));
                 };
                 try {
-                    populateForm(initialFormData, mayRestore);
+                    if (restoreCancelled) return;
+                    if (!contextSelected) populateForm(initialFormData, mayRestore);
                     if (!lectureFormIsEditMode) {
                         // Error recovery still needs photo/assistant state, without
                         // fetching an older draft over the submitted form fields.
-                        const recoveryData = {...initialFormData};
-                        const captureId = Number(recoveryData.site_capture_id);
+                        const captureInput = document.getElementById('site_capture_id');
+                        const captureId = Number(captureInput?.value || window.lectureFormSiteCaptureId || initialFormData.site_capture_id);
+                        if (captureInput) captureInput.value = Number.isSafeInteger(captureId) && captureId > 0 ? String(captureId) : '';
+                        const recoveryData = contextSelected ? collectLectureFormDraftData() : {...initialFormData};
+                        if (contextSelected) { delete recoveryData.assistant; delete recoveryData.assistant_payload; }
                         recoveryData.site_capture_id = Number.isSafeInteger(captureId) && captureId > 0 ? captureId : null;
                         recoveryData.student_grade_class = document.getElementById('student_grade_class')?.value || '';
                         const restored = applyLectureFormDraftData(recoveryData, true);
@@ -66,6 +76,8 @@
                 } finally {
                     form?.removeEventListener('input', markEdited);
                     form?.removeEventListener('change', markEdited);
+                    form?.removeEventListener('reset', cancelRestore);
+                    form?.removeEventListener('lecture-form-context-selected', preserveSelectedContext);
                 }
             }, 100);
         });
@@ -77,7 +89,7 @@
             // 遍历数据并填充
             for (const key in data) {
                 if (data.hasOwnProperty(key)) {
-                    if (['csrf_token', 'entry_mode', 'manual_entry_allowed'].includes(key) ||
+                    if (['csrf_token', 'entry_mode', 'manual_entry_allowed', 'expected_draft_revision'].includes(key) ||
                         (!lectureFormIsEditMode && ['unique_id', 'expected_form_id', 'expected_form_updated_at'].includes(key)) ||
                         (!lectureScheduleReady && key === 'assistant_payload') ||
                         (!lectureRegistrationReady && !lectureFormIsEditMode && key === 'registration_id')) {
@@ -167,7 +179,8 @@
                 </div>
                 <div class="card-body">
                     <div id="draftSaveStatus" class="draft-save-status" role="status" aria-live="polite">尚未保存</div>
-                    <form method="POST" action="{{ url_for('user.submit_form') }}" id="lectureForm">
+                    <form method="POST" action="{{ url_for('user.submit_form') }}" id="lectureForm" data-draft-protocol="revision-v1">
+                        <input type="hidden" id="expected_draft_revision" name="expected_draft_revision" value="{{ lecture_draft_revision | default('none') }}">
                         <!-- 关联登记ID (隐藏域) -->
                         <input type="hidden" id="registration_id" name="registration_id" value="{{ form_data.get('registration_id', '') or '' if form_data is defined else '' }}">
                         <!-- 唯一ID (用于版本控制，编辑/驳回重填时使用) -->
@@ -745,6 +758,12 @@ window.lectureFormSiteCaptureId = null;
 let lectureFormDraftLoadSequence = 0;
 let lectureFormDraftEditRevision = 0;
 let lectureFormDraftSavePromise = null;
+window.lectureFormDraftState = {revision: {{ lecture_draft_revision | default('none') | tojson }}, epoch: 0, blocked: false, deleting: false, deletePromise: null};
+window.LectureDraftRevision = {
+    begin: beginLectureDraftMutation,
+    accept: acceptLectureDraftMutation,
+    reject: rejectLectureDraftMutation,
+};
 
 // 页面加载完成后检查未使用的登记
 {% if registration_ready and not form %}
@@ -815,6 +834,9 @@ function selectRegistration(id, rawDataInput) {
         const rawData = typeof rawDataInput === 'string'
             ? JSON.parse(decodeURIComponent(rawDataInput))
             : (rawDataInput && typeof rawDataInput === 'object' ? rawDataInput : {});
+        // Explicit selection supersedes any draft read already in flight.
+        ++lectureFormDraftLoadSequence;
+        document.getElementById('lectureForm')?.dispatchEvent(new CustomEvent('lecture-form-context-selected'));
         
         // 设置隐藏域
         document.getElementById('registration_id').value = id;
@@ -825,6 +847,9 @@ function selectRegistration(id, rawDataInput) {
         document.getElementById('teacher_college').value = rawData.teacher_college || '';
         document.getElementById('lecture_location').value = rawData.lecture_location || '';
         document.getElementById('student_grade_class').value = rawData.student_grade_class || '';
+        scheduleLectureFormDraftSave();
+        // Notify assistants about programmatic field changes as well as typing.
+        document.getElementById('student_grade_class').dispatchEvent(new Event('input', {bubbles: true}));
         
         // 显示提示
         document.getElementById('autoFillAlert').style.display = 'block';
@@ -1005,7 +1030,7 @@ function collectLectureFormDraftData() {
     formData.forEach((value, key) => {
         data[key] = value;
     });
-    for (const key of ['csrf_token', 'unique_id', 'expected_form_id', 'expected_form_updated_at',
+    for (const key of ['csrf_token', 'unique_id', 'expected_form_id', 'expected_form_updated_at', 'expected_draft_revision',
                        'entry_mode', 'manual_entry_allowed']) delete data[key];
     if (!lectureRegistrationReady) delete data.registration_id;
     const assistantPayload = parseAssistantPayloadObject(data.assistant_payload);
@@ -1025,7 +1050,7 @@ function applyLectureFormDraftData(data) {
     }
     // Old ordinary/per-photo drafts may contain credentials from another
     // session. Strip them from both form restoration and its event payload.
-    for (const key of ['csrf_token', 'unique_id', 'expected_form_id', 'expected_form_updated_at',
+    for (const key of ['csrf_token', 'unique_id', 'expected_form_id', 'expected_form_updated_at', 'expected_draft_revision',
                        'entry_mode', 'manual_entry_allowed']) delete data[key];
     window.lectureFormSiteCaptureId = lectureCaptureReady ? (data.site_capture_id || null) : null;
     if (!lectureCaptureReady) delete data.site_capture_id;
@@ -1113,13 +1138,18 @@ async function loadLectureFormDraft() {
         const classValue = classInput?.value;
         const sequence = ++lectureFormDraftLoadSequence;
         const editRevision = lectureFormDraftEditRevision;
+        const state = getLectureDraftState();
+        const epoch = state.epoch;
+        const revision = state.revision;
         const response = await fetch(lectureFormDraftUrl);
         const result = await response.json();
         if (sequence !== lectureFormDraftLoadSequence || editRevision !== lectureFormDraftEditRevision ||
+            epoch !== state.epoch || revision !== state.revision || state.deleting ||
             (classInput && classInput.value !== classValue)) return false;
         if (!response.ok || !result.success) {
             throw new Error(result.message || '草稿读取失败');
         }
+        const nextRevision = validatedLectureDraftRevision(result.draft_revision);
         if (result.success && result.exists) {
             let preservedClassChanged = false;
             if (preserveClassInput && typeof classValue === 'string' && classValue.trim()) {
@@ -1127,6 +1157,9 @@ async function loadLectureFormDraft() {
                 result.data = {...result.data, student_grade_class: classValue};
             }
             applyLectureFormDraftData(result.data);
+            state.epoch++;
+            state.blocked = false;
+            setLectureDraftRevision(nextRevision);
             window.dispatchEvent(new CustomEvent('lecture-form-draft-loaded', {
                 detail: {data: result.data, updated_at: result.updated_at}
             }));
@@ -1134,6 +1167,9 @@ async function loadLectureFormDraft() {
             if (preservedClassChanged) scheduleLectureFormDraftSave();
             return true;
         }
+        state.epoch++;
+        state.blocked = false;
+        setLectureDraftRevision(nextRevision);
         return false;
     } catch (error) {
         setLectureDraftStatus('草稿读取失败，请检查网络后重试', 'error');
@@ -1142,8 +1178,63 @@ async function loadLectureFormDraft() {
     }
 }
 
+function getLectureDraftState() {
+    if (!window.lectureFormDraftState) {
+        const input = typeof document === 'undefined' ? null : document.getElementById('expected_draft_revision');
+        window.lectureFormDraftState = {revision: input?.value || null, epoch: 0, blocked: false, deleting: false, deletePromise: null};
+    }
+    return window.lectureFormDraftState;
+}
+
+function validatedLectureDraftRevision(value) {
+    if (typeof value !== 'string' || !value) throw new Error('草稿版本未能确认，请重新打开页面后核对当前输入。');
+    return value;
+}
+
+function setLectureDraftRevision(value) {
+    getLectureDraftState().revision = validatedLectureDraftRevision(value);
+    const input = typeof document === 'undefined' ? null : document.getElementById('expected_draft_revision');
+    if (input) input.value = value;
+}
+
+function beginLectureDraftMutation(allowDeleting = false) {
+    const state = getLectureDraftState();
+    if (!state.revision) {
+        state.blocked = true;
+        setLectureDraftStatus('草稿版本尚未载入，当前输入已保留，请重新打开页面核对后继续。', 'error');
+    }
+    if (state.blocked || (state.deleting && !allowDeleting) || !state.revision) {
+        throw new Error('草稿版本已变化或尚未载入，当前输入已保留，请重新打开页面核对后继续。');
+    }
+    return {epoch: state.epoch, revision: state.revision};
+}
+
+function acceptLectureDraftMutation(ticket, result) {
+    const state = getLectureDraftState();
+    if (state.epoch !== ticket.epoch || state.revision !== ticket.revision) return false;
+    try {
+        setLectureDraftRevision(result.draft_revision);
+    } catch (error) {
+        state.blocked = true;
+        setLectureDraftStatus('保存结果的草稿版本未能确认，当前输入已保留，请重新打开页面核对。', 'error');
+        throw error;
+    }
+    return true;
+}
+
+function rejectLectureDraftMutation(response, result, ticket) {
+    if (response.status !== 409 && response.status !== 428) return;
+    if (!['draft_conflict', 'draft_revision_required'].includes(result?.code)) return;
+    const state = getLectureDraftState();
+    if (ticket && (state.epoch !== ticket.epoch || state.revision !== ticket.revision)) return;
+    state.blocked = true;
+    window.clearTimeout(lectureFormDraftTimer);
+    setLectureDraftStatus('其他页面已更新此草稿，当前输入已保留；请重新打开页面核对后继续。', 'error');
+}
+
 async function saveLectureFormDraft() {
-    if (lectureFormIsEditMode || lectureFormDraftSubmitting) {
+    const state = getLectureDraftState();
+    if (lectureFormIsEditMode || lectureFormDraftSubmitting || state.blocked || state.deleting) {
         return false;
     }
     if (lectureFormDraftSavePromise) return await lectureFormDraftSavePromise;
@@ -1152,7 +1243,7 @@ async function saveLectureFormDraft() {
         // is stored. Continuous editing gets a bounded retry rather than a
         // false "saved" status or an unbounded navigation wait.
         for (let attempt = 0; attempt < 3; attempt += 1) {
-            if (lectureFormDraftSubmitting) return false;
+            if (lectureFormDraftSubmitting || state.blocked || state.deleting) return false;
             const data = collectLectureFormDraftData();
             const snapshot = JSON.stringify(data);
             const captureId = window.lectureFormSiteCaptureId;
@@ -1163,16 +1254,21 @@ async function saveLectureFormDraft() {
             const saveController = new AbortController();
             lectureFormDraftSaveController = saveController;
             try {
+                const ticket = beginLectureDraftMutation();
                 const response = await fetch(lectureFormDraftUrl, {
                     method: 'PUT',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: {'Content-Type': 'application/json', 'X-Lecture-Draft-Revision': ticket.revision},
                     signal: saveController.signal,
                     body: JSON.stringify({data, expected_site_capture_id:captureId})
                 });
                 const result = await response.json();
+                if (state.epoch !== ticket.epoch || state.revision !== ticket.revision) return false;
+                rejectLectureDraftMutation(response, result, ticket);
                 if (!response.ok || !result.success) {
                     throw new Error(result.message || 'save failed');
                 }
+                if (!acceptLectureDraftMutation(ticket, result)) return false;
+                if (state.deleting) return false;
                 if (generation !== lectureFormDraftLoadSequence || captureId !== window.lectureFormSiteCaptureId || lectureFormDraftSubmitting) return false;
                 if (editRevision === lectureFormDraftEditRevision && snapshot === JSON.stringify(collectLectureFormDraftData())) {
                     lectureFormDraftDirty = false;
@@ -1183,7 +1279,7 @@ async function saveLectureFormDraft() {
             } catch (error) {
                 if (error.name === 'AbortError') return false;
                 lectureFormDraftDirty = true;
-                setLectureDraftStatus('保存失败，请检查网络后重试', 'error');
+                if (!state.blocked) setLectureDraftStatus('保存失败，请检查网络后重试', 'error');
                 console.error('Failed to save lecture form draft:', error);
                 return false;
             } finally {
@@ -1207,34 +1303,94 @@ function scheduleLectureFormDraftSave() {
     }
     ++lectureFormDraftEditRevision;
     lectureFormDraftDirty = true;
+    if (getLectureDraftState().blocked) return;
     setLectureDraftStatus('尚未保存', 'pending');
     window.clearTimeout(lectureFormDraftTimer);
     lectureFormDraftTimer = window.setTimeout(saveLectureFormDraft, 1500);
 }
 
 async function deleteLectureFormDraft() {
+    const state = getLectureDraftState();
+    if (state.deletePromise) return await state.deletePromise;
+    state.deleting = true;
     ++lectureFormDraftLoadSequence;
     window.clearTimeout(lectureFormDraftTimer);
     lectureFormDraftTimer = null;
     lectureFormDraftDirty = false;
-    if (lectureFormDraftSaveController) {
-        lectureFormDraftSaveController.abort();
-        lectureFormDraftSaveController = null;
-    }
-    try {
-        const response = await fetch(lectureFormDraftUrl, {method: 'DELETE'});
-        const result = await response.json();
-        if (!response.ok || !result.success) {
-            throw new Error(result.message || 'delete failed');
+    const editRevision = lectureFormDraftEditRevision;
+    const operation = (async () => {
+        let completed = false;
+        try {
+            if (lectureFormDraftSavePromise) await lectureFormDraftSavePromise;
+            state.epoch++;
+            const ticket = beginLectureDraftMutation(true);
+            const response = await fetch(lectureFormDraftUrl, {method: 'DELETE', headers: {'X-Lecture-Draft-Revision': ticket.revision}});
+            const result = await response.json();
+            rejectLectureDraftMutation(response, result, ticket);
+            if (!response.ok || !result.success) throw new Error(result.message || 'delete failed');
+            if (!acceptLectureDraftMutation(ticket, result)) return false;
+            completed = true;
+            setLectureDraftStatus('草稿已清除', 'pending');
+            return true;
+        } catch (error) {
+            if (!state.blocked) setLectureDraftStatus('草稿未能清除，当前输入已保留，请核对后重试。', 'error');
+            console.error('Failed to delete lecture form draft:', error);
+            return false;
+        } finally {
+            state.deleting = false;
+            if (completed && editRevision !== lectureFormDraftEditRevision) scheduleLectureFormDraftSave();
         }
-        setLectureDraftStatus('草稿已清除', 'pending');
-    } catch (error) {
-        console.error('Failed to delete lecture form draft:', error);
+    })();
+    state.deletePromise = operation;
+    try {
+        return await operation;
+    } finally {
+        if (state.deletePromise === operation) state.deletePromise = null;
     }
+}
+
+function submitLectureFormAfterDraft(form, submitter) {
+    const state = getLectureDraftState();
+    if (state.submitPromise) return state.submitPromise;
+    const button = submitter || form.querySelector('button[type="submit"]');
+    const originalText = button?.innerHTML;
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="bi bi-arrow-repeat icon-spin me-1"></i> 正在保存草稿...';
+    }
+    const operation = (async () => {
+        try {
+            if (!await saveLectureFormDraft()) return false;
+            if (state.blocked || state.deleting) return false;
+            if (button) { button.disabled = false; button.innerHTML = originalText; }
+            // Re-run native and application validation with the accepted new token.
+            if (submitter) form.requestSubmit(submitter);
+            else form.requestSubmit();
+            return form.dataset.submitting === '1';
+        } finally {
+            if (form.dataset.submitting !== '1' && button) {
+                button.disabled = false;
+                button.innerHTML = originalText;
+            }
+        }
+    })();
+    state.submitPromise = operation;
+    operation.catch(error => {
+        console.error('Failed to prepare form submission:', error);
+        setLectureDraftStatus('提交准备未完成，当前输入已保留，请核对后重试。', 'error');
+    }).finally(() => {
+        if (state.submitPromise === operation) state.submitPromise = null;
+    });
+    return operation;
 }
 
 // 表单验证
 document.getElementById('lectureForm').addEventListener('submit', function(e) {
+    if (!lectureFormIsEditMode && (getLectureDraftState().blocked || getLectureDraftState().deleting)) {
+        e.preventDefault();
+        setLectureDraftStatus('草稿版本尚未核对，当前输入已保留，请重新打开页面核对后提交。', 'error');
+        return;
+    }
     if (this.dataset.submitting === '1') {
         e.preventDefault();
         return;
@@ -1296,6 +1452,11 @@ document.getElementById('lectureForm').addEventListener('submit', function(e) {
 
     if (!isValid) {
         e.preventDefault();
+        return;
+    }
+    if (!lectureFormIsEditMode && (lectureFormDraftDirty || lectureFormDraftSavePromise)) {
+        e.preventDefault();
+        submitLectureFormAfterDraft(this, e.submitter);
         return;
     }
     lectureFormDraftSubmitting = true;
@@ -1396,7 +1557,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-{% if candidates_ready %}<script src="{{ url_for('static', filename='js/listening-assistant.js', v='20261014-copy') }}"></script>{% endif %}
+{% if candidates_ready %}<script src="{{ url_for('static', filename='js/listening-assistant.js', v='20261107-draft-revision-v1') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='js/form-completion-assistant.js', v='20261106-feedback-count') }}"></script>
-{% if capture_enabled and not form %}<script src="{{ url_for('static', filename='js/site-location.js', v='20261014-location-fix-1') }}"></script>{% if candidates_ready %}<script src="{{ url_for('static', filename='js/site-context-guide.js', v='20261014-copy') }}"></script>{% endif %}<script src="{{ url_for('static', filename='js/site-capture.js', v='20261014-location-fix-1') }}"></script><script src="{{ url_for('static', filename='js/site-door-crop.js', v='20261014-copy') }}"></script><script src="{{ url_for('static', filename='js/site-building-map.js', v='20261014-copy') }}"></script>{% endif %}
+{% if capture_enabled and not form %}<script src="{{ url_for('static', filename='js/site-location.js', v='20261014-location-fix-1') }}"></script>{% if candidates_ready %}<script src="{{ url_for('static', filename='js/site-context-guide.js', v='20261107-draft-revision-v1') }}"></script>{% endif %}<script src="{{ url_for('static', filename='js/site-capture.js', v='20261107-draft-revision-v1') }}"></script><script src="{{ url_for('static', filename='js/site-door-crop.js', v='20261014-copy') }}"></script><script src="{{ url_for('static', filename='js/site-building-map.js', v='20261014-copy') }}"></script>{% endif %}
 {% endblock %}

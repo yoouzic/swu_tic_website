@@ -16,7 +16,9 @@ from app.services.listening_assistant_evidence import revalidate_selection, Assi
 from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
 from app.services.schedule_snapshots import resolve_current_schedule_snapshot
 from app.services.schedule_availability import current_schedule_availability
-from app.services.lecture_form_draft_concurrency import LectureFormDraftConflict, save_lecture_form_draft_atomic
+from app.services.lecture_form_draft_concurrency import (LectureFormDraftConflict,
+    save_lecture_form_draft_atomic, get_draft_revision)
+from app.utils.draft_revision import require_draft_revision
 from . import user_bp
 from .forms import _load_lecture_form_draft, _parse_draft_payload, LECTURE_FORM_DRAFT_KEY
 from .listening_assistant import _assistant_login_required
@@ -119,6 +121,7 @@ def site_capture_map(user,capture_id):
 def site_capture_upload(user):
     _enabled()
     draft,payload=_draft(user)
+    require_draft_revision(user.id, LECTURE_FORM_DRAFT_KEY, draft)
     replacing = request.form.get('replace_capture_id')
     existing_id=payload.get('site_capture_id')
     old=_owned(existing_id,user) if existing_id else None
@@ -168,6 +171,7 @@ def site_capture_upload(user):
         for field in ('teacher_name','teacher_college','course_title','student_grade_class','lecture_location','start_period','end_period','class_period'):
             payload[field]=''
         save_lecture_form_draft_atomic(user.id,LECTURE_FORM_DRAFT_KEY,draft,payload)
+        written_revision = get_draft_revision(user.id, LECTURE_FORM_DRAFT_KEY, draft)
         if old:
             if new_record:old.draft_json=json.dumps(previous_payload,ensure_ascii=False)
             else:old.is_archived=True
@@ -202,7 +206,7 @@ def site_capture_upload(user):
     },synchronize_session=False)
     db.session.commit()
     db.session.refresh(record)
-    return jsonify(success=True,data=_public(record)),201
+    return jsonify(success=True,data=_public(record),draft_revision=written_revision),201
 
 
 @user_bp.route('/api/site-capture/<int:capture_id>',methods=['GET','PATCH'])
@@ -218,6 +222,7 @@ def site_capture_context(user,capture_id):
     if not re.fullmatch(r'[\w\u4e00-\u9fff]{1,40}',building) or not re.fullmatch(r'[A-Za-z]?\d{3,4}',number):
         return jsonify(success=False,message='请确认楼栋和三至四位门牌号。'),400
     draft,payload=_draft(user)
+    require_draft_revision(user.id, LECTURE_FORM_DRAFT_KEY, draft)
     if payload.get('site_capture_id')!=record.id:return jsonify(success=False,message='请先打开这次听课的草稿。'),409
     availability=current_schedule_availability()
     changed=(record.building,record.room_number)!=(building,number)
@@ -230,6 +235,7 @@ def site_capture_context(user,capture_id):
     query=_query(record);payload['lecture_location']=query.room;payload['lecture_date']=record.received_at[:10]
     try:
         save_lecture_form_draft_atomic(user.id,LECTURE_FORM_DRAFT_KEY,draft,payload)
+        written_revision = get_draft_revision(user.id, LECTURE_FORM_DRAFT_KEY, draft)
         record.draft_json=draft.payload_json;db.session.commit()
     except LectureFormDraftConflict:
         db.session.rollback()
@@ -237,7 +243,7 @@ def site_capture_context(user,capture_id):
     except Exception:
         db.session.rollback();raise
     if not availability['candidates_ready']:
-        return jsonify(success=True,data=_public(record),candidates=[],
+        return jsonify(success=True,data=_public(record),candidates=[],draft_revision=written_revision,
                        message='教室已确认，请手动填写课程信息。')
     try:
         result=ListeningAssistantService(semester=get_current_teaching_semester()).search(query)
@@ -246,7 +252,7 @@ def site_capture_context(user,capture_id):
         message='' if public else '现场记录已保存，暂未找到课程，可稍后补充。'
     except (ScheduleSourceUnavailable,ValueError):
         public=[];message='现场记录已保存，课程信息可稍后补充。'
-    return jsonify(success=True,data=_public(record),candidates=public,message=message)
+    return jsonify(success=True,data=_public(record),candidates=public,message=message,draft_revision=written_revision)
 
 
 @user_bp.route('/api/site-capture/<int:capture_id>/photo')
@@ -365,6 +371,7 @@ def site_capture_confirm(user,capture_id):
                        data={'source_unavailable':True,'status':availability['status']}),503
     if record.form_id:return jsonify(success=False,message='这次记录已提交。'),409
     body=request.get_json(silent=True) or {};draft,payload=_draft(user)
+    require_draft_revision(user.id, LECTURE_FORM_DRAFT_KEY, draft)
     if not isinstance(body,dict):return jsonify(success=False,message='请求格式错误。'),400
     if payload.get('site_capture_id')!=record.id:return jsonify(success=False,message='请打开这次记录的草稿。'),409
     try:
@@ -382,13 +389,14 @@ def site_capture_confirm(user,capture_id):
     payload['start_period']=str(selected.candidate.period[0]);payload['end_period']=str(selected.candidate.period[1])
     try:
         save_lecture_form_draft_atomic(user.id,LECTURE_FORM_DRAFT_KEY,draft,payload)
+        written_revision = get_draft_revision(user.id, LECTURE_FORM_DRAFT_KEY, draft)
         record.draft_json=draft.payload_json;db.session.commit()
     except LectureFormDraftConflict:
         db.session.rollback()
         return jsonify(success=False,code='draft_conflict',message='听课草稿已更新，请保留当前输入并刷新后重新确认课程。'),409
     except Exception:
         db.session.rollback();raise
-    return jsonify(success=True,data=_public(record),draft=payload)
+    return jsonify(success=True,data=_public(record),draft=payload,draft_revision=written_revision)
 
 
 @user_bp.route('/api/site-capture/records')
@@ -411,6 +419,7 @@ def site_capture_resume(user,capture_id):
     _enabled();record=_owned(capture_id,user)
     if record.form_id or record.is_archived:return jsonify(success=False,message='这次记录已提交或替换。'),409
     draft,current=_draft(user)
+    require_draft_revision(user.id, LECTURE_FORM_DRAFT_KEY, draft)
     old_id=current.get('site_capture_id')
     if old_id:
         old=_owned(old_id,user)
@@ -422,6 +431,7 @@ def site_capture_resume(user,capture_id):
         record.confirmed_candidate_id=None
     try:
         save_lecture_form_draft_atomic(user.id,LECTURE_FORM_DRAFT_KEY,draft,payload)
+        written_revision = get_draft_revision(user.id, LECTURE_FORM_DRAFT_KEY, draft)
         if old_id:old.draft_json=json.dumps(current,ensure_ascii=False)
         db.session.commit()
     except LectureFormDraftConflict:
@@ -429,4 +439,4 @@ def site_capture_resume(user,capture_id):
         return jsonify(success=False,code='draft_conflict',message='听课草稿已更新，请保留当前输入并刷新后重新打开记录。'),409
     except Exception:
         db.session.rollback();raise
-    return jsonify(success=True,data=_public(record))
+    return jsonify(success=True,data=_public(record),draft_revision=written_revision)

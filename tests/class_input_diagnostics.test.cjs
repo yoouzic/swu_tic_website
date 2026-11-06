@@ -13,6 +13,7 @@ function fixture(ErrorConstructor = Error) {
   Input.prototype.addEventListener = function(type, callback) { this.listeners[type] = callback; };
   Input.prototype.insertAdjacentElement = function(_where, element) { controls.push(element); };
   const input = new Input();
+  input.form = {dataset: {draftProtocol: 'revision-v1'}};
   const window = {HTMLInputElement: Input,
     location: {pathname: '/user/submit_form', search: '?class_trace=1&secret=omit'},
     navigator: {userAgent: 'Test Browser', clipboard: {writeText: async text => copied.push(text)}},
@@ -61,6 +62,7 @@ test('diagnostic records are bounded and omit URL query strings', async () => {
   await f.controls[0].children[1].listeners.click();
   assert.equal(f.copied.length, 1);
   assert.equal(JSON.parse(f.copied[0]).field, 'student_grade_class');
+  assert.equal(JSON.parse(f.copied[0]).draft_protocol, 'revision-v1');
 });
 
 test('diagnostics are opt-in and perform no network or storage writes', () => {

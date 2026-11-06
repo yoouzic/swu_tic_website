@@ -75,8 +75,17 @@
         setMode(false);
         const stop=()=>{stream?.getTracks().forEach(track=>track.stop());stream=null;el('camera').hidden=true;};
         async function request(url,options={}){
+            const method=String(options.method||'GET').toUpperCase();
+            const changesDraft=(method==='POST'&&/^\/user\/api\/site-capture(?:\/\d+\/(?:confirm|resume))?$/.test(url))||
+                (method==='PATCH'&&/^\/user\/api\/site-capture\/\d+$/.test(url));
+            if(changesDraft&&['begin','accept','reject'].some(key=>typeof window.LectureDraftRevision?.[key]!=='function')){
+                const error=new Error('页面版本已更新，请刷新并重新打开填表页面后继续；当前内容尚未改写。');error.definiteFailure=true;throw error;
+            }
+            const contextVersion=formRevision,contextRecord=record?.id;
+            const draftTicket=changesDraft?window.LectureDraftRevision.begin():null;
             const headers=new Headers(options.headers||{});
             headers.set('X-CSRFToken',document.querySelector('meta[name="csrf-token"]').content);
+            if(draftTicket)headers.set('X-Lecture-Draft-Revision',draftTicket.revision);
             const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);
             try{
                 const response=await fetch(url,{...options,headers,signal:controller.signal});
@@ -88,9 +97,13 @@
                     throw error;
                 }
                 if(!response.ok||!data.success){
+                    if(draftTicket&&contextVersion===formRevision&&contextRecord===record?.id)window.LectureDraftRevision.reject(response,data,draftTicket);
                     const error=new Error(data.message||'操作未完成，请重试。');
                     error.definiteFailure=response.ok||(response.status>=400&&response.status<500);
                     throw error;
+                }
+                if(draftTicket&&(contextVersion!==formRevision||contextRecord!==record?.id||!window.LectureDraftRevision.accept(draftTicket,data))){
+                    const error=new Error('当前记录已切换，已保留当前填写内容，请重新核对。');error.definiteFailure=true;throw error;
                 }
                 return data;
             }finally{clearTimeout(timer);}

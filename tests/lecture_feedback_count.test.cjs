@@ -25,7 +25,9 @@ function fixture(value) {
     document: {getElementById: field},
     window: {SwuFeedbackText: feedbackText, appFeedback() {}},
     syncCoursewareQualityWithTeachingMethod() {},
-    updateDateWithWeekday() {}, lectureFormDraftSubmitting: false,
+    updateDateWithWeekday() {}, lectureFormDraftSubmitting: false, lectureFormIsEditMode: false,
+    lectureFormDraftDirty: false, lectureFormDraftSavePromise: null,
+    getLectureDraftState: () => ({blocked: false, deleting: false}),
   });
   vm.runInContext(submitSource + inputSource, context);
   return {field, submit() {

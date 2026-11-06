@@ -21,7 +21,7 @@ from app.services.lecture_form_validation import submission_field_errors, review
 from app.services.review_concurrency import ReviewConflict, claim_review_form
 from app.services.lecture_form_concurrency import serialize_new_submission
 from app.services.submission_receipts import (positive_sqlite_id, stable_submission_signature,
-    find_submission_receipt, remember_submission_receipt)
+    find_submission_receipt, remember_submission_receipt, peek_submission_receipt, BUSINESS_FIELDS)
 from app.services.submission_draft_consumption import (snapshot_submission_draft,
     delete_consumed_submission_draft)
 from app.services.listening_assistant_contracts import SAFE_OVERRIDE_KEYS
@@ -36,7 +36,9 @@ from app.services.listening_assistant_evidence import (
     revalidate_selection,
 )
 from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
-from app.services.lecture_form_draft_concurrency import LectureFormDraftConflict, save_lecture_form_draft_atomic
+from app.services.lecture_form_draft_concurrency import (LectureFormDraftConflict,
+    save_lecture_form_draft_atomic, get_draft_revision, delete_lecture_form_draft_atomic)
+from app.utils.draft_revision import DraftRevisionError, require_draft_revision
 from app.services.lecture_form_draft_entry_schema import ensure_lecture_form_draft_entry_schema, manual_draft_entry_allowed
 from app.services.registration_course_identity import resolve_registration_course
 from sqlalchemy.orm.exc import StaleDataError
@@ -57,7 +59,14 @@ from . import user_bp
 def listening_assistant_page_defaults():
     draft = _load_lecture_form_draft(session['user_id']) if session.get('user_id') else None
     return {'assistant_default_semester': get_current_teaching_semester(),
+            'lecture_draft_revision': get_draft_revision(session.get('user_id'), LECTURE_FORM_DRAFT_KEY, draft),
             'capture_enabled': site_capture_assistance_enabled() and not manual_draft_entry_allowed(draft)}
+
+
+@user_bp.errorhandler(DraftRevisionError)
+def handle_draft_revision_error(error):
+    db.session.rollback()
+    return jsonify(success=False, code=error.code, message=str(error)), error.status
 
 
 LECTURE_FORM_DRAFT_KEY = 'submit_form'
@@ -323,7 +332,8 @@ def _normalize_draft_payload(raw_payload):
         # Request credentials, version guards and server-owned entry metadata
         # must never travel with a user's persisted form fields.
         if key in {'site_capture_id', 'csrf_token', 'unique_id', 'expected_form_id',
-                   'expected_form_updated_at', 'entry_mode', 'manual_entry_allowed'}:
+                   'expected_form_updated_at', 'entry_mode', 'manual_entry_allowed',
+                   'expected_draft_revision', 'draft_revision'}:
             continue
         if not isinstance(key, str):
             continue
@@ -483,7 +493,37 @@ def _render_submitted_form(user, existing_version=None):
         submitted.setdefault('review_comment', existing_version.review_comment)
     return render_template('user/lecture_form.html', user=user, form_data=submitted,
                            form=existing_version, edit_mode=existing_version is not None,
+                           lecture_draft_revision=(request.headers.get('X-Lecture-Draft-Revision') or
+                                                   request.form.get('expected_draft_revision', '')),
                            schedule_availability=current_schedule_availability())
+
+
+def _readonly_submission_retry(user):
+    """An old draft token may acknowledge an already accepted exact request.
+
+    This never grants write authority, consumes a draft, or resolves fields
+    from a newer draft. Only the complete posted business-field signature can
+    match an existing receipt owned by this user.
+    """
+    fields = {field: request.form.get(field) for field in BUSINESS_FIELDS}
+    fields['listener_number'] = user.number
+    fields['lecture_date'] = request.form.get('lecture_date_display') or request.form.get('lecture_date', '')
+    fields['class_period'] = request.form.get('class_period') or f"第{request.form.get('start_period', '')}-{request.form.get('end_period', '')}节"
+    fields['student_grade_class'] = format_student_grade_class(request.form.get('student_grade_class', ''))
+    for key in ('course_changes', 'abnormal_situation', 'suggestions'):
+        fields[key] = request.form.get(key, '无')
+    if 'PPT演示法' not in (fields.get('teaching_method') or ''):
+        fields['courseware_quality'] = '无'
+    try:
+        registration = (positive_sqlite_id(request.form['registration_id'])
+                        if request.form.get('registration_id', '').strip() else None)
+        capture = (positive_sqlite_id(request.form['site_capture_id'])
+                   if request.form.get('site_capture_id', '').strip() else None)
+    except ValueError:
+        return None
+    signature = stable_submission_signature(fields, requested_suggestions=fields['suggestions'],
+                                            capture_id=capture, registration_id=registration)
+    return peek_submission_receipt(user.id, user.number, signature, datetime.now())
 
 
 @user_bp.route('/api/student_grade_class/format', methods=['POST'])
@@ -509,16 +549,23 @@ def lecture_form_draft():
             'success': True,
             'exists': draft is not None,
             'data': payload,
+            'draft_revision': get_draft_revision(user_id, LECTURE_FORM_DRAFT_KEY, draft),
             'updated_at': draft.updated_at.strftime('%Y-%m-%d %H:%M:%S') if draft else None,
         })
 
+    draft = _load_lecture_form_draft(user_id)
+    require_draft_revision(user_id, LECTURE_FORM_DRAFT_KEY, draft)
     if request.method == 'DELETE':
-        deleted = _delete_lecture_form_draft(user_id)
+        try:
+            deleted = delete_lecture_form_draft_atomic(user_id, LECTURE_FORM_DRAFT_KEY, draft)
+        except LectureFormDraftConflict as error:
+            db.session.rollback()
+            return jsonify(success=False, code='draft_conflict', message=str(error)), 409
         db.session.commit()
-        return jsonify({'success': True, 'deleted': deleted})
+        return jsonify({'success': True, 'deleted': deleted, 'draft_revision': 'none'})
 
     body = request.get_json(silent=True) or {}
-    raw_payload = body.get('data', body)
+    raw_payload = body.get('data', body) if isinstance(body, dict) else body
     try:
         payload = _normalize_draft_payload(raw_payload)
     except ValueError as error:
@@ -526,12 +573,11 @@ def lecture_form_draft():
     if payload is None:
         return jsonify({'success': False, 'message': 'Draft payload must be a JSON object'}), 400
 
-    draft = _load_lecture_form_draft(user_id)
     existing = _parse_draft_payload(draft)
     capture_enabled = site_capture_assistance_enabled()
     if ('expected_site_capture_id' in body and body['expected_site_capture_id'] != existing.get('site_capture_id')
             and not (not capture_enabled and body['expected_site_capture_id'] is None)):
-        return jsonify(success=False,message='听课记录已切换，请刷新后继续填写。'),409
+        return jsonify(success=False,code='draft_conflict',message='听课记录已切换，请刷新后继续填写。'),409
     if capture_enabled and existing.get('site_capture_id'):
         payload['site_capture_id']=existing['site_capture_id']
     else:
@@ -542,6 +588,8 @@ def lecture_form_draft():
         # Claim the exact raw draft/version before touching its photo record.
         policy = 'manual' if not capture_enabled or manual_draft_entry_allowed(draft) else 'photo'
         written_at=save_lecture_form_draft_atomic(user_id,LECTURE_FORM_DRAFT_KEY,draft,payload,entry_mode=policy)
+        written_revision = get_draft_revision(
+            user_id, LECTURE_FORM_DRAFT_KEY, draft or _load_lecture_form_draft(user_id))
         if capture_enabled and existing.get('site_capture_id'):
             capture=LectureSiteCapture.query.filter_by(id=existing['site_capture_id'],user_id=user_id,form_id=None).first()
             if capture:
@@ -557,6 +605,7 @@ def lecture_form_draft():
         raise
     return jsonify({
         'success': True,
+        'draft_revision': written_revision,
         'updated_at': written_at.strftime('%Y-%m-%d %H:%M:%S'),
     })
 
@@ -700,6 +749,26 @@ def submit_form():
                     or request.form.get('expected_form_updated_at') != expected_timestamp):
                 flash('表单已更新，请保留当前输入并刷新页面后重新核对。', 'error')
                 return _render_submitted_form(recovery_user, recovery_form), 409
+        if existing_version is not None:
+            # Editing a saved logical form must not consume or depend on an
+            # unrelated ordinary new-form draft in another tab.
+            continuing_manual_draft = False
+            draft_revision = None
+            consumed_capture_id = None
+        else:
+            try:
+                expected_draft_revision = require_draft_revision(
+                    user.id, LECTURE_FORM_DRAFT_KEY, submission_draft,
+                    allow_missing_if_absent=True)
+            except DraftRevisionError as error:
+                retry = _readonly_submission_retry(user)
+                if retry is not None:
+                    retry_id = retry.id
+                    db.session.rollback()
+                    flash('检测到重复提交，系统已保留首次提交结果。', 'info')
+                    return redirect(url_for('user.success', form_id=retry_id))
+                flash(str(error), 'error')
+                return _render_submitted_form(recovery_user, recovery_form), error.status
         if capture_enabled and not existing_version:
             capture_id=_parse_draft_payload(submission_draft).get('site_capture_id')
             posted_capture=request.form.get('site_capture_id','')
@@ -941,6 +1010,20 @@ def submit_form():
                 claimed_at = claim_review_form(existing_version, unique_id)
             else:
                 serialize_new_submission(user.id)
+                live_draft = LectureFormDraft.query.filter_by(
+                    user_id=user.id, draft_key=LECTURE_FORM_DRAFT_KEY
+                ).populate_existing().first()
+                if get_draft_revision(user.id, LECTURE_FORM_DRAFT_KEY, live_draft) != expected_draft_revision:
+                    # Another identical request may have finished while this
+                    # request waited for the actor lock. A receipt can only
+                    # acknowledge that result; it cannot consume a newer draft.
+                    retry = peek_submission_receipt(user.id, user.number, stable_signature, datetime.now())
+                    if retry is not None:
+                        retry_id = retry.id
+                        db.session.rollback()
+                        flash('检测到重复提交，系统已保留首次提交结果。', 'info')
+                        return redirect(url_for('user.success', form_id=retry_id))
+                    raise DraftRevisionError('听课草稿已在其他页面更新，请保留当前输入并刷新。')
 
             if continuing_manual_draft:
                 # The compatibility grant must still belong to the exact draft
@@ -1105,6 +1188,10 @@ def submit_form():
             flash(f'表单提交成功！{" " if is_new_version else "原有表单已更新，等待重新审核。"}', 'success')
             # 跳转到成功页面，显示提交的表单详情
             return redirect(url_for('user.success', form_id=target_form.id))
+        except DraftRevisionError as error:
+            db.session.rollback()
+            flash(str(error), 'error')
+            return _render_submitted_form(recovery_user, recovery_form), error.status
         except ReviewConflict as error:
             db.session.rollback()
             flash(str(error), 'error')
@@ -1148,7 +1235,8 @@ def edit_form(form_id):
     #     form_data['suggestions'] = parts[0]
     #     form_data['remarks'] = parts[1] if len(parts) > 1 else ''
     
-    return render_template('user/lecture_form.html', user=user, form_data=form_data, form=form)
+    return render_template('user/lecture_form.html', user=user, form_data=form_data, form=form,
+                           lecture_draft_revision='none')
 
 
 @user_bp.route('/success/<int:form_id>')

@@ -23,6 +23,7 @@ def test_slow_upload_ocr_preserves_later_human_or_terminal_state(setup_capture, 
         semester='2025-2026-2')
     service = ListeningAssistantService(schedule_loader=lambda **kwargs: [entry], semester='2025-2026-2')
     user_id = case.user.id
+    opened_revision = case.client.draft_revision
     entered, finish = threading.Event(), threading.Event()
     result = {}
 
@@ -37,6 +38,7 @@ def test_slow_upload_ocr_preserves_later_human_or_terminal_state(setup_capture, 
         client = case.app.test_client()
         with client.session_transaction() as session:
             session.update(user_id=user_id, user_role='信息员')
+        client.set_draft_revision(opened_revision)
         try:
             response = client.post('/user/api/site-capture', data={
                 'photo': (photo(), 'slow.jpg')}, content_type='multipart/form-data')

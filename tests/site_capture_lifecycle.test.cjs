@@ -3,6 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync('app/static/js/site-capture.js', 'utf8');
+const formTemplate = fs.readFileSync('app/templates/user/lecture_form.html', 'utf8');
+const revisionHelpers = formTemplate.slice(formTemplate.indexOf('function getLectureDraftState()'),
+                                           formTemplate.indexOf('async function saveLectureFormDraft()'));
 
 class Node {
   constructor() { this.listeners = {}; this.value = ''; this.textContent = ''; this.hidden = false; this.disabled = false; this.dataset = {}; this.attributes = new Map(); this.children = []; this.scrollCalls=0; }
@@ -48,18 +51,36 @@ async function captureFixture(route, {scheduleReady=true,locationRuntime=null}={
   };
   const sampler = {stop(){},best:() => null,samples:() => []};
   window.SiteLocation = locationRuntime?.api||{start:() => sampler};
+  window.lectureFormDraftState = {revision:'r0',epoch:0,blocked:false,deleting:false,deletePromise:null};
+  let serverRevision='r0',serverRevisionIndex=0;
   window.saveLectureFormDraft = async () => true;
-  window.loadLectureFormDraft = async () => true;
+  window.loadLectureFormDraft = async () => {window.lectureFormDraftState.revision=serverRevision;return true;};
   const calls = [];let pendingListFailure=false;
   const fetch = async (url, options={}) => {
     calls.push({url,options});
     if (url === '/user/api/site-capture/settings') return {ok:true,json:async () => ({success:true,data:{buildings:[]}})};
     if (url === '/user/api/site-capture/records') {if(pendingListFailure)throw new Error('pending records unavailable');return {ok:true,json:async () => ({success:true,data:[]})};}
-    return route(url, options);
+    const method=String(options.method||'GET').toUpperCase();
+    const changesDraft=(method==='POST'&&/^\/user\/api\/site-capture(?:\/\d+\/(?:confirm|resume))?$/.test(url))||
+      (method==='PATCH'&&/^\/user\/api\/site-capture\/\d+$/.test(url));
+    if(changesDraft) assert.equal(new Headers(options.headers).get('X-Lecture-Draft-Revision'),serverRevision);
+    const result=await route(url, options);
+    return {...result,json:async()=>{
+      const body=await result.json();
+      if(result.ok&&body.success&&(changesDraft||url==='/user/api/lecture_form_draft')){
+        if(changesDraft || (url==='/user/api/lecture_form_draft'&&body.data?.site_capture_id!==window.lectureFormSiteCaptureId)) {
+          serverRevision=`r${++serverRevisionIndex}`;
+        }
+        return {...body,draft_revision:serverRevision};
+      }
+      return body;
+    }};
   };
   const navigator = {};
-  const context = {document,window,navigator,fetch,Headers,AbortController,Blob,FormData,Date:locationRuntime?.Date||Date,CustomEvent:class {constructor(type,options={}){this.type=type;this.detail=options.detail;}},setTimeout:locationRuntime?.setTimeout||((callback)=>{timers.push(callback);return timers.length;}),clearTimeout:locationRuntime?.clearTimeout||(()=>{}),console};
-  vm.runInNewContext(source,context);ready();await Promise.resolve();await Promise.resolve();
+  const context = {document,window,navigator,fetch,Headers,AbortController,Blob,FormData,lectureFormDraftTimer:null,setLectureDraftStatus(){},Date:locationRuntime?.Date||Date,CustomEvent:class {constructor(type,options={}){this.type=type;this.detail=options.detail;}},setTimeout:locationRuntime?.setTimeout||((callback)=>{timers.push(callback);return timers.length;}),clearTimeout:locationRuntime?.clearTimeout||(()=>{}),console};
+  vm.createContext(context);vm.runInContext(revisionHelpers,context);
+  window.LectureDraftRevision={begin:context.beginLectureDraftMutation,accept:context.acceptLectureDraftMutation,reject:context.rejectLectureDraftMutation};
+  vm.runInContext(source,context);ready();await Promise.resolve();await Promise.resolve();
   nodes.video.videoWidth = 1280;nodes.video.videoHeight = 720;
   return {nodes,inputs,form,assistant,reviewGuide,completion,window,calls,timers,navigator,failPendingList(){pendingListFailure=true;}};
 }

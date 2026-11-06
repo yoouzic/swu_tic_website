@@ -15,6 +15,7 @@ from app.app import app
 from app.models import db, LectureForm, LectureFormDraft, User
 from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
+from tests.draft_revision_client import DraftRevisionClient
 
 
 INFO_MEMBER = '\u4fe1\u606f\u5458'
@@ -40,11 +41,14 @@ class LectureFormDraftTest(unittest.TestCase):
         self.app_context.push()
         db.drop_all()
         db.create_all()
+        self.original_test_client_class = app.test_client_class
+        app.test_client_class = DraftRevisionClient
         self.client = app.test_client()
         self.user = self._create_user('1001', 'student-1001')
         self.other_user = self._create_user('1002', 'student-1002')
 
     def tearDown(self):
+        app.test_client_class = self.original_test_client_class
         cleanup_sqlite_database(db, drop_all=True)
         self.app_context.pop()
 
@@ -75,6 +79,7 @@ class LectureFormDraftTest(unittest.TestCase):
             sess['user_id'] = user.id
             sess['user_role'] = user.role
             sess['user_name'] = user.name
+        self.client.observe_draft_revision()
 
     def _valid_form_payload(self):
         return {

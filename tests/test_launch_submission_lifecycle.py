@@ -45,6 +45,7 @@ class SubmissionLifecycleTests(_ReviewMutationCompatibilityBase):
             SystemSetting.set(key, value)
         with self.client.session_transaction() as session:
             session.update(user_id=self.officer.id, user_role=self.officer.role, user_name=self.officer.name)
+        self.client.observe_draft_revision()
 
     def tearDown(self):
         self.clock.stop()
@@ -82,6 +83,7 @@ class SubmissionLifecycleTests(_ReviewMutationCompatibilityBase):
         db.session.add(leave)
         db.session.commit()
         user_id, leave_id = self.officer.id, leave.id
+        draft_revision = self.client.draft_revision
         waiting, proceed = threading.Event(), threading.Event()
         real_lock = form_routes.serialize_new_submission
         def paused_lock(actor_id):
@@ -93,7 +95,8 @@ class SubmissionLifecycleTests(_ReviewMutationCompatibilityBase):
             with self.client.application.test_client() as client:
                 with client.session_transaction() as session:
                     session.update(user_id=user_id, user_role='信息员')
-                return client.post('/user/submit_form', data=valid_submission(course_title='后提交的不同课程')).status_code
+                return client.post('/user/submit_form', data=valid_submission(
+                    course_title='后提交的不同课程', expected_draft_revision=draft_revision)).status_code
         db.session.remove()
         with mock.patch.object(form_routes, 'serialize_new_submission', paused_lock):
             with ThreadPoolExecutor(max_workers=1) as pool:
@@ -159,6 +162,7 @@ class SubmissionLifecycleTests(_ReviewMutationCompatibilityBase):
     def test_same_capture_concurrent_distinct_payload_cannot_overwrite_binding(self):
         self.enable_capture_with_current_schedule()
         capture_id, user_id = self.make_capture('shared').id, self.officer.id
+        draft_revision = self.client.draft_revision
         waiting, proceed = threading.Event(), threading.Event()
         real_lock = form_routes.serialize_new_submission
         def paused_lock(actor_id):
@@ -171,7 +175,8 @@ class SubmissionLifecycleTests(_ReviewMutationCompatibilityBase):
                 with client.session_transaction() as session:
                     session.update(user_id=user_id, user_role='信息员')
                 return client.post('/user/submit_form', data=valid_submission(
-                    site_capture_id=str(capture_id), course_title='后提交的不同课程'))
+                    site_capture_id=str(capture_id), course_title='后提交的不同课程',
+                    expected_draft_revision=draft_revision))
         db.session.remove()
         with mock.patch.object(form_routes, 'serialize_new_submission', paused_lock):
             with ThreadPoolExecutor(max_workers=1) as pool:
@@ -198,6 +203,7 @@ class SubmissionLifecycleTests(_ReviewMutationCompatibilityBase):
         db.session.add(registration)
         db.session.commit()
         registration_id, user_id = registration.id, self.officer.id
+        draft_revision = self.client.draft_revision
         waiting, proceed = threading.Event(), threading.Event()
         real_lock = form_routes.serialize_new_submission
         def paused_lock(actor_id):
@@ -208,7 +214,8 @@ class SubmissionLifecycleTests(_ReviewMutationCompatibilityBase):
             with self.client.application.test_client() as client:
                 with client.session_transaction() as session:
                     session.update(user_id=user_id, user_role='信息员')
-                return client.post('/user/submit_form', data=valid_submission(registration_id=str(registration_id)))
+                return client.post('/user/submit_form', data=valid_submission(
+                    registration_id=str(registration_id), expected_draft_revision=draft_revision))
         db.session.remove()
         with mock.patch.object(form_routes, 'serialize_new_submission', paused_lock):
             with ThreadPoolExecutor(max_workers=1) as pool:
@@ -260,9 +267,13 @@ class SubmissionLifecycleTests(_ReviewMutationCompatibilityBase):
         self.enable_capture_with_current_schedule()
         capture_a, capture_b = self.make_capture('A'), self.make_capture('B')
         user_id, capture_a_id, capture_b_id = self.officer.id, capture_a.id, capture_b.id
+        capture_payloads = {capture_a_id: capture_a.draft_json, capture_b_id: capture_b.draft_json}
         saved = self.client.put('/user/api/lecture_form_draft', json={'data': {
             **valid_submission(), 'site_capture_id': capture_a_id}})
         self.assertEqual(saved.status_code, 200)
+        # Both tabs opened A before B resumes; neither may refresh its token
+        # immediately before writing or submitting.
+        draft_revision = saved.get_json()['draft_revision']
         entered, resumed = threading.Event(), threading.Event()
         real_extract = form_routes._extract_assistant_submission_payload
         def pause_a():
@@ -273,7 +284,8 @@ class SubmissionLifecycleTests(_ReviewMutationCompatibilityBase):
             with self.client.application.test_client() as client:
                 with client.session_transaction() as session:
                     session.update(user_id=user_id, user_role='信息员')
-                return client.post('/user/submit_form', data=valid_submission(site_capture_id=str(capture_a_id))).status_code
+                return client.post('/user/submit_form', data=valid_submission(
+                    site_capture_id=str(capture_a_id), expected_draft_revision=draft_revision)).status_code
         db.session.remove()
         with mock.patch.object(form_routes, '_extract_assistant_submission_payload', pause_a):
             with ThreadPoolExecutor(max_workers=1) as pool:
@@ -283,11 +295,15 @@ class SubmissionLifecycleTests(_ReviewMutationCompatibilityBase):
                     with self.client.application.test_client() as other:
                         with other.session_transaction() as session:
                             session.update(user_id=user_id, user_role='信息员')
-                        response = other.post(f'/user/api/site-capture/{capture_b_id}/resume')
+                        response = other.post(f'/user/api/site-capture/{capture_b_id}/resume',
+                                              headers={'X-Lecture-Draft-Revision': draft_revision})
                         self.assertEqual(response.status_code, 200)
                 finally:
                     resumed.set()
-                self.assertEqual(pending.result(timeout=20), 302)
+                # The shared draft has moved to B. Unlike an exact retry of
+                # an already accepted receipt, A has never been accepted and
+                # its old token cannot authorize a new form or consume B.
+                self.assertEqual(pending.result(timeout=20), 409)
         db.session.expire_all()
         draft = LectureFormDraft.query.filter_by(user_id=user_id, draft_key='submit_form').one_or_none()
         self.assertIsNotNone(draft, 'A submission must not delete the newly resumed B draft')
@@ -295,7 +311,21 @@ class SubmissionLifecycleTests(_ReviewMutationCompatibilityBase):
         self.assertEqual(payload['site_capture_id'], capture_b_id)
         self.assertEqual(payload['course_title'], '草稿课程-B')
         self.assertIsNone(db.session.get(LectureSiteCapture, capture_b_id).form_id)
-        self.assertIsNotNone(db.session.get(LectureSiteCapture, capture_a_id).form_id)
+        self.assertIsNone(db.session.get(LectureSiteCapture, capture_a_id).form_id)
+        self.assertEqual(LectureForm.query.count(), 0)
+        for capture_id, original_payload in capture_payloads.items():
+            record = db.session.get(LectureSiteCapture, capture_id)
+            self.assertEqual(record.draft_json, original_payload)
+            self.assertFalse(record.is_archived)
+        # After deliberately observing B's current version, A can still be
+        # reopened from its independent saved photo draft.
+        current_revision = self.client.observe_draft_revision()
+        reopened = self.client.post(f'/user/api/site-capture/{capture_a_id}/resume',
+            headers={'X-Lecture-Draft-Revision': current_revision})
+        self.assertEqual(reopened.status_code, 200)
+        restored = self.client.get('/user/api/lecture_form_draft').get_json()['data']
+        self.assertEqual(restored['site_capture_id'], capture_a_id)
+        self.assertEqual(restored['course_title'], '草稿课程-A')
 
     def test_claim_expires_after_120_seconds_and_rollback_leaves_no_claim(self):
         self.assertIsNotNone(importlib.util.find_spec('app.services.submission_receipts'))
@@ -344,6 +374,7 @@ class SubmissionLifecycleTests(_ReviewMutationCompatibilityBase):
         self.center_admin.role = '超级管理员'
         db.session.commit()
         admin_id, user_id = self.center_admin.id, self.officer.id
+        draft_revision = self.client.draft_revision
         counted, proceed, submit_entered = threading.Event(), threading.Event(), threading.Event()
         real_cleanup = receipt_service.delete_user_submission_receipts
         real_lock = form_routes.serialize_new_submission
@@ -363,7 +394,8 @@ class SubmissionLifecycleTests(_ReviewMutationCompatibilityBase):
             with self.client.application.test_client() as client:
                 with client.session_transaction() as session:
                     session.update(user_id=user_id, user_role='信息员')
-                return client.post('/user/submit_form', data=valid_submission()).status_code
+                return client.post('/user/submit_form', data=valid_submission(
+                    expected_draft_revision=draft_revision)).status_code
         db.session.remove()
         with mock.patch.object(receipt_service, 'delete_user_submission_receipts', pause_delete):
             with mock.patch.object(form_routes, 'serialize_new_submission', mark_submit):

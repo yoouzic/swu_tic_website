@@ -17,6 +17,7 @@ from app.models import (
 from app.services.registration_course_identity import stamp_registration_course
 from tests.review_request_utils import opened_listener_revision
 from tests.schedule_fixture import seed_current_schedule
+from tests.draft_revision_client import DraftRevisionClient
 
 
 def _photo():
@@ -58,7 +59,7 @@ def route_case(tmp_path, monkeypatch):
     })
     with app.app_context():
         db.create_all()
-        case = SimpleNamespace(app=app, client=app.test_client(), storage=storage, captures=captures)
+        case = SimpleNamespace(app=app, client=DraftRevisionClient(app), storage=storage, captures=captures)
         permission = Permission(name='填表')
         db.session.add(permission)
         db.session.flush()
@@ -96,6 +97,7 @@ def _login(case, key, session_role=None):
         session['user_id'] = user.id
         session['user_role'] = session_role or user.role
         session['user_name'] = user.name
+    case.client.observe_draft_revision()
     return user
 
 
@@ -118,6 +120,7 @@ def _seed_history(case, user):
     db.session.add(LectureFormDraft(user_id=user.id, draft_key='submit_form',
                                    payload_json=json.dumps(draft_payload)))
     db.session.commit()
+    case.client.observe_draft_revision()
     return SimpleNamespace(form_id=form.id, reservation_id=reservation.id, capture_id=capture.id,
                            payload=payload, photo_key=photo_key)
 

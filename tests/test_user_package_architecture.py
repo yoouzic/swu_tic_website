@@ -65,7 +65,7 @@ class UserPackageArchitectureTests(unittest.TestCase):
             for node in tree.body:
                 if isinstance(node, ast.FunctionDef):
                     functions[node.name] = path.name
-        self.assertEqual(len(functions), 83)
+        self.assertEqual(len(functions), 86)
         expected = {
             '_is_draft_scalar', '_normalize_assistant_draft_payload',
             '_extract_assistant_submission_payload',
@@ -73,6 +73,8 @@ class UserPackageArchitectureTests(unittest.TestCase):
             '_parse_draft_payload', '_normalize_draft_payload',
             '_normalize_submission_value', '_build_submission_signature',
             '_find_recent_duplicate_submission', 'profile', 'lecture_form_draft',
+            'format_student_grade_class_input', 'handle_draft_revision_error',
+            '_readonly_submission_retry',
             'edit_profile', '_build_activity_records', 'my_forms', 'course_lookup',
             'delete_form', 'submit_form', 'edit_form', 'success', 'view_form',
             'listening_registration', 'course_feedback_management',
