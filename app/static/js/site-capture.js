@@ -213,10 +213,10 @@
         }));
         el('shoot').addEventListener('click',()=>action(el('shoot'),async()=>{
             const version=formRevision,previousId=record?.id;
-            if(record){
-                await ensureDraftSaved();
-                if(version!==formRevision||record?.id!==previousId)throw new Error('记录已切换，请重新拍摄。');
-            }
+            // The first photo also reloads the server draft. Persist current
+            // review/signatures before that reload, even without an old photo.
+            await ensureDraftSaved();
+            if(version!==formRevision||record?.id!==previousId)throw new Error('记录已切换，请重新拍摄。');
             const video=el('video');if(!video.videoWidth)throw new Error('相机还未就绪，请稍后拍摄。');
             const canvas=document.createElement('canvas');const scale=Math.min(1,1280/Math.max(video.videoWidth,video.videoHeight));
             canvas.width=Math.round(video.videoWidth*scale);canvas.height=Math.round(video.videoHeight*scale);

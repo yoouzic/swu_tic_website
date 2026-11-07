@@ -166,6 +166,60 @@ test('retaking a photo first saves current manual evaluation before opening the 
   assert.deepEqual(order,['save','camera']);
 });
 
+test('the first photo saves current review and witnesses before upload and draft reload', async () => {
+  const visible={course_feedback:'刚写好的评价',student_signature1:'新见证人',contact_phone1:'13800138000'};
+  let stored={course_feedback:'旧评价',student_signature1:'旧见证人',contact_phone1:'13900139000'};
+  const order=[];
+  const fixture=await captureFixture(async(url)=>{
+    if(url==='/user/api/site-capture'){
+      order.push('upload');
+      // A first capture preserves saved review/signatures while clearing course fields.
+      stored={...stored,student_grade_class:''};
+      return response({success:true,data:photo(8)});
+    }
+    throw new Error(url);
+  });
+  fixture.window.saveLectureFormDraft=async()=>{order.push('save');stored={...visible};return true;};
+  fixture.window.loadLectureFormDraft=async()=>{order.push('load');Object.assign(visible,stored);return true;};
+  await fixture.nodes.shoot.click();
+  assert.deepEqual(order,['save','upload','load']);
+  assert.equal(visible.course_feedback,'刚写好的评价');
+  assert.equal(visible.student_signature1,'新见证人');
+  assert.equal(visible.contact_phone1,'13800138000');
+});
+
+test('a failed first-photo draft save prevents upload and keeps current input', async () => {
+  const fixture=await captureFixture(async(url)=>{throw new Error(url);});
+  fixture.inputs.course_feedback=Object.assign(new Node(),{value:'刚写好的评价'});
+  fixture.inputs.student_signature1=Object.assign(new Node(),{value:'新见证人'});
+  fixture.nodes.camera.hidden=false;
+  fixture.window.saveLectureFormDraft=async()=>false;
+  fixture.window.loadLectureFormDraft=async()=>{
+    fixture.inputs.course_feedback.value='旧评价';
+    fixture.inputs.student_signature1.value='旧见证人';
+    return true;
+  };
+  await fixture.nodes.shoot.click();
+  assert.equal(fixture.calls.filter(call=>call.url==='/user/api/site-capture').length,0);
+  assert.equal(fixture.nodes.camera.hidden,false);
+  assert.match(fixture.nodes.status.textContent,/保存失败/);
+  assert.equal(fixture.inputs.course_feedback.value,'刚写好的评价');
+  assert.equal(fixture.inputs.student_signature1.value,'新见证人');
+});
+
+test('the first photo waits for pending draft save and stops after the form is reset', async () => {
+  let finishSave;
+  const fixture=await captureFixture(async(url)=>{throw new Error(url);});
+  fixture.window.saveLectureFormDraft=()=>new Promise(resolve=>{finishSave=resolve;});
+  const shooting=fixture.nodes.shoot.click();await settle();
+  assert.equal(typeof finishSave,'function');
+  assert.equal(fixture.calls.filter(call=>call.url==='/user/api/site-capture').length,0);
+  await fixture.form.fire('reset');
+  finishSave(true);await shooting;
+  assert.equal(fixture.calls.filter(call=>call.url==='/user/api/site-capture').length,0);
+  assert.match(fixture.nodes.status.textContent,/记录已切换/);
+});
+
 test('a failed draft save prevents switching to a new record and starting its camera', async () => {
   const fixture=await captureFixture(async url=> {
     if(url==='/user/api/site-capture/7')return response({success:true,data:photo(7)});

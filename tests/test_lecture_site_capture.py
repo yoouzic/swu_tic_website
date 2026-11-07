@@ -60,6 +60,24 @@ def test_upload_saved_to_draft_and_private_to_owner(setup_capture):
     assert case.client.patch(f"/user/api/site-capture/{data['id']}",json={'building':'10','room_number':'601'}).status_code==404
 
 
+def test_first_upload_inherits_latest_saved_review_and_witnesses(setup_capture):
+    case=setup_capture
+    old={'course_feedback':'旧评价','student_signature1':'旧见证人','contact_phone1':'13900139000'}
+    latest={'course_feedback':'刚写好的评价','student_signature1':'新见证人','contact_phone1':'13800138000',
+            'student_grade_class':'2024级农林经济01班'}
+    assert case.client.put('/user/api/lecture_form_draft',json={'data':old}).status_code==200
+    assert case.client.put('/user/api/lecture_form_draft',json={'data':latest}).status_code==200
+    response=upload(case)
+    assert response.status_code==201
+    record=db.session.get(LectureSiteCapture,response.get_json()['data']['id'])
+    draft=case.client.get('/user/api/lecture_form_draft').get_json()['data']
+    saved=json.loads(record.draft_json)
+    for key in ('course_feedback','student_signature1','contact_phone1'):
+        assert draft[key]==saved[key]==latest[key]
+    # New photo confirmation still owns course context; this does not expand a class name.
+    assert draft['student_grade_class']==saved['student_grade_class']==''
+
+
 def test_autosave_preserves_photo_and_cannot_forge_binding(setup_capture):
     case=setup_capture;data=upload(case).get_json()['data']
     case.client.put('/user/api/lecture_form_draft',json={'data':{'course_feedback':'课后评价','site_capture_id':999}})
