@@ -231,7 +231,7 @@ def test_accessibility_responsive_and_local_assets_are_present():
         text = path.read_text(encoding='utf-8')
         assert 'https://cdn.' not in text
         assert 'https://unpkg.' not in text
-    assert '<script src="{{ url_for(\'static\', filename=\'js/listening-assistant.js\', v=\'20261107-draft-revision-v1\') }}"></script>' in TEMPLATE
+    assert '<script src="{{ url_for(\'static\', filename=\'js/listening-assistant.js\', v=\'20261108-class-alignment-v1\') }}"></script>' in TEMPLATE
     assert '<link rel="stylesheet" href="{{ url_for(\'static\', filename=\'css/listening-assistant.css\', v=\'20261013-complement\') }}">' in TEMPLATE
 
 

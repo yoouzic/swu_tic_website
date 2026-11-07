@@ -682,7 +682,7 @@
             });
             table.appendChild(tbody);
             elements.comparison.appendChild(table);
-            appendText(elements.comparison, 'p', 'listening-assistant__review-hint', '已填写的内容会保留；不同信息请在下方课程信息中核对。');
+            appendText(elements.comparison, 'p', 'listening-assistant__review-hint', '确认后，班级按所选课表记录回填；其他已填写内容保留，请核对差异。');
         }
 
         function renderCandidateConfirm() {
@@ -1434,8 +1434,16 @@
                 ['teacher_name', 'teacher_name'],
                 ['teacher_college', 'teacher_college'],
                 ['course_title', 'course_title'],
-                ['student_grade_class', 'student_grade_class'],
             ].forEach(([id, key]) => setBlankField(id, snapshot[key], changed));
+            // The user has explicitly confirmed this freshly verified course.
+            // Align the class with its timetable row, whether short or full.
+            const classInput = form.querySelector('#student_grade_class');
+            if (classInput && cleanText(snapshot.student_grade_class) &&
+                classInput.value !== String(snapshot.student_grade_class)) {
+                classInput.value = String(snapshot.student_grade_class);
+                changed.push(classInput);
+                guideState.assistantFilledFields.add('student_grade_class');
+            }
             if (typeof updateDateWithWeekday === 'function' && cleanText(dateInput?.value)) {
                 updateDateWithWeekday();
             }
@@ -1558,11 +1566,20 @@
                 return;
             }
             const requestPayload = buildConfirmationPayload(candidate);
+            const classInputAtRequest = form.querySelector('#student_grade_class');
+            const classValueAtRequest = classInputAtRequest?.value;
             const request = beginRequest();
             setBusy(elements.confirm, true, '确认中…');
             try {
                 const data = await requestJson(GUIDE_ENDPOINTS.confirm, requestPayload, request);
                 if (!isCurrentRequest(request.requestId)) return;
+                if (form.querySelector('#student_grade_class') !== classInputAtRequest ||
+                    classInputAtRequest?.value !== classValueAtRequest) {
+                    resetGuideState();
+                    renderAll();
+                    setStatus('班级已修改，当前输入已保留，请重新核对课程。', 'info');
+                    return;
+                }
                 guideState.applyingSnapshot = true;
                 applyFieldSnapshot(data.field_snapshot);
                 guideState.applyingSnapshot = false;
@@ -1572,7 +1589,7 @@
                 rememberAssistantQueryContext();
                 renderAll();
                 form.dispatchEvent(new CustomEvent('lecture-assistant-course-confirmed'));
-                setStatus('状态：已完成。服务器已重新核验，空白基础字段已补充。', 'info');
+                setStatus('状态：已完成。请核对已填入的课表信息。', 'info');
             } catch (error) {
                 guideState.applyingSnapshot = false;
                 if (error && error.name !== 'AbortError' && isCurrentRequest(request.requestId)) {

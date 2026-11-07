@@ -33,6 +33,76 @@ function loadFunction(name, context) {
   return context[name];
 }
 
+function classConfirmationContext(currentClass, timetableClass) {
+  const ids=['lecture_date','start_period','end_period','class_period','lecture_location',
+    'teacher_name','teacher_college','course_title','student_grade_class'];
+  const fields=Object.fromEntries(ids.map(id=>[id,{value:''}]));
+  fields.student_grade_class.value=currentClass;
+  fields.teacher_name.value='已填写的教师';
+  const events=[];
+  const ctx={
+    fields,events,current:true,
+    form:{querySelector:selector=>fields[selector.slice(1)],dispatchEvent:event=>events.push(event.type)},
+    guideState:{state:{stage:'confirm'},candidates:[{candidate_id:'selected-course'}],
+      selectedCandidateId:'selected-course',assistantFilledFields:new Set(),assistantFilledGroups:new Set()},
+    elements:{confirm:{disabled:false}},
+    cleanText:value=>String(value??'').trim(),isObject:value=>value!==null&&typeof value==='object',
+    Event:class{constructor(type){this.type=type;}},CustomEvent:class{constructor(type){this.type=type;}},
+    GUIDE_ENDPOINTS:{confirm:'/confirm'},updateConfirmControls(){},buildConfirmationPayload:()=>({candidate_id:'selected-course'}),
+    beginRequest:()=>({requestId:1}),isCurrentRequest:()=>ctx.current,setBusy(){},
+    requestJson:async()=>({field_snapshot:{student_grade_class:timetableClass,teacher_name:'课表教师'}}),
+    storeAssistantPayload(){},rememberAssistantQueryContext(){},renderAll(){},setStatus(){},
+    resetGuideState(){ctx.current=false;ctx.reset=true;},
+  };
+  for(const name of ['fieldIsBlank','setBlankField','applyFieldSnapshot','confirmSelection'])loadFunction(name,ctx);
+  return ctx;
+}
+
+for(const [current,timetable] of [
+  ['2025级机械设计制造及其自动化01班','2025级机制01班'],
+  ['2025机制01班','2025级机械设计制造及其自动化01班'],
+  ['2024级农林经济管理01班','2024级农林经济01班'],
+  ['2025机制01班','2025级机制01、02、03班；2025级农机班'],
+])test(`explicit course confirmation aligns class to timetable: ${timetable}`,async()=>{
+  const ctx=classConfirmationContext(current,timetable);
+  await ctx.confirmSelection();
+  assert.equal(ctx.fields.student_grade_class.value,timetable);
+  assert.equal(ctx.fields.teacher_name.value,'已填写的教师');
+  assert.ok(ctx.guideState.assistantFilledFields.has('student_grade_class'));
+  assert.ok(ctx.events.includes('input'));
+});
+
+test('a late course confirmation still cannot replace intervening class input',async()=>{
+  const ctx=classConfirmationContext('2025机制01班','2025级机械设计制造及其自动化01班');
+  let resolve;
+  ctx.requestJson=()=>new Promise(done=>{resolve=done;});
+  const confirming=ctx.confirmSelection();
+  ctx.fields.student_grade_class.value='刚重新核对的班级';ctx.current=false;
+  resolve({field_snapshot:{student_grade_class:'2025级机械设计制造及其自动化01班'}});
+  await confirming;
+  assert.equal(ctx.fields.student_grade_class.value,'刚重新核对的班级');
+  assert.equal(ctx.events.length,0);
+});
+
+test('confirmation detects a changed class even without an input event',async()=>{
+  const ctx=classConfirmationContext('2025机制01班','2025级机械设计制造及其自动化01班');
+  let resolve;
+  ctx.requestJson=()=>new Promise(done=>{resolve=done;});
+  const confirming=ctx.confirmSelection();
+  ctx.fields.student_grade_class.value='浏览器刚填入的班级';
+  resolve({field_snapshot:{student_grade_class:'2025级机械设计制造及其自动化01班'}});
+  await confirming;
+  assert.equal(ctx.fields.student_grade_class.value,'浏览器刚填入的班级');
+  assert.equal(ctx.events.length,0);
+  assert.equal(ctx.reset,true);
+});
+
+test('a confirmed course without class evidence does not erase the entered class',async()=>{
+  const ctx=classConfirmationContext('2025机制01班','');
+  await ctx.confirmSelection();
+  assert.equal(ctx.fields.student_grade_class.value,'2025机制01班');
+});
+
 test('skip sends an explicit nonfactual answer and retains a back-history entry',async()=>{
   const ctx={guideState:{question:{kind:'teacher'}},ensureStarted:async()=>true,
     sendAnswer:async(...args)=>{ctx.sent=args;}};

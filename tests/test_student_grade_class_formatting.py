@@ -167,6 +167,50 @@ class ClassFormattingSourceTest(unittest.TestCase):
                                          json={'value': explicitly_written_full_name}).json['value'],
                          explicitly_written_full_name)
 
+    def test_candidate_and_confirmation_follow_source_class_not_major_name_length(self):
+        import pandas as pd
+        from app.models import ListeningAssistantScheduleEntry
+        from app.services.listening_assistant import ListeningAssistantService
+        from app.services.listening_assistant_contracts import AssistantQuery
+        from app.services.listening_assistant_schedule import persist_listening_assistant_entries
+        from app.services.teaching_calendar import TeachingCalendarConfig
+
+        cases = [
+            ('2025机制01班', '机械设计制造及其自动化', '2025级机制01班'),
+            ('2025机械设计制造及其自动化02班', '机制', '2025级机械设计制造及其自动化02班'),
+            ('2024农林经济01班', '农林经济管理', '2024级农林经济01班'),
+            ('2024农林经济管理02班', '农林经济', '2024级农林经济管理02班'),
+            ('2025机制01班;2025机制02班;2025农机班',
+             '机械设计制造及其自动化;农业机械化及其自动化',
+             '2025级机制01、02班；2025级农机班'),
+        ]
+        batch = self.add_source([(raw, major) for raw, major, _ in cases])
+        frame = pd.DataFrame([
+            {'姓名': f'课表教师{index}', '教师所属学院': '测试学院', '课程名称': f'课表课程{index}',
+             '星期几': 5, '上课节次': '第3-4节', '场地名称': '32-302', '起始周': '1-20',
+             '教学班组成': raw, '专业组成': major, '学期': batch.semester,
+             '学年': '2026', '课程号': f'SOURCE{index}', '选课号': str(index)}
+            for index, (raw, major, _) in enumerate(cases)
+        ])
+        persist_listening_assistant_entries(frame, [batch])
+        self.db.session.commit()
+        service = ListeningAssistantService(
+            semester=batch.semester,
+            calendar=TeachingCalendarConfig(date(2026, 9, 7), 0, 20))
+        for index, (raw, major, expected) in enumerate(cases):
+            with self.subTest(source_class=raw, source_major=major):
+                indexed = ListeningAssistantScheduleEntry.query.filter_by(
+                    batch_id=batch.id, teacher_name=f'课表教师{index}').one()
+                self.assertEqual(indexed.student_grade_class_raw, raw)
+                result = service.search(AssistantQuery(
+                    lecture_date=date(2026, 9, 18), room='32-302', teacher_name=f'课表教师{index}'))
+                self.assertEqual(len(result.candidates), 1)
+                selected = result.candidates[0]
+                public = selected.to_public_dict()
+                self.assertEqual(public['student_grade_class'], expected)
+                self.assertEqual(safe_field_snapshot(selected, {})['student_grade_class'], expected)
+                self.assertEqual(public['candidate_id'], selected.candidate_id)
+
     def test_draft_write_and_read_are_normalized(self):
         response = self.client.put('/user/api/lecture_form_draft',
                                    json={'data': {'student_grade_class': '2024英语(师)1班'}})
