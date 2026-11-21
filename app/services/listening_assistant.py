@@ -966,7 +966,8 @@ class ListeningAssistantService:
 
             course_code = _text(_value(row, 'course_code', 'course_code_raw'))
             selection_code = _text(_value(row, 'selection_code', 'selection_code_raw'))
-            course_title = _text(_value(row, 'course_title', 'course_title_raw', 'course_name'))
+            course_title = _value(row, 'course_title', 'course_title_raw', 'course_name', default='')
+            identity_title = _text(course_title)
             teacher_college = _text(_value(row, 'teacher_college', 'teacher_college_raw'))
             source_batch_id = _optional_text(_value(row, 'source_batch_id', 'batch_id'))
             source_row = _value(row, 'source_row')
@@ -982,7 +983,7 @@ class ListeningAssistantService:
                     entry_id=entry_id,
                     selection_code=selection_code,
                     course_code=course_code,
-                    course_title=course_title,
+                    course_title=identity_title,
                     teacher=teacher,
                     teacher_college=teacher_college,
                     room=room,
@@ -997,7 +998,7 @@ class ListeningAssistantService:
                     room=room,
                     period=period,
                     course_code=course_code,
-                    course_title=course_title,
+                    course_title=identity_title,
                     teacher_name=teacher,
                     student_grade_class=student_grade_class,
                 )
@@ -1040,7 +1041,7 @@ class ListeningAssistantService:
             key=lambda candidate: (
                 candidate.period[0],
                 candidate.period[1],
-                candidate.course_title,
+                _text(candidate.course_title),
                 candidate.teacher_name,
                 candidate.needs_confirmation,
                 candidate.candidate_id,
@@ -1056,7 +1057,7 @@ class ListeningAssistantService:
                 candidate.period,
                 candidate.course_code,
                 candidate.selection_code,
-                candidate.course_title,
+                _text(candidate.course_title),
                 candidate.teacher_name,
                 candidate.teacher_college,
                 candidate.student_grade_class,

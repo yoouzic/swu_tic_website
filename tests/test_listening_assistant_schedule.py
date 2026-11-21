@@ -107,6 +107,36 @@ class ListeningAssistantScheduleTest(unittest.TestCase):
         with patch('app.services.schedule_snapshots._rows_for_batch', side_effect=AssertionError('raw snapshot must not be loaded')):
             self.assertEqual(len(load_schedule_entries(semester=SEMESTER)), 1)
 
+    def test_imported_course_title_preserves_roman_numeral_in_candidate_and_autofill(self):
+        from app.services.listening_assistant import ListeningAssistantService
+        from app.services.listening_assistant_evidence import safe_field_snapshot
+
+        source_title = '数字电子Ⅰ与实践(英文)'
+        indexed_title = '数字电子I与实践(英文)'
+        frame = schedule_frame()
+        frame.loc[0, '课程名称'] = source_title
+        self._persist(frame)
+        entry = ListeningAssistantScheduleEntry.query.one()
+        self.assertEqual(entry.course_title_raw, source_title)
+        self.assertEqual(entry.course_title, indexed_title)
+
+        def search_candidate():
+            result = ListeningAssistantService(semester=SEMESTER).search_partial({'date': '2026-09-30'})
+            self.assertEqual(len(result.candidates), 1)
+            return result.candidates[0]
+
+        candidate = search_candidate()
+        self.assertEqual(candidate.to_public_dict()['course_title'], source_title)
+        self.assertEqual(safe_field_snapshot(candidate, {})['course_title'], source_title)
+
+        # Legacy indexes may lack raw text. Their fallback stays available,
+        # and old confirmations still refer to the same candidate identity.
+        entry.course_title_raw = None
+        db.session.commit()
+        legacy_candidate = search_candidate()
+        self.assertEqual(legacy_candidate.course_title, indexed_title)
+        self.assertEqual(legacy_candidate.candidate_id, candidate.candidate_id)
+
     def test_memory_only_search_does_not_materialize_entire_index(self):
         from app.services.listening_assistant import ListeningAssistantService
         self._persist(schedule_frame())

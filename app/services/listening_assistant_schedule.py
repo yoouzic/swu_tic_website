@@ -488,7 +488,7 @@ def _as_contract(
         period=period,
         course_code=entry.course_code or '',
         selection_code=entry.selection_code or '',
-        course_title=entry.course_title or '',
+        course_title=(entry.course_title_raw or '').strip() or entry.course_title or '',
         teacher_name=entry.teacher_name or '',
         teacher_college=entry.teacher_college or '',
         student_grade_class=entry.student_grade_class or '',

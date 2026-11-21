@@ -54,7 +54,7 @@ function classConfirmationContext(currentClass, timetableClass) {
     storeAssistantPayload(){},rememberAssistantQueryContext(){},renderAll(){},setStatus(){},
     resetGuideState(){ctx.current=false;ctx.reset=true;},
   };
-  for(const name of ['fieldIsBlank','setBlankField','applyFieldSnapshot','confirmSelection'])loadFunction(name,ctx);
+  for(const name of ['comparableValue','fieldIsBlank','setBlankField','applyFieldSnapshot','confirmSelection'])loadFunction(name,ctx);
   return ctx;
 }
 
@@ -101,6 +101,39 @@ test('a confirmed course without class evidence does not erase the entered class
   const ctx=classConfirmationContext('2025机制01班','');
   await ctx.confirmSelection();
   assert.equal(ctx.fields.student_grade_class.value,'2025机制01班');
+});
+
+test('confirming a course restores the timetable spelling of an equivalent title',async()=>{
+  const ctx=classConfirmationContext('','');
+  ctx.fields.course_title.value='数字电子I与实践(英文)';
+  const sourceTitle='数字电子Ⅰ与实践（英文）';
+  ctx.requestJson=async()=>({field_snapshot:{course_title:sourceTitle}});
+  await ctx.confirmSelection();
+  assert.equal(ctx.fields.course_title.value,sourceTitle);
+  assert.ok(ctx.guideState.assistantFilledFields.has('course_title'));
+  assert.ok(ctx.events.includes('input'));
+});
+
+test('confirming a course retains a non-equivalent title already entered',async()=>{
+  const ctx=classConfirmationContext('','');
+  ctx.fields.course_title.value='数字电子Ⅱ与实践(英文)';
+  ctx.requestJson=async()=>({field_snapshot:{course_title:'数字电子Ⅰ与实践(英文)'}});
+  await ctx.confirmSelection();
+  assert.equal(ctx.fields.course_title.value,'数字电子Ⅱ与实践(英文)');
+  assert.ok(!ctx.events.includes('input'));
+});
+
+test('a course title edited without an input event is protected from a late confirmation',async()=>{
+  const ctx=classConfirmationContext('','');
+  let resolve;
+  ctx.requestJson=()=>new Promise(done=>{resolve=done;});
+  const confirming=ctx.confirmSelection();
+  ctx.fields.course_title.value='数字电子I与实践(英文)';
+  resolve({field_snapshot:{course_title:'数字电子Ⅰ与实践(英文)'}});
+  await confirming;
+  assert.equal(ctx.fields.course_title.value,'数字电子I与实践(英文)');
+  assert.equal(ctx.events.length,0);
+  assert.equal(ctx.reset,true);
 });
 
 test('skip sends an explicit nonfactual answer and retains a back-history entry',async()=>{

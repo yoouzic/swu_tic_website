@@ -97,7 +97,7 @@ class FrozenDict(dict):
     update = _reject_mutation
 
 
-def _text(value: object) -> str:
+def _text(value: object, *, compatibility: bool = True) -> str:
     """Return conservative Unicode/whitespace normalization for display text."""
     if value is None:
         return ''
@@ -107,8 +107,10 @@ def _text(value: object) -> str:
                 return ''
         except (OverflowError, ValueError):
             return ''
-    normalized = unicodedata.normalize('NFKC', str(value)).replace('\u3000', ' ')
-    return re.sub(r'\s+', ' ', normalized).strip()
+    text = str(value)
+    if compatibility:
+        text = unicodedata.normalize('NFKC', text)
+    return re.sub(r'\s+', ' ', text).strip()
 
 
 def _optional_text(value: object) -> str | None:
@@ -610,7 +612,6 @@ class ScheduleEntry:
         for field_name in (
             'course_code',
             'selection_code',
-            'course_title',
             'teacher_name',
             'teacher_college',
             'semester',
@@ -619,6 +620,8 @@ class ScheduleEntry:
             'source_label',
         ):
             object.__setattr__(self, field_name, _text(getattr(self, field_name)))
+        # A displayed title keeps the timetable's typography, including Ⅰ/Ⅱ.
+        object.__setattr__(self, 'course_title', _text(self.course_title, compatibility=False))
         object.__setattr__(
             self,
             'student_grade_class',
@@ -686,7 +689,6 @@ class Candidate:
             raise ValueError('period is invalid')
         object.__setattr__(self, 'period', normalized_period)
         for field_name in (
-            'course_title',
             'teacher_name',
             'teacher_college',
             'source_kind',
@@ -695,6 +697,7 @@ class Candidate:
             'selection_code',
         ):
             object.__setattr__(self, field_name, _text(getattr(self, field_name)))
+        object.__setattr__(self, 'course_title', _text(self.course_title, compatibility=False))
         object.__setattr__(
             self,
             'student_grade_class',

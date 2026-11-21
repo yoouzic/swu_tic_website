@@ -651,7 +651,11 @@
                 ['日期', form.querySelector('#lecture_date')?.value, candidate.lecture_date],
                 ['班级', form.querySelector('#student_grade_class')?.value, candidate.student_grade_class],
             ];
-            const differentRows = rows.filter(([, current, proposed]) => cleanText(current) && cleanText(proposed) && comparableValue(current) !== comparableValue(proposed));
+            const differentRows = rows.filter(([label, current, proposed]) => {
+                if (!cleanText(current) || !cleanText(proposed)) return false;
+                if (label === '课程') return cleanText(current) !== cleanText(proposed);
+                return comparableValue(current) !== comparableValue(proposed);
+            });
             elements.comparison.hidden = !differentRows.length;
             if (!differentRows.length) return;
             const table = document.createElement('table');
@@ -666,23 +670,16 @@
             table.appendChild(thead);
             const tbody = document.createElement('tbody');
             differentRows.forEach(([label, current, proposed]) => {
-                const currentValue = cleanText(current) || '未填写';
-                const proposedValue = cleanText(proposed) || '未提供';
-                const differs = currentValue !== '未填写'
-                    && proposedValue !== '未提供'
-                    && comparableValue(currentValue) !== comparableValue(proposedValue);
                 const row = document.createElement('tr');
-                if (differs) {
-                    row.className = 'listening-assistant__comparison-different';
-                }
+                row.className = 'listening-assistant__comparison-different';
                 appendText(row, 'th', '', label);
-                appendText(row, 'td', '', currentValue);
-                appendText(row, 'td', '', proposedValue);
+                appendText(row, 'td', '', cleanText(current));
+                appendText(row, 'td', '', cleanText(proposed));
                 tbody.appendChild(row);
             });
             table.appendChild(tbody);
             elements.comparison.appendChild(table);
-            appendText(elements.comparison, 'p', 'listening-assistant__review-hint', '确认后，班级按所选课表记录回填；其他已填写内容保留，请核对差异。');
+            appendText(elements.comparison, 'p', 'listening-assistant__review-hint', '确认后班级按课表回填。同一课程名称的不同写法会统一为课表写法。');
         }
 
         function renderCandidateConfirm() {
@@ -1433,8 +1430,15 @@
                 ['lecture_location', 'lecture_location'],
                 ['teacher_name', 'teacher_name'],
                 ['teacher_college', 'teacher_college'],
-                ['course_title', 'course_title'],
             ].forEach(([id, key]) => setBlankField(id, snapshot[key], changed));
+            const courseInput = form.querySelector('#course_title');
+            const sourceTitle = cleanText(snapshot.course_title);
+            if (courseInput && sourceTitle && courseInput.value !== sourceTitle &&
+                (fieldIsBlank(courseInput) || comparableValue(courseInput.value) === comparableValue(sourceTitle))) {
+                courseInput.value = sourceTitle;
+                changed.push(courseInput);
+                guideState.assistantFilledFields.add('course_title');
+            }
             // The user has explicitly confirmed this freshly verified course.
             // Align the class with its timetable row, whether short or full.
             const classInput = form.querySelector('#student_grade_class');
@@ -1566,18 +1570,20 @@
                 return;
             }
             const requestPayload = buildConfirmationPayload(candidate);
-            const classInputAtRequest = form.querySelector('#student_grade_class');
-            const classValueAtRequest = classInputAtRequest?.value;
+            const fieldsAtRequest = ['#student_grade_class', '#course_title'].map(selector => {
+                const element = form.querySelector(selector);
+                return {selector, element, value: element?.value};
+            });
             const request = beginRequest();
             setBusy(elements.confirm, true, '确认中…');
             try {
                 const data = await requestJson(GUIDE_ENDPOINTS.confirm, requestPayload, request);
                 if (!isCurrentRequest(request.requestId)) return;
-                if (form.querySelector('#student_grade_class') !== classInputAtRequest ||
-                    classInputAtRequest?.value !== classValueAtRequest) {
+                if (fieldsAtRequest.some(({selector, element, value}) =>
+                    form.querySelector(selector) !== element || element?.value !== value)) {
                     resetGuideState();
                     renderAll();
-                    setStatus('班级已修改，当前输入已保留，请重新核对课程。', 'info');
+                    setStatus('课程名称或班级已修改，当前输入已保留，请重新核对课程。', 'info');
                     return;
                 }
                 guideState.applyingSnapshot = true;
