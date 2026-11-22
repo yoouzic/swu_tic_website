@@ -5,7 +5,7 @@ from functools import wraps
 from flask import flash, jsonify, redirect, request, session, url_for
 
 from app.models import User, db
-from app.utils.operation_log import form_write_operation, mark_form_failure
+from app.utils.operation_log import form_write_operation, mark_form_failure, photo_write_operation
 from app.utils.permission_feedback import (
     flash_forbidden,
     forbidden_json,
@@ -84,8 +84,10 @@ def submission_required(*, api=False, methods=None):
             user_id = session.get('user_id')
             user = db.session.get(User, user_id) if user_id is not None else None
             if user is None or not is_user_active(user):
-                if form_write_operation():
+                form_operation = form_write_operation()
+                if form_operation:
                     request.environ['swu_tic.form_actor_id'] = user_id
+                if form_operation or photo_write_operation():
                     mark_form_failure('login_required' if user_id is None else 'account_unavailable')
                 if user_id is not None:
                     session.clear()
@@ -97,7 +99,7 @@ def submission_required(*, api=False, methods=None):
             if guarded_methods is not None and request.method not in guarded_methods:
                 return view(*args, **kwargs)
             if not can_submit_lecture_form(user):
-                if form_write_operation():
+                if form_write_operation() or photo_write_operation():
                     mark_form_failure('submission_forbidden')
                 message = '当前账号没有个人填报权限，请返回工作台或联系管理员。'
                 if api:

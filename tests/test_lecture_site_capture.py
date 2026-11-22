@@ -88,26 +88,71 @@ def test_autosave_preserves_photo_and_cannot_forge_binding(setup_capture):
 
 def test_invalid_photo_is_rejected_without_creating_record(setup_capture):
     case=setup_capture
-    response=case.client.post('/user/api/site-capture',data={'photo':(io.BytesIO(b'not an image'),'a.jpg')})
+    errors=io.StringIO()
+    response=case.client.post('/user/api/site-capture',
+        data={'photo':(io.BytesIO(b'private-image-bytes'),'private-filename.jpg')},
+        environ_overrides={'wsgi.errors':errors})
     assert response.status_code==400
     assert LectureSiteCapture.query.count()==0
+    assert errors.getvalue().splitlines()==['photo_upload_failed reason=photo_invalid record=-']
 
 
 def test_ocr_failure_still_saves_photo_and_existing_review(setup_capture):
     case=setup_capture
     case.client.put('/user/api/lecture_form_draft',json={'data':{'course_feedback':'已经写的评价'}})
-    with mock.patch('app.services.lecture_site_capture.recognize_door',side_effect=RuntimeError('offline engine unavailable')):
-        result=case.client.post('/user/api/site-capture',data={'photo':(photo(),'a.jpg')})
+    errors=io.StringIO()
+    with mock.patch.object(case.app.logger,'error') as app_error, mock.patch(
+        'app.services.lecture_site_capture.recognize_door',side_effect=RuntimeError('private-ocr-result'),
+    ):
+        result=case.client.post('/user/api/site-capture',
+            data={'photo':(photo(),'private-filename.jpg'),'location':'{"latitude":29.82,"longitude":106.43,"accuracy":35}'},
+            environ_overrides={'wsgi.errors':errors})
     assert result.status_code==201
-    assert result.get_json()['data']['ocr_status']=='unavailable'
+    record=result.get_json()['data']
+    assert record['ocr_status']=='unavailable'
+    assert errors.getvalue().splitlines()==[f"photo_ocr_failed reason=ocr_unavailable record=capture:{record['id']}"]
+    app_error.assert_not_called()
     assert case.client.get('/user/api/lecture_form_draft').get_json()['data']['course_feedback']=='已经写的评价'
 
 
 def test_new_capture_does_not_silently_replace_existing_draft_photo(setup_capture):
     case=setup_capture;first=upload(case).get_json()['data']
-    assert upload(case).status_code==409
+    errors=io.StringIO()
+    assert case.client.post('/user/api/site-capture',data={'photo':(photo(),'a.jpg')},
+        environ_overrides={'wsgi.errors':errors}).status_code==409
+    assert errors.getvalue().splitlines()==[f"photo_upload_failed reason=existing_photo record=capture:{first['id']}"]
     assert LectureSiteCapture.query.count()==1
     assert case.client.get('/user/api/lecture_form_draft').get_json()['data']['site_capture_id']==first['id']
+
+
+@pytest.mark.parametrize('status,expected_failure',[('unrecognized',True),('needs_check',False)])
+def test_upload_logs_no_door_read_but_not_manual_confirmation(setup_capture,status,expected_failure):
+    case=setup_capture
+    errors=io.StringIO()
+    with mock.patch('app.services.lecture_site_capture.recognize_door',
+                    return_value={'room_number':None,'status':status,'alternatives':[]}):
+        response=case.client.post('/user/api/site-capture',data={'photo':(photo(),'a.jpg')},
+            environ_overrides={'wsgi.errors':errors})
+    assert response.status_code==201
+    capture_id=response.get_json()['data']['id']
+    expected=[f'photo_ocr_failed reason=door_not_read record=capture:{capture_id}'] if expected_failure else []
+    assert errors.getvalue().splitlines()==expected
+
+
+def test_photo_storage_failure_omits_paths_and_keeps_the_saved_draft_reference(setup_capture):
+    case=setup_capture
+    assert case.client.put('/user/api/lecture_form_draft',json={'data':{'course_feedback':'saved draft'}}).status_code==200
+    draft_id=LectureFormDraft.query.filter_by(user_id=case.user.id).one().id
+    image=photo()
+    errors=io.StringIO()
+    with mock.patch.dict(case.app.config,{'PROPAGATE_EXCEPTIONS':False}), mock.patch(
+        'PIL.Image.Image.save',side_effect=OSError('private-storage-path'),
+    ), mock.patch.object(case.app.logger,'error') as app_error:
+        response=case.client.post('/user/api/site-capture',data={'photo':(image,'a.jpg')},
+            environ_overrides={'wsgi.errors':errors})
+    assert response.status_code==500
+    assert errors.getvalue().splitlines()==[f'photo_upload_failed reason=photo_storage_failed record=draft:{draft_id}']
+    app_error.assert_not_called()
 
 
 def test_missing_photo_and_forged_version_do_not_bypass_trial_requirement(setup_capture):

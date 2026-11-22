@@ -112,15 +112,37 @@ def test_region_retry_preserves_photo_and_does_not_confirm_room(setup_capture):
 
 
 def test_region_retry_failure_and_foreign_record_leave_evidence_intact(setup_capture):
+    from io import StringIO
+
     case=setup_capture;record,service=prepare(case);original=record.ocr_alternatives_json
     path=f'/user/api/site-capture/{record.id}/ocr-region'
-    with mock.patch('app.services.lecture_site_capture.recognize_door',side_effect=RuntimeError('offline')):
-        assert case.client.post(path,json={'region':{}}).status_code==503
+    errors=StringIO()
+    output={'wsgi.errors':errors}
+    with mock.patch.object(case.app.logger,'error') as app_error, mock.patch(
+        'app.services.lecture_site_capture.recognize_door',side_effect=RuntimeError('private-ocr-result'),
+    ):
+        assert case.client.post(path,json={'region':{}},environ_overrides=output).status_code==503
+    app_error.assert_not_called()
+    region={'x':0,'y':0,'width':0,'height':1}
+    assert case.client.post(path,json={'region':region},environ_overrides=output).status_code==400
+    with mock.patch('app.services.lecture_site_capture.recognize_door',
+                    side_effect=ValueError('private-ocr-engine-output')):
+        assert case.client.post(path,json={'region':{}},environ_overrides=output).status_code==400
     assert record.ocr_alternatives_json==original
+    with mock.patch('app.services.lecture_site_capture.recognize_door',return_value={'hypotheses':[]}):
+        assert case.client.post(path,json={'region':{}},environ_overrides=output).status_code==200
     record.confirmed_candidate_id='already-confirmed';db.session.commit()
-    assert case.client.post(path,json={'region':{}}).status_code==409
+    assert case.client.post(path,json={'region':{}},environ_overrides=output).status_code==409
     case._login_as(case.other_user)
-    assert case.client.post(path,json={'region':{}}).status_code==404
+    assert case.client.post(path,json={'region':{}},environ_overrides=output).status_code==404
+    assert errors.getvalue().splitlines()==[
+        f'photo_ocr_failed reason=ocr_unavailable record=capture:{record.id}',
+        f'photo_ocr_failed reason=ocr_region_invalid record=capture:{record.id}',
+        f'photo_ocr_failed reason=ocr_unavailable record=capture:{record.id}',
+        f'photo_ocr_failed reason=door_not_read record=capture:{record.id}',
+        f'photo_ocr_failed reason=capture_locked record=capture:{record.id}',
+        'photo_ocr_failed reason=capture_unavailable record=-',
+    ]
 
 
 def test_map_is_private_read_only_and_retains_unmapped_buildings(setup_capture):

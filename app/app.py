@@ -10,7 +10,10 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from app.utils.env_config import env_bool, env_int, env_path, env_value, is_production
-from app.utils.operation_log import form_write_operation, log_form_write_failure, mark_form_failure
+from app.utils.operation_log import (
+    form_write_operation, log_form_write_failure, log_photo_write_failure,
+    mark_form_failure, photo_write_operation,
+)
 from app.models import db
 
 DEFAULT_INSTANCE_DIR = os.path.join('data', 'instance')
@@ -33,6 +36,9 @@ class ListeningApp(Flask):
     def log_exception(self, exc_info):
         if form_write_operation():
             mark_form_failure('internal_error', error=exc_info[1])
+        elif photo_write_operation():
+            if 'swu_tic.form_failure' not in request.environ:
+                mark_form_failure('internal_error')
         else:
             super().log_exception(exc_info)
 
@@ -155,11 +161,12 @@ def create_app(config_override: dict | None = None):
         ensure_review_read_receipt_schema()
     csrf.init_app(app)
     app.after_request(log_form_write_failure)
+    app.after_request(log_photo_write_failure)
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(error):
         """Return JSON for API/fetch CSRF failures; keep normal pages safe and simple."""
-        operation = form_write_operation()
+        operation = form_write_operation() or photo_write_operation()
         if operation or (request.endpoint == 'auth.login' and request.method == 'POST'):
             result = ('csrf_session_missing' if error.description == 'The CSRF session token is missing.'
                       else 'csrf_rejected')

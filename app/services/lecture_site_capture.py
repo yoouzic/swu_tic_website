@@ -15,6 +15,10 @@ PERIODS = (('08:00','08:45'),('08:55','09:40'),('10:00','10:45'),('10:55','11:40
 _ocr_lock = Lock()
 
 
+class InvalidOcrRegion(ValueError):
+    """The selected rectangle cannot be used for door OCR."""
+
+
 def ensure_capture_schema():
     from sqlalchemy import inspect, text
     from app.models import db, LectureSiteCapture
@@ -77,12 +81,12 @@ def recognize_door(path, *, region=None):
     image = ImageOps.exif_transpose(Image.open(path)).convert('RGB')
     if region is not None:
         if not isinstance(region,dict) or set(region)!={'x','y','width','height'}:
-            raise ValueError('请框选门牌所在区域。')
+            raise InvalidOcrRegion('请框选门牌所在区域。')
         x,y,w,h=(region[k] for k in ('x','y','width','height'))
         if (any(type(v) not in (int,float) or not math.isfinite(v) for v in (x,y,w,h))
                 or min(x,y)<0 or min(w,h)<=0 or x+w>1.000001 or y+h>1.000001
                 or w*image.width<12 or h*image.height<12):
-            raise ValueError('框选区域过小或超出照片，请重新框选。')
+            raise InvalidOcrRegion('框选区域过小或超出照片，请重新框选。')
         image=image.crop((round(x*image.width),round(y*image.height),
                           round((x+w)*image.width),round((y+h)*image.height)))
     array = np.asarray(image)[:, :, ::-1].copy()

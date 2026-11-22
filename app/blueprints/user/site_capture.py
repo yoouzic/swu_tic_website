@@ -19,13 +19,17 @@ from app.services.schedule_availability import current_schedule_availability
 from app.services.lecture_form_draft_concurrency import (LectureFormDraftConflict,
     save_lecture_form_draft_atomic, get_draft_revision)
 from app.utils.draft_revision import require_draft_revision
+from app.utils.operation_log import begin_uploaded_photo_ocr, mark_form_failure, photo_write_operation, set_form_record
 from . import user_bp
 from .forms import _load_lecture_form_draft, _parse_draft_payload, LECTURE_FORM_DRAFT_KEY
 from .listening_assistant import _assistant_login_required
 
 
 def _enabled():
-    if not current_app.config.get('LECTURE_CAPTURE_ENABLED'):abort(404)
+    if not current_app.config.get('LECTURE_CAPTURE_ENABLED'):
+        if photo_write_operation():
+            mark_form_failure('capture_disabled')
+        abort(404)
 
 
 def _folder():
@@ -121,13 +125,18 @@ def site_capture_map(user,capture_id):
 def site_capture_upload(user):
     _enabled()
     draft,payload=_draft(user)
+    if draft.id is not None:
+        set_form_record('draft', draft.id)
     require_draft_revision(user.id, LECTURE_FORM_DRAFT_KEY, draft)
     replacing = request.form.get('replace_capture_id')
     existing_id=payload.get('site_capture_id')
     old=_owned(existing_id,user) if existing_id else None
     new_record=request.form.get('new_record')=='1'
+    if old and not new_record:
+        set_form_record('capture', old.id)
     if existing_id and not new_record and (str(existing_id)!=replacing or old.form_id):
         db.session.rollback()
+        mark_form_failure('existing_photo')
         return jsonify(success=False,message='本次听课已有照片，请先完成或新建表单。'),409
     if new_record and old:
         previous_payload=dict(payload)
@@ -135,9 +144,13 @@ def site_capture_upload(user):
         payload.pop('site_capture_id',None)
         payload['listener_number']=user.number
     photo=request.files.get('photo')
-    if not photo:return jsonify(success=False,message='请先拍摄门牌。'),400
+    if not photo:
+        mark_form_failure('photo_missing')
+        return jsonify(success=False,message='请先拍摄门牌。'),400
     raw=photo.stream.read(6*1024*1024+1)
-    if len(raw)>6*1024*1024:return jsonify(success=False,message='照片过大，请靠近门牌重新拍摄。'),413
+    if len(raw)>6*1024*1024:
+        mark_form_failure('photo_too_large')
+        return jsonify(success=False,message='照片过大，请靠近门牌重新拍摄。'),413
     try:
         from PIL import Image, ImageOps
         image=Image.open(io.BytesIO(raw))
@@ -145,15 +158,20 @@ def site_capture_upload(user):
         image=ImageOps.exif_transpose(image).convert('RGB');image.thumbnail((1600,1600))
     except Exception:
         db.session.rollback()
+        mark_form_failure('photo_invalid')
         return jsonify(success=False,message='照片无法读取，请重新拍摄。'),400
     received=capture_service.now_at_site()
     try:location=capture_service.normalize_photo_location_evidence(
         json.loads(request.form.get('location') or '{}'),
         received_at=received.isoformat(),captured_at=request.form.get('captured_at'))
     except (ValueError,TypeError):location={}
-    folder=_folder();folder.mkdir(parents=True,exist_ok=True)
-    key=f'{uuid.uuid4().hex}.jpg';path=folder/key
-    image.save(path,'JPEG',quality=88)
+    try:
+        folder=_folder();folder.mkdir(parents=True,exist_ok=True)
+        key=f'{uuid.uuid4().hex}.jpg';path=folder/key
+        image.save(path,'JPEG',quality=88)
+    except OSError:
+        mark_form_failure('photo_storage_failed')
+        raise
     # Commit evidence and draft before OCR. A failed OCR never rolls back the photo.
     record=LectureSiteCapture(user_id=user.id,photo_key=key,received_at=received.isoformat(),
         location_json=json.dumps(location),period_number=capture_service.infer_period(received.strftime('%H:%M')))
@@ -165,7 +183,8 @@ def site_capture_upload(user):
     except ValueError:pass
     try:
         db.session.add(record);db.session.flush()
-        payload['site_capture_id']=record.id
+        capture_id=record.id
+        payload['site_capture_id']=capture_id
         payload['lecture_date']=record.received_at[:10]
         payload.pop('assistant',None)
         for field in ('teacher_name','teacher_college','course_title','student_grade_class','lecture_location','start_period','end_period','class_period'):
@@ -179,18 +198,19 @@ def site_capture_upload(user):
         db.session.commit()
     except LectureFormDraftConflict:
         db.session.rollback();path.unlink(missing_ok=True)
+        mark_form_failure('draft_conflict')
         return jsonify(success=False,code='draft_conflict',message='听课草稿已更新，请保留当前输入并刷新后重新拍摄。'),409
     except Exception:
+        mark_form_failure('capture_save_failed')
         db.session.rollback();path.unlink(missing_ok=True);raise
+    begin_uploaded_photo_ocr(capture_id)
     try:ocr=capture_service.recognize_door(path)
     except Exception:
-        current_app.logger.exception('Door OCR unavailable for capture %s',record.id)
         ocr={'room_number':None,'status':'unavailable','alternatives':[]}
     # The upload may outlive the browser timeout. A recovered draft can already
     # have a human classroom, confirmed course, submitted form, or newer photo.
     # Compare persisted state in the UPDATE itself; a refreshed ORM object alone
     # would still allow another request to change it before this commit.
-    capture_id=record.id
     db.session.query(LectureSiteCapture).filter(
         LectureSiteCapture.id==capture_id,
         LectureSiteCapture.form_id.is_(None),
@@ -206,7 +226,12 @@ def site_capture_upload(user):
     },synchronize_session=False)
     db.session.commit()
     db.session.refresh(record)
-    return jsonify(success=True,data=_public(record),draft_revision=written_revision),201
+    response=jsonify(success=True,data=_public(record),draft_revision=written_revision)
+    if ocr['status']=='unavailable':
+        mark_form_failure('ocr_unavailable')
+    elif ocr['status']=='unrecognized':
+        mark_form_failure('door_not_read')
+    return response,201
 
 
 @user_bp.route('/api/site-capture/<int:capture_id>',methods=['GET','PATCH'])
@@ -269,23 +294,30 @@ def site_capture_photo(user,capture_id):
 def site_capture_ocr_region(user,capture_id):
     from app.services.site_context_model import normalize_hypotheses
     _enabled();record=_owned(capture_id,user)
+    set_form_record('capture', record.id)
     if record.form_id or record.is_archived or record.confirmed_candidate_id:
+        mark_form_failure('capture_locked')
         return jsonify(success=False,message='请先修改已确认的教室，或新建记录后再识别。'),409
     body=request.get_json(silent=True)
     if not isinstance(body,dict) or not isinstance(body.get('region'),dict):
+        mark_form_failure('ocr_region_invalid')
         return jsonify(success=False,message='请框选门牌所在区域。'),400
     try:
         ocr=capture_service.recognize_door(_folder()/record.photo_key,region=body['region'])
     except ValueError as error:
+        mark_form_failure('ocr_region_invalid' if isinstance(error,capture_service.InvalidOcrRegion)
+                          else 'ocr_unavailable')
         return jsonify(success=False,message=str(error)),400
     except Exception:
-        current_app.logger.exception('Region OCR unavailable for capture %s',record.id)
+        mark_form_failure('ocr_unavailable')
         return jsonify(success=False,message='识别暂不可用，原照片已保留，可手填门牌或重拍。'),503
     # OCR can be slow; recheck persisted state before updating machine evidence.
     db.session.refresh(record)
     if record.form_id or record.is_archived or record.confirmed_candidate_id:
+        mark_form_failure('capture_changed')
         return jsonify(success=False,message='记录已更新，请重新打开。'),409
     if not ocr.get('hypotheses'):
+        mark_form_failure('door_not_read')
         return jsonify(success=True,data=_public(record),message='仍未读出门牌，请靠近重拍或手动输入。')
     old=capture_service.decode_ocr_evidence(record.ocr_alternatives_json)['hypotheses']
     hypotheses=normalize_hypotheses(old+ocr['hypotheses'])
