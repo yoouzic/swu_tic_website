@@ -17,9 +17,11 @@
 {% block content %}
 {{ page_header('修改被驳回的听课表' if is_rejected_form else '填写听课表单') }}
 {% if is_rejected_form %}
-<section class="app-message app-message--danger d-block mb-4" aria-labelledby="lectureRejectionTitle">
-    <h2 class="h6 mb-1" id="lectureRejectionTitle"><i class="bi bi-exclamation-circle me-1" aria-hidden="true"></i> 驳回原因</h2>
-    <p class="lecture-rejection-reason mb-0 text-body">{{ form.review_comment | default('', true) | trim or '审核人未填写驳回原因。' }}</p>
+<section class="surface-panel p-3 mb-4" aria-labelledby="lectureRejectionTitle">
+    <div class="rejection-heading">
+        <h2 class="h6 mb-1" id="lectureRejectionTitle">驳回原因</h2>
+        <p class="lecture-rejection-reason mb-0">{{ form.review_comment | default('', true) | trim or '审核人未填写驳回原因。' }}</p>
+    </div>
 </section>
 {% endif %}
 <div class="lecture-form-layout">

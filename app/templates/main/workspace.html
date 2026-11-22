@@ -9,8 +9,7 @@
     {% if workspace.rejected_forms %}
     <section class="workspace-panel workspace-rejections" aria-labelledby="workspaceRejectionsTitle">
         <div class="workspace-panel__header workspace-rejections__header">
-            <span class="workspace-rejections__icon" aria-hidden="true"><i class="bi bi-exclamation-circle"></i></span>
-            <div>
+            <div class="rejection-heading">
                 <h2 id="workspaceRejectionsTitle">你有 {{ workspace.rejected_forms | length }} 份听课表被驳回</h2>
                 <p>请查看驳回原因，修改后重新提交审核。</p>
             </div>
@@ -20,11 +19,11 @@
             <li class="workspace-task">
                 <div class="workspace-rejections__details">
                     <h3>{{ item.course_title }}</h3>
-                    <p>{{ item.teacher_name }} · {{ item.lecture_date }} · {{ item.class_period }}</p>
+                    <p>{{ item.teacher_name }} · {{ item.lecture_date }} <span class="text-nowrap">· {{ item.class_period }}</span></p>
                 </div>
                 <a href="{{ url_for('user.edit_form', form_id=item.id) }}" class="btn btn-outline-primary workspace-rejections__action"
                    aria-label="修改并重提 {{ item.course_title }}（{{ item.teacher_name }}，{{ item.lecture_date }} {{ item.class_period }}）">
-                    修改并重提 <i class="bi bi-arrow-right" aria-hidden="true"></i>
+                    修改并重提
                 </a>
             </li>
             {% endfor %}
