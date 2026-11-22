@@ -705,6 +705,8 @@ body,.public-shell,.app-sidebar,.workspace > .page-header { background-size: var
     .workspace-metrics { grid-template-columns: 1fr 1fr; gap: 10px; }
     .workspace-metric { padding: 18px; }
     .workspace-task { padding: 18px; flex-wrap: wrap; }
+    .workspace-rejections .workspace-task { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+    .workspace-rejections__action { justify-self: end; white-space: nowrap; }
     .activity-panel__header--split { align-items: stretch; flex-direction: column; }
     .activity-panel__header .btn { width: 100%; }
     .course-summary { grid-template-columns: 1fr; }
