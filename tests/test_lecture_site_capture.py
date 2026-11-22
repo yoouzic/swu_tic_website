@@ -296,6 +296,17 @@ def test_late_location_only_improves_owned_recent_record(setup_capture):
 def test_location_update_rejects_old_record_and_invalid_accuracy(setup_capture):
     case=setup_capture;capture=upload(case).get_json()['data'];record=db.session.get(LectureSiteCapture,capture['id'])
     path=f"/user/api/site-capture/{record.id}/location"
-    assert case.client.patch(path,json={'location':{'latitude':29.82,'longitude':106.43,'accuracy':0}}).status_code==400
+    errors=io.StringIO()
+    output={'wsgi.errors':errors}
+    assert case.client.patch(path,json={'location':{'latitude':29.82,'longitude':106.43,'accuracy':0}},
+        environ_overrides=output).status_code==400
+    assert case.client.patch(path,json={'location':{'latitude':29.82,'longitude':106.43,'accuracy':8,'timestamp':0}},
+        environ_overrides=output).status_code==400
     record.received_at=(datetime.now(timezone(timedelta(hours=8)))-timedelta(minutes=2)).isoformat();db.session.commit()
-    assert case.client.patch(path,json={'location':{'latitude':29.82,'longitude':106.43,'accuracy':8}}).status_code==409
+    assert case.client.patch(path,json={'location':{'latitude':29.82,'longitude':106.43,'accuracy':8}},
+        environ_overrides=output).status_code==409
+    assert errors.getvalue().splitlines()==[
+        f'location_failed reason=location_invalid record=capture:{record.id}',
+        f'location_failed reason=location_sample_rejected record=capture:{record.id}',
+        f'location_failed reason=location_window_expired record=capture:{record.id}',
+    ]

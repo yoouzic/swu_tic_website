@@ -1,5 +1,6 @@
 import json
 from datetime import date, datetime, timezone, timedelta
+from io import StringIO
 from unittest import mock
 
 from tests.test_lecture_site_capture import setup_capture, upload
@@ -68,13 +69,38 @@ def test_suggestion_endpoint_rejects_other_user_and_invalid_facts(setup_capture)
 def test_missing_primary_source_retains_photo_and_manual_path(setup_capture):
     from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
     case=setup_capture;record,service=prepare(case)
+    errors=StringIO()
     service.search_partial=mock.Mock(side_effect=ScheduleSourceUnavailable(status='missing'))
     with mock.patch('app.blueprints.user.site_capture.ListeningAssistantService',return_value=service):
-        response=case.client.get(f'/user/api/site-capture/{record.id}/suggestions')
+        response=case.client.get(f'/user/api/site-capture/{record.id}/suggestions',
+                                 environ_overrides={'wsgi.errors':errors})
     assert response.status_code==200
     assert response.get_json()['data']['source_unavailable'] is True
     assert response.get_json()['data']['manual_available'] is True
     assert case.client.get(f'/user/api/site-capture/{record.id}/photo').status_code==200
+    assert errors.getvalue().splitlines()==[
+        f'course_match_failed reason=schedule_source_unavailable record=capture:{record.id}',
+    ]
+
+
+def test_site_matching_logs_empty_result_and_sanitizes_unhandled_errors(setup_capture):
+    case=setup_capture;record,_=prepare(case)
+    path=f'/user/api/site-capture/{record.id}/suggestions'
+    errors=StringIO()
+    output={'wsgi.errors':errors}
+    empty=ListeningAssistantService(schedule_loader=lambda **kwargs:[],semester='2025-2026-2')
+    with mock.patch('app.blueprints.user.site_capture.ListeningAssistantService',return_value=empty):
+        assert case.client.get(path,environ_overrides=output).get_json()['data']['candidates']==[]
+    with mock.patch('app.blueprints.user.site_capture.ListeningAssistantService',
+                    side_effect=RuntimeError('private-course-and-position')), mock.patch.dict(
+        case.app.config,{'PROPAGATE_EXCEPTIONS':False},
+    ), mock.patch.object(case.app.logger,'error') as app_error:
+        assert case.client.get(path,environ_overrides=output).status_code==500
+    app_error.assert_not_called()
+    assert errors.getvalue().splitlines()==[
+        f'course_match_failed reason=course_not_found record=capture:{record.id}',
+        f'course_match_failed reason=internal_error record=capture:{record.id}',
+    ]
 
 
 def test_ranked_card_must_use_existing_context_and_confirmation_revalidation(setup_capture):
@@ -112,8 +138,6 @@ def test_region_retry_preserves_photo_and_does_not_confirm_room(setup_capture):
 
 
 def test_region_retry_failure_and_foreign_record_leave_evidence_intact(setup_capture):
-    from io import StringIO
-
     case=setup_capture;record,service=prepare(case);original=record.ocr_alternatives_json
     path=f'/user/api/site-capture/{record.id}/ocr-region'
     errors=StringIO()

@@ -16,14 +16,27 @@ _FORM_WRITE_OPERATIONS = {
     ('user.lecture_form_draft', 'PUT'): 'draft_save',
     ('user.submit_form', 'POST'): 'form_submit',
 }
-_PHOTO_WRITE_OPERATIONS = {
+_PRIVATE_OPERATIONS = {
     ('user.site_capture_upload', 'POST'): 'photo_upload',
     ('user.site_capture_ocr_region', 'POST'): 'photo_ocr',
+    ('user.site_capture_location', 'PATCH'): 'location',
+    ('user.site_capture_map', 'GET'): 'location',
+    ('user.site_capture_context', 'PATCH'): 'course_match',
+    ('user.site_capture_suggestions', 'GET'): 'course_match',
+    ('user.site_capture_suggestions', 'POST'): 'course_match',
+    ('user.site_capture_confirm', 'POST'): 'course_match',
+    ('user.listening_assistant_candidates', 'GET'): 'course_match',
+    ('user.listening_assistant_guide_start', 'POST'): 'course_match',
+    ('user.listening_assistant_guide_answer', 'POST'): 'course_match',
+    ('user.listening_assistant_confirm', 'POST'): 'course_match',
+    ('user.listening_assistant_fallback', 'POST'): 'course_match',
 }
 
-_PHOTO_HTTP_REASONS = {
+_PRIVATE_HTTP_REASONS = {
+    400: 'request_invalid',
+    401: 'login_required',
+    403: 'permission_denied',
     404: 'capture_unavailable',
-    413: 'photo_too_large',
 }
 
 
@@ -31,8 +44,8 @@ def form_write_operation():
     return _FORM_WRITE_OPERATIONS.get((request.endpoint, request.method))
 
 
-def photo_write_operation():
-    return request.environ.get('swu_tic.photo_operation') or _PHOTO_WRITE_OPERATIONS.get(
+def private_failure_operation():
+    return request.environ.get('swu_tic.photo_operation') or _PRIVATE_OPERATIONS.get(
         (request.endpoint, request.method),
     )
 
@@ -79,14 +92,21 @@ def log_form_write_failure(response):
     return response
 
 
-def log_photo_write_failure(response):
-    operation = photo_write_operation()
+def log_private_failure(response):
+    operation = private_failure_operation()
     failure = request.environ.get('swu_tic.form_failure')
     status = response.status_code
     if operation is None or (failure is None and status < 400):
         return response
 
-    reason = failure[0] if failure else _PHOTO_HTTP_REASONS.get(status, f'http_{status}')
+    if failure:
+        reason = failure[0]
+    elif operation == 'course_match' and status == 503:
+        reason = 'schedule_source_unavailable'
+    elif operation == 'photo_upload' and status == 413:
+        reason = 'photo_too_large'
+    else:
+        reason = _PRIVATE_HTTP_REASONS.get(status, f'http_{status}')
     operation_logger.log(
         logging.ERROR if status >= 500 or reason == 'ocr_unavailable' else logging.INFO,
         '%s_failed reason=%s record=%s',

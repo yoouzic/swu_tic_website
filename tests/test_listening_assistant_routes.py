@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from datetime import date, datetime
+from io import StringIO
 from unittest import mock
 
 from werkzeug.security import generate_password_hash
@@ -135,6 +136,20 @@ class ListeningAssistantRoutesTest(unittest.TestCase):
             sess['user_id'] = user.id
             sess['user_role'] = user.role
             sess['user_name'] = user.name
+
+    def test_candidate_search_logs_no_match_without_query_values(self):
+        self._login()
+        errors = StringIO()
+        response = self.client.get(
+            '/user/api/listening-assistant/candidates',
+            query_string={'date': LOOKUP_DATE.isoformat(), 'teacher': 'private-query-marker'},
+            environ_overrides={'wsgi.errors': errors},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['data']['candidates'], [])
+        self.assertEqual(errors.getvalue().splitlines(), [
+            'course_match_failed reason=course_not_found record=-',
+        ])
 
     def test_form_uses_configured_semester_without_student_settings(self):
         self._login()

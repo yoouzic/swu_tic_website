@@ -34,6 +34,7 @@ from app.services.listening_assistant_evidence import (
 )
 from app.services.schedule_snapshots import resolve_current_schedule_snapshot
 from app.services.academic_term import get_current_teaching_semester
+from app.utils.operation_log import mark_form_failure, private_failure_operation
 from app.utils.user_status import is_user_active
 
 from . import user_bp
@@ -122,6 +123,8 @@ def _assistant_login_required(view):
 
         user = db.session.get(User, user_id)
         if not user or not is_user_active(user):
+            if private_failure_operation():
+                mark_form_failure('account_unavailable')
             session.clear()
             return _error_response('账号已离任或不可用', 401)
         return view(user, *args, **kwargs)
@@ -487,6 +490,8 @@ def listening_assistant_guide_start(user):
         if _is_expected_guide_value_error(error):
             return _error_response(str(error) or '请求参数无效', 400)
         raise
+    if result.state.stage == 'manual' and not result.candidates:
+        mark_form_failure('course_not_found')
     return _envelope(True, _public_guide_result(result, semester), '引导已开始')
 
 
@@ -527,6 +532,9 @@ def listening_assistant_guide_answer(user):
         if _is_expected_guide_value_error(error):
             return _error_response(str(error) or '请求参数无效', 400)
         raise
+    if (result.state.stage == 'manual' and not result.candidates
+            and result.state.known_facts != state.known_facts):
+        mark_form_failure('course_not_found')
     return _envelope(True, _public_guide_result(result, semester), '引导答案已处理')
 
 
@@ -597,6 +605,8 @@ def listening_assistant_candidates(user):
             error.message,
         ), 503
     data = result.to_public_dict()
+    if not result.candidates:
+        mark_form_failure('course_not_found')
     if backup_source_batch_id is not None:
         data['backup_source_batch_id'] = str(backup_source_batch_id)
     return _envelope(True, data, '候选查询完成')
@@ -606,6 +616,7 @@ def listening_assistant_candidates(user):
 @_assistant_login_required
 def listening_assistant_fallback(user):
     del user
+    mark_form_failure('backup_schedule_unsupported')
     return _error_response('目前仅支持当前课表，请重新查找课程。', 400)
 
 
@@ -616,10 +627,12 @@ def listening_assistant_confirm(user):
         payload = _json_object()
         current_semester = _configured_assistant_semester()
         if payload.get('source_kind', 'primary') != 'primary':
+            mark_form_failure('backup_schedule_unsupported')
             raise ValueError('目前仅支持当前课表，请重新查找课程。')
         query = payload.get('query')
         for value in (payload.get('semester'), query.get('semester') if isinstance(query, dict) else None):
             if value is not None and value != current_semester:
+                mark_form_failure('schedule_changed')
                 raise ValueError('当前课表已更新，请重新选择课程。')
         payload.setdefault('semester', current_semester)
         selection_payload = _normalize_selection_payload(payload)
@@ -628,6 +641,7 @@ def listening_assistant_confirm(user):
         return _envelope(False, {'status': error.status, 'code': error.code}, error.message), 503
     except AssistantSelectionError as error:
         status, message = _expected_selection_error(error)
+        mark_form_failure(error.code)
         return _error_response(message, status)
     except (ValueError, TypeError) as error:
         return _error_response(str(error) or '请求参数无效', 400)
@@ -642,6 +656,7 @@ def listening_assistant_confirm(user):
         )
     except AssistantSelectionError as error:
         status, message = _expected_selection_error(error)
+        mark_form_failure(error.code)
         return _error_response(message, status)
     except ScheduleSourceUnavailable as error:
         return _envelope(

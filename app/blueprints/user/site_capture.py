@@ -19,7 +19,9 @@ from app.services.schedule_availability import current_schedule_availability
 from app.services.lecture_form_draft_concurrency import (LectureFormDraftConflict,
     save_lecture_form_draft_atomic, get_draft_revision)
 from app.utils.draft_revision import require_draft_revision
-from app.utils.operation_log import begin_uploaded_photo_ocr, mark_form_failure, photo_write_operation, set_form_record
+from app.utils.operation_log import (
+    begin_uploaded_photo_ocr, mark_form_failure, private_failure_operation, set_form_record,
+)
 from . import user_bp
 from .forms import _load_lecture_form_draft, _parse_draft_payload, LECTURE_FORM_DRAFT_KEY
 from .listening_assistant import _assistant_login_required
@@ -27,7 +29,7 @@ from .listening_assistant import _assistant_login_required
 
 def _enabled():
     if not current_app.config.get('LECTURE_CAPTURE_ENABLED'):
-        if photo_write_operation():
+        if private_failure_operation():
             mark_form_failure('capture_disabled')
         abort(404)
 
@@ -109,6 +111,7 @@ def site_capture_settings(user):
 def site_capture_map(user,capture_id):
     from app.services.campus_buildings import load_buildings,nearby_buildings
     _enabled();record=_owned(capture_id,user)
+    set_form_record('capture', record.id)
     location=json.loads(record.location_json);codes=_schedule_building_codes()
     data=load_buildings()
     response=jsonify(success=True,data={'coordinate_system':'WGS84','buildings':data,
@@ -240,15 +243,21 @@ def site_capture_upload(user):
 def site_capture_context(user,capture_id):
     _enabled();record=_owned(capture_id,user)
     if request.method=='GET':return jsonify(success=True,data=_public(record))
-    if record.form_id:return jsonify(success=False,message='这次记录已提交，请新建听课记录。'),409
+    set_form_record('capture', record.id)
+    if record.form_id:
+        mark_form_failure('capture_locked')
+        return jsonify(success=False,message='这次记录已提交，请新建听课记录。'),409
     body=request.get_json(silent=True) or {}
     if not isinstance(body,dict):return jsonify(success=False,message='请求格式错误。'),400
     building=str(body.get('building') or '').strip();number=str(body.get('room_number') or '').strip()
     if not re.fullmatch(r'[\w\u4e00-\u9fff]{1,40}',building) or not re.fullmatch(r'[A-Za-z]?\d{3,4}',number):
+        mark_form_failure('classroom_invalid')
         return jsonify(success=False,message='请确认楼栋和三至四位门牌号。'),400
     draft,payload=_draft(user)
     require_draft_revision(user.id, LECTURE_FORM_DRAFT_KEY, draft)
-    if payload.get('site_capture_id')!=record.id:return jsonify(success=False,message='请先打开这次听课的草稿。'),409
+    if payload.get('site_capture_id')!=record.id:
+        mark_form_failure('capture_context_changed')
+        return jsonify(success=False,message='请先打开这次听课的草稿。'),409
     availability=current_schedule_availability()
     changed=(record.building,record.room_number)!=(building,number)
     record.building=building;record.room_number=number
@@ -264,18 +273,24 @@ def site_capture_context(user,capture_id):
         record.draft_json=draft.payload_json;db.session.commit()
     except LectureFormDraftConflict:
         db.session.rollback()
+        mark_form_failure('draft_conflict')
         return jsonify(success=False,code='draft_conflict',message='听课草稿已更新，请保留当前输入并刷新后重新核对教室。'),409
     except Exception:
         db.session.rollback();raise
     if not availability['candidates_ready']:
+        mark_form_failure('schedule_source_unavailable')
         return jsonify(success=True,data=_public(record),candidates=[],draft_revision=written_revision,
                        message='教室已确认，请手动填写课程信息。')
     try:
         result=ListeningAssistantService(semester=get_current_teaching_semester()).search(query)
         candidates=sorted(result.candidates,key=lambda c:(not(record.period_number and c.period[0]<=record.period_number<=c.period[1]),c.period,c.course_title,c.candidate_id))
         public=[c.to_public_dict() for c in candidates]
+        if not public:
+            mark_form_failure('course_not_found')
         message='' if public else '现场记录已保存，暂未找到课程，可稍后补充。'
-    except (ScheduleSourceUnavailable,ValueError):
+    except (ScheduleSourceUnavailable,ValueError) as error:
+        mark_form_failure('schedule_source_unavailable' if isinstance(error, ScheduleSourceUnavailable)
+                          else 'course_match_invalid')
         public=[];message='现场记录已保存，课程信息可稍后补充。'
     return jsonify(success=True,data=_public(record),candidates=public,message=message,draft_revision=written_revision)
 
@@ -333,14 +348,20 @@ def site_capture_ocr_region(user,capture_id):
 def site_capture_location(user,capture_id):
     from datetime import datetime
     _enabled();record=_owned(capture_id,user)
+    set_form_record('capture', record.id)
     age=(capture_service.now_at_site()-datetime.fromisoformat(record.received_at)).total_seconds()
     if record.form_id or record.is_archived or not 0<=age<=120:
+        mark_form_failure('capture_locked' if record.form_id or record.is_archived else 'location_window_expired')
         return jsonify(success=False,message='本次定位已结束。'),409
     body=request.get_json(silent=True)
+    submitted_location=body.get('location') if isinstance(body,dict) else None
     location=capture_service.normalize_photo_location_evidence(
-        body.get('location') if isinstance(body,dict) else None,
+        submitted_location,
         received_at=record.received_at,captured_at=record.client_captured_at)
-    if not location:return jsonify(success=False,message='定位数据无效。'),400
+    if not location:
+        mark_form_failure('location_sample_rejected' if capture_service.normalize_location(submitted_location)
+                          else 'location_invalid')
+        return jsonify(success=False,message='定位数据无效。'),400
     existing=json.loads(record.location_json)
     merged=capture_service.merge_location_evidence(existing,location)
     if merged!=existing:
@@ -353,11 +374,14 @@ def site_capture_location(user,capture_id):
 def site_capture_suggestions(user,capture_id):
     from app.services.site_context_model import rank_site_candidates, validate_facts, FACT_KINDS
     _enabled();record=_owned(capture_id,user)
+    set_form_record('capture', record.id)
     availability=current_schedule_availability()
     if not availability['candidates_ready']:
         return jsonify(success=False,message=availability['candidate_message'],
                        data={'source_unavailable':True,'status':availability['status']}),503
-    if record.is_archived:return jsonify(success=False,message='这次照片已被替换，请打开新的记录。'),409
+    if record.is_archived:
+        mark_form_failure('capture_locked')
+        return jsonify(success=False,message='这次照片已被替换，请打开新的记录。'),409
     body=request.get_json(silent=True) if request.method=='POST' else {}
     if not isinstance(body,dict):return jsonify(success=False,message='请求格式错误。'),400
     try:
@@ -385,6 +409,9 @@ def site_capture_suggestions(user,capture_id):
     except ScheduleSourceUnavailable:
         ranking=rank_site_candidates([],**kwargs)
         ranking['source_unavailable']=True
+        mark_form_failure('schedule_source_unavailable')
+    if not ranking['source_unavailable'] and not ranking['candidates']:
+        mark_form_failure('course_not_found')
     # Human-readable reasons are displayed, never probability-like numerical scores.
     for candidate in ranking['candidates']:
         candidate.pop('match_components',None);candidate.pop('match_score',None)
@@ -397,21 +424,33 @@ def site_capture_suggestions(user,capture_id):
 @_assistant_login_required
 def site_capture_confirm(user,capture_id):
     _enabled();record=_owned(capture_id,user)
+    set_form_record('capture', record.id)
     availability=current_schedule_availability()
     if not availability['candidates_ready']:
         return jsonify(success=False,message=availability['candidate_message'],
                        data={'source_unavailable':True,'status':availability['status']}),503
-    if record.form_id:return jsonify(success=False,message='这次记录已提交。'),409
+    if record.form_id:
+        mark_form_failure('capture_locked')
+        return jsonify(success=False,message='这次记录已提交。'),409
     body=request.get_json(silent=True) or {};draft,payload=_draft(user)
     require_draft_revision(user.id, LECTURE_FORM_DRAFT_KEY, draft)
     if not isinstance(body,dict):return jsonify(success=False,message='请求格式错误。'),400
-    if payload.get('site_capture_id')!=record.id:return jsonify(success=False,message='请打开这次记录的草稿。'),409
+    if payload.get('site_capture_id')!=record.id:
+        mark_form_failure('capture_context_changed')
+        return jsonify(success=False,message='请打开这次记录的草稿。'),409
     try:
         query=_query(record)
         selection={'stage':'confirmed','source_kind':'primary','semester':get_current_teaching_semester(),
                    'candidate_id':body.get('candidate_id'),'query':{'lecture_date':record.received_at[:10],'room':query.room},'overrides':{},'template_version':'site-capture-v1'}
         selected=revalidate_selection(user,selection)
-    except (AssistantSelectionError,ScheduleSourceUnavailable,ValueError):
+    except (AssistantSelectionError,ScheduleSourceUnavailable,ValueError) as error:
+        if isinstance(error, AssistantSelectionError):
+            mark_form_failure(error.code)
+        elif isinstance(error, ScheduleSourceUnavailable):
+            mark_form_failure('schedule_source_unavailable')
+        else:
+            mark_form_failure('classroom_unconfirmed' if not record.building or not record.room_number
+                              else 'course_match_invalid')
         db.session.rollback();return jsonify(success=False,message='课程已变化，请重新查找并确认。'),409
     record.confirmed_candidate_id=selected.candidate.candidate_id
     selection['source_batch_id']=selected.source_batch_id
@@ -425,6 +464,7 @@ def site_capture_confirm(user,capture_id):
         record.draft_json=draft.payload_json;db.session.commit()
     except LectureFormDraftConflict:
         db.session.rollback()
+        mark_form_failure('draft_conflict')
         return jsonify(success=False,code='draft_conflict',message='听课草稿已更新，请保留当前输入并刷新后重新确认课程。'),409
     except Exception:
         db.session.rollback();raise
