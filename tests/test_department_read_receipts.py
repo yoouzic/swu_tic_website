@@ -185,10 +185,14 @@ class DepartmentReadReceiptTest(_ReviewMutationCompatibilityBase):
                 self._login(self.dept_admin)
                 self.assertEqual(self._mark(form).status_code, 403)
         form = self._approved()
+        self._login(self.dept_admin)
         self.dept_admin.is_active = False
         db.session.commit()
-        self._login(self.dept_admin)
-        self.assertIn(self._mark(form).status_code, (302, 401, 403))
+        response = self._mark(form)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers['Location'].endswith('/auth/login'))
+        with self.client.session_transaction() as session:
+            self.assertNotIn('user_id', session)
         self.assertEqual(self._receipt_count(), 0)
 
     def test_other_statuses_and_invalid_payloads_are_rejected(self):

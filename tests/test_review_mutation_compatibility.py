@@ -296,9 +296,9 @@ class ReviewMutationAuthCompatibilityTest(_ReviewMutationCompatibilityBase):
     def test_inactive_actor_route_a_clears_session_and_redirects(self):
         """A via login_required: session.clear() + 302 redirect. (UNKNOWN_POLICY)"""
         form = self._make_form(self.officer)
+        self._login(self.dept_admin)
         self.dept_admin.is_active = False
         db.session.commit()
-        self._login(self.dept_admin)
         response = self.client.post(ROUTE_A.format(form_id=form.id), json={})
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.headers['Location'].endswith('/auth/login'))
@@ -309,9 +309,9 @@ class ReviewMutationAuthCompatibilityTest(_ReviewMutationCompatibilityBase):
         """B manual session check passes, permission lookup fails closed: 403 JSON,
         session is NOT cleared. (UNKNOWN_POLICY vs A)"""
         form = self._make_form(self.officer)
+        self._login(self.dept_admin)
         self.dept_admin.is_active = False
         db.session.commit()
-        self._login(self.dept_admin)
         response = self.client.post(ROUTE_B.format(form_id=form.id), json={})
         self.assertEqual(response.status_code, 403)
         body = response.get_json()
