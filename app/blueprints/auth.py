@@ -1,4 +1,8 @@
+import logging
+
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
+from flask.logging import wsgi_errors_stream
+from werkzeug.exceptions import BadRequestKeyError
 from werkzeug.security import check_password_hash
 from ..models import User, db
 from ..utils.password_audit import record_password_audit
@@ -7,25 +11,46 @@ from app.security import login_required, role_required
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
+_login_logger = logging.getLogger('swu_tic.auth.login')
+_login_logger.setLevel(logging.INFO)
+_login_logger.propagate = False
+if not _login_logger.handlers:
+    _login_logger.addHandler(logging.StreamHandler(wsgi_errors_stream))
+
+
+def log_login_result(result, user_id=None):
+    _login_logger.info('auth_login result=%s user_id=%s', result, user_id if user_id is not None else '-')
+
+
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     """用户登录"""
     if request.method == 'POST':
-        student_id = request.form['student_id']
-        password = request.form['password']
+        try:
+            student_id = request.form['student_id']
+            password = request.form['password']
+        except BadRequestKeyError:
+            log_login_result('invalid_form')
+            raise
         
         user = User.query.filter_by(student_id=student_id).first()
         
         if user and not is_user_active(user):
+            log_login_result('inactive_account', user.id)
             flash('账号已离任或不可用，请联系管理员', 'error')
         elif user and check_password_hash(user.password_hash, password):
             session.clear()
             session['user_id'] = user.id
             session['user_role'] = user.role
             session['user_name'] = user.name
-            
+
+            log_login_result('success', user.id)
             return redirect(url_for('main.index'))
         else:
+            if user:
+                log_login_result('bad_password', user.id)
+            else:
+                log_login_result('unknown_account')
             flash('学号或密码错误', 'error')
     
     return render_template('auth/login.html')

@@ -2,6 +2,7 @@ import os
 import re
 import tempfile
 import unittest
+from io import StringIO
 from pathlib import Path
 
 from werkzeug.security import generate_password_hash
@@ -411,6 +412,51 @@ class SecurityAuthorizationTest(unittest.TestCase):
         with self.client.session_transaction() as sess:
             self.assertNotIn('stale', sess)
             self.assertEqual(sess['user_id'], self.officer_a.id)
+
+    def test_login_logs_one_result_per_submission_without_credentials(self):
+        self.officer_b.is_active = False
+        db.session.commit()
+        cases = (
+            ({'student_id': self.officer_a.student_id, 'password': 'password'},
+             302, f'success user_id={self.officer_a.id}'),
+            ({'student_id': self.officer_a.student_id, 'password': 'wrong-password'},
+             200, f'bad_password user_id={self.officer_a.id}'),
+            ({'student_id': 'unknown-account', 'password': 'password'},
+             200, 'unknown_account user_id=-'),
+            ({'student_id': self.officer_b.student_id, 'password': 'password'},
+             200, f'inactive_account user_id={self.officer_b.id}'),
+            ({'student_id': self.officer_a.student_id},
+             400, 'invalid_form user_id=-'),
+        )
+        for data, status, result in cases:
+            with self.subTest(result=result):
+                errors = StringIO()
+                response = app.test_client().post(
+                    '/auth/login', data=data, environ_overrides={'wsgi.errors': errors},
+                )
+                self.assertEqual(response.status_code, status)
+                self.assertEqual(errors.getvalue().splitlines(), [f'auth_login result={result}'])
+
+    def test_login_logs_csrf_failure_and_ignores_page_views_and_other_routes(self):
+        app.config['WTF_CSRF_ENABLED'] = True
+        errors = StringIO()
+        output = {'wsgi.errors': errors}
+        page = self.client.get('/auth/login', environ_overrides=output)
+        token = re.search(r'name="csrf-token" content="([^"]+)"', page.get_data(as_text=True)).group(1)
+        response = app.test_client().post(
+            '/auth/login',
+            data={'csrf_token': token, 'student_id': self.officer_a.student_id, 'password': 'password'},
+            environ_overrides=output,
+        )
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post('/auth/login', environ_overrides=output)
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post('/auth/logout', environ_overrides=output)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(errors.getvalue().splitlines(), [
+            'auth_login result=csrf_session_missing user_id=-',
+            'auth_login result=csrf_rejected user_id=-',
+        ])
 
     def test_session_cookie_attributes_explicit(self):
         self.assertTrue(app.config['SESSION_COOKIE_HTTPONLY'])

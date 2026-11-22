@@ -49,6 +49,7 @@ def create_app(config_override: dict | None = None):
     from app.utils.storage_cleanup import run_scheduled_storage_cleanup
     from app.ui.navigation import build_navigation, resolve_page_label
     from app.services.schedule_availability import current_schedule_availability
+    from app.blueprints.auth import auth_bp, log_login_result
 
     app = Flask(__name__)
 
@@ -148,6 +149,10 @@ def create_app(config_override: dict | None = None):
     @app.errorhandler(CSRFError)
     def handle_csrf_error(error):
         """Return JSON for API/fetch CSRF failures; keep normal pages safe and simple."""
+        if request.endpoint == 'auth.login' and request.method == 'POST':
+            result = ('csrf_session_missing' if error.description == 'The CSRF session token is missing.'
+                      else 'csrf_rejected')
+            log_login_result(result)
         if request.path.startswith('/admin/api/') or request.is_json:
             return jsonify({
                 'success': False,
@@ -167,7 +172,6 @@ def create_app(config_override: dict | None = None):
             app.logger.warning('storage cleanup skipped after error: %s', exc)
 
     # 5. Blueprints
-    from app.blueprints.auth import auth_bp
     from app.blueprints.user import user_bp
     from app.blueprints.admin import admin_bp
     from app.blueprints.main import main_bp
