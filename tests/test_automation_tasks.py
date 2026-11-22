@@ -2,6 +2,7 @@ import json
 import unittest
 from collections import Counter
 from types import SimpleNamespace
+from unittest import mock
 
 from app.models import db
 from app.review_automation.contracts import (
@@ -335,13 +336,17 @@ class AutomationTasksTest(unittest.TestCase):
         self.assert_protected_unchanged(snapshot)
 
     def test_exhausted_transient_retry_uses_deterministic_fallback(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
         snapshot = self.protected_snapshot()
 
         def always_transient_factory():
             return AlwaysTransientService(self.factory.service)
 
         self.review_tasks.SERVICE_FACTORY = always_transient_factory
-        batch = self.review_tasks.enqueue_review_batch([self.form_ids[0]])
+        errors = StringIO()
+        with redirect_stderr(errors):
+            batch = self.review_tasks.enqueue_review_batch([self.form_ids[0]])
 
         self.assertEqual(batch.status, 'completed_with_errors')
         self.assertEqual(batch.failed_count, 1)
@@ -350,7 +355,27 @@ class AutomationTasksTest(unittest.TestCase):
             ReviewAssessment.query.filter_by(form_id=self.form_ids[0]).first().error_code,
             'timeout',
         )
+        item = ReviewBatchItem.query.filter_by(batch_id=batch.id).one()
+        self.assertEqual(errors.getvalue().splitlines(), [
+            f'review_failed reason=timeout record=review_item:{item.id}',
+        ])
         self.assert_protected_unchanged(snapshot)
+
+    def test_unexpected_worker_error_drops_private_exception_details(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+
+        batch = self.review_tasks.create_review_batch([self.form_ids[0]], enqueue=False)
+        errors = StringIO()
+        with redirect_stderr(errors), mock.patch.object(
+            self.review_tasks, '_assess_one', side_effect=RuntimeError('private-worker-form-content'),
+        ):
+            result = self.review_tasks.assess_form_task.apply(args=[batch.id, self.form_ids[0]], throw=False)
+        self.assertTrue(result.failed())
+        self.assertEqual(str(result.result), 'review_task_failed')
+        self.assertEqual(errors.getvalue().splitlines(), [
+            f'review_failed reason=review_task_failed record=form:{self.form_ids[0]}',
+        ])
 
     def test_root_task_result_is_json_safe(self):
         batch = self.review_tasks.create_review_batch([self.form_ids[0]], enqueue=False)

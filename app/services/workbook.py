@@ -8,18 +8,24 @@ calculation/domain services can use them without importing Flask.
 """
 from io import BytesIO
 
-from flask import send_file
+from flask import has_request_context, send_file
 
 from app.services.excel_utils import (
     XLSX_MIMETYPE,
     autosize_worksheet,
     build_export_filename,
 )
+from app.utils.operation_log import mark_form_failure, private_failure_operation
 
 
 def workbook_response(wb, filename):
     output = BytesIO()
-    wb.save(output)
+    try:
+        wb.save(output)
+    except Exception:
+        if has_request_context() and private_failure_operation() == 'export':
+            mark_form_failure('workbook_serialize_failed')
+        raise
     output.seek(0)
     return send_file(
         output,

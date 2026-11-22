@@ -8,9 +8,11 @@ from inspect import signature
 from typing import Any, Mapping
 
 from celery import chord, group
+from flask import has_request_context
 
 from app.app import app as flask_app
 from app.models import User, db
+from app.utils.operation_log import log_failure_event, private_failure_operation, set_form_record
 
 from .. import get_celery_app
 from ..contracts import BatchStatus, ReviewCategory, ReviewMode
@@ -40,6 +42,12 @@ TRANSIENT_ERROR_CODES = {
     'server_error',
     'connection_error',
     'retry_exhausted',
+}
+_REVIEW_FAILURE_CODES = TRANSIENT_ERROR_CODES | {
+    'task_error', 'invalid_retry_config', 'authentication_failed',
+    'provider_rejected', 'provider_error', 'missing_content', 'truncated_output',
+    'empty_content', 'invalid_json_fence', 'invalid_json', 'schema_validation',
+    'llm_unavailable', 'client_error',
 }
 
 
@@ -306,7 +314,12 @@ def _record_progress(
             0,
             int((item.finished_at - effective_start).total_seconds() * 1000),
         )
+    failure = item.error_code if item.status == 'failed' else None
+    record = f'review_item:{item.id}'
     db.session.commit()
+    if failure:
+        reason = failure if failure in _REVIEW_FAILURE_CODES else 'task_error'
+        log_failure_event('review', reason, record, server_error=True)
 
 
 def _mark_assessment_error(assessment_id: str | None, code: str):
@@ -740,6 +753,8 @@ def create_review_batch(
         ))
     db.session.commit()
     if enqueue:
+        if has_request_context() and private_failure_operation() == 'review':
+            set_form_record('review_batch', batch.id)
         dispatch_review_batch(batch.id)
     db.session.expire_all()
     return db.session.get(ReviewBatch, batch.id)

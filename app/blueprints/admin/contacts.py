@@ -7,6 +7,7 @@ from app.models import User, Department, Group, db
 from datetime import datetime
 from app.security import role_required
 from app.utils.password_audit import record_password_audit
+from app.utils.operation_log import mark_form_failure, set_form_record
 from app.utils.user_status import UNASSIGNED_DEPARTMENT_NAME, UNASSIGNED_GROUP_NAME
 from app.utils.env_config import env_path
 from app.services.import_state import (
@@ -120,6 +121,7 @@ def download_passwords(filename):
     """下载密码文件"""
     safe_filename = _safe_export_filename(filename)
     if safe_filename is None:
+        mark_form_failure('export_file_unavailable')
         flash('文件不存在', 'error')
         return redirect(url_for('admin.super_admin_dashboard'))
     # Publish gate（新式 token 工件）：只有 durable COMMITTED marker 精确匹配
@@ -129,6 +131,7 @@ def download_passwords(filename):
         if not is_password_artifact_published(
             token_match.group(1), token_match.group(2), safe_filename,
         ):
+            mark_form_failure('export_file_unavailable')
             flash('文件不存在', 'error')
             return redirect(url_for('admin.super_admin_dashboard'))
     else:
@@ -138,12 +141,14 @@ def download_passwords(filename):
         # 文件不受影响。
         artifact_match = _PASSWORD_ARTIFACT_RE.match(safe_filename)
         if artifact_match and import_preview_exists(artifact_match.group(1)):
+            mark_form_failure('export_file_unavailable')
             flash('文件不存在', 'error')
             return redirect(url_for('admin.super_admin_dashboard'))
     export_dir = env_path('EXPORT_DIR', DEFAULT_EXPORT_DIR)
     file_path = _export_file_within_root(export_dir, safe_filename)
     if file_path and os.path.isfile(file_path):
         return send_file(file_path, as_attachment=True)
+    mark_form_failure('export_file_unavailable')
     flash('文件不存在', 'error')
     return redirect(url_for('admin.super_admin_dashboard'))
 
@@ -523,17 +528,19 @@ def export_contacts():
     支持参数：department（可选）、ignore_role_errors（可选）
     按主任、部长、信息员分段导出，包含文档元数据，提供进度查询。
     """
+    failure_reason = 'export_job_creation_failed'
     try:
-        from flask import current_app
         department = request.args.get('department')
         ignore_role_errors = (request.args.get('ignore_role_errors') or '').lower() in ('1', 'true', 'yes', 'on')
         role_error_message = '自动分配主任、部长信息时出现错误，请检查“主任”和“部长”的群组名称'
 
         # 生成任务ID并初始化进度
-        from app.services.import_state import get_export_job, start_export_job, update_export_job
+        from app.services.import_state import start_export_job, update_export_job
         job_id = start_export_job()
+        set_form_record('export_job', job_id)
 
         # 查询用户
+        failure_reason = 'export_query_failed'
         query = _active_user_query()
         if department:
             query = query.filter_by(department=department)
@@ -588,6 +595,7 @@ def export_contacts():
         if role_error_details and not ignore_role_errors:
             detailed_role_error_message = f'{role_error_message}：{"；".join(role_error_details)}'
             update_export_job(job_id, status='failed', message=detailed_role_error_message)
+            mark_form_failure('export_roles_incomplete')
             return jsonify({'success': False, 'message': detailed_role_error_message}), 400
 
         directors.sort(key=contact_number_sort_key)
@@ -595,9 +603,11 @@ def export_contacts():
         informants.sort(key=contact_number_sort_key)
 
         # 加载模板工作簿，保留模板列宽等基础设置，再重建导出内容。
+        failure_reason = 'export_template_unavailable'
         template_path = env_path('CONTACT_TEMPLATE_PATH', DEFAULT_CONTACT_TEMPLATE_PATH)
         import openpyxl
         wb = openpyxl.load_workbook(template_path)
+        failure_reason = 'export_workbook_build_failed'
         ws = wb.active
 
         for merged_range in list(ws.merged_cells.ranges):
@@ -747,6 +757,7 @@ def export_contacts():
         )
 
         # 保存到导出目录
+        failure_reason = 'export_file_write_failed'
         export_dir = env_path('EXPORT_DIR', DEFAULT_EXPORT_DIR)
         os.makedirs(export_dir, exist_ok=True)
         fname_base = f"contacts_{(department or '全部')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -754,6 +765,7 @@ def export_contacts():
         export_path = os.path.join(export_dir, export_filename)
         wb.save(export_path)
 
+        failure_reason = 'export_job_completion_failed'
         download_url = url_for('admin.download_passwords', filename=export_filename)
         update_export_job(
             job_id,
@@ -763,9 +775,9 @@ def export_contacts():
             download_url=download_url,
         )
 
-        current_app.logger.info(f'通讯录导出完成 记录数{total} 部门{department or "全部"} 文件{export_filename}')
         return jsonify({'success': True, 'job_id': job_id, 'download_url': download_url, 'total': total})
     except Exception as e:
+        mark_form_failure(failure_reason)
         return jsonify({
             'success': False,
             'message': f'导出失败：{str(e)}'
@@ -779,6 +791,7 @@ def export_progress(job_id):
     from app.services.import_state import get_export_job
     progress = get_export_job(job_id)
     if progress is None:
+        mark_form_failure('export_job_unavailable')
         return jsonify({'success': False, 'message': '任务不存在'}), 404
     return jsonify({'success': True, 'progress': progress})
 

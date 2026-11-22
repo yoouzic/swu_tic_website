@@ -10,6 +10,7 @@ from flask import Blueprint, current_app, g, jsonify, request, url_for
 from sqlalchemy import func
 
 from app.models import LectureForm, User, db
+from app.utils.operation_log import mark_form_failure, set_form_record
 from app.utils.permission_feedback import build_forbidden_message
 from app.utils.user_status import active_user_filter
 
@@ -472,6 +473,7 @@ def _review_mode(data):
 def _llm_options(data):
     mode = _review_mode(data)
     if mode is None:
+        mark_form_failure('invalid_review_mode')
         return None, jsonify({
             'success': False,
             'code': 'invalid_review_mode',
@@ -479,6 +481,7 @@ def _llm_options(data):
         }), 400
     enabled = mode in {ReviewMode.LLM_ONLY, ReviewMode.COMBINED}
     if enabled and not _transfer_acknowledged(data):
+        mark_form_failure('external_transfer_ack_required')
         return None, jsonify({
             'success': False,
             'code': 'external_transfer_ack_required',
@@ -534,6 +537,7 @@ def create_batch_response(*, legacy_force_ignored=False, actor_id=None):
     if error is not None:
         return error, status
     if not payload['form_ids']:
+        mark_form_failure('no_reviewable_forms')
         return jsonify({'success': False, 'code': 'no_reviewable_forms', 'message': '没有可审核范围内的最新表单'}), 400
     try:
         from .tasks.review import enqueue_review_batch
@@ -548,6 +552,7 @@ def create_batch_response(*, legacy_force_ignored=False, actor_id=None):
             semester_monday=data.get('semester_monday'),
         )
     except Exception:
+        mark_form_failure('batch_enqueue_failed')
         return jsonify({'success': False, 'code': 'batch_enqueue_failed', 'message': '批次创建失败'}), 503
     return jsonify({
         'success': True,
@@ -671,6 +676,7 @@ def _load_batch_or_404(batch_id):
             }),
             403,
         )
+    set_form_record('review_batch', batch.id)
     return batch, None
 
 
@@ -767,6 +773,7 @@ def get_form_assessment(form_id):
                 action='查看',
             ),
         }), 403
+    set_form_record('form', latest.id)
     summary = latest_assessment_summaries([latest.id]).get(latest.id)
     return jsonify({'success': True, 'assessment': summary})
 
@@ -787,6 +794,7 @@ def get_assessment(assessment_id):
                 action='查看',
             ),
         }), 403
+    set_form_record('assessment', assessment.id)
     return jsonify({'success': True, 'assessment': _assessment_detail_payload(assessment)})
 
 
@@ -820,6 +828,7 @@ def status_batch_response(batch_id=None, actor_id=None):
     ).order_by(ReviewBatch.created_at.desc()).first()
     if batch is None:
         return jsonify({'success': True, 'status': 'idle', 'batch': None, 'legacy_force_ignored': True})
+    set_form_record('review_batch', batch.id)
     return jsonify({'success': True, 'status': batch.status, 'batch': _batch_payload(batch), 'legacy_force_ignored': True})
 
 

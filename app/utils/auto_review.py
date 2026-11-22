@@ -11,7 +11,7 @@ try:
     import pycorrector
 except Exception:
     pycorrector = None
-from flask import current_app
+from app.utils.operation_log import report_review_component_failure
 
 from ..models import db, LectureForm, Teacher, Course, SystemSetting, User, ScoreRecord, ScoreItem
 from ..services.legacy_review_compat import (
@@ -584,7 +584,7 @@ class AutoReviewEngine:
                     for wrong, right, begin, end in detail:
                         issues.append(f'疑似错别字："{wrong}" 应为 "{right}"')
                 elif not self._pycorrector_unavailable_logged:
-                    current_app.logger.warning("pycorrector.correct 不可用，已跳过错别字检测")
+                    report_review_component_failure('review_spellcheck_unavailable')
                     self._pycorrector_unavailable_logged = True
             except Exception as e:
                 err_msg = str(e)
@@ -592,10 +592,10 @@ class AutoReviewEngine:
                 if 'kenlm' in err_lower or 'dependencies are not fully installed' in err_lower or 'statistical language model' in err_lower:
                     self._pycorrector_runtime_disabled = True
                     if not self._pycorrector_unavailable_logged:
-                        current_app.logger.warning(f"pycorrector 依赖不完整，已跳过错别字检测: {err_msg}")
+                        report_review_component_failure('review_spellcheck_unavailable')
                         self._pycorrector_unavailable_logged = True
                 else:
-                    current_app.logger.error(f"错别字检测失败: {e}")
+                    report_review_component_failure('review_spellcheck_failed')
                 
         # 3. 检查标点符号 (中文文本中使用英文标点)
         if re.search(r'[\u4e00-\u9fa5],[^0-9]', text): # 中文后跟英文逗号且非数字

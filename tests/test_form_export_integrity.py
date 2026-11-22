@@ -122,20 +122,46 @@ def test_multiline_feedback_preserves_content_and_intentional_blank_lines(export
 
 
 def test_failed_workbook_save_does_not_advance_incremental_cursor(export_app, monkeypatch):
+    from io import StringIO
+
     previous = add_form(course='此前已导出')
     SystemSetting.set('last_exported_form_id', str(previous.id))
-    add_form(course='本次待导出')
+    pending = add_form(course='本次待导出')
     db.session.commit()
     client = export_app.test_client()
     login_admin(client)
 
     def fail_save(*args, **kwargs):
-        raise OSError('simulated workbook write failure')
+        raise OSError('private-export-row')
 
     monkeypatch.setattr('openpyxl.Workbook.save', fail_save)
-    response = client.get('/admin/api/forms/export/download', query_string={'scope': 'latest'})
+    errors = StringIO()
+    response = client.get('/admin/api/forms/export/download', query_string={'scope': 'latest'},
+                          environ_overrides={'wsgi.errors': errors})
     assert response.status_code == 302
     assert int(SystemSetting.get('last_exported_form_id')) == previous.id
+    assert errors.getvalue().splitlines() == [
+        f'export_failed reason=workbook_serialize_failed record=form:{pending.id}',
+    ]
+
+
+def test_contact_export_failure_logs_persisted_job_id_without_export_data(export_app, monkeypatch):
+    from io import StringIO
+    from unittest.mock import Mock
+    from app.models import ExportJobRecord
+
+    client = export_app.test_client()
+    login_admin(client)
+    monkeypatch.setattr('app.blueprints.admin.contacts._active_user_query',
+                        Mock(side_effect=RuntimeError('private-export-data')))
+    errors = StringIO()
+    response = client.get('/admin/api/export/contacts', environ_overrides={'wsgi.errors': errors})
+    assert response.status_code == 200
+    assert response.get_json()['success'] is False
+    job = ExportJobRecord.query.one()
+    assert errors.getvalue().splitlines() == [
+        f'export_failed reason=export_query_failed record=export_job:{job.id}',
+    ]
 
 
 def test_long_revision_chain_keeps_only_final_row_and_separate_extra_lecture(export_app):

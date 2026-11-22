@@ -9,6 +9,7 @@ from app.security import login_required, role_required
 from app.services.workbook import workbook_response
 from app.services.review_form_queries import parse_lecture_date_value
 from app.utils.audit_tags import REVIEW_TAG_REQUIRED, validate_audit_tag
+from app.utils.operation_log import mark_form_failure, set_form_record
 from app.utils.user_status import active_user_filter
 import pandas as pd
 import openpyxl
@@ -576,7 +577,10 @@ def export_imported_forms_excel():
         return jsonify({'success': False, 'message': 'form_ids参数无效'}), 400
     forms = LectureForm.query.filter(LectureForm.id.in_(form_ids)).order_by(LectureForm.id.asc()).all()
     if not forms:
+        mark_form_failure('no_exportable_records')
         return jsonify({'success': False, 'message': '未找到可导出的表单'}), 404
+    if len(forms) == 1:
+        set_form_record('form', forms[0].id)
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = '导入结果明细'
@@ -635,6 +639,7 @@ def export_imported_forms_excel():
 @role_required('超级管理员')
 def export_forms():
     """听课记录导出（框架性实现）"""
+    mark_form_failure('export_unavailable')
     try:
         # TODO: 实现真正的听课记录导出功能
         # 这里暂时返回一个提示信息，避免路由错误
@@ -954,6 +959,7 @@ def check_export_forms():
             'excluded_count': excluded_count
         })
     except Exception as e:
+        mark_form_failure('export_selection_check_failed')
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -961,6 +967,7 @@ def check_export_forms():
 @role_required('超级管理员')
 def download_export_forms():
     """执行导出并下载Excel"""
+    failure_reason = 'export_query_failed'
     try:
         # 获取参数
         scope = request.args.get('scope', 'latest')
@@ -982,10 +989,14 @@ def download_export_forms():
         forms = query.all()
         
         if not forms:
+            mark_form_failure('no_exportable_records')
             flash('没有符合条件的记录可导出', 'warning')
             return redirect(url_for('admin.view_forms'))
+        if len(forms) == 1:
+            set_form_record('form', forms[0].id)
             
         # 2. 排序
+        failure_reason = 'workbook_build_failed'
         _sort_export_forms(forms, sort_by)
             
         # 3. 生成Excel
@@ -996,10 +1007,12 @@ def download_export_forms():
             wb, max_id = _build_standard_forms_workbook(forms)
         
         # Serialize before advancing the cursor so a failed export remains retryable.
+        failure_reason = 'workbook_serialize_failed'
         output = BytesIO()
         wb.save(output)
         output.seek(0)
         
+        failure_reason = 'export_delivery_failed'
         date_str = datetime.now().strftime('%Y%m%d')
         if export_mode == 'all_data':
             filename = f"听课反馈表-{date_str}.xlsx"
@@ -1022,11 +1035,13 @@ def download_export_forms():
         rv.headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{filename_encoded}"
 
         if scope == 'latest' and max_id > 0:
+            failure_reason = 'export_cursor_update_failed'
             SystemSetting.set('last_exported_form_id', str(max_id))
         
         return rv
         
     except Exception as e:
+        mark_form_failure(failure_reason)
         flash(f'导出失败: {str(e)}', 'error')
         return redirect(url_for('admin.view_forms'))
 

@@ -6,6 +6,7 @@ from flask import request, jsonify
 from app.models import db
 from app.security import role_required
 from app.utils.env_config import env_path
+from app.utils.operation_log import mark_form_failure
 from app.services.academic_term import compose_semester_identifier
 from app.services.schedule_snapshots import (
     DEFAULT_SOURCE_ROW_OFFSET,
@@ -78,11 +79,13 @@ def export_schedule():
     """全校课表导出API（框架性实现）"""
     try:
         # TODO: 实现真正的全校课表导出功能
+        mark_form_failure('export_not_available')
         return jsonify({
             'success': False,
             'message': '全校课表导出功能正在开发中，敬请期待！'
         })
     except Exception as e:
+        mark_form_failure('schedule_export_failed')
         return jsonify({
             'success': False,
             'message': f'导出功能暂不可用：{str(e)}'

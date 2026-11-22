@@ -10,7 +10,6 @@ This module owns:
 No Flask/request/session dependency is allowed here.
 """
 import datetime
-import logging
 import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional
@@ -30,7 +29,7 @@ from app.services.schedule_snapshots import (
 )
 from app.utils.env_config import env_path
 
-logger = logging.getLogger(__name__)
+from app.utils.operation_log import report_review_component_failure
 
 # Final source kinds used by AutoReviewEngine.
 EXPLICIT_LEGACY = 'explicit_legacy'
@@ -126,8 +125,8 @@ def _read_excel(path: str, sheet_name: int = 0) -> Optional[pd.DataFrame]:
         else:
             df = pd.read_excel(path, sheet_name=sheet_name)
         return df
-    except Exception as e:
-        logger.error("读取Excel文件失败 %s: %s", path, e)
+    except Exception:
+        report_review_component_failure('review_schedule_read_failed')
         return None
 
 

@@ -54,6 +54,7 @@ from app.services.stat_snapshots import (
 )
 from app.services.workbook import autosize_worksheet, build_export_filename, workbook_response
 from app.utils.permission_feedback import build_forbidden_message, forbidden_json, flash_forbidden
+from app.utils.operation_log import mark_form_failure, set_form_record
 from app.utils.manage_permissions import get_user_manage_permission
 from app.utils.leave_management import LEAVE_OVERRIDE_TYPE
 from app.utils.user_status import UNASSIGNED_GROUP_NAME
@@ -194,6 +195,7 @@ def export_submission_count_stats():
     user_ids = request.args.getlist('user_ids')
     users = resolve_assessment_users(session['user_id'], user_ids)
     if not users:
+        mark_form_failure('no_exportable_records')
         return jsonify({'success': False, 'message': '无可导出用户'}), 400
     sort_by = request.args.get('sort_by', 'submission')
     if sort_by not in ['submission', 'reward']:
@@ -455,6 +457,7 @@ def export_submission_count_snapshot(snapshot_id):
     record, error_response, status_code = _get_snapshot_record_or_404(snapshot_id, SNAPSHOT_TYPE_SUBMISSION_REWARD, session['user_id'])
     if error_response:
         return error_response, status_code
+    set_form_record('snapshot', record.id)
     _, payload_data = load_snapshot_payload(record)
     wb = build_submission_snapshot_workbook(payload_data)
     filename = build_export_filename(request.args.get('filename_title'), record.title)
@@ -501,6 +504,7 @@ def export_department_monthly_assessment_stats():
     if payload_err:
         return jsonify({'success': False, 'message': payload_err}), 400
     if not payload.get('meta', {}).get('has_full_months'):
+        mark_form_failure('no_complete_teaching_month')
         return jsonify({'success': False, 'message': '当前筛选范围内无完整教学月，无法导出月度考评'}), 400
     wb = build_department_monthly_workbook(payload)
     default_title = f'{start_date_str}至{end_date_str}部门月度考评统计'
@@ -595,6 +599,7 @@ def export_department_monthly_assessment_snapshot(snapshot_id):
     record, error_response, status_code = _get_snapshot_record_or_404(snapshot_id, SNAPSHOT_TYPE_DEPARTMENT_MONTHLY, session['user_id'])
     if error_response:
         return error_response, status_code
+    set_form_record('snapshot', record.id)
     _, payload_data = load_snapshot_payload(record)
     wb = build_department_monthly_workbook(payload_data)
     filename = build_export_filename(request.args.get('filename_title'), record.title)
@@ -635,6 +640,7 @@ def export_review_assessment_stats():
     user_ids = request.args.getlist('user_ids')
     users = resolve_assessment_users(session['user_id'], user_ids)
     if not users:
+        mark_form_failure('no_exportable_records')
         return jsonify({'success': False, 'message': '无可导出用户'}), 400
 
     rows = build_review_assessment_rows(users, start_date, end_date)

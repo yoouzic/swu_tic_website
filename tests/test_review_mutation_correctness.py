@@ -27,7 +27,10 @@ from unittest import mock
 
 from app.models import ScoreItem, ScoreRecord, db
 from app.services import review_application as review_application_module
+from io import StringIO
+
 from tests.test_review_mutation_compatibility import _ReviewMutationCompatibilityBase
+from tests.review_request_utils import post_opened_review
 
 
 class ReviewMutationScoreAtomicityCorrectnessTest(_ReviewMutationCompatibilityBase):
@@ -49,7 +52,7 @@ class ReviewMutationScoreAtomicityCorrectnessTest(_ReviewMutationCompatibilityBa
             calls['count'] += 1
             if calls['count'] == 1:
                 return real_score_item(*args, **kwargs)
-            raise RuntimeError('second score item fault')
+            raise RuntimeError('private-review-opinion-and-form-content')
 
         payload = {
             'form_data': self._full_form_data(form),
@@ -59,14 +62,21 @@ class ReviewMutationScoreAtomicityCorrectnessTest(_ReviewMutationCompatibilityBa
                 self._positive_score(reason='item2', dept=2.0, pers=2.0),
             ],
         }
-        with mock.patch(
+        errors = StringIO()
+        with self.assertNoLogs(self.client.application.logger, level='ERROR'), mock.patch(
             'app.services.review_application.ScoreItem',
             side_effect=factory,
         ):
-            response = self._submit_a(form.id, payload)
+            response = post_opened_review(
+                self.client, f'/admin/api/review/submit/{form.id}', json=payload,
+                environ_overrides={'wsgi.errors': errors},
+            )
 
         self.assertEqual(calls['count'], 2)
         self.assertEqual(response.status_code, 500)
+        self.assertEqual(errors.getvalue().splitlines(), [
+            f'review_failed reason=review_approval_failed record=form:{form.id}',
+        ])
         body = response.get_json()
         self.assertFalse(body['success'])
         self.assertEqual(body['message'], '审核提交失败，请稍后重试')

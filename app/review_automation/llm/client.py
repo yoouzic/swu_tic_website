@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
 from typing import Any
 
@@ -14,7 +13,6 @@ from .prompts import PROMPT_VERSION, build_review_messages
 from .schemas import DeepSeekReviewResponse
 
 
-logger = logging.getLogger(__name__)
 _ALLOWED_REASONING_EFFORTS = {'high', 'max'}
 _MAX_OUTPUT_TOKENS = 8192
 
@@ -144,13 +142,10 @@ class DeepSeekReviewClient:
             if provider_failure is not None:
                 error_type, code = provider_failure
                 if error_type is PermanentLLMError:
-                    logger.warning('deepseek_review_failed code=%s', code)
                     raise error_type(code)
                 if attempt >= self.max_retries:
                     final_code = code if self.max_retries == 0 else 'retry_exhausted'
-                    logger.warning('deepseek_review_failed code=%s', final_code)
                     raise TransientLLMError(final_code)
-                logger.warning('deepseek_review_retry code=%s attempt=%s', code, attempt + 1)
                 continue
             return self._parse_response(_content(response))
         raise TransientLLMError('retry_exhausted')

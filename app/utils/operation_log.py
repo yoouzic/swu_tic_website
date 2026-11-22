@@ -2,7 +2,7 @@
 
 import logging
 
-from flask import request, session
+from flask import has_request_context, request, session
 from flask.logging import wsgi_errors_stream
 
 
@@ -30,6 +30,45 @@ _PRIVATE_OPERATIONS = {
     ('user.listening_assistant_guide_answer', 'POST'): 'course_match',
     ('user.listening_assistant_confirm', 'POST'): 'course_match',
     ('user.listening_assistant_fallback', 'POST'): 'course_match',
+    ('admin.acknowledge_review_form_read', 'POST'): 'review',
+    ('admin.review_form_draft', 'GET'): 'review',
+    ('admin.review_form_draft', 'PUT'): 'review',
+    ('admin.review_form_draft', 'DELETE'): 'review',
+    ('admin.reject_form_review', 'POST'): 'review',
+    ('admin.submit_review', 'POST'): 'review',
+    ('admin.submit_form_review', 'POST'): 'review',
+    ('admin.review_form_page', 'GET'): 'review',
+    ('admin.get_form_for_review', 'GET'): 'review',
+    ('admin.get_form_detail', 'GET'): 'review',
+    ('admin.preview_review_form_tags', 'POST'): 'review',
+    ('admin.update_review_form_tags', 'PUT'): 'review',
+    ('admin.delete_form', 'DELETE'): 'review',
+    ('admin.delete_form_group', 'DELETE'): 'review',
+    ('admin.auto_check_form', 'POST'): 'review',
+    ('admin.get_reference_data', 'POST'): 'review',
+    ('admin.batch_auto_check', 'POST'): 'review',
+    ('admin.batch_auto_check_preview', 'POST'): 'review',
+    ('admin.get_auto_check_status', 'GET'): 'review',
+    ('review_automation.preview_batches', 'POST'): 'review',
+    ('review_automation.create_batch', 'POST'): 'review',
+    ('review_automation.get_batch', 'GET'): 'review',
+    ('review_automation.cancel_batch', 'POST'): 'review',
+    ('review_automation.get_form_assessment', 'GET'): 'review',
+    ('review_automation.get_assessment', 'GET'): 'review',
+    ('admin.export_forms', 'GET'): 'export',
+    ('admin.export_imported_forms_excel', 'GET'): 'export',
+    ('admin.check_export_forms', 'POST'): 'export',
+    ('admin.download_export_forms', 'GET'): 'export',
+    ('admin.export_contacts', 'GET'): 'export',
+    ('admin.export_progress', 'GET'): 'export',
+    ('admin.download_passwords', 'GET'): 'export',
+    ('admin.export_schedule', 'GET'): 'export',
+    ('admin.export_statistics', 'GET'): 'export',
+    ('admin.export_submission_count_stats', 'GET'): 'export',
+    ('admin.export_submission_count_snapshot', 'GET'): 'export',
+    ('admin.export_department_monthly_assessment_stats', 'GET'): 'export',
+    ('admin.export_department_monthly_assessment_snapshot', 'GET'): 'export',
+    ('admin.export_review_assessment_stats', 'GET'): 'export',
 }
 
 _PRIVATE_HTTP_REASONS = {
@@ -45,8 +84,9 @@ def form_write_operation():
 
 
 def private_failure_operation():
+    method = 'GET' if request.method == 'HEAD' else request.method
     return request.environ.get('swu_tic.photo_operation') or _PRIVATE_OPERATIONS.get(
-        (request.endpoint, request.method),
+        (request.endpoint, method),
     )
 
 
@@ -92,6 +132,20 @@ def log_form_write_failure(response):
     return response
 
 
+def log_failure_event(operation, reason, record, *, server_error=False):
+    operation_logger.log(
+        logging.ERROR if server_error else logging.INFO,
+        '%s_failed reason=%s record=%s', operation, reason, record,
+    )
+
+
+def report_review_component_failure(reason):
+    if has_request_context() and private_failure_operation() == 'review':
+        mark_form_failure(reason)
+    else:
+        log_failure_event('review', reason, '-', server_error=True)
+
+
 def log_private_failure(response):
     operation = private_failure_operation()
     failure = request.environ.get('swu_tic.form_failure')
@@ -105,11 +159,14 @@ def log_private_failure(response):
         reason = 'schedule_source_unavailable'
     elif operation == 'photo_upload' and status == 413:
         reason = 'photo_too_large'
+    elif operation in {'review', 'export'} and status == 404:
+        reason = 'record_unavailable'
+    elif operation == 'review' and status == 409:
+        reason = 'review_conflict'
     else:
         reason = _PRIVATE_HTTP_REASONS.get(status, f'http_{status}')
-    operation_logger.log(
-        logging.ERROR if status >= 500 or reason == 'ocr_unavailable' else logging.INFO,
-        '%s_failed reason=%s record=%s',
+    log_failure_event(
         operation, reason, request.environ.get('swu_tic.form_record', '-'),
+        server_error=status >= 500 or reason == 'ocr_unavailable',
     )
     return response

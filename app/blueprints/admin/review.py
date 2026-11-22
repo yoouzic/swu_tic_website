@@ -2,7 +2,8 @@
 # Phase 1 mechanical split from app/blueprints/admin.py
 # Module: review
 
-from flask import render_template, request, redirect, url_for, flash, session, jsonify, current_app
+from flask import render_template, request, redirect, url_for, flash, session, jsonify
+from werkzeug.exceptions import NotFound
 from app.models import User, Group, LectureForm, CourseRegistration, db, SystemSetting, ScoreRecord, ScoreItem
 from datetime import datetime, timedelta
 from app.utils.auto_review import AutoReviewEngine
@@ -10,6 +11,7 @@ from app.security import login_required, role_required
 from app.utils.review_permissions import get_user_review_permission, can_review_status, get_user_structure_for_review, get_reviewable_users, get_next_status_after_review, get_review_permission_presentation, is_center_force_review
 from app.utils.permission_feedback import build_forbidden_message, forbidden_json, flash_forbidden
 from app.utils.manage_permissions import get_user_manage_permission
+from app.utils.operation_log import mark_form_failure, set_form_record
 from app.utils.audit_tags import REVIEW_TAG_OPTIONS, LATE_TAG_OPTIONS, build_audit_tag, parse_audit_tag, validate_audit_tag
 from app.utils.user_status import UNASSIGNED_GROUP_NAME
 from app.utils.review_drafts import delete_review_form_draft, load_review_form_draft, normalize_review_draft_payload, parse_review_form_draft, save_review_form_draft
@@ -73,7 +75,9 @@ def acknowledge_review_form_read(form_id):
     form = LectureForm.query.get_or_404(form_id)
     if not is_form_in_review_scope(user_id, form):
         return forbidden_json('个人已阅记录', '该表单不在当前审核范围内。', action='操作')
+    set_form_record('form', form.id)
     if form.status != '部门已审核':
+        mark_form_failure('review_stage_forbidden')
         return forbidden_json('个人已阅记录', '仅部门已审核的表单可记录已阅。', action='操作')
     payload = _json_object_request()
     if payload is None:
@@ -106,7 +110,7 @@ def acknowledge_review_form_read(form_id):
         return jsonify({'success': False, 'code': 'review_conflict', 'message': str(error)}), 409
     except Exception:
         db.session.rollback()
-        current_app.logger.exception('Unable to record personal review read receipt')
+        mark_form_failure('read_receipt_failed')
         return jsonify({'success': False, 'message': '已阅记录保存失败，请重新打开详情重试。'}), 500
 
 
@@ -194,6 +198,7 @@ def review_form_draft(form_id):
         form = LectureForm.query.get_or_404(form_id)
         if not is_form_in_review_scope(user_id, form):
             return forbidden_json('表单审核', '该表单不在当前审核范围内。', action='审核')
+        set_form_record('form', form.id)
 
         if request.method == 'GET':
             draft = load_review_form_draft(user_id, form_id)
@@ -244,9 +249,9 @@ def review_form_draft(form_id):
     except ReviewConflict as error:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(error), 'code': 'review_conflict'}), 409
-    except Exception:
+    except Exception as error:
         db.session.rollback()
-        current_app.logger.exception('Review draft operation failed')
+        mark_form_failure('record_unavailable' if isinstance(error, NotFound) else 'review_draft_failed')
         return jsonify({'success': False, 'message': '审核草稿操作失败，请稍后重试'}), 500
 
 
@@ -350,6 +355,7 @@ def reject_form_review(form_id):
         
         # 校验：确保操作的是最新版本
         if latest_form and latest_form.id != original_form.id:
+            mark_form_failure('review_conflict')
             return jsonify({'success': False, 'message': '该表单已有更新版本，请刷新页面后操作'}), 400
         
         # 对象级授权：目标表单主人必须属于当前账号的可审核范围，不存在时 fail-closed。
@@ -365,7 +371,9 @@ def reject_form_review(form_id):
         
         # 阶段授权：驳回只能作用于当前审核级别允许处理的表单状态。
         # 已驳回记录的“更新驳回意见”属于既有兼容分支，不在常规状态推进检查中拒绝。
+        set_form_record('form', original_form.id)
         if latest_form.status != '已驳回' and not can_review_status(user.id, latest_form.status):
+            mark_form_failure('review_stage_forbidden')
             return jsonify({
                 'success': False,
                 'message': build_forbidden_message(
@@ -377,6 +385,7 @@ def reject_form_review(form_id):
 
         data = _json_object_request()
         if data is None or not isinstance(data.get('reason', ''), str):
+            mark_form_failure('review_comment_invalid')
             return jsonify({'success': False, 'message': '请填写文字形式的驳回理由'}), 400
         reason = data.get('reason', '')
         validate_opened_review_revision(original_form, data)
@@ -459,9 +468,9 @@ def reject_form_review(form_id):
     except ReviewConflict as error:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(error), 'code': 'review_conflict'}), 409
-    except Exception:
+    except Exception as error:
         db.session.rollback()
-        current_app.logger.exception('Review rejection failed')
+        mark_form_failure('record_unavailable' if isinstance(error, NotFound) else 'review_rejection_failed')
         return jsonify({'success': False, 'message': '驳回失败，请稍后重试'}), 500
 
 
@@ -473,6 +482,7 @@ def submit_review(form_id):
         # 检查用户权限
         permission = get_user_review_permission(session['user_id'])
         if not permission:
+            mark_form_failure('permission_denied')
             return jsonify({
                 'success': False,
                 'message': build_forbidden_message(
@@ -485,6 +495,7 @@ def submit_review(form_id):
         # 获取原表单
         original_form = LectureForm.query.filter_by(id=form_id).first()
         if not original_form:
+            mark_form_failure('record_unavailable')
             return jsonify({'success': False, 'message': '表单不存在'})
         
         # 校验目标表单所有者是否在当前账号可审核范围内（对象级授权，绝不能只依赖状态/权限）
@@ -499,7 +510,9 @@ def submit_review(form_id):
             }), 403
 
         # 检查是否可以审核该状态的表单
+        set_form_record('form', original_form.id)
         if not can_review_status(session['user_id'], original_form.status):
+            mark_form_failure('review_stage_forbidden')
             return jsonify({
                 'success': False,
                 'message': build_forbidden_message(
@@ -526,6 +539,7 @@ def submit_review(form_id):
                 }), 400
             review_comment = data.get('review_comment', '无')
             if not isinstance(review_comment, str):
+                mark_form_failure('review_comment_invalid')
                 return jsonify({'success': False, 'message': '审核意见应填写文字'}), 400
             score_data_list = data.get('score_data', [])
         else:
@@ -542,6 +556,7 @@ def submit_review(form_id):
                     try:
                         score_data_list = json.loads(score_data_json)
                     except (ValueError, TypeError):
+                        mark_form_failure('review_score_invalid')
                         return jsonify({
                             'success': False,
                             'message': '评分数据格式错误：score_data 不是合法 JSON',
@@ -551,6 +566,7 @@ def submit_review(form_id):
         try:
             normalized_score_data = normalize_score_items(score_data_list)
         except ScoreValidationError as exc:
+            mark_form_failure('review_score_invalid')
             return jsonify({
                 'success': False,
                 'message': f'评分数据格式错误：{exc}',
@@ -559,6 +575,7 @@ def submit_review(form_id):
         # 确定新状态
         field_errors = review_field_errors(original_form, form_data)
         if field_errors:
+            mark_form_failure('review_form_invalid')
             return jsonify({
                 'success': False, 'code': 'invalid_form',
                 'message': '请修正表单中标出的内容后再提交审核',
@@ -578,6 +595,7 @@ def submit_review(form_id):
         
         # 校验：确保操作的是最新版本
         if latest_form and latest_form.id != original_form.id:
+             mark_form_failure('review_conflict')
              return jsonify({'success': False, 'message': '该表单已有更新版本，请刷新页面后操作'}), 400
         
         # 准备表单数据
@@ -619,6 +637,7 @@ def submit_review(form_id):
 
         field_errors = review_field_errors(original_form, new_form_data)
         if field_errors:
+            mark_form_failure('review_form_invalid')
             return jsonify({'success': False, 'code': 'invalid_form',
                             'message': '请修正表单中标出的内容后再提交审核',
                             'field_errors': field_errors}), 400
@@ -683,7 +702,7 @@ def submit_review(form_id):
         return jsonify({'success': False, 'message': str(error), 'code': 'review_conflict'}), 409
     except Exception:
         db.session.rollback()
-        current_app.logger.exception('Review approval failed')
+        mark_form_failure('review_approval_failed')
         return jsonify({'success': False, 'message': '审核提交失败，请稍后重试'}), 500
 
 
@@ -701,6 +720,7 @@ def review_form_page(form_id):
     # 检查用户权限
     permission = get_user_review_permission(session['user_id'])
     if not permission:
+        mark_form_failure('permission_denied')
         flash_forbidden('表单审核')
         return redirect(url_for('main.index'))
     
@@ -734,11 +754,13 @@ def get_form_detail(form_id):
                 has_permission = True
                 
         if not has_permission:
+            mark_form_failure('permission_denied')
             if request.args.get('format') != 'json':
                 flash_forbidden('表单详情', '该表单不在当前账号的可见范围内。', action='查看')
                 return redirect(url_for('main.index'))
             return forbidden_json('表单详情', '该表单不在当前账号的可见范围内。', action='查看')
             
+        set_form_record('form', form.id)
         # 渲染表单详情模板
         reviewer_display_mode = get_reviewer_display_mode()
         score_record = ScoreRecord.query.filter_by(form_id=form.id).first()
@@ -767,6 +789,7 @@ def get_form_detail(form_id):
                         'department_read': department_read})
         
     except Exception as e:
+        mark_form_failure('record_unavailable' if isinstance(e, NotFound) else 'review_detail_failed')
         if request.args.get('format') != 'json':
             flash(str(e), 'error')
             return redirect(url_for('main.index'))
@@ -1218,6 +1241,7 @@ def get_form_for_review(form_id):
         # 检查是否有权限审核此表单
         if not is_form_in_review_scope(session['user_id'], form):
             return forbidden_json('表单审核', '该表单不在当前审核范围内。', action='审核')
+        set_form_record('form', form.id)
         
         # 构建表单数据
         reviewer_display_mode = get_reviewer_display_mode()
@@ -1296,6 +1320,7 @@ def get_form_for_review(form_id):
             'score_data': score_data
         })
     except Exception as e:
+        mark_form_failure('record_unavailable' if isinstance(e, NotFound) else 'review_detail_failed')
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -1373,6 +1398,8 @@ def update_review_form_tags():
         audit_tag = build_audit_tag(review_tag, week_correction_tag)
         errors = validate_audit_tag(audit_tag)
         if errors:
+            set_form_record('form', latest_form.id)
+            mark_form_failure('review_tag_invalid')
             return jsonify({
                 'success': False,
                 'message': f'表单组最新版本ID {latest_form.id} 的标签不合法：{"；".join(errors)}'
@@ -1419,9 +1446,11 @@ def submit_form_review(form_id):
         # 检查是否有权限审核此表单
         if not is_form_in_review_scope(session['user_id'], original_form):
             return forbidden_json('表单审核', '该表单不在当前审核范围内。', action='审核')
+        set_form_record('form', original_form.id)
         
         # 检查是否可以审核此状态的表单
         if not can_review_status(session['user_id'], original_form.status):
+            mark_form_failure('review_stage_forbidden')
             return jsonify({
                 'success': False,
                 'message': build_forbidden_message(
@@ -1439,6 +1468,7 @@ def submit_form_review(form_id):
             }), 400
         review_comment = data.get('review_comment', '')
         if not isinstance(review_comment, str):
+            mark_form_failure('review_comment_invalid')
             return jsonify({'success': False, 'message': '审核意见应填写文字'}), 400
         form_data = data.get('form_data', {})
         if not isinstance(form_data, dict):
@@ -1449,6 +1479,7 @@ def submit_form_review(form_id):
 
         field_errors = review_field_errors(original_form, form_data)
         if field_errors:
+            mark_form_failure('review_form_invalid')
             return jsonify({'success': False, 'code': 'invalid_form',
                             'message': '请修正表单中标出的内容后再提交审核',
                             'field_errors': field_errors}), 400
@@ -1457,6 +1488,7 @@ def submit_form_review(form_id):
         try:
             normalized_score_data = normalize_score_items(data.get('score_data', []))
         except ScoreValidationError as exc:
+            mark_form_failure('review_score_invalid')
             return jsonify({
                 'success': False,
                 'message': f'评分数据格式错误：{exc}',
@@ -1660,9 +1692,9 @@ def submit_form_review(form_id):
     except ReviewConflict as error:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(error), 'code': 'review_conflict'}), 409
-    except Exception:
+    except Exception as error:
         db.session.rollback()
-        current_app.logger.exception('Legacy review approval failed')
+        mark_form_failure('record_unavailable' if isinstance(error, NotFound) else 'review_approval_failed')
         return jsonify({'success': False, 'message': '审核提交失败，请稍后重试'}), 500
 
 
@@ -1695,6 +1727,7 @@ def delete_form(form_id):
                 ),
             }), 403
 
+        set_form_record('form', form_to_delete.id)
         registration_id = form_to_delete.registration_id
         score_record = ScoreRecord.query.filter_by(form_id=form_id).first()
         if score_record:
@@ -1716,6 +1749,7 @@ def delete_form(form_id):
 
     except Exception as e:
         db.session.rollback()
+        mark_form_failure('record_unavailable' if isinstance(e, NotFound) else 'review_record_delete_failed')
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -1756,6 +1790,7 @@ def delete_form_group(group_id):
                 ),
             }), 403
 
+        set_form_record('form_group', group_id)
         form_ids = [form.id for form in group_forms]
         registration_ids = list({form.registration_id for form in group_forms if form.registration_id})
 
@@ -1785,6 +1820,7 @@ def delete_form_group(group_id):
         })
     except Exception as e:
         db.session.rollback()
+        mark_form_failure('review_record_delete_failed')
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -1842,7 +1878,7 @@ def auto_check_form():
         
         return jsonify({'success': True, 'result': result})
     except Exception:
-        current_app.logger.exception('Immediate auto-review failed')
+        mark_form_failure('review_check_failed')
         return jsonify({'success': False, 'message': '自动检查失败，请稍后重试'}), 500
 
 
@@ -1872,7 +1908,7 @@ def get_reference_data():
         
         return jsonify({'success': True, 'result': result})
     except Exception:
-        current_app.logger.exception('Review reference lookup failed')
+        mark_form_failure('review_reference_failed')
         return jsonify({'success': False, 'message': '参考数据查询失败，请稍后重试'}), 500
 
 

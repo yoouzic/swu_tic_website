@@ -5,11 +5,10 @@ This module is the single authority for the frozen legacy matcher algorithm.
 AutoReviewEngine and reference-data services delegate here. Legacy matching
 remains compatible; class filtering also accepts the canonical form spelling.
 """
-import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+from app.utils.operation_log import report_review_component_failure
 
 
 def normalize_weekday(weekday_str: str) -> str:
@@ -177,6 +176,6 @@ def find_course_in_schedule(
         best_match = all_matches[0] if all_matches else None
         return best_match, all_matches
 
-    except Exception as e:
-        logger.error("课表匹配失败: %s", e)
+    except Exception:
+        report_review_component_failure('review_schedule_match_failed')
         return None, []
