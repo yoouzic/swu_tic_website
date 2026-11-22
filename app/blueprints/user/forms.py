@@ -471,7 +471,7 @@ def _form_edit_data(form):
         'abnormal_situation', 'teaching_method', 'classroom_discipline', 'classroom_atmosphere',
         'courseware_quality', 'overall_effect', 'quality_case', 'course_feedback', 'suggestions',
         'student_signature1', 'contact_phone1', 'student_signature2', 'contact_phone2',
-        'registration_id',
+        'registration_id', 'review_comment',
     )
     data = {field: getattr(form, field) for field in fields}
     data['unique_id'] = form.unique_id or form.id
@@ -492,6 +492,7 @@ def _render_submitted_form(user, existing_version=None):
     submitted = request.form.to_dict(flat=True)
     if existing_version:
         submitted.setdefault('unique_id', str(existing_version.unique_id or existing_version.id))
+        submitted.setdefault('review_comment', existing_version.review_comment)
     return render_template('user/lecture_form.html', user=user, form_data=submitted,
                            form=existing_version, edit_mode=existing_version is not None,
                            lecture_draft_revision=(request.headers.get('X-Lecture-Draft-Revision') or

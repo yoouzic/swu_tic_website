@@ -2,6 +2,7 @@
 {% from "partials/_page_header.html" import page_header %}
 {% set candidates_ready = schedule_availability.candidates_ready %}
 {% set registration_ready = schedule_availability.registration_ready %}
+{% set is_rejected_form = form and form.status == '已驳回' %}
 
 {% block title %}填写听课表单{% endblock %}
 {% block body_class %}lecture-form-page{% endblock %}
@@ -14,7 +15,13 @@
 {% endblock %}
 
 {% block content %}
-{{ page_header('填写听课表单') }}
+{{ page_header('修改被驳回的听课表' if is_rejected_form else '填写听课表单') }}
+{% if is_rejected_form %}
+<section class="app-message app-message--danger d-block mb-4" aria-labelledby="lectureRejectionTitle">
+    <h2 class="h6 mb-1" id="lectureRejectionTitle"><i class="bi bi-exclamation-circle me-1" aria-hidden="true"></i> 驳回原因</h2>
+    <p class="lecture-rejection-reason mb-0 text-body">{{ form.review_comment | default('', true) | trim or '审核人未填写驳回原因。' }}</p>
+</section>
+{% endif %}
 <div class="lecture-form-layout">
     <nav class="form-section-nav" aria-label="表单分区">
         <a href="#basic-information">基本信息</a>
@@ -156,18 +163,6 @@
             updateClassPeriod();
             
             refreshPhoneValidation();
-
-            // 如果是驳回重填，显示提示
-            {% if form and form.status == '已驳回' %}
-            const alertDiv = document.createElement('div');
-            alertDiv.className = 'alert alert-warning alert-dismissible fade show mb-4';
-            alertDiv.innerHTML = `
-                <i class="bi bi-exclamation-triangle-fill"></i> <strong>注意：</strong> 您正在重新填写被驳回的表单。
-                <br><strong>驳回原因：</strong> ${data.review_comment || '无'}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>
-            `;
-            document.querySelector('.card-body').insertBefore(alertDiv, document.querySelector('form'));
-            {% endif %}
         }
     </script>
     {% endif %}
@@ -672,7 +667,7 @@
 
                         <div class="form-actions">
                             <button type="submit" class="btn btn-primary btn-lg me-3">
-                                <i class="bi bi-save"></i> 提交表单
+                                <i class="bi bi-save"></i> {{ '重新提交审核' if is_rejected_form else '提交表单' }}
                             </button>
                             <button type="button" class="btn btn-secondary btn-lg" data-bs-toggle="modal" data-bs-target="#lectureFormResetDialog">
                                 <i class="bi bi-arrow-counterclockwise"></i> 重置表单

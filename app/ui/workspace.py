@@ -13,6 +13,7 @@ class WorkspaceSnapshot:
     draft_saved: bool = False
     schedule_ready: bool = True
     registration_ready: bool = True
+    rejected_forms: tuple = ()
 
 
 def _build_review_tasks(pending_forms):
@@ -39,16 +40,22 @@ def load_workspace_snapshot(user):
     )
 
     latest_ids = db.select(db.func.max(LectureForm.id)).group_by(
-        db.func.coalesce(LectureForm.unique_id, LectureForm.id)
+        db.func.coalesce(db.func.nullif(LectureForm.unique_id, 0), LectureForm.id)
     )
     latest_forms = LectureForm.query.filter(LectureForm.id.in_(latest_ids))
 
     if user.role == '信息员':
+        personal_forms = latest_forms.filter_by(listener_number=user.number)
+        rejected_forms = personal_forms.filter_by(status='已驳回').with_entities(
+            LectureForm.id, LectureForm.course_title, LectureForm.teacher_name,
+            LectureForm.lecture_date, LectureForm.class_period,
+        ).order_by(LectureForm.id.desc()).all()
         return WorkspaceSnapshot(
             **capabilities,
-            total_forms=latest_forms.filter_by(listener_number=user.number).count(),
+            total_forms=personal_forms.count(),
             reservation_count=CourseRegistration.query.filter_by(user_id=user.id).count(),
             draft_saved=LectureFormDraft.query.filter_by(user_id=user.id, draft_key='submit_form').first() is not None,
+            rejected_forms=tuple(rejected_forms),
         )
     permission = get_user_review_permission(user.id)
     reviewable_users = get_reviewable_users(user.id)
@@ -109,6 +116,7 @@ def build_workspace(user, snapshot):
                 {'label': '我的预约', 'value': snapshot.reservation_count},
             ],
             'tasks': tasks,
+            'rejected_forms': snapshot.rejected_forms,
             'quick_actions': ([{'label': '听课登记', 'endpoint': 'user.listening_registration'}]
                               if snapshot.registration_ready else []) + [
                 {'label': '查看记录', 'endpoint': 'user.my_forms'},
