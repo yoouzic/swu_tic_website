@@ -11,6 +11,7 @@ MAX_GUIDED_QUESTIONS = 4
 MAX_GUIDED_FACT_LENGTH = 120
 MAX_GUIDED_CANDIDATES = 20
 ALLOWED_GUIDED_STAGES = frozenset({'question', 'candidate', 'confirm', 'manual', 'done'})
+GUIDE_HISTORY_ANSWER_CODES = frozenset({'A', 'B', 'C', 'D', 'NONE', 'SKIP'})
 _ALLOWED_GUIDED_FACTS = frozenset({'date', 'teacher', 'room', 'period', 'student_grade_class'})
 _ALLOWED_GUIDED_QUESTION_KINDS = _ALLOWED_GUIDED_FACTS | {'memory'}
 

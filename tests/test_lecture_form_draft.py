@@ -187,18 +187,20 @@ class LectureFormDraftTest(unittest.TestCase):
     def test_guided_assistant_draft_round_trips_bounded_state_and_history(self):
         self._login_as(self.user)
         payload = {
+            'course_feedback': 'Manual feedback retained after skipping a guide question.',
             'assistant': {
                 'stage': 'candidate',
                 'guide_state': {
                     'known_facts': {'date': '2026-09-18', 'room': '8-309'},
                     'candidate_ids': ['primary:batch-current:1'],
-                    'asked_question_kinds': ['memory', 'date'],
-                    'question_count': 1,
+                    'asked_question_kinds': ['memory', 'date', 'teacher'],
+                    'question_count': 2,
                     'stage': 'candidate',
                 },
                 'history': [
                     {'kind': 'memory', 'answer_code': 'A', 'custom_value': None},
                     {'kind': 'date', 'answer_code': 'D', 'custom_value': '2026-09-18'},
+                    {'kind': 'teacher', 'answer_code': 'SKIP', 'custom_value': None},
                 ],
                 'template_version': 'task4-v1',
             },
@@ -206,8 +208,9 @@ class LectureFormDraftTest(unittest.TestCase):
 
         response = self.client.put('/user/api/lecture_form_draft', json={'data': payload})
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200, response.get_json())
         saved = self.client.get('/user/api/lecture_form_draft').get_json()['data']
+        self.assertEqual(saved['course_feedback'], payload['course_feedback'])
         self.assertEqual(saved['assistant']['guide_state'], payload['assistant']['guide_state'])
         self.assertEqual(saved['assistant']['history'], payload['assistant']['history'])
 

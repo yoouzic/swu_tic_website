@@ -30,6 +30,7 @@ from app.services.listening_assistant_contracts import (
     parse_period,
 )
 from app.services.listening_assistant_guide_contracts import (
+    GUIDE_HISTORY_ANSWER_CODES,
     MAX_GUIDED_FACT_LENGTH,
     MAX_GUIDED_QUESTIONS,
     normalize_candidate_ids,
@@ -97,7 +98,6 @@ GUIDE_STATE_KEYS = frozenset({
 })
 GUIDE_HISTORY_KEYS = frozenset({'kind', 'answer_code', 'custom_value'})
 GUIDE_KINDS = frozenset({'memory', 'date', 'teacher', 'room', 'period', 'student_grade_class'})
-GUIDE_ANSWER_CODES = frozenset({'A', 'B', 'C', 'D', 'NONE'})
 GUIDE_CANDIDATE_ID_PATTERN = re.compile(r'^[0-9A-Za-z._:~\-]+$')
 GUIDE_PHONE_PATTERN = re.compile(r'1[3-9]\d{9}')
 
@@ -249,7 +249,7 @@ def _normalize_guide_history(value: object) -> tuple[Mapping[str, Any], ...]:
         answer_code = item['answer_code']
         if not isinstance(kind, str) or kind not in GUIDE_KINDS:
             raise AssistantSelectionError(f'history[{index}].kind is not allowed')
-        if not isinstance(answer_code, str) or answer_code not in GUIDE_ANSWER_CODES:
+        if not isinstance(answer_code, str) or answer_code not in GUIDE_HISTORY_ANSWER_CODES:
             raise AssistantSelectionError(f'history[{index}].answer_code is not allowed')
         custom_value = _normalize_guide_text(
             item['custom_value'],

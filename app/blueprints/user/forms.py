@@ -26,6 +26,7 @@ from app.services.submission_draft_consumption import (snapshot_submission_draft
     delete_consumed_submission_draft)
 from app.services.listening_assistant_contracts import SAFE_OVERRIDE_KEYS
 from app.services.listening_assistant_guide_contracts import (
+    GUIDE_HISTORY_ANSWER_CODES,
     MAX_GUIDED_FACT_LENGTH,
     MAX_GUIDED_QUESTIONS,
     GuidedAssistantState,
@@ -109,7 +110,6 @@ _ASSISTANT_QUERY_DRAFT_KEYS = frozenset({
 })
 _GUIDE_HISTORY_KEYS = frozenset({'kind', 'answer_code', 'custom_value'})
 _GUIDE_KINDS = frozenset({'memory', 'date', 'teacher', 'room', 'period', 'student_grade_class'})
-_GUIDE_ANSWER_CODES = frozenset({'A', 'B', 'C', 'D', 'NONE'})
 # The entry choice and final course selection do not consume fact questions.
 _MAX_GUIDE_HISTORY = MAX_GUIDED_QUESTIONS + 2
 _GUIDE_CANDIDATE_ID_PATTERN = re.compile(r'^[0-9A-Za-z._:~\-]+$')
@@ -147,7 +147,7 @@ def _normalize_guide_history(value):
         answer_code = item['answer_code']
         if not isinstance(kind, str) or kind not in _GUIDE_KINDS:
             raise ValueError(f'assistant.history[{index}].kind is not allowed')
-        if not isinstance(answer_code, str) or answer_code not in _GUIDE_ANSWER_CODES:
+        if not isinstance(answer_code, str) or answer_code not in GUIDE_HISTORY_ANSWER_CODES:
             raise ValueError(f'assistant.history[{index}].answer_code is not allowed')
         custom_value = item['custom_value']
         if custom_value is not None:

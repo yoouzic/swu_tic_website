@@ -614,8 +614,23 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
             create_evidence(other_user, form, normalized)
 
     def test_submit_revalidates_assistant_fills_only_empty_schedule_fields_and_records_evidence(self):
-        service, _loader = self._service(primary=[schedule_entry()])
-        assistant_payload, _candidate = self._payload(service)
+        service, _loader = self._service(primary=[schedule_entry(source_batch_id='1')])
+        assistant_payload, candidate = self._payload(service, source_batch_id='1')
+        skipped_answer = {'kind': 'teacher', 'answer_code': 'SKIP', 'custom_value': None}
+        assistant_payload.update({
+            'guide_state': {
+                'known_facts': {'date': LOOKUP_DATE.isoformat(), 'room': '8-309'},
+                'candidate_ids': [candidate.candidate_id],
+                'asked_question_kinds': ['memory', 'date', 'teacher'],
+                'question_count': 2,
+                'stage': 'done',
+            },
+            'history': [
+                {'kind': 'memory', 'answer_code': 'A', 'custom_value': None},
+                {'kind': 'date', 'answer_code': 'D', 'custom_value': LOOKUP_DATE.isoformat()},
+                skipped_answer,
+            ],
+        })
         form_data = self._valid_form_payload()
         form_data.update({
             'lecture_date': '',
@@ -648,7 +663,8 @@ class ListeningAssistantEvidenceTest(unittest.TestCase):
         self.assertEqual(form.lecture_location, '8-309')
         self.assertEqual(form.teacher_name, '张老师')
         self.assertEqual(form.course_title, '数据结构')
-        self.assertEqual(ListeningAssistantEvidence.query.filter_by(user_id=self.user.id).count(), 1)
+        evidence = ListeningAssistantEvidence.query.filter_by(user_id=self.user.id).one()
+        self.assertEqual(json.loads(evidence.confirmation_json)['guide_history'][-1], skipped_answer)
 
     def test_submit_preserves_explicitly_cleared_assistant_overrides_and_blocks_incomplete_form(self):
         service, _loader = self._service(primary=[schedule_entry()])
