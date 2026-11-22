@@ -1,25 +1,16 @@
-import logging
-
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
-from flask.logging import wsgi_errors_stream
 from werkzeug.exceptions import BadRequestKeyError
 from werkzeug.security import check_password_hash
 from ..models import User, db
+from ..utils.operation_log import operation_logger
 from ..utils.password_audit import record_password_audit
 from ..utils.user_status import is_user_active
 from app.security import login_required, role_required
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
-_login_logger = logging.getLogger('swu_tic.auth.login')
-_login_logger.setLevel(logging.INFO)
-_login_logger.propagate = False
-if not _login_logger.handlers:
-    _login_logger.addHandler(logging.StreamHandler(wsgi_errors_stream))
-
-
 def log_login_result(result, user_id=None):
-    _login_logger.info('auth_login result=%s user_id=%s', result, user_id if user_id is not None else '-')
+    operation_logger.info('auth_login result=%s user_id=%s', result, user_id if user_id is not None else '-')
 
 
 @auth_bp.route('/login', methods=['GET', 'POST'])

@@ -20,6 +20,7 @@ Covers:
 import os
 import tempfile
 import unittest
+from io import StringIO
 from tests.draft_revision_client import DraftRevisionClient
 from unittest import mock
 
@@ -288,17 +289,103 @@ class SubmitFormTransactionTest(unittest.TestCase):
 
     # ---- Outcome C: commit failures roll back and preserve the draft ----
 
+    def test_draft_and_submission_rejections_log_reason_and_owned_draft(self):
+        self._save_draft()
+        draft_id = LectureFormDraft.query.filter_by(user_id=self.user.id).one().id
+        errors = StringIO()
+        output = {'wsgi.errors': errors}
+        response = self.client.put(
+            '/user/api/lecture_form_draft',
+            json={'data': {'course_title': 'private-course-title'}},
+            headers={'X-Lecture-Draft-Revision': 'private-stale-token'},
+            environ_overrides=output,
+        )
+        self.assertEqual(response.status_code, 409)
+        response = self.client.put(
+            '/user/api/lecture_form_draft',
+            json={'data': {'assistant': {'unsupported': 'private-assistant-value'}}},
+            environ_overrides=output,
+        )
+        self.assertEqual(response.status_code, 400)
+        payload = self._valid_form_payload()
+        payload['course_feedback'] = 'private-feedback'
+        response = self.client.post('/user/submit_form', data=payload, environ_overrides=output)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(errors.getvalue().splitlines(), [
+            f'form_write_failed operation=draft_save reason=draft_conflict status=409 user_id={self.user.id} record=draft:{draft_id}',
+            f'form_write_failed operation=draft_save reason=assistant_draft_invalid status=400 user_id={self.user.id} record=draft:{draft_id}',
+            f'form_write_failed operation=form_submit reason=field_validation_failed status=400 user_id={self.user.id} record=draft:{draft_id} fields=course_feedback',
+        ])
+
+    def test_form_edit_rejection_logs_record_but_success_does_not_log(self):
+        errors = StringIO()
+        output = {'wsgi.errors': errors}
+        payload = self._valid_form_payload()
+        response = self.client.post('/user/submit_form', data=payload, environ_overrides=output)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(errors.getvalue(), '')
+        form = LectureForm.query.one()
+        payload.update(unique_id=str(form.id), expected_form_id='private-stale-value')
+        response = self.client.post('/user/submit_form', data=payload, environ_overrides=output)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(errors.getvalue().splitlines(), [
+            f'form_write_failed operation=form_submit reason=form_version_conflict status=409 user_id={self.user.id} record=form:{form.id}',
+        ])
+
+    def test_draft_server_error_logs_exception_type_without_exception_details(self):
+        self._save_draft()
+        draft_id = LectureFormDraft.query.filter_by(user_id=self.user.id).one().id
+        errors = StringIO()
+        with self.assertNoLogs(app.logger, level='ERROR'), mock.patch.dict(
+            app.config, {'PROPAGATE_EXCEPTIONS': False},
+        ), mock.patch(
+            'app.blueprints.user.forms.save_lecture_form_draft_atomic',
+            side_effect=RuntimeError('private-draft-fault-detail'),
+        ):
+            response = self.client.put(
+                '/user/api/lecture_form_draft', json={'data': {'course_title': 'private-course-title'}},
+                environ_overrides={'wsgi.errors': errors},
+            )
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(errors.getvalue().splitlines(), [
+            f'form_write_failed operation=draft_save reason=internal_error status=500 user_id={self.user.id} record=draft:{draft_id} error_type=RuntimeError',
+        ])
+
+    def test_form_write_logs_access_rejection_and_csrf_with_no_record(self):
+        errors = StringIO()
+        output = {'wsgi.errors': errors}
+        response = app.test_client().post('/user/submit_form', environ_overrides=output)
+        self.assertEqual(response.status_code, 302)
+        with mock.patch.dict(app.config, {'WTF_CSRF_ENABLED': True}):
+            response = self.client.put('/user/api/lecture_form_draft', json={}, environ_overrides=output)
+            self.assertEqual(response.status_code, 400)
+        self.assertEqual(errors.getvalue().splitlines(), [
+            'form_write_failed operation=form_submit reason=login_required status=302 user_id=- record=-',
+            f'form_write_failed operation=draft_save reason=csrf_rejected status=400 user_id={self.user.id} record=-',
+        ])
+
     def test_failed_normal_submission_preserves_draft_and_registration(self):
         # §14：FAILED_SUBMISSION_PRESERVES_DRAFT——normal 提交最终 commit 失败
         # → rollback：无表单、draft 保留、registration 绑定回滚。
         self._save_draft()
         registration = self._make_registration()
         self.assertEqual(self._draft_count(), 1)
+        draft_id = LectureFormDraft.query.filter_by(user_id=self.user.id).one().id
+        errors = StringIO()
 
-        with mock.patch.object(db.session, 'commit', side_effect=RuntimeError('commit fault')):
-            response = self._submit(registration_id=registration.id)
+        with self.assertNoLogs(app.logger, level='ERROR'), mock.patch.object(
+            db.session, 'commit', side_effect=RuntimeError('private-submit-fault-detail'),
+        ):
+            form_data = self._valid_form_payload()
+            form_data['registration_id'] = str(registration.id)
+            response = self.client.post(
+                '/user/submit_form', data=form_data, environ_overrides={'wsgi.errors': errors},
+            )
 
         self.assertEqual(response.status_code, 500)  # 失败状态 + 保留输入的表单页
+        self.assertEqual(errors.getvalue().splitlines(), [
+            f'form_write_failed operation=form_submit reason=internal_error status=500 user_id={self.user.id} record=draft:{draft_id} error_type=RuntimeError',
+        ])
         self.assertEqual(self._form_count(), 0)
         self.assertEqual(self._draft_count(), 1)
         self.assertFalse(self._durable_registration(registration.id).is_used)

@@ -40,6 +40,7 @@ from app.services.listening_assistant_schedule import ScheduleSourceUnavailable
 from app.services.lecture_form_draft_concurrency import (LectureFormDraftConflict,
     save_lecture_form_draft_atomic, get_draft_revision, delete_lecture_form_draft_atomic)
 from app.utils.draft_revision import DraftRevisionError, require_draft_revision
+from app.utils.operation_log import mark_form_failure, set_form_record
 from app.services.lecture_form_draft_entry_schema import ensure_lecture_form_draft_entry_schema, manual_draft_entry_allowed
 from app.services.registration_course_identity import resolve_registration_course
 from sqlalchemy.orm.exc import StaleDataError
@@ -67,6 +68,7 @@ def listening_assistant_page_defaults():
 @user_bp.errorhandler(DraftRevisionError)
 def handle_draft_revision_error(error):
     db.session.rollback()
+    mark_form_failure(error.code)
     return jsonify(success=False, code=error.code, message=str(error)), error.status
 
 
@@ -469,7 +471,7 @@ def _form_edit_data(form):
         'abnormal_situation', 'teaching_method', 'classroom_discipline', 'classroom_atmosphere',
         'courseware_quality', 'overall_effect', 'quality_case', 'course_feedback', 'suggestions',
         'student_signature1', 'contact_phone1', 'student_signature2', 'contact_phone2',
-        'registration_id', 'review_comment',
+        'registration_id',
     )
     data = {field: getattr(form, field) for field in fields}
     data['unique_id'] = form.unique_id or form.id
@@ -490,7 +492,6 @@ def _render_submitted_form(user, existing_version=None):
     submitted = request.form.to_dict(flat=True)
     if existing_version:
         submitted.setdefault('unique_id', str(existing_version.unique_id or existing_version.id))
-        submitted.setdefault('review_comment', existing_version.review_comment)
     return render_template('user/lecture_form.html', user=user, form_data=submitted,
                            form=existing_version, edit_mode=existing_version is not None,
                            lecture_draft_revision=(request.headers.get('X-Lecture-Draft-Revision') or
@@ -554,6 +555,8 @@ def lecture_form_draft():
         })
 
     draft = _load_lecture_form_draft(user_id)
+    if draft is not None and request.method == 'PUT':
+        set_form_record('draft', draft.id)
     require_draft_revision(user_id, LECTURE_FORM_DRAFT_KEY, draft)
     if request.method == 'DELETE':
         try:
@@ -569,14 +572,17 @@ def lecture_form_draft():
     try:
         payload = _normalize_draft_payload(raw_payload)
     except ValueError as error:
+        mark_form_failure('assistant_draft_invalid')
         return jsonify({'success': False, 'message': str(error)}), 400
     if payload is None:
+        mark_form_failure('draft_payload_invalid')
         return jsonify({'success': False, 'message': 'Draft payload must be a JSON object'}), 400
 
     existing = _parse_draft_payload(draft)
     capture_enabled = site_capture_assistance_enabled()
     if ('expected_site_capture_id' in body and body['expected_site_capture_id'] != existing.get('site_capture_id')
             and not (not capture_enabled and body['expected_site_capture_id'] is None)):
+        mark_form_failure('site_capture_changed')
         return jsonify(success=False,code='draft_conflict',message='听课记录已切换，请刷新后继续填写。'),409
     if capture_enabled and existing.get('site_capture_id'):
         payload['site_capture_id']=existing['site_capture_id']
@@ -599,6 +605,7 @@ def lecture_form_draft():
         db.session.commit()
     except (LectureFormDraftConflict,StaleDataError):
         db.session.rollback()
+        mark_form_failure('draft_conflict')
         return jsonify(success=False,code='draft_conflict',message='听课草稿已更新或删除，请保留当前输入并刷新后继续填写。'),409
     except Exception:
         db.session.rollback()
@@ -720,19 +727,23 @@ def submit_form():
             try:
                 parsed_version_id = positive_sqlite_id(version_id)
             except ValueError:
+                mark_form_failure('form_reference_invalid')
                 flash('无法打开这份表单，请通过“查看记录”重新打开。', 'error')
                 return _render_submitted_form(user), 400
             base = db.session.get(LectureForm, parsed_version_id)
             if base is None:
+                mark_form_failure('form_not_found')
                 flash('表单不存在，请通过“查看记录”重新打开。', 'error')
                 return _render_submitted_form(user), 404
             logical_id = base.unique_id or base.id
             chain = LectureForm.query.filter(db.or_(LectureForm.unique_id == logical_id,
                                                      LectureForm.id == logical_id)).order_by(LectureForm.id.desc()).all()
             if not chain or any(form.listener_number != user.number for form in chain):
+                mark_form_failure('form_owner_mismatch')
                 flash('只能修改自己提交的表单。', 'error')
                 return _render_submitted_form(user), 403
             existing_version = chain[0]
+            set_form_record('form', existing_version.id)
             # Rendering after a rollback must also tolerate an authorized
             # reviewer deleting this form while the edit request was in flight.
             recovery_form = SimpleNamespace(
@@ -741,12 +752,14 @@ def submit_form():
                 status=existing_version.status, updated_at=existing_version.updated_at,
             )
             if existing_version.status not in ('待审核', '已驳回'):
+                mark_form_failure('form_review_locked')
                 flash('该表单已进入审核或完成审核，不能重新提交。', 'error')
                 return _render_submitted_form(recovery_user, recovery_form), 403
             expected_timestamp = existing_version.updated_at.isoformat() if existing_version.updated_at else ''
             if (request.form.get('expected_form_id') != str(existing_version.id)
                     or 'expected_form_updated_at' not in request.form
                     or request.form.get('expected_form_updated_at') != expected_timestamp):
+                mark_form_failure('form_version_conflict')
                 flash('表单已更新，请保留当前输入并刷新页面后重新核对。', 'error')
                 return _render_submitted_form(recovery_user, recovery_form), 409
         if existing_version is not None:
@@ -756,6 +769,8 @@ def submit_form():
             draft_revision = None
             consumed_capture_id = None
         else:
+            if submission_draft is not None:
+                set_form_record('draft', submission_draft.id)
             try:
                 expected_draft_revision = require_draft_revision(
                     user.id, LECTURE_FORM_DRAFT_KEY, submission_draft,
@@ -767,29 +782,35 @@ def submit_form():
                     db.session.rollback()
                     flash('检测到重复提交，系统已保留首次提交结果。', 'info')
                     return redirect(url_for('user.success', form_id=retry_id))
+                mark_form_failure(error.code)
                 flash(str(error), 'error')
                 return _render_submitted_form(recovery_user, recovery_form), error.status
         if capture_enabled and not existing_version:
             capture_id=_parse_draft_payload(submission_draft).get('site_capture_id')
             posted_capture=request.form.get('site_capture_id','')
             if capture_id and posted_capture and str(capture_id)!=posted_capture:
+                mark_form_failure('site_capture_changed')
                 flash('听课记录已切换，请刷新后提交。','error')
                 return _render_submitted_form(recovery_user, recovery_form),400
             try:
                 capture_id = positive_sqlite_id(capture_id or posted_capture) if capture_id or posted_capture else None
             except ValueError:
+                mark_form_failure('site_capture_reference_invalid')
                 flash('无法读取这次听课记录，请通过“查看记录”重新打开后提交。', 'error')
                 return _render_submitted_form(recovery_user, recovery_form), 400
             site_capture=LectureSiteCapture.query.filter_by(id=capture_id,user_id=user.id,is_archived=False).first() if capture_id else None
             if not site_capture:
+                mark_form_failure('site_capture_unavailable')
                 flash('请先拍摄门牌并保存这次听课记录。','error')
                 return _render_submitted_form(recovery_user, recovery_form),400
             consumed_capture_id = site_capture.id
             if request.form.get('lecture_date')!=site_capture.received_at[:10]:
+                mark_form_failure('site_capture_date_mismatch')
                 flash('听课日期与现场记录不一致，请核对后提交。','error')
                 return _render_submitted_form(recovery_user, recovery_form),400
             from app.services.listening_assistant_contracts import normalize_room
             if not site_capture.building or not site_capture.room_number or normalize_room(request.form.get('lecture_location')) != normalize_room(f'{site_capture.building}-{site_capture.room_number}'):
+                mark_form_failure('site_capture_room_unconfirmed')
                 flash('请先确认照片中的教室，并核对表单教室。','error')
                 return _render_submitted_form(recovery_user, recovery_form),400
 
@@ -798,6 +819,7 @@ def submit_form():
             assistant_payload = _extract_assistant_submission_payload()
         except ValueError:
             db.session.rollback()
+            mark_form_failure('assistant_payload_invalid')
             flash('填表助手数据格式错误，请重新确认课程信息后提交。', 'error')
             return _render_submitted_form(recovery_user, recovery_form), 400
 
@@ -808,14 +830,17 @@ def submit_form():
             if (not current_semester or assistant_payload.get('source_kind', 'primary') != 'primary'
                     or any(value is not None and value != current_semester
                            for value in (assistant_payload.get('semester'), query_semester))):
+                mark_form_failure('assistant_context_stale')
                 flash('填表助手信息已失效，请保留手填内容并重新核对。', 'error')
                 return _render_submitted_form(recovery_user, recovery_form), 400
             try:
                 assistant_selection = revalidate_selection(user, assistant_payload, semester=current_semester)
-            except (AssistantSelectionError, ScheduleSourceUnavailable):
+            except (AssistantSelectionError, ScheduleSourceUnavailable) as error:
                 # Revalidation happens before any form mutation.  Keep the
                 # route's normal HTML/flash error shape and fail closed.
                 db.session.rollback()
+                mark_form_failure('schedule_source_unavailable' if isinstance(error, ScheduleSourceUnavailable)
+                                  else error.code)
                 flash('填表助手信息已失效，请重新搜索并确认课程后提交。', 'error')
                 return _render_submitted_form(recovery_user, recovery_form), 400
 
@@ -895,9 +920,11 @@ def submit_form():
         if registration_id:
             registration = Reservation.query.get(registration_id)
             if registration is None:
+                mark_form_failure('registration_not_found')
                 flash('所选听课登记不存在或已被删除，请刷新后重试。', 'error')
                 return _render_submitted_form(recovery_user, recovery_form), 400
             if registration.user_id != user.id:
+                mark_form_failure('registration_owner_mismatch')
                 flash('无权使用该听课登记。', 'error')
                 return _render_submitted_form(recovery_user, recovery_form), 403
 
@@ -985,6 +1012,7 @@ def submit_form():
         if posted_date is not None and effective_date is not None and posted_date != effective_date:
             field_errors['lecture_date'] = '听课日期与显示日期不一致，请重新确认'
         if field_errors:
+            mark_form_failure('field_validation_failed', fields=field_errors)
             for message in field_errors.values():
                 flash(message, 'error')
             db.session.rollback()
@@ -1033,6 +1061,7 @@ def submit_form():
                         or live_draft.payload_json != draft_revision['payload_json']
                         or live_draft.updated_at != draft_revision['updated_at']):
                     db.session.rollback()
+                    mark_form_failure('draft_conflict')
                     flash('听课草稿已更新，请保留输入并重新打开草稿。', 'error')
                     return _render_submitted_form(recovery_user, recovery_form), 409
 
@@ -1048,16 +1077,19 @@ def submit_form():
                         or not site_capture.building or not site_capture.room_number
                         or normalize_room(lecture_location) != normalize_room(f'{site_capture.building}-{site_capture.room_number}')):
                     db.session.rollback()
+                    mark_form_failure('site_capture_changed')
                     flash('现场记录已更新或归档，请核对后重新提交。', 'error')
                     return _render_submitted_form(recovery_user, recovery_form), 400
             if registration is not None:
                 registration = Reservation.query.filter_by(id=registration.id).populate_existing().with_for_update().first()
                 if registration is None:
                     db.session.rollback()
+                    mark_form_failure('registration_not_found')
                     flash('所选听课登记不存在或已被删除，请刷新后重试。', 'error')
                     return _render_submitted_form(recovery_user, recovery_form), 400
                 if registration.user_id != user.id:
                     db.session.rollback()
+                    mark_form_failure('registration_owner_mismatch')
                     flash('无权使用该听课登记。', 'error')
                     return _render_submitted_form(recovery_user, recovery_form), 403
 
@@ -1075,6 +1107,7 @@ def submit_form():
                              else submission_field_errors(form_data))
             if locked_errors:
                 db.session.rollback()
+                mark_form_failure('field_validation_failed', fields=locked_errors)
                 for message in locked_errors.values():
                     flash(message, 'error')
                 return _render_submitted_form(recovery_user, recovery_form), 400
@@ -1116,6 +1149,7 @@ def submit_form():
                             duplicate_form = None
                 if site_capture and site_capture.form_id and (not duplicate_form or duplicate_form.id!=site_capture.form_id):
                     db.session.rollback()
+                    mark_form_failure('site_capture_already_submitted')
                     flash('这次现场记录已提交，请新建听课记录。','error')
                     return _render_submitted_form(recovery_user, recovery_form),400
                 if duplicate_form:
@@ -1190,15 +1224,17 @@ def submit_form():
             return redirect(url_for('user.success', form_id=target_form.id))
         except DraftRevisionError as error:
             db.session.rollback()
+            mark_form_failure(error.code)
             flash(str(error), 'error')
             return _render_submitted_form(recovery_user, recovery_form), error.status
         except ReviewConflict as error:
             db.session.rollback()
+            mark_form_failure('form_version_conflict')
             flash(str(error), 'error')
             return _render_submitted_form(recovery_user, recovery_form), 409
-        except Exception:
+        except Exception as error:
             db.session.rollback()
-            current_app.logger.exception('Listener submission failed')
+            mark_form_failure('internal_error', error=error)
             flash('提交失败，请保留输入后重试。', 'error')
             return _render_submitted_form(recovery_user, recovery_form), 500
     

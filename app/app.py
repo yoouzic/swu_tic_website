@@ -10,6 +10,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from app.utils.env_config import env_bool, env_int, env_path, env_value, is_production
+from app.utils.operation_log import form_write_operation, log_form_write_failure, mark_form_failure
 from app.models import db
 
 DEFAULT_INSTANCE_DIR = os.path.join('data', 'instance')
@@ -26,6 +27,14 @@ class AnonymousUser:
     department = '无'
     is_active = False
     is_authenticated = False
+
+
+class ListeningApp(Flask):
+    def log_exception(self, exc_info):
+        if form_write_operation():
+            mark_form_failure('internal_error', error=exc_info[1])
+        else:
+            super().log_exception(exc_info)
 
 
 def create_app(config_override: dict | None = None):
@@ -51,7 +60,7 @@ def create_app(config_override: dict | None = None):
     from app.services.schedule_availability import current_schedule_availability
     from app.blueprints.auth import auth_bp, log_login_result
 
-    app = Flask(__name__)
+    app = ListeningApp(__name__)
 
     # Production proxy behavior is kept as before.
     if is_production():
@@ -145,14 +154,19 @@ def create_app(config_override: dict | None = None):
         from app.services.review_read_receipt_schema import ensure_review_read_receipt_schema
         ensure_review_read_receipt_schema()
     csrf.init_app(app)
+    app.after_request(log_form_write_failure)
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(error):
         """Return JSON for API/fetch CSRF failures; keep normal pages safe and simple."""
-        if request.endpoint == 'auth.login' and request.method == 'POST':
+        operation = form_write_operation()
+        if operation or (request.endpoint == 'auth.login' and request.method == 'POST'):
             result = ('csrf_session_missing' if error.description == 'The CSRF session token is missing.'
                       else 'csrf_rejected')
-            log_login_result(result)
+            if operation:
+                mark_form_failure(result)
+            else:
+                log_login_result(result)
         if request.path.startswith('/admin/api/') or request.is_json:
             return jsonify({
                 'success': False,
