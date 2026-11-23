@@ -231,7 +231,7 @@ def test_accessibility_responsive_and_local_assets_are_present():
         text = path.read_text(encoding='utf-8')
         assert 'https://cdn.' not in text
         assert 'https://unpkg.' not in text
-    assert '<script src="{{ url_for(\'static\', filename=\'js/listening-assistant.js\', v=\'20261121-course-title-v1\') }}"></script>' in TEMPLATE
+    assert '<script src="{{ url_for(\'static\', filename=\'js/listening-assistant.js\', v=\'20261123-course-paging-v1\') }}"></script>' in TEMPLATE
     assert '<link rel="stylesheet" href="{{ url_for(\'static\', filename=\'css/listening-assistant.css\', v=\'20261013-complement\') }}">' in TEMPLATE
 
 
@@ -322,3 +322,9 @@ def test_draft_semester_does_not_override_admin_configuration():
     assert 'elements.semester.value = draftSemester' not in SCRIPT
     assert "assistant.source_kind === 'backup'" in SCRIPT
     assert 'cleanText(assistant.semester) !== readSemester()' in SCRIPT
+
+def test_paged_course_candidates_share_the_guided_question_region():
+    assert "['question', 'candidate'].includes(stage)" in SCRIPT
+    assert 'candidatePage' in SCRIPT
+    assert '换一批（' in SCRIPT
+    assert 'data-assistant-next-batch' in TEMPLATE

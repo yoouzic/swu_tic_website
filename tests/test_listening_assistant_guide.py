@@ -628,3 +628,138 @@ def test_first_batch_prioritizes_more_covered_courses_and_keeps_other_answers():
     assert {o.value for batch in result.question.option_batches for o in batch} == set(names)
     answered = guide.answer(result.state, question_kind='teacher', option_code='A', custom_value=None)
     assert answered.state.known_facts['teacher'] == '教师甲'
+
+def test_skipping_the_only_distinguishing_teacher_still_offers_the_courses():
+    entries = [
+        entry(i, teacher=f'教师{i}', room='8-0309', period=(3, 4), course='体育C')
+        for i in range(1, 6)
+    ]
+    service, _ = make_service(entries)
+    guide = ListeningAssistantGuideService(service)
+    initial = guide.start(known_facts={
+        'date': LOOKUP_DATE.isoformat(),
+        'room': '8-0309',
+        'period': '第3-4节',
+        'student_grade_class': '2024级计算机1班',
+    })
+
+    assert initial.question is not None and initial.question.kind == 'teacher'
+    result = guide.answer(initial.state, question_kind='teacher', option_code='SKIP', custom_value=None)
+
+    assert result.state.stage == 'candidate'
+    assert result.question is not None
+    assert len(result.candidates) == 5
+    offered = [option.value for batch in result.question.option_batches for option in batch]
+    assert offered == [candidate.candidate_id for candidate in result.candidates]
+    selected = guide.answer(
+        result.state,
+        question_kind=result.question.kind,
+        option_code=None,
+        custom_value=offered[-1],
+    )
+    assert selected.state.stage == 'confirm'
+    assert selected.state.candidate_ids == (offered[-1],)
+    assert any(candidate.candidate_id == offered[-1] for candidate in selected.candidates)
+
+
+def test_exhausted_question_budget_shows_candidates_instead_of_hiding_them():
+    entries = [
+        entry(i, teacher=f'教师{i}', room='8-0309', period=(1, 2), course='公共体育')
+        for i in range(1, 7)
+    ]
+    service, _ = make_service(entries)
+    guide = ListeningAssistantGuideService(service)
+    state = GuidedAssistantState(
+        {'date': LOOKUP_DATE.isoformat(), 'room': '8-0309'},
+        (),
+        ('memory', 'date', 'teacher', 'room', 'period'),
+        3,
+        'question',
+    )
+
+    result = guide.answer(state, question_kind='period', option_code='A', custom_value=None)
+
+    assert result.state.stage == 'candidate'
+    assert result.question is not None
+    assert len(result.candidates) == 6
+    assert any(len(batch) == 3 for batch in result.question.option_batches)
+
+
+def test_candidate_pages_only_offer_candidates_the_client_received():
+    entries = [
+        entry(i, teacher=f'教师{i:02}', room='第四运动场', period=(7, 8), course=f'体育C{i:02}')
+        for i in range(1, 31)
+    ]
+    service, _ = make_service(entries)
+    guide = ListeningAssistantGuideService(service)
+    initial = guide.start(known_facts={
+        'date': LOOKUP_DATE.isoformat(),
+        'room': '第四运动场',
+        'period': '第7-8节',
+        'student_grade_class': '2024级计算机1班',
+    })
+
+    assert initial.question is not None and initial.question.kind == 'teacher'
+    result = guide.answer(initial.state, question_kind='teacher', option_code='SKIP', custom_value=None)
+
+    assert result.state.stage == 'candidate'
+    assert len(result.candidates) == 20
+    offered = [option.value for batch in result.question.option_batches for option in batch]
+    assert len(offered) == 20
+    assert len(result.question.option_batches) == 7
+    assert offered == [candidate.candidate_id for candidate in result.candidates]
+    selected = guide.answer(
+        result.state,
+        question_kind=result.question.kind,
+        option_code=None,
+        custom_value=offered[-1],
+    )
+    assert selected.state.stage == 'confirm'
+    assert selected.state.candidate_ids == (offered[-1],)
+    assert any(candidate.candidate_id == offered[-1] for candidate in selected.candidates)
+
+
+def test_candidate_selection_rejects_an_unknown_candidate_id():
+    entries = [entry(i, teacher=f'教师{i}', room='8-0309', period=(3, 4)) for i in range(1, 6)]
+    service, _ = make_service(entries)
+    guide = ListeningAssistantGuideService(service)
+    initial = guide.start(known_facts={
+        'date': LOOKUP_DATE.isoformat(),
+        'room': '8-0309',
+        'period': '第3-4节',
+        'student_grade_class': '2024级计算机1班',
+    })
+    result = guide.answer(initial.state, question_kind='teacher', option_code='SKIP', custom_value=None)
+
+    with pytest.raises(ValueError, match='candidate selection'):
+        guide.answer(
+            result.state,
+            question_kind=result.question.kind,
+            option_code=None,
+            custom_value='forged-candidate',
+        )
+
+
+def test_candidate_fallback_pages_put_fact_matching_courses_first():
+    early = [entry(i, room='8-0309', period=(3, 4), teacher=f'早课教师{i}', course=f'早课{i}')
+             for i in range(1, 4)]
+    late = [entry(i + 10, room='8-0309', period=(7, 8), teacher=f'晚课教师{i}', course=f'晚课{i}')
+            for i in range(1, 6)]
+    service, _ = make_service(early + late)
+    guide = ListeningAssistantGuideService(service)
+    initial = guide.start(known_facts={
+        'date': LOOKUP_DATE.isoformat(),
+        'room': '8-0309',
+        'period': '第7-8节',
+    })
+
+    assert initial.question is not None and initial.question.kind == 'teacher'
+    result = guide.answer(initial.state, question_kind='teacher', option_code='SKIP', custom_value=None)
+
+    assert result.state.stage == 'candidate'
+    assert len(result.candidates) == 8
+    offered = [option for batch in result.question.option_batches for option in batch]
+    assert len(offered) == 8
+    # The five courses matching the entered period must be offered first.
+    assert all('第7-8节' in option.label for option in offered[:5])
+    assert all('第3-4节' in option.label for option in offered[5:])

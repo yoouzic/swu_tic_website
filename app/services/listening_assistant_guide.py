@@ -139,6 +139,23 @@ def _bounded_result(
     return GuidedResult(state, question, candidates[:MAX_GUIDED_CANDIDATES], needs_confirmation)
 
 
+def _candidate_display_order(candidates: tuple[Candidate, ...]) -> tuple[Candidate, ...]:
+    """Keep conflict-free courses first so the pages show the likely choices.
+
+    The search result is period-first; a fallback candidate list that spans
+    several periods would otherwise page through unrelated periods before the
+    course matching the facts the user already gave.
+    """
+    return tuple(sorted(candidates, key=lambda candidate: (
+        bool(candidate.conflicts),
+        candidate.period[0],
+        candidate.period[1],
+        candidate.course_title or '',
+        candidate.teacher_name,
+        candidate.candidate_id,
+    )))
+
+
 class ListeningAssistantGuideService:
     """Choose one safe question at a time from a fresh primary search."""
 
@@ -362,22 +379,31 @@ class ListeningAssistantGuideService:
         kind: str,
         candidates: tuple[Candidate, ...],
     ) -> GuidedQuestion:
-        options = tuple(
-            GuidedOption(
-                code=chr(ord('A') + index),
-                label=(
-                    f'{candidate.course_title} · {candidate.teacher_name} · '
-                    f'{candidate.room} · {_period_label(candidate.period)}'
-                )[:120],
-                value=candidate.candidate_id,
-                candidate_count=1,
+        # A fact question may page through every grouped value, but a course
+        # question can only offer candidates the client actually received.
+        # Build its pages from the same bounded list the response carries.
+        visible = _candidate_display_order(candidates)[:MAX_GUIDED_CANDIDATES]
+        batches = tuple(
+            tuple(
+                GuidedOption(
+                    code=chr(ord('A') + index),
+                    label=(
+                        f'{candidate.course_title} · {candidate.teacher_name} · '
+                        f'{candidate.room} · {_period_label(candidate.period)}'
+                    )[:120],
+                    value=candidate.candidate_id,
+                    candidate_count=1,
+                )
+                for index, candidate in enumerate(visible[offset:offset + 3])
             )
-            for index, candidate in enumerate(candidates[:3])
+            for offset in range(0, len(visible), 3)
         )
+        options = batches[0] if batches else ()
         return GuidedQuestion(
             kind=kind,
             prompt='请选择本次听课课程：',
             options=options,
+            option_batches=batches if len(batches) > 1 else (),
         )
 
     def _render(
@@ -434,27 +460,43 @@ class ListeningAssistantGuideService:
 
         if 1 <= len(candidates) <= 3:
             kind = self._candidate_kind(state, candidates)
+            ordered = _candidate_display_order(candidates)
+            ordered_ids = tuple(candidate.candidate_id
+                                for candidate in ordered[:MAX_GUIDED_CANDIDATES])
             next_state = GuidedAssistantState(
-                dict(state.known_facts), candidate_ids,
+                dict(state.known_facts), ordered_ids,
                 self._append_kind(state.asked_question_kinds, kind),
                 state.question_count, 'candidate',
             )
-            return _bounded_result(next_state, self._candidate_question(kind, candidates), candidates, True)
+            return _bounded_result(next_state, self._candidate_question(kind, ordered), ordered, True)
 
+        ordered = _candidate_display_order(candidates)
+        ordered_ids = tuple(candidate.candidate_id
+                            for candidate in ordered[:MAX_GUIDED_CANDIDATES])
         if state.question_count >= MAX_GUIDED_QUESTIONS:
+            # The question budget is spent, but the search did find courses.
+            # Hiding them behind a manual-only state made "skip the teacher"
+            # look like "no course exists"; keep them selectable instead.
+            kind = self._candidate_kind(state, candidates)
             next_state = GuidedAssistantState(
-                dict(state.known_facts), candidate_ids, state.asked_question_kinds,
-                state.question_count, 'manual',
+                dict(state.known_facts), ordered_ids,
+                self._append_kind(state.asked_question_kinds, kind),
+                state.question_count, 'candidate',
             )
-            return _bounded_result(next_state, None, candidates, False)
+            return _bounded_result(next_state, self._candidate_question(kind, ordered), ordered, True)
 
         kind = self._select_kind(candidates, state.known_facts, state.asked_question_kinds)
         if kind is None:
+            # No remaining fact can separate these courses (for example the
+            # user does not know the only teacher). Show the candidates so the
+            # course remains selectable instead of dropping to manual.
+            kind = self._candidate_kind(state, candidates)
             next_state = GuidedAssistantState(
-                dict(state.known_facts), candidate_ids, state.asked_question_kinds,
-                state.question_count, 'manual',
+                dict(state.known_facts), ordered_ids,
+                self._append_kind(state.asked_question_kinds, kind),
+                state.question_count, 'candidate',
             )
-            return _bounded_result(next_state, None, candidates, False)
+            return _bounded_result(next_state, self._candidate_question(kind, ordered), ordered, True)
         next_state = GuidedAssistantState(
             dict(state.known_facts), candidate_ids,
             self._append_kind(state.asked_question_kinds, kind),
@@ -470,24 +512,33 @@ class ListeningAssistantGuideService:
         custom_value: object | None,
         candidates: tuple[Candidate, ...],
     ) -> GuidedResult:
-        if custom_value is not None:
-            raise ValueError('candidate selection does not accept custom_value')
         if question_kind != self._candidate_kind(state, candidates):
             raise ValueError('question_kind does not match the candidate question')
         if option_code in _NO_OP_CODES or option_code=='SKIP':
             return self._manual(state, candidates)
         if option_code == 'D':
             return self._manual(state, candidates)
-        if option_code is None:
-            raise ValueError('candidate selection requires A, B, or C')
-        question = self._candidate_question(question_kind, candidates)
-        selected_option = next((option for option in question.options if option.code == option_code), None)
-        if selected_option is None:
-            raise ValueError('option_code is not valid for the candidate question')
-        selected = next(
-            candidate for candidate in candidates
-            if candidate.candidate_id == selected_option.value
-        )
+        if custom_value is not None:
+            # Later pages cannot reuse A/B/C positions: the client sends the
+            # candidate id it displayed, and the server re-resolves it here.
+            selected = next(
+                (candidate for candidate in candidates
+                 if candidate.candidate_id == custom_value),
+                None,
+            )
+            if selected is None:
+                raise ValueError('candidate selection is not valid')
+        else:
+            if option_code is None:
+                raise ValueError('candidate selection requires A, B, or C')
+            question = self._candidate_question(question_kind, candidates)
+            selected_option = next((option for option in question.options if option.code == option_code), None)
+            if selected_option is None:
+                raise ValueError('option_code is not valid for the candidate question')
+            selected = next(
+                candidate for candidate in candidates
+                if candidate.candidate_id == selected_option.value
+            )
         # Conflicts are evidence that require explicit confirmation/overrides,
         # not a reason to discard a user-selected candidate into an opaque
         # manual state.  The existing /confirm route remains the authority
@@ -497,7 +548,13 @@ class ListeningAssistantGuideService:
             dict(state.known_facts), (selected.candidate_id,),
             state.asked_question_kinds, state.question_count, stage,
         )
-        return _bounded_result(next_state, None, candidates, stage == 'confirm')
+        # The selected course must survive the response bound even when it was
+        # reached through a later page: keep it first for the confirmation UI.
+        ordered = (selected,) + tuple(
+            candidate for candidate in _candidate_display_order(candidates)
+            if candidate.candidate_id != selected.candidate_id
+        )
+        return _bounded_result(next_state, None, ordered, stage == 'confirm')
 
     @staticmethod
     def _manual(state: GuidedAssistantState, candidates: tuple[Candidate, ...]) -> GuidedResult:

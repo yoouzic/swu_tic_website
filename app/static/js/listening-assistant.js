@@ -570,7 +570,13 @@
             const skipButton=root.querySelector('[data-assistant-skip]');
             if(skipButton)skipButton.textContent=question.kind==='memory'?'都不记得，稍后填写':stage==='candidate'?'我不确定，先手动填写':'我不知道，跳过此题';
             const nextBatch = root.querySelector('[data-assistant-next-batch]');
-            if (nextBatch) nextBatch.hidden = stage !== 'question' || !Array.isArray(question.option_batches) || question.option_batches.length < 2;
+            if (nextBatch) {
+                const batchCount = Array.isArray(question.option_batches) ? question.option_batches.length : 0;
+                nextBatch.hidden = !['question', 'candidate'].includes(stage) || batchCount < 2;
+                if (!nextBatch.hidden) {
+                    nextBatch.textContent = `换一批（${(question.batchIndex || 0) + 1}/${batchCount}）`;
+                }
+            }
             elements.options.replaceChildren();
             const options = displayedQuestionOptions();
             options.forEach((option) => {
@@ -1202,7 +1208,8 @@
         }
 
         async function answerOption(optionCode) {
-            if (cleanText(optionCode) === 'D' && (!guideState.state || guideState.question?.kind === 'memory')) {
+            const initialStage = guideState.state && guideState.state.stage;
+            if (cleanText(optionCode) === 'D' && (!guideState.state || guideState.question?.kind === 'memory' || initialStage === 'candidate')) {
                 openManual();
                 return;
             }
@@ -1213,8 +1220,9 @@
             }
             const code = cleanText(optionCode);
             const question = guideState.question;
+            const stage = guideState.state && guideState.state.stage;
             if (code === 'D') {
-                if (question.kind === 'memory' || question.kind === 'candidate') {
+                if (question.kind === 'memory' || question.kind === 'candidate' || stage === 'candidate') {
                     openManual();
                 } else {
                     showCustomInput(true);
@@ -1235,10 +1243,18 @@
                 selectBackupCandidate(option.value);
                 return;
             }
-            // Later batches carry factual values, never reused A/B/C positions
-            // from the first batch. The server searches the current source again.
-            const laterBatch = (question.batchIndex || 0) > 0 && guideState.state?.stage === 'question';
-            await sendAnswer(laterBatch ? null : code, laterBatch ? option.value : null, {
+            // Later batches carry values, never reused A/B/C positions from the
+            // first batch. Fact values are searched again server-side; a course
+            // answer always sends the displayed candidate id so the server
+            // re-resolves it against the freshly recomputed candidates.
+            const candidatePage = stage === 'candidate';
+            const laterBatch = (question.batchIndex || 0) > 0 && stage === 'question';
+            await sendAnswer(candidatePage || laterBatch ? null : code, candidatePage || laterBatch ? option.value : null, candidatePage ? {
+                kind: question.kind,
+                answer_code: code,
+                custom_value: null,
+                value: answerValue(option),
+            } : {
                 kind: question.kind === 'candidate' ? 'candidate' : question.kind,
                 answer_code: laterBatch ? 'D' : code,
                 custom_value: laterBatch ? option.value : null,

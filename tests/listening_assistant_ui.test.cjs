@@ -409,3 +409,29 @@ test('independent actual-location confirmation uses the existing payload and dra
   assert.equal(stored.candidate_id, candidate.candidate_id);
   assert.deepEqual(stored.overrides, {lecture_location: '实习基地'});
 });
+
+test('paged course-candidate selection sends the displayed candidate id instead of first-page A', async () => {
+  const ctx = {
+    guideState: {
+      state: {stage: 'candidate'},
+      question: {
+        kind: 'teacher',
+        options: [{code: 'A', value: 'candidate-1'}],
+        option_batches: [[{code: 'A', value: 'candidate-1'}], [{code: 'A', label: '课程乙 · 教师乙', value: 'candidate-4'}]],
+        batchIndex: 1,
+      },
+    },
+    cleanText: v => String(v || '').trim(),
+    NO_OP_CODES: new Set(),
+    ensureStarted: async () => true,
+    answerValue: o => o.value,
+    sendAnswer: async (...args) => { ctx.sent = args; },
+  };
+  loadFunction('displayedQuestionOptions', ctx);
+  await loadFunction('answerOption', ctx)('A');
+  assert.equal(ctx.sent[0], null);
+  assert.equal(ctx.sent[1], 'candidate-4');
+  assert.equal(ctx.sent[2].answer_code, 'A');
+  assert.equal(ctx.sent[2].custom_value, null);
+  assert.equal(ctx.sent[2].value, 'candidate-4');
+});
