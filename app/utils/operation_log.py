@@ -38,6 +38,7 @@ _PRIVATE_OPERATIONS = {
     ('admin.submit_review', 'POST'): 'review',
     ('admin.submit_form_review', 'POST'): 'review',
     ('admin.review_form_page', 'GET'): 'review',
+    ('admin.get_forms_for_review', 'GET'): 'review',
     ('admin.get_form_for_review', 'GET'): 'review',
     ('admin.get_form_detail', 'GET'): 'review',
     ('admin.preview_review_form_tags', 'POST'): 'review',

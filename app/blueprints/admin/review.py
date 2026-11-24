@@ -1214,8 +1214,9 @@ def get_forms_for_review():
             result.append(group_data)
         
         return jsonify({'success': True, 'forms': result})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+    except Exception:
+        mark_form_failure('review_queue_load_failed')
+        return jsonify({'success': False, 'message': '加载审核队列失败，请稍后重试。'}), 500
 
 
 @admin_bp.route('/api/review/form/<int:form_id>', methods=['GET'])

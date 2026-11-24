@@ -4,6 +4,7 @@ from datetime import datetime
 from app.models import ReviewReadReceipt, db
 from app.services.review_domain import partition_forms_by_review_scope
 from app.utils.review_permissions import get_user_review_permission
+from app.utils.sqlite_queries import iter_bind_batches
 
 
 def _read_state(read_at=None):
@@ -18,12 +19,13 @@ def department_read_states(user_id, forms, permission=None):
         return result
     allowed, _ = partition_forms_by_review_scope(user_id, forms)
     eligible = [form for form in allowed if form.status == '部门已审核']
-    if not eligible:
-        return result
-    receipts = {receipt.form_id: receipt for receipt in ReviewReadReceipt.query.filter(
-        ReviewReadReceipt.user_id == user_id,
-        ReviewReadReceipt.form_id.in_([form.id for form in eligible]),
-    ).all()}
+    receipts = {}
+    for form_id_batch in iter_bind_batches([form.id for form in eligible]):
+        for receipt in ReviewReadReceipt.query.filter(
+            ReviewReadReceipt.user_id == user_id,
+            ReviewReadReceipt.form_id.in_(form_id_batch),
+        ).all():
+            receipts[receipt.form_id] = receipt
     for form in eligible:
         receipt = receipts.get(form.id)
         if form.reviewer_id == user_id:

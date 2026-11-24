@@ -12,6 +12,7 @@ from sqlalchemy import func
 from app.models import LectureForm, User, db
 from app.utils.operation_log import mark_form_failure, set_form_record
 from app.utils.permission_feedback import build_forbidden_message
+from app.utils.sqlite_queries import iter_bind_batches
 from app.utils.user_status import active_user_filter
 
 from .contracts import BatchStatus, DatasetStatus, ReviewCategory, ReviewMode, ScheduleCoverage
@@ -407,23 +408,24 @@ def _latest_accessible_forms(form_ids, actor_id):
 def latest_assessment_summaries(form_ids):
     """Bulk-load latest assessment summaries and finding counts for queue APIs."""
 
-    ids = _coerce_form_ids(form_ids)
-    if not ids:
-        return {}
-    rows = ReviewAssessment.query.filter(ReviewAssessment.form_id.in_(ids)).order_by(
-        ReviewAssessment.form_id.asc(),
-        ReviewAssessment.created_at.desc(),
-        ReviewAssessment.id.desc(),
-    ).all()
     latest = {}
-    for row in rows:
-        latest.setdefault(row.form_id, row)
-    counts = dict(
-        db.session.query(ReviewFinding.assessment_id, func.count(ReviewFinding.id))
-        .filter(ReviewFinding.assessment_id.in_([row.id for row in latest.values()]))
-        .group_by(ReviewFinding.assessment_id)
-        .all()
-    )
+    for form_id_batch in iter_bind_batches(_coerce_form_ids(form_ids)):
+        rows = ReviewAssessment.query.filter(ReviewAssessment.form_id.in_(form_id_batch)).order_by(
+            ReviewAssessment.form_id.asc(),
+            ReviewAssessment.created_at.desc(),
+            ReviewAssessment.id.desc(),
+        ).all()
+        for row in rows:
+            latest.setdefault(row.form_id, row)
+
+    counts = {}
+    for assessment_id_batch in iter_bind_batches([row.id for row in latest.values()]):
+        counts.update(
+            db.session.query(ReviewFinding.assessment_id, func.count(ReviewFinding.id))
+            .filter(ReviewFinding.assessment_id.in_(assessment_id_batch))
+            .group_by(ReviewFinding.assessment_id)
+            .all()
+        )
     return {
         form_id: {
             'assessment_id': row.id,
