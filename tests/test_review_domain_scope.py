@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
 """Characterization and service tests for review scope policy (Phase 2A.1)."""
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
+from sqlalchemy import event
 from werkzeug.security import generate_password_hash
 
 from app.app import app
@@ -14,16 +18,19 @@ from app.models import (
     Group,
     LectureForm,
     Permission,
+    ReviewReadReceipt,
     RolePermission,
     ScoreRecord,
     User,
     db,
 )
+from app.review_automation.models import ReviewAssessment, ReviewFinding
 from app.services.review_domain import (
     is_form_in_review_scope,
     partition_forms_by_review_scope,
 )
 from tests.app_test_utils import cleanup_sqlite_database, configure_sqlite_database
+from tests.automation_test_utils import make_synthetic_form
 from tests.review_request_utils import post_opened_review
 
 ROLE_INFO = '信息员'
@@ -407,6 +414,97 @@ class ReviewScopeRouteLegacyTests(_ScopeTestBase):
         can_review = {f['id']: f['can_review'] for f in group['forms']}
         self.assertTrue(can_review[form_high.id])
         self.assertFalse(can_review[form_low.id])
+
+    def test_review_queue_loads_more_forms_than_sqlite_variable_limit(self):
+        forms = [
+            make_synthetic_form(
+                unique_id=index,
+                listener_number=self.info_same.number,
+                status='部门已审核',
+            )
+            for index in range(1, 1102)
+        ]
+        db.session.add_all(forms)
+        db.session.flush()
+        # Keep one form unchecked and persist enough assessments to exercise
+        # the separate finding-count query past the same limit.
+        timestamp = datetime(2026, 4, 15)
+        assessments = [
+            ReviewAssessment(
+                id=f'assessment-{form.id}', form_id=form.id,
+                fingerprint=f'{form.id:064x}', created_at=timestamp,
+            )
+            for form in forms[:-1]
+        ]
+        db.session.add_all(assessments)
+        db.session.add_all([
+            ReviewAssessment(id='z-older', form_id=forms[0].id,
+                             fingerprint='f' * 64, created_at=datetime(2026, 4, 14)),
+            ReviewAssessment(id='a-tied', form_id=forms[0].id,
+                             fingerprint='e' * 64, created_at=timestamp),
+        ])
+        db.session.flush()
+        db.session.add_all([
+            ReviewFinding(assessment_id=assessment.id, source='schedule',
+                          severity='review', title='Synthetic finding', message='Synthetic evidence')
+            for assessment in (assessments[0], assessments[-1])
+        ])
+        db.session.add(ReviewReadReceipt(
+            user_id=self.dept_manager.id, form_id=forms[-1].id,
+            form_updated_at=forms[-1].updated_at,
+        ))
+        db.session.commit()
+        first_id, last_assessed_id, unchecked_id = forms[0].id, forms[-2].id, forms[-1].id
+        expected_assessments = {row.form_id: row.id for row in assessments}
+
+        def enforce_limit(conn, cursor, statement, parameters, context, executemany):
+            # Python 3.10 lacks sqlite3.Connection.setlimit().
+            setlimit = getattr(conn.connection.driver_connection, 'setlimit', None)
+            if setlimit is not None:
+                setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 999)
+            elif not executemany and len(parameters) > 999:
+                raise sqlite3.OperationalError('too many SQL variables')
+
+        engine = db.engine
+        event.listen(engine, 'before_cursor_execute', enforce_limit)
+        try:
+            for reviewer in (self.center_manager, self.dept_manager):
+                with self.subTest(reviewer=reviewer.number):
+                    self._login(reviewer)
+                    response = self.client.get('/admin/api/review/forms')
+                    body = response.get_json()
+                    self.assertEqual(response.status_code, 200, body.get('message', '')[:180])
+                    queue = {group['forms'][0]['id']: group['forms'][0] for group in body['forms']}
+                    self.assertEqual(len(queue), len(forms))
+                    self.assertEqual({form_id: row['automation']['assessment_id']
+                                      for form_id, row in queue.items() if row['automation']},
+                                     expected_assessments)
+                    self.assertEqual(queue[first_id]['automation']['finding_count'], 1)
+                    self.assertEqual(queue[last_assessed_id]['automation']['finding_count'], 1)
+                    self.assertIsNone(queue[unchecked_id]['automation'])
+                    if reviewer is self.dept_manager:
+                        self.assertEqual(queue[first_id]['department_read']['state'], 'unread')
+                        self.assertEqual(queue[unchecked_id]['department_read']['state'], 'read')
+        finally:
+            event.remove(engine, 'before_cursor_execute', enforce_limit)
+
+    def test_review_queue_failure_keeps_database_details_private(self):
+        self._login(self.center_manager)
+        self._form(self.info_same.number)
+        db.session.commit()
+        errors = StringIO()
+        with patch('app.review_automation.routes.latest_assessment_summaries',
+                   side_effect=RuntimeError('synthetic SQL and form parameters')):
+            response = self.client.get('/admin/api/review/forms', environ_overrides={'wsgi.errors': errors})
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.get_json(), {
+            'success': False,
+            'message': '加载审核队列失败，请稍后重试。',
+        })
+        self.assertEqual(errors.getvalue().splitlines(), [
+            'review_failed reason=review_queue_load_failed record=-',
+        ])
 
     def test_submit_form_review_effective_lecture_date_change_is_audited(self):
         form = self._form(self.info_same.number, status='待审核')
